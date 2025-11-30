@@ -1,11 +1,14 @@
-// include/fujinet/platform/posix/channel_factory.h
 #pragma once
 
 #include <memory>
+
 #include "fujinet/io/core/channel.h"
+#include "fujinet/config/build_profile.h"
 
 namespace fujinet::platform::posix {
 
-std::unique_ptr<fujinet::io::Channel> create_default_channel();
+// Create a Channel appropriate for the given build profile.
+std::unique_ptr<fujinet::io::Channel>
+create_channel_for_profile(const config::BuildProfile& profile);
 
 } // namespace fujinet::platform::posix

@@ -9,6 +9,7 @@
 #include "fujinet/config/build_profile.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/core/channel.h"
+#include "fujinet/platform/posix/channel_factory.h"
 
 // Quick forward declaration (we’ll make a proper header later).
 namespace fujinet {
@@ -79,14 +80,21 @@ int main()
         }
     }
 
-    // 2. Determine build profile and set up transports.
+    // 2. Determine build profile.
     auto profile = config::current_build_profile();
     std::cout << "Build profile: " << profile.name << "\n";
 
-    DummyChannel channel;
-    core::setup_transports(core, channel, profile);
+    // 3. Create a Channel appropriate for this profile (PTY, RS232, etc.).
+    auto channel = platform::posix::create_channel_for_profile(profile);
+    if (!channel) {
+        std::cerr << "Failed to create Channel for profile\n";
+        return 1;
+    }
 
-    // 3. Tick the core a few times.
+    // 4. Set up transports based on profile (RS232/PTY/etc.).
+    core::setup_transports(core, *channel, profile);
+
+    // 5. Tick the core a few times.
     for (int i = 0; i < 10; ++i) {
         core.tick();
         std::cout << "[POSIX] tick " << core.tick_count() << "\n";

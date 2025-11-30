@@ -22,17 +22,15 @@ add_library(fujinet-nio)
 # For now, it's tiny; we'll add more sources as the IO system grows.
 target_sources(fujinet-nio
     PRIVATE
-        src/lib/fujinet_init.cpp
-        src/lib/fujinet_core.cpp
-        
-        src/lib/build_profile.cpp
         src/lib/bootstrap.cpp
-
+        src/lib/build_profile.cpp
+        src/lib/fujinet_core.cpp        
+        src/lib/fujinet_init.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
         src/lib/routing_manager.cpp
-
         src/lib/rs232_transport.cpp
+        src/platform/posix/channel_factory.cpp
 )
 
 target_include_directories(fujinet-nio
