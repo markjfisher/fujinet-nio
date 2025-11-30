@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.20)
-
 project(fujinet_nio
     VERSION 0.1.0
     LANGUAGES CXX
@@ -25,6 +23,7 @@ add_library(fujinet-nio)
 target_sources(fujinet-nio
     PRIVATE
         src/lib/fujinet_init.cpp
+        src/lib/fujinet_core.cpp
 )
 
 target_include_directories(fujinet-nio

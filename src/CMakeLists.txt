@@ -1,6 +1,14 @@
-# This file was automatically generated for projects
-# without default 'CMakeLists.txt' file.
+# File: src/CMakeLists.txt
 
-FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/src/*.*)
+# Collect all core library sources under src/lib
+file(GLOB LIB_SOURCES
+    "lib/*.cpp"
+)
 
-idf_component_register(SRCS ${app_sources})
+idf_component_register(
+    SRCS
+        app/main_esp32.cpp
+        ${LIB_SOURCES}
+    INCLUDE_DIRS
+        "../include"
+)
