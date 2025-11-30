@@ -2,26 +2,45 @@
 
 #include <cstdint>
 
+#include "fujinet/io/core/io_device_manager.h"
+#include "fujinet/io/core/routing_manager.h"
+#include "fujinet/io/transport/io_service.h"
+
 namespace fujinet::core {
 
-// Core “engine” for the I/O system.
-// For now it just tracks a tick counter; later this will:
-//  - pump IOService
-//  - poll devices
-//  - handle timers, etc.
+// Central engine for FujiNet I/O.
+// Owns:
+//   - IODeviceManager (devices)
+//   - RoutingManager  (modes / overrides)
+//   - IOService       (transports)
 class FujinetCore {
 public:
-    FujinetCore() = default;
+    FujinetCore();
 
     // One iteration of the core loop.
-    // Call this regularly from POSIX main or a FreeRTOS task.
     void tick();
 
     // How many ticks have been executed so far.
     std::uint64_t tick_count() const noexcept { return _tickCount; }
 
+    // Access to core subsystems for setup/registration.
+    io::IODeviceManager&       deviceManager()       { return _deviceManager; }
+    const io::IODeviceManager& deviceManager() const { return _deviceManager; }
+
+    io::RoutingManager&       routingManager()       { return _routing; }
+    const io::RoutingManager& routingManager() const { return _routing; }
+
+    io::IOService&       ioService()       { return _ioService; }
+    const io::IOService& ioService() const { return _ioService; }
+
+    // Helper to add transports to the IOService.
+    void addTransport(io::ITransport* transport);
+
 private:
-    std::uint64_t _tickCount{0};
+    std::uint64_t     _tickCount{0};
+    io::IODeviceManager _deviceManager;
+    io::RoutingManager  _routing;
+    io::IOService       _ioService;
 };
 
 } // namespace fujinet::core
