@@ -1,0 +1,79 @@
+# artifacts
+build/
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+
+# Mac crap
+.DS_Store
+
+# python
+*.pyc
+__pycache__/
+*.py[cod]
+
+# various
+*.egg-info/
+*.egg
+*.log
+*.bak
+*.tmp
+*.swp
+*.swo
+*.orig
+*.rej
+
+# libraries/objects
+*.so
+*.dll
+*.exe
+*.pdb
+*.lib
+*.a
+*.la
+*.o
+*.ko
+*.obj
+*.class
+
+# archives
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar
+*.gz
+*.bz2
+*.xz
+*.lzma
+*.lz
+*.lzo
+*.lz4
+*.zst
+*.zstd
+*.br
+*.snappy
+*.lzf
+*.lzop
+*.xz
+*.lzma
+*.zstd
+*.zst
+*.br
+*.snappy
+*.lzf
+*.lzop
+*.xz
+*.lzma
+*.zstd
+*.zst
+*.br
+*.snappy
+*.lzf
