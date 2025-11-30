@@ -1,5 +1,13 @@
-# artifacts
+# cmake artifacts
 build/
+CMakeCache.txt
+CMakeFiles/
+
+# platformio files
+.pio/
+sdkconfig.*
+# allow the defaults file. Must come after wild card version above.
+!sdkconfig.defaults
 
 # IDE files
 .vscode/
