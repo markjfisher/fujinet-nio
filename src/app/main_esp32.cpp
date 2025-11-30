@@ -3,18 +3,17 @@
 #include "esp_log.h"
 
 #include "fujinet/core/core.h"
+#include "fujinet/core/bootstrap.h"
+#include "fujinet/config/build_profile.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/core/channel.h"
-#include "fujinet/io/transport/rs232_transport.h"
 
-static const char* TAG = "fujinet-nio";
+static const char* TAG = "nio";
 
 using namespace fujinet;
 
-// ---------------------------------------------------------
-// Dummy implementations to prove the IO pipeline works.
-// (Same idea as POSIX, but running under FreeRTOS.)
-// ---------------------------------------------------------
+// Temporary dummy device + channel for ESP32.
+// We'll later swap DummyChannel for a real UART/USB/SIO-backed Channel.
 
 class DummyDevice : public io::VirtualDevice {
 public:
@@ -24,20 +23,15 @@ public:
         resp.deviceId = request.deviceId;
         resp.status   = io::StatusCode::Ok;
         resp.payload  = request.payload;
-        // We don't log here to avoid spamming the UART.
         return resp;
     }
 
-    void poll() override {
-        // Could blink an LED or similar later.
-    }
+    void poll() override {}
 };
 
 class DummyChannel : public io::Channel {
 public:
-    bool available() override {
-        return false;
-    }
+    bool available() override { return false; }
 
     std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override {
         (void)buffer;
@@ -46,19 +40,17 @@ public:
     }
 
     void write(const std::uint8_t* buffer, std::size_t len) override {
-        // For now, just log the fact that something would be written.
         ESP_LOGI(TAG, "[DummyChannel] write %u bytes",
                  static_cast<unsigned>(len));
         (void)buffer;
     }
 };
 
-// FreeRTOS task that owns and runs the FujinetCore loop.
 extern "C" void fujinet_core_task(void* arg)
 {
     core::FujinetCore core;
 
-    // Register a dummy device on DeviceID 1.
+    // 1. Register a dummy device.
     {
         auto dev = std::make_unique<DummyDevice>();
         bool ok = core.deviceManager().registerDevice(1, std::move(dev));
@@ -67,10 +59,14 @@ extern "C" void fujinet_core_task(void* arg)
         }
     }
 
-    // Create dummy channel + transport and attach to core.
+    // 2. Determine build profile and set up transports.
+    auto profile = config::current_build_profile();
+    ESP_LOGI(TAG, "Build profile: %.*s",
+             static_cast<int>(profile.name.size()),
+             profile.name.data());
+
     DummyChannel channel;
-    io::Rs232Transport rs232(channel);
-    core.addTransport(&rs232);
+    core::setup_transports(core, channel, profile);
 
     ESP_LOGI(TAG, "fujinet-nio core task starting");
 
@@ -86,7 +82,6 @@ extern "C" void fujinet_core_task(void* arg)
     }
 }
 
-// ESP-IDF entrypoint
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "fujinet-nio (ESP32-S3 / ESP-IDF) starting up...");

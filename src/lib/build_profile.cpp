@@ -1,0 +1,29 @@
+#include "fujinet/config/build_profile.h"
+
+namespace fujinet::config {
+
+BuildProfile current_build_profile()
+{
+#if defined(FN_BUILD_ATARI)
+    return BuildProfile{
+        .machine          = Machine::Atari8Bit,
+        .primaryTransport = TransportKind::SIO,
+        .name             = "Atari + SIO",
+    };
+#elif defined(FN_BUILD_RS232)
+    return BuildProfile{
+        .machine          = Machine::Generic,
+        .primaryTransport = TransportKind::RS232,
+        .name             = "Generic + RS232",
+    };
+#else
+    // Default POSIX dev build, etc.
+    return BuildProfile{
+        .machine          = Machine::Generic,
+        .primaryTransport = TransportKind::PTY,
+        .name             = "POSIX + PTY",
+    };
+#endif
+}
+
+} // namespace fujinet::config

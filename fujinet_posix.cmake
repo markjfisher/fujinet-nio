@@ -24,10 +24,14 @@ target_sources(fujinet-nio
     PRIVATE
         src/lib/fujinet_init.cpp
         src/lib/fujinet_core.cpp
+        
+        src/lib/build_profile.cpp
+        src/lib/bootstrap.cpp
 
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
         src/lib/routing_manager.cpp
+
         src/lib/rs232_transport.cpp
 )
 

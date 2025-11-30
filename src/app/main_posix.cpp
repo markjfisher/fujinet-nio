@@ -5,9 +5,10 @@
 #include <thread>
 
 #include "fujinet/core/core.h"
+#include "fujinet/core/bootstrap.h"
+#include "fujinet/config/build_profile.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/core/channel.h"
-#include "fujinet/io/transport/rs232_transport.h"
 
 // Quick forward declaration (we’ll make a proper header later).
 namespace fujinet {
@@ -17,10 +18,10 @@ namespace fujinet {
 using namespace fujinet;
 
 // ---------------------------------------------------------
-// Dummy implementations to prove the IO pipeline works.
+// Temporary dummy implementations to prove the IO pipeline.
+// We'll replace DummyChannel with a PTY-backed Channel next.
 // ---------------------------------------------------------
 
-// A simple device that just echoes the payload.
 class DummyDevice : public io::VirtualDevice {
 public:
     io::IOResponse handle(const io::IORequest& request) override {
@@ -40,12 +41,9 @@ public:
         return resp;
     }
 
-    void poll() override {
-        // No background work for now.
-    }
+    void poll() override {}
 };
 
-// A channel that never has input and logs writes.
 class DummyChannel : public io::Channel {
 public:
     bool available() override {
@@ -81,17 +79,17 @@ int main()
         }
     }
 
-    // 2. Create a dummy channel + RS232 transport and attach it to the core.
+    // 2. Determine build profile and set up transports.
+    auto profile = config::current_build_profile();
+    std::cout << "Build profile: " << profile.name << "\n";
+
     DummyChannel channel;
-    io::Rs232Transport rs232(channel);
-    core.addTransport(&rs232);
+    core::setup_transports(core, channel, profile);
 
     // 3. Tick the core a few times.
     for (int i = 0; i < 10; ++i) {
         core.tick();
-
         std::cout << "[POSIX] tick " << core.tick_count() << "\n";
-
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
