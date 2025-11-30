@@ -29,10 +29,12 @@ public:
 
 extern "C" void fujinet_core_task(void* arg)
 {
+    // NO LONGER NEEDED - it started logging everything after enabling tinyUSB
     // Give the USB host a moment to re-enumerate after reset before we
     // print anything. This makes it much more likely you'll see the
     // early logs in your monitor.
-    vTaskDelay(pdMS_TO_TICKS(1500));
+
+    // vTaskDelay(pdMS_TO_TICKS(1500));
     // ESP_LOGI(TAG, "core_task starting after 1.5s delay\n");
 
     core::FujinetCore core;
@@ -69,10 +71,10 @@ extern "C" void fujinet_core_task(void* arg)
     for (;;) {
         core.tick();
 
-        if (core.tick_count() % 50 == 0) {
-            ESP_LOGI(TAG, "tick_count=%llu",
-                     static_cast<unsigned long long>(core.tick_count()));
-        }
+        // if (core.tick_count() % 50 == 0) {
+        //     ESP_LOGI(TAG, "tick_count=%llu",
+        //              static_cast<unsigned long long>(core.tick_count()));
+        // }
 
         vTaskDelay(pdMS_TO_TICKS(20));
     }
