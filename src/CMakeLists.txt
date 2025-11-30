@@ -1,5 +1,7 @@
 # File: src/CMakeLists.txt
 
+# THIS IS ONLY USED BY ESP-IDF
+
 # Collect all core library sources under src/lib
 file(GLOB LIB_SOURCES
     "lib/*.cpp"
