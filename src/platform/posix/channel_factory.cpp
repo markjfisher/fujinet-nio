@@ -116,15 +116,11 @@ create_channel_for_profile(const config::BuildProfile& profile)
     using config::TransportKind;
 
     switch (profile.primaryTransport) {
-    case TransportKind::PTY:
-        // Our main dev case on POSIX: PTY-backed channel.
-        return create_pty_channel();
 
-    case TransportKind::RS232:
+    case TransportKind::SerialDebug:
         // In future, this could open a real TTY (e.g. /dev/ttyS0) or a
         // configurable path. For now, we can reuse PTY as a dev stand-in.
-        std::cout << "[ChannelFactory] RS232 on POSIX not yet implemented; "
-                     "using PTY as a stand-in.\n";
+        std::cout << "[ChannelFactory] SerialDebug on POSIX uses PTY.\n";
         return create_pty_channel();
 
     case TransportKind::SIO:

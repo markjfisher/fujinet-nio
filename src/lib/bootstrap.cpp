@@ -15,7 +15,7 @@ io::ITransport* setup_transports(FujinetCore& core,
     io::ITransport* primary = nullptr;
 
     switch (profile.primaryTransport) {
-    case TransportKind::RS232: {
+    case TransportKind::SerialDebug: {
         auto* t = new io::Rs232Transport(channel);
         core.addTransport(t);
         primary = t;
@@ -29,14 +29,6 @@ io::ITransport* setup_transports(FujinetCore& core,
     }
     case TransportKind::IEC: {
         // ...
-        break;
-    }
-    case TransportKind::PTY: {
-        // On POSIX, PTYChannel would be a Channel that wraps a pty;
-        // the transport might still be Rs232Transport-like.
-        auto* t = new io::Rs232Transport(channel);
-        core.addTransport(t);
-        primary = t;
         break;
     }
     }

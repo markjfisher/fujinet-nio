@@ -104,7 +104,7 @@ BuildProfile current_build_profile()
 #elif defined(FN_BUILD_RS232)
     return BuildProfile{
         .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::RS232,
+        .primaryTransport = TransportKind::SerialDebug,
         .name             = "Generic + RS232",
     };
 #else
@@ -167,7 +167,7 @@ io::ITransport* setup_transports(
     io::ITransport* primary = nullptr;
 
     switch (profile.primaryTransport) {
-    case TransportKind::RS232: {
+    case TransportKind::SerialDebug: {
         auto* t = new io::Rs232Transport(channel);
         core.addTransport(t);
         primary = t;

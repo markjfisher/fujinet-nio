@@ -13,15 +13,15 @@ BuildProfile current_build_profile()
 #elif defined(FN_BUILD_RS232)
     return BuildProfile{
         .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::RS232,
+        .primaryTransport = TransportKind::SerialDebug,
         .name             = "Generic + RS232",
     };
 #else
     // Default POSIX dev build, etc.
     return BuildProfile{
         .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::PTY,
-        .name             = "POSIX + PTY",
+        .primaryTransport = TransportKind::SerialDebug,
+        .name             = "POSIX + SerialDebug",
     };
 #endif
 }

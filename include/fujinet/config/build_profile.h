@@ -13,10 +13,9 @@ enum class Machine {
 };
 
 enum class TransportKind {
-    RS232,
+    SerialDebug,
     SIO,
     IEC,
-    PTY,      // POSIX pseudo-terminal
     // ...
 };
 
