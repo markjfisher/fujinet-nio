@@ -67,10 +67,9 @@ enum class Machine {
 };
 
 enum class TransportKind {
-    RS232,
     SIO,
     IEC,
-    PTY,
+    SerialDebug,
 };
 
 struct BuildProfile {
@@ -280,3 +279,36 @@ The shape is identical across platforms.
 4. Add a channel factory if required
 
 No core surgery required.
+
+## Naming Recap
+
+- Channel: PTY vs UART vs USB vs socket (implementation detail)
+- TransportKind: what protocol/framing we’re using on that channel (debug line vs FujiSlip vs SIO)
+- ITransport implementation (Rs232Transport, later SlipTransport, etc.): maps bytes to IORequest/IOResponse
+- BuildProfile + FN_BUILD_*: chooses TransportKind and Machine
+
+## Clearing up the mental model (PTY vs RS232 vs SLIP)
+
+Right now we have three concepts:
+
+1. Channel (io::Channel)
+“How do raw bytes move?”
+Examples: PTY, UART0, USB CDC, TCP socket
+
+2. Transport (ITransport, e.g. Rs232Transport)
+“How do I frame & interpret those bytes as IORequests / IOResponses?”
+
+e.g.: simple “newline-delimited” frames
+
+Later: FujiNet SLIP + headers
+
+3. BuildProfile::TransportKind
+
+“What kind of protocol/link does this build expect from the host?”
+This should really be about the protocol, not about “it’s a PTY”.
+
+So:
+
+- PTY is a type of Channel, not a protocol. It’s just “a pipe with a TTY personality”.
+- Our current protocol is “line-based debug over serial-like link”.
+- Later protocol will be “FujiNet SLIP framing over serial-like link”.

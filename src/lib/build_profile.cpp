@@ -14,7 +14,7 @@ BuildProfile current_build_profile()
     return BuildProfile{
         .machine          = Machine::Generic,
         .primaryTransport = TransportKind::SerialDebug,
-        .name             = "Generic + RS232",
+        .name             = "Generic + SerialDebug",
     };
 #else
     // Default POSIX dev build, etc.

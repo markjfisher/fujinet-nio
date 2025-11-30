@@ -5,6 +5,9 @@ CMakeFiles/
 
 # platformio files
 .pio/
+managed_components/
+.pioenvs/
+.pioinitcache.py
 sdkconfig.*
 # allow the defaults file. Must come after wild card version above.
 !sdkconfig.defaults

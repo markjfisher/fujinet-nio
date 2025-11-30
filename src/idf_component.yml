@@ -1,0 +1,4 @@
+## IDF Component Manager Manifest File
+## This is required to get TinyUSB showing in menuconfig after a compilation
+dependencies:
+  espressif/esp_tinyusb: "^2.0.0"

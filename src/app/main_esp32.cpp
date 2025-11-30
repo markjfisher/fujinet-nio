@@ -6,15 +6,13 @@
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/config/build_profile.h"
 #include "fujinet/io/devices/virtual_device.h"
-#include "fujinet/io/core/channel.h"
+#include "fujinet/platform/esp32/channel_factory.h"
 
 static const char* TAG = "nio";
 
 using namespace fujinet;
 
-// Temporary dummy device + channel for ESP32.
-// We'll later swap DummyChannel for a real UART/USB/SIO-backed Channel.
-
+// Dummy device just to exercise the pipeline.
 class DummyDevice : public io::VirtualDevice {
 public:
     io::IOResponse handle(const io::IORequest& request) override {
@@ -22,32 +20,21 @@ public:
         resp.id       = request.id;
         resp.deviceId = request.deviceId;
         resp.status   = io::StatusCode::Ok;
-        resp.payload  = request.payload;
+        resp.payload  = request.payload; // echo
         return resp;
     }
 
     void poll() override {}
 };
 
-class DummyChannel : public io::Channel {
-public:
-    bool available() override { return false; }
-
-    std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override {
-        (void)buffer;
-        (void)maxLen;
-        return 0;
-    }
-
-    void write(const std::uint8_t* buffer, std::size_t len) override {
-        ESP_LOGI(TAG, "[DummyChannel] write %u bytes",
-                 static_cast<unsigned>(len));
-        (void)buffer;
-    }
-};
-
 extern "C" void fujinet_core_task(void* arg)
 {
+    // Give the USB host a moment to re-enumerate after reset before we
+    // print anything. This makes it much more likely you'll see the
+    // early logs in your monitor.
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    // ESP_LOGI(TAG, "core_task starting after 1.5s delay\n");
+
     core::FujinetCore core;
 
     // 1. Register a dummy device.
@@ -59,17 +46,26 @@ extern "C" void fujinet_core_task(void* arg)
         }
     }
 
-    // 2. Determine build profile and set up transports.
+    // 2. Determine build profile.
     auto profile = config::current_build_profile();
     ESP_LOGI(TAG, "Build profile: %.*s",
              static_cast<int>(profile.name.size()),
              profile.name.data());
 
-    DummyChannel channel;
-    core::setup_transports(core, channel, profile);
+    // 3. Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
+    auto channel = platform::esp32::create_channel_for_profile(profile);
+    if (!channel) {
+        ESP_LOGE(TAG, "Failed to create Channel for profile");
+        vTaskDelete(nullptr);
+        return;
+    }
 
-    ESP_LOGI(TAG, "fujinet-nio core task starting");
+    // 4. Set up transports based on profile (SerialDebug, SIO, etc.).
+    core::setup_transports(core, *channel, profile);
 
+    ESP_LOGI(TAG, "fujinet-nio core task starting (transport initialized)");
+
+    // 5. Run the core loop forever.
     for (;;) {
         core.tick();
 
