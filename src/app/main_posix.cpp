@@ -94,13 +94,14 @@ int main()
     // 4. Set up transports based on profile (RS232/PTY/etc.).
     core::setup_transports(core, *channel, profile);
 
-    // 5. Tick the core a few times.
-    for (int i = 0; i < 10; ++i) {
+    // 5. Run core loop until the process is terminated (Ctrl+C, kill, etc.).
+    while (true) {
         core.tick();
-        std::cout << "[POSIX] tick " << core.tick_count() << "\n";
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
+    // (Unreachable for now, but kept for future clean shutdown logic.)
     std::cout << "fujinet-nio exiting.\n";
     return 0;
 }
+
