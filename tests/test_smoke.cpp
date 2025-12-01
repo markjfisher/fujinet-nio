@@ -1,14 +1,9 @@
-#include <cassert>
-#include <iostream>
-
+#include "doctest.h"
 #include "fujinet/io/core/io_message.h"
 
 using namespace fujinet::io;
 
-int main()
-{
-    std::cout << "[test_smoke] Running simple checks...\n";
-
+TEST_CASE("Simple IORequest/IOResponse smoke test") {
     IORequest req;
     req.id       = 42;
     req.deviceId = 1;
@@ -22,10 +17,7 @@ int main()
     resp.status   = StatusCode::Ok;
     resp.payload  = req.payload;
 
-    assert(resp.id == req.id);
-    assert(resp.deviceId == req.deviceId);
-    assert(resp.payload.size() == 3);
-
-    std::cout << "[test_smoke] OK\n";
-    return 0;
+    CHECK(resp.id == req.id);
+    CHECK(resp.deviceId == req.deviceId);
+    CHECK(resp.payload.size() == 3);
 }

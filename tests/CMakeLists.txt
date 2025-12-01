@@ -1,7 +1,13 @@
 # File: tests/CMakeLists.txt
 
+# Collect all test_*.cpp files automatically
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS
+    "test_*.cpp"
+)
+
 add_executable(fujinet-nio-tests
-    test_smoke.cpp
+    run_main.cpp       # contains doctest main
+    ${TEST_SOURCES}    # test_smoke.cpp, test_fujipacket.cpp, etc.
 )
 
 target_link_libraries(fujinet-nio-tests
@@ -9,4 +15,4 @@ target_link_libraries(fujinet-nio-tests
         fujinet-nio
 )
 
-add_test(NAME fujinet-nio-smoke COMMAND fujinet-nio-tests)
+add_test(NAME fujinet-nio-tests COMMAND fujinet-nio-tests)

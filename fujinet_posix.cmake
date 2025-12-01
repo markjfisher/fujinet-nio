@@ -24,7 +24,8 @@ target_sources(fujinet-nio
     PRIVATE
         src/lib/bootstrap.cpp
         src/lib/build_profile.cpp
-        src/lib/fujinet_core.cpp        
+        src/lib/fuji_bus_packet.cpp
+        src/lib/fujinet_core.cpp
         src/lib/fujinet_init.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
@@ -59,7 +60,7 @@ if(FN_BUILD_POSIX_APP)
 endif()
 
 # --------------------------------------------------
-# Tests (using CTest + simple homegrown assertions for now)
+# Tests (using CTest/doctest)
 # --------------------------------------------------
 if(FN_BUILD_TESTS)
     enable_testing()

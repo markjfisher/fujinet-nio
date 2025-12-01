@@ -1,9 +1,17 @@
 #include "fujinet/io/transport/rs232_transport.h"
 
+#include "fujinet/io/protocol/fuji_bus_packet.h"
+
 #include <iostream>   // temporary for debug
 #include <algorithm>  // for std::find
 
 namespace fujinet::io {
+
+using fujinet::io::protocol::FujiBusPacket;
+using fujinet::io::protocol::FujiDeviceId;
+using fujinet::io::protocol::FujiCommandId;
+using fujinet::io::protocol::ByteBuffer;
+using fujinet::io::protocol::SlipByte;
 
 void Rs232Transport::poll()
 {
@@ -17,63 +25,91 @@ void Rs232Transport::poll()
         _rxBuffer.insert(_rxBuffer.end(), temp, temp + n);
     }
 
-    // In a SLIP-style setup, you might also drive a state machine here.
+    // All framing is handled in receive() via SLIP + FujiBusPacket.
 }
 
-// For now, we use a very simple "one line = one request" framing:
-//
-//  - Bytes are accumulated into _rxBuffer by poll().
-//  - receive() looks for '\n' (LF).
-//  - Everything before the newline is one frame.
-//  - If the frame ends with '\r', we strip it (CRLF support).
-//
-// Later, we'll replace this with SLIP framing while keeping the overall shape:
-//   poll()  -> gather bytes
-//   receive() -> look for complete frame, parse into IORequest
-bool Rs232Transport::receive(IORequest& outReq)
+// Helper: try to extract a single SLIP-framed message from _rxBuffer.
+// We look for: SlipByte::End ... SlipByte::End, and return that span (inclusive).
+static bool extractSlipFrame(std::vector<std::uint8_t>& buffer, ByteBuffer& outFrame)
 {
-    // Look for LF as a frame terminator.
-    auto it = std::find_if(
-        _rxBuffer.begin(),
-        _rxBuffer.end(),
-        [](std::uint8_t b) { return b == '\n' || b == '\r'; }
+    // Find the first END marker.
+    auto startIt = std::find(
+        buffer.begin(),
+        buffer.end(),
+        to_byte(SlipByte::End)
     );
-    
-    if (it == _rxBuffer.end()) {
-        // No complete frame yet.
+    if (startIt == buffer.end()) {
+        // No START/END marker yet.
         return false;
     }
 
-    std::size_t endIndex = static_cast<std::size_t>(it - _rxBuffer.begin());
-
-    // Frame is [_rxBuffer[0], ..., _rxBuffer[endIndex-1]].
-    // Handle optional '\r' before '\n' (CRLF).
-    std::size_t frameLen = endIndex;
-    if (frameLen > 0 && _rxBuffer[frameLen - 1] == static_cast<std::uint8_t>('\r')) {
-        --frameLen;
+    // Find the next END marker after start.
+    auto endIt = std::find(
+        std::next(startIt),
+        buffer.end(),
+        to_byte(SlipByte::End)
+    );
+    if (endIt == buffer.end()) {
+        // We have a start but no complete frame yet.
+        // Optionally: discard noise before startIt.
+        if (startIt != buffer.begin()) {
+            buffer.erase(buffer.begin(), startIt);
+        }
+        return false;
     }
 
-    std::vector<std::uint8_t> payload;
-    payload.reserve(frameLen);
-    payload.insert(payload.end(), _rxBuffer.begin(), _rxBuffer.begin() + frameLen);
+    // We have a complete frame: [startIt, endIt].
+    outFrame.clear();
+    outFrame.insert(outFrame.end(), startIt, std::next(endIt));
 
-    // Erase consumed bytes including the terminator '\n'.
-    _rxBuffer.erase(_rxBuffer.begin(), _rxBuffer.begin() + endIndex + 1);
+    // Erase everything up to and including endIt from the buffer.
+    buffer.erase(buffer.begin(), std::next(endIt));
+    return true;
+}
 
-    // For now, we hard-code:
-    //   - deviceId = 1 (DummyDevice)
-    //   - type = Command
-    //   - command = 0
-    // Later, SLIP framing and a real header can carry these.
-    outReq.id       = _nextRequestId++;
-    outReq.deviceId = 1;
-    outReq.type     = RequestType::Command;
-    outReq.command  = 0;
-    outReq.payload  = std::move(payload);
+// SLIP + FujiBus framing:
+//
+//  - poll() accumulates raw bytes from the Channel into _rxBuffer.
+//  - receive() looks for one full SLIP frame (END ... END).
+//  - FujiBusPacket::fromSerialized() parses that into a FujiBusPacket.
+//  - We then map FujiBusPacket → IORequest.
+bool Rs232Transport::receive(IORequest& outReq)
+{
+    ByteBuffer frame;
+    if (!extractSlipFrame(_rxBuffer, frame)) {
+        // No complete SLIP frame yet.
+        return false;
+    }
 
-    // Debug print so you can see the requests being detected.
+    auto packetPtr = FujiBusPacket::fromSerialized(frame);
+    if (!packetPtr) {
+        std::cout << "[Rs232Transport] invalid FujiBus frame, dropped\n";
+        return false;
+    }
+
+    const FujiBusPacket& packet = *packetPtr;
+
+    // Map FujiBusPacket → IORequest.
+    outReq.id        = _nextRequestId++;
+    outReq.deviceId  = static_cast<DeviceID>(packet.device());
+    outReq.type      = RequestType::Command; // FujiBus operations are all "commands" at this level.
+    outReq.command   = static_cast<std::uint16_t>(packet.command());
+
+    outReq.params.clear();
+    outReq.params.reserve(packet.paramCount());
+    for (unsigned int i = 0; i < packet.paramCount(); ++i) {
+        outReq.params.push_back(packet.param(i));
+    }
+
+    outReq.payload.clear();
+    if (const auto& dataOpt = packet.data()) {
+        outReq.payload.insert(outReq.payload.end(), dataOpt->begin(), dataOpt->end());
+    }
+
     std::cout << "[Rs232Transport] receive: id=" << outReq.id
               << " deviceId=" << static_cast<int>(outReq.deviceId)
+              << " command=0x" << std::hex << outReq.command << std::dec
+              << " params=" << outReq.params.size()
               << " payloadSize=" << outReq.payload.size()
               << std::endl;
 
@@ -82,28 +118,40 @@ bool Rs232Transport::receive(IORequest& outReq)
 
 void Rs232Transport::send(const IOResponse& resp)
 {
-    // Log to stdout for debugging.
     std::cout << "[Rs232Transport] send: deviceId="
               << static_cast<int>(resp.deviceId)
               << " status=" << static_cast<int>(resp.status)
+              << " command=0x" << std::hex << resp.command << std::dec
               << " payloadSize=" << resp.payload.size()
               << std::endl;
 
-    // For now, we use a simple "line" framing:
-    //   [payload bytes] '\n'
+    // Map IOResponse → FujiBusPacket.
     //
-    // This matches the simple line-based receive() and works well with
-    // terminals and minicom. Later, SLIP framing will replace this.
-    std::vector<std::uint8_t> frame;
-    frame.reserve(resp.payload.size() + 1);
+    // For now we:
+    //   - use the same deviceId and command as the request/response pair
+    //   - encode status as a 1-byte parameter (first param)
+    //   - use IOResponse::payload as the FujiBus "data" block
+    //
+    // This is easy to evolve later as we tighten to FEP-004 specifics.
 
-    frame.insert(frame.end(), resp.payload.begin(), resp.payload.end());
-    frame.push_back(static_cast<std::uint8_t>('\n'));
+    ByteBuffer data;
+    data.insert(data.end(), resp.payload.begin(), resp.payload.end());
 
-    if (!frame.empty()) {
-        _channel.write(frame.data(), frame.size());
+    FujiDeviceId  dev = static_cast<FujiDeviceId>(resp.deviceId);
+    FujiCommandId cmd = static_cast<FujiCommandId>(resp.command & 0xFF);
+
+    // status as first param, plus payload as raw data.
+    FujiBusPacket packet(
+        dev,
+        cmd,
+        static_cast<std::uint8_t>(resp.status), // status param
+        std::move(data)
+    );
+
+    ByteBuffer serialized = packet.serialize();
+    if (!serialized.empty()) {
+        _channel.write(serialized.data(), serialized.size());
     }
 }
-
 
 } // namespace fujinet::io
