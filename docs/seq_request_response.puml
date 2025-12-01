@@ -1,0 +1,55 @@
+@startuml RequestResponseFlow
+title Full request/response path over FujiBus + SLIP
+
+skinparam shadowing false
+
+actor Host as Host
+participant "/dev/ttyACM1\n(or PTY)" as Serial
+participant "Channel\n(UsbCdcChannel / PtyChannel)" as Channel
+participant "Rs232Transport" as Transport
+participant "FujinetCore" as Core
+participant "IOService" as IOService
+participant "RoutingManager" as Router
+participant "IODeviceManager" as DevMgr
+participant "VirtualDevice\n(e.g. DummyDevice, FujiDevice)" as Device
+
+== Host sends FujiBus+SLIP frame ==
+
+Host -> Serial : write SLIP-framed FujiBus packet\n(deviceId, command, params, payload)
+Serial -> Channel : bytes arrive
+
+== Core tick loop ==
+
+Core -> Transport : poll()
+Transport -> Channel : available() / read()
+Channel --> Transport : raw bytes
+Transport -> Transport : append bytes to _rxBuffer
+
+loop while complete SLIP frame(s) present
+  Core -> Transport : receive(out IORequest)
+  Transport -> Transport : extract SLIP frame from _rxBuffer
+  Transport -> Transport : FujiBusPacket::fromSerialized(frame)
+  Transport -> Transport : build IORequest\n(id, deviceId, type, command,\nparams, payload)
+
+  Transport --> Core : IORequest
+
+  Core -> IOService : handleRequest(request)
+  IOService -> Router : selectDevice(request, DevMgr)
+  Router -> DevMgr : findDevice(request.deviceId)
+  DevMgr --> Router : VirtualDevice*
+  Router --> IOService : selected VirtualDevice
+
+  IOService -> Device : handle(request)
+  Device --> IOService : IOResponse
+  IOService --> Core : IOResponse
+
+  Core -> Transport : send(response)
+  Transport -> Transport : map IOResponse -> FujiBusPacket\n(deviceId, command, status param, payload)
+  Transport -> Transport : packet.serialize() -> SLIP bytes
+  Transport -> Channel : write(SLIP bytes)
+  Channel -> Serial : bytes out
+
+  Serial --> Host : SLIP-framed response
+end
+
+@enduml

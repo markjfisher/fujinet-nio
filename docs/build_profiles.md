@@ -3,7 +3,7 @@
 This document explains how **fujinet-nio** decides:
 
 - which **machine profile** it is (Atari, generic, etc.),
-- which **transport** to use (RS232, SIO, PTY, …),
+- which **transport** to use (SIO, IDC, Serial, ...),
 - and how we keep all of that from turning into `#ifdef` spaghetti.
 
 The core idea is:

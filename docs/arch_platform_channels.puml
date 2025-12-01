@@ -1,0 +1,125 @@
+@startuml PlatformChannels
+title Platform Build Profiles + Channels + Transports
+
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+' ---------- Build Profile ----------
+package "fujinet::config" {
+    enum Machine {
+        Generic
+        Atari8Bit
+        C64
+        ...
+    }
+
+    enum TransportKind {
+        SerialDebug
+        SIO
+        IEC
+        ...
+    }
+
+    class BuildProfile {
+        + Machine       machine
+        + TransportKind primaryTransport
+        + std::string   name
+    }
+
+    class "current_build_profile()" as CurrentProfile {
+        + BuildProfile current_build_profile()
+    }
+}
+
+' ---------- Channel Base ----------
+package "fujinet::io::core" {
+    interface Channel {
+        + available(): bool
+        + read(buf, maxLen): std::size_t
+        + write(buf, len): void
+    }
+}
+
+' ---------- POSIX Channels ----------
+package "fujinet::platform::posix" {
+    class PtyChannel {
+        - int _masterFd
+        --
+        + PtyChannel(int masterFd)
+        + ~PtyChannel()
+        + available(): bool
+        + read(...): std::size_t
+        + write(...): void
+    }
+
+    class "create_channel_for_profile()" as PosixFactory {
+        + std::unique_ptr<Channel> create_channel_for_profile(const BuildProfile&)
+    }
+
+    PtyChannel ..|> Channel
+}
+
+' ---------- ESP32 Channels ----------
+package "fujinet::platform::esp32" {
+    class UsbCdcChannel {
+        + UsbCdcChannel()
+        + available(): bool
+        + read(...): std::size_t
+        + write(...): void
+    }
+
+    class "create_channel_for_profile()" as Esp32Factory {
+        + std::unique_ptr<Channel> create_channel_for_profile(const BuildProfile&)
+    }
+
+    UsbCdcChannel ..|> Channel
+}
+
+' ---------- Transports ----------
+package "fujinet::io::transport" {
+    interface ITransport {
+        + poll(): void
+        + receive(out IORequest): bool
+        + send(IOResponse): void
+    }
+
+    class Rs232Transport {
+        - Channel& _channel
+        - std::vector<uint8_t> _rxBuffer
+        - RequestID _nextRequestId
+        --
+        + Rs232Transport(Channel&)
+        + poll(): void
+        + receive(out IORequest): bool
+        + send(IOResponse): void
+    }
+
+    Rs232Transport ..|> ITransport
+}
+
+' ---------- Core ----------
+package "fujinet::core" {
+    class FujinetCore {
+        + addTransport(ITransport*)
+        + ioService(): IOService&
+        + deviceManager(): IODeviceManager&
+        + routingManager(): RoutingManager&
+    }
+}
+
+' ---------- Host Application ----------
+class "HostApp\n(POSIX / ESP32 firmware / Emulator)" as Host
+
+Host --> CurrentProfile : calls current_build_profile()
+
+Host -> PosixFactory : POSIX build
+PosixFactory --> PtyChannel
+
+Host -> Esp32Factory : ESP32 build
+Esp32Factory --> UsbCdcChannel
+
+Host --> FujinetCore : owns core
+FujinetCore --> ITransport : addTransport()
+Rs232Transport --> Channel : uses underlying I/O
+
+@enduml

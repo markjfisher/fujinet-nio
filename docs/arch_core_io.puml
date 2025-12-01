@@ -1,0 +1,157 @@
+@startuml CoreIOArchitecture
+title fujinet-nio Core / IO / Device Architecture
+
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+' ========= IO core types =========
+package "fujinet::io" {
+
+    ' ---- Basic IDs & enums ----
+    class IORequest {
+        + RequestID              id
+        + DeviceID               deviceId
+        + RequestType            type
+        + std::uint16_t          command
+        + std::vector<std::uint32_t> params
+        + std::vector<std::uint8_t>  payload
+    }
+
+    class IOResponse {
+        + RequestID              id
+        + DeviceID               deviceId
+        + StatusCode             status
+        + std::uint16_t          command
+        + std::vector<std::uint8_t> payload
+    }
+
+    enum RequestType {
+        Command
+        Read
+        Write
+        Open
+        Close
+        Control
+    }
+
+    enum StatusCode {
+        Ok
+        DeviceNotFound
+        InvalidRequest
+        DeviceBusy
+        NotReady
+        IOError
+        Timeout
+        Unsupported
+    }
+
+    interface IRequestHandler {
+        + handleRequest(request: IORequest): IOResponse
+    }
+}
+
+' ========= Devices & routing =========
+package "fujinet::io (devices & routing)" {
+
+    interface VirtualDevice {
+        + handle(request: IORequest): IOResponse
+        + poll(): void
+    }
+
+    class IODeviceManager {
+        - std::unordered_map<DeviceID, std::unique_ptr<VirtualDevice>> _devices
+        --
+        + IODeviceManager()
+        + IODeviceManager(const IODeviceManager&) = delete
+        + operator=(const IODeviceManager&) = delete
+        + registerDevice(id: DeviceID, dev: std::unique_ptr<VirtualDevice>): bool
+        + unregisterDevice(id: DeviceID): bool
+        + getDevice(id: DeviceID): VirtualDevice*
+        + getDevice(id: DeviceID) const: const VirtualDevice*
+        + handleRequest(request: IORequest): IOResponse
+        + pollDevices(): void
+    }
+
+    class RoutingManager {
+        .. future routing / override logic ..
+    }
+
+    class DummyDevice {
+        + handle(request: IORequest): IOResponse
+        + poll(): void
+    }
+
+    IODeviceManager ..|> IRequestHandler
+    DummyDevice ..|> VirtualDevice
+    IODeviceManager "1" o-- "0..*" VirtualDevice : owns
+}
+
+' ========= Channels & transports =========
+package "fujinet::io (channels & transports)" {
+
+    abstract class Channel {
+        + available(): bool
+        + read(buffer, maxLen): std::size_t
+        + write(buffer, len): void
+    }
+
+    interface ITransport {
+        + poll(): void
+        + receive(out request: IORequest): bool
+        + send(response: IOResponse): void
+    }
+
+    class Rs232Transport {
+        - Channel&                       _channel
+        - std::vector<std::uint8_t>      _rxBuffer
+        - RequestID                      _nextRequestId
+        --
+        + Rs232Transport(channel: Channel&)
+        + poll(): void
+        + receive(out request: IORequest): bool
+        + send(response: IOResponse): void
+    }
+
+    class IOService {
+        - IRequestHandler&         _handler
+        - std::vector<ITransport*> _transports
+        --
+        + IOService(handler: IRequestHandler&)
+        + addTransport(transport: ITransport*): void
+        + serviceOnce(): void
+    }
+
+    Rs232Transport ..|> ITransport
+    Rs232Transport --> Channel : uses >
+    IOService --> ITransport : holds 0..* >
+    IOService --> IRequestHandler : routes requests to >
+}
+
+' ========= Core =========
+package "fujinet::core" {
+
+    class FujinetCore {
+        - std::uint64_t        _tickCount
+        - io::IODeviceManager  _deviceManager
+        - io::RoutingManager   _routing
+        - io::IOService        _ioService
+        --
+        + FujinetCore()
+        + tick(): void
+        + tick_count() const: std::uint64_t
+        + deviceManager(): io::IODeviceManager&
+        + deviceManager() const: const io::IODeviceManager&
+        + routingManager(): io::RoutingManager&
+        + routingManager() const: const io::RoutingManager&
+        + ioService(): io::IOService&
+        + ioService() const: const io::IOService&
+        + addTransport(transport: io::ITransport*): void
+    }
+
+    FujinetCore --> io_IODeviceManager : owns
+    FujinetCore --> io_RoutingManager  : owns
+    FujinetCore --> io_IOService       : owns
+    FujinetCore --> io_ITransport : via addTransport()\n(delegates to IOService)
+}
+
+@enduml

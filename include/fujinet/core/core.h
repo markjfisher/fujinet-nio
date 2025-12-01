@@ -37,7 +37,7 @@ public:
     void addTransport(io::ITransport* transport);
 
 private:
-    std::uint64_t     _tickCount{0};
+    std::uint64_t       _tickCount{0};
     io::IODeviceManager _deviceManager;
     io::RoutingManager  _routing;
     io::IOService       _ioService;

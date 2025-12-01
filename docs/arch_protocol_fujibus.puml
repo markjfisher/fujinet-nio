@@ -1,0 +1,78 @@
+@startuml ProtocolFujiBus
+title FujiBus Packet Format + SLIP Encoding
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+package "fujinet::io::protocol" {
+
+    ' Represent the byte buffer type (std::vector<uint8_t>)
+    class ByteBuffer {
+        + size() : size_t
+        + operator[] : uint8_t
+        + push_back(uint8_t)
+        + insert(...)
+        + reserve(...)
+    }
+
+    ' SLIP control bytes as an enum
+    enum SlipByte {
+        End = 0xC0
+        Escape = 0xDB
+        EscEnd = 0xDC
+        EscEsc = 0xDD
+    }
+
+    class "to_byte(...)" as ToByte {
+        + to_byte(SlipByte) : uint8_t <<constexpr>>
+    }
+
+    ByteBuffer --> SlipByte : uses >
+    ToByte --> SlipByte
+}
+
+package "fujinet::io::protocol" {
+
+    class PacketParam {
+        + value : uint32_t
+        + size  : uint8_t  <<1,2,4>>
+    }
+
+    class FujiBusPacket {
+        - device : uint8_t
+        - command : uint8_t
+        - params : std::vector<PacketParam>
+        - data : ByteBuffer?
+
+        + serialize() : ByteBuffer
+        + decodeSLIP(ByteBuffer) : ByteBuffer
+        + encodeSLIP(ByteBuffer) : ByteBuffer
+        + calcChecksum(ByteBuffer) : uint8_t
+        + fromSerialized(ByteBuffer) : FujiBusPacket*
+    }
+
+    FujiBusPacket --> PacketParam : contains >
+    FujiBusPacket --> ByteBuffer : uses >
+}
+
+' --- FujiBus header description ---
+note right of FujiBusPacket
+FujiBus Header (6 bytes):
+  struct {
+    uint8_t  device
+    uint8_t  command
+    uint16_t length   ; includes header
+    uint8_t  checksum ; entire frame w/ checksum=0
+    uint8_t  descr    ; descriptor for params
+  }
+end note
+
+' --- Descriptor explanation ---
+note bottom of PacketParam
+Parameter descriptors define:
+ - how many params follow
+ - each param’s byte width (1,2,4)
+Multiple descriptors may be chained using bit 7.
+end note
+
+@enduml
