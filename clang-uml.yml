@@ -1,0 +1,27 @@
+compilation_database_dir: build
+
+# All generated .puml files will go here.
+output_directory: docs/uml
+
+diagrams:
+  core_io:
+    type: class
+
+    # Limit analysis to our core + IO code
+    glob:
+      - src/lib/**/*.cpp
+      - include/fujinet/**/*.h
+
+    # Render names relative to this namespace
+    using_namespace:
+      - fujinet
+
+    include:
+      namespaces:
+        - fujinet::core
+        - fujinet::io
+
+    # Optional, just to show how to inject raw PlantUML
+    plantuml:
+      before:
+        - "title Core + IO (auto-generated)"

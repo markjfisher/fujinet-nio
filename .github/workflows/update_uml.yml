@@ -1,0 +1,49 @@
+name: Update UML diagrams
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'clang-uml.yml'
+      - 'tools/gen_uml.sh'
+  workflow_dispatch: {}
+
+jobs:
+  uml:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          # clang-uml PPA
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:bkryza/clang-uml
+          sudo apt-get update
+          # clang-uml + PlantUML + Graphviz + CMake toolchain
+          sudo apt-get install -y \
+            clang-uml \
+            plantuml \
+            graphviz \
+            cmake \
+            ninja-build \
+            build-essential
+
+      - name: Generate UML diagrams
+        run: |
+          chmod +x tools/gen_uml.sh
+          ./tools/gen_uml.sh
+
+      - name: Commit updated diagrams
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update auto-generated UML diagrams"
+          file_pattern: |
+            docs/uml/*.puml
+            docs/images/*.svg

@@ -7,7 +7,11 @@ SLIP_ESCAPE  = 0xDB
 SLIP_ESC_END = 0xDC
 SLIP_ESC_ESC = 0xDD
 
-HEADER_SIZE = 6  # FujiBusHeader: device, command, length(2), checksum, descr
+HEADER_SIZE = 6  # device(1), command(1), length(2), checksum(1), descr(1)
+
+# Descriptor tables (same as C++ FujiBusPacket)
+FIELD_SIZE_TABLE = [0, 1, 1, 1, 1, 2, 2, 4]
+NUM_FIELDS_TABLE = [0, 1, 2, 3, 4, 1, 2, 1]
 
 
 def calc_checksum(data: bytes) -> int:
@@ -40,6 +44,171 @@ def slip_encode(payload: bytes) -> bytes:
     return bytes(out)
 
 
+def extract_first_slip_frame(data: bytes) -> bytes | None:
+    """Return first SLIP frame (including END bytes) or None."""
+    try:
+        start = data.index(SLIP_END)
+    except ValueError:
+        return None
+    try:
+        end = data.index(SLIP_END, start + 1)
+    except ValueError:
+        return None
+    return data[start:end + 1]
+
+
+def slip_decode(frame: bytes) -> bytes:
+    """Decode a single SLIP frame (including leading/trailing END)."""
+    if not frame or frame[0] != SLIP_END or frame[-1] != SLIP_END:
+        return b""
+    out = bytearray()
+    i = 1
+    while i < len(frame) - 1:
+        b = frame[i]
+        if b == SLIP_ESCAPE:
+            i += 1
+            if i >= len(frame) - 1:
+                break
+            esc = frame[i]
+            if esc == SLIP_ESC_END:
+                out.append(SLIP_END)
+            elif esc == SLIP_ESC_ESC:
+                out.append(SLIP_ESCAPE)
+            # else: malformed escape, ignore
+        else:
+            out.append(b)
+        i += 1
+    return bytes(out)
+
+
+def parse_fuji_packet(decoded: bytes) -> dict | None:
+    """
+    Parse a FujiBus packet (decoded SLIP payload).
+    Returns dict with header, params, payload, checksum_ok, etc.
+    """
+    if len(decoded) < HEADER_SIZE:
+        return None
+
+    device   = decoded[0]
+    command  = decoded[1]
+    length   = decoded[2] | (decoded[3] << 8)
+    checksum = decoded[4]
+    descr    = decoded[5]
+
+    if length != len(decoded):
+        # Length mismatch: probably corrupt or mis-framed
+        return None
+
+    # Verify checksum: recompute with checksum byte zeroed
+    tmp = bytearray(decoded)
+    tmp[4] = 0
+    computed = calc_checksum(tmp)
+    checksum_ok = (computed == checksum)
+
+    # Parse descriptors + params
+    offset = HEADER_SIZE
+    descr_bytes = [descr]
+
+    # Additional descriptors when bit 7 is set
+    while descr_bytes[-1] & 0x80:
+        if offset >= len(decoded):
+            return None
+        next_descr = decoded[offset]
+        offset += 1
+        descr_bytes.append(next_descr)
+
+    params: list[int] = []
+
+    for dbyte in descr_bytes:
+        field_desc = dbyte & 0x07  # low bits => field pattern index
+        field_count = NUM_FIELDS_TABLE[field_desc]
+        if field_count == 0:
+            continue
+        field_size = FIELD_SIZE_TABLE[field_desc]
+
+        for _ in range(field_count):
+            if offset + field_size > len(decoded):
+                return None
+            v = 0
+            for i in range(field_size):
+                v |= decoded[offset + i] << (8 * i)
+            params.append(v)
+            offset += field_size
+
+    payload = decoded[offset:]
+
+    return {
+        "device": device,
+        "command": command,
+        "length": length,
+        "checksum": checksum,
+        "checksum_computed": computed,
+        "checksum_ok": checksum_ok,
+        "descr": descr,
+        "params": params,
+        "payload": payload,
+    }
+
+
+def pretty_hex(data: bytes) -> str:
+    return " ".join(f"{b:02X}" for b in data)
+
+
+def pretty_ascii(data: bytes) -> str:
+    return "".join(chr(b) if 32 <= b < 127 else "." for b in data)
+
+
+def print_packet(label: str, raw: bytes):
+    print(f"\n=== {label} ===")
+    if not raw:
+        print("  (no data)")
+        return
+
+    print(f"Raw SLIP frame ({len(raw)} bytes):")
+    print("  " + pretty_hex(raw))
+
+    frame = extract_first_slip_frame(raw)
+    if frame is None:
+        print("  No complete SLIP frame found.")
+        return
+
+    print(f"First SLIP frame ({len(frame)} bytes):")
+    print("  " + pretty_hex(frame))
+
+    decoded = slip_decode(frame)
+    print(f"Decoded FujiBus payload ({len(decoded)} bytes):")
+    print("  " + pretty_hex(decoded))
+
+    pkt = parse_fuji_packet(decoded)
+    if pkt is None:
+        print("  Failed to parse FujiBus header/structure.")
+        return
+
+    print("\n  Header:")
+    print(f"    device   = 0x{pkt['device']:02X} ({pkt['device']})")
+    print(f"    command  = 0x{pkt['command']:02X} ({pkt['command']})")
+    print(f"    length   = 0x{pkt['length']:04X} ({pkt['length']})")
+    print(f"    checksum = 0x{pkt['checksum']:02X} "
+          f"(computed: 0x{pkt['checksum_computed']:02X}, "
+          f"{'OK' if pkt['checksum_ok'] else 'MISMATCH'})")
+    print(f"    descr    = 0x{pkt['descr']:02X}")
+
+    if pkt["params"]:
+        print("  Params:")
+        for i, v in enumerate(pkt["params"]):
+            print(f"    [{i}] = {v} (0x{v:08X})")
+    else:
+        print("  Params: (none)")
+
+    payload = pkt["payload"]
+    print(f"  Payload ({len(payload)} bytes):")
+    if payload:
+        print("    hex   :", pretty_hex(payload))
+        print("    ascii :", repr(pretty_ascii(payload)))
+    else:
+        print("    (empty)")
+
+
 def build_fuji_packet(device: int, command: int, payload: bytes) -> bytes:
     """
     Build a minimal FujiBus packet:
@@ -63,7 +232,6 @@ def build_fuji_packet(device: int, command: int, payload: bytes) -> bytes:
 
     pkt[HEADER_SIZE:] = payload
 
-    # Compute checksum over entire packet with checksum field = 0
     checksum = calc_checksum(pkt)
     pkt[4] = checksum
 
@@ -83,7 +251,7 @@ def main():
     parser.add_argument("--payload", "-P", default="hello",
                         help="String payload to send (will be sent as raw bytes)")
     parser.add_argument("--read", "-r", action="store_true",
-                        help="Read back and dump response bytes after sending")
+                        help="Read back and decode response after sending")
     parser.add_argument("--timeout", "-t", type=float, default=1.0,
                         help="Read timeout in seconds when --read is used")
 
@@ -92,8 +260,7 @@ def main():
     payload_bytes = args.payload.encode("ascii", errors="replace")
     packet = build_fuji_packet(args.device, args.command, payload_bytes)
 
-    print(f"Sending {len(packet)} bytes on {args.port}:")
-    print(" ".join(f"{b:02X}" for b in packet))
+    print_packet("Outgoing request", packet)
 
     with serial.Serial(args.port, args.baud, timeout=args.timeout) as ser:
         ser.write(packet)
@@ -101,11 +268,9 @@ def main():
 
         if args.read:
             resp = ser.read(256)  # read up to 256 bytes
-            if resp:
-                print(f"Received {len(resp)} bytes:")
-                print(" ".join(f"{b:02X}" for b in resp))
-            else:
-                print("No response received (timeout).")
+            print_packet("Incoming response", resp)
+        else:
+            print("\n(no response read; --read not set)")
 
 
 if __name__ == "__main__":

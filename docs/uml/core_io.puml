@@ -1,0 +1,252 @@
+@startuml
+title Core + IO (auto-generated)
+abstract "io::Channel" as C_0008542343802949846318
+abstract C_0008542343802949846318 {
++~Channel() constexpr = default : void
+..
+{abstract} +available() = 0 : bool
+{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
+{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
+__
+}
+enum "io::RequestType" as C_0015173710654558847960
+enum C_0015173710654558847960 {
+Command
+Read
+Write
+Open
+Close
+Control
+}
+class "io::IORequest" as C_0002386736627821114488
+class C_0002386736627821114488 {
+__
++command : std::uint16_t
++deviceId : DeviceID
++id : RequestID
++params : std::vector<std::uint32_t>
++payload : std::vector<std::uint8_t>
++type : RequestType
+}
+enum "io::StatusCode" as C_0012496700434923238249
+enum C_0012496700434923238249 {
+Ok
+DeviceNotFound
+InvalidRequest
+DeviceBusy
+NotReady
+IOError
+Timeout
+Unsupported
+}
+class "io::IOResponse" as C_0002942984525013396621
+class C_0002942984525013396621 {
+__
++command : std::uint16_t
++deviceId : DeviceID
++id : RequestID
++payload : std::vector<std::uint8_t>
++status : StatusCode
+}
+abstract "io::ITransport" as C_0015529497257294770104
+abstract C_0015529497257294770104 {
++~ITransport() constexpr = default : void
+..
++poll() : void
+{abstract} +receive(IORequest & outReq) = 0 : bool
+{abstract} +send(const IOResponse & resp) = 0 : void
+__
+}
+class "io::Rs232Transport" as C_0015782707598099127908
+class C_0015782707598099127908 {
++Rs232Transport(Channel & channel) : void
+..
++poll() : void
++receive(IORequest & outReq) : bool
++send(const IOResponse & resp) : void
+__
+-_channel : Channel &
+-_nextRequestId : RequestID
+-_rxBuffer : std::vector<std::uint8_t>
+}
+enum "io::protocol::FujiDeviceId" as C_0000782810335588983435
+enum C_0000782810335588983435 {
+FujiNet
+DiskFirst
+DiskLast
+PrinterFirst
+PrinterLast
+Voice
+Clock
+NetworkFirst
+NetworkLast
+Midi
+Dbc
+}
+enum "io::protocol::FujiCommandId" as C_0003386160999608540497
+enum C_0003386160999608540497 {
+Reset
+SpecialQuery
+GetSsid
+}
+enum "io::protocol::SlipByte" as C_0010627602090167488081
+enum C_0010627602090167488081 {
+End
+Escape
+EscEnd
+EscEsc
+}
+class "io::protocol::PacketParam" as C_0003277087640557799971
+class C_0003277087640557799971 {
++PacketParam(std::uint32_t v, std::uint8_t s) : void
++PacketParam<T>(T v) : void
+__
++size : std::uint8_t
++value : std::uint32_t
+}
+class "io::protocol::FujiBusPacket" as C_0017232777488057089840
+class C_0017232777488057089840 {
++FujiBusPacket() = default : void
++FujiBusPacket<Args...>(FujiDeviceId dev, FujiCommandId cmd, Args &&... args) : void
+..
+-calcChecksum(const ByteBuffer & buf) const : std::uint8_t
++command() const : FujiCommandId
++data() const : const std::optional<ByteBuffer> &
++dataAsString() const : std::optional<std::string>
+-decodeSLIP(const ByteBuffer & input) const : ByteBuffer
++device() const : FujiDeviceId
+-encodeSLIP(const ByteBuffer & input) const : ByteBuffer
+{static} +fromSerialized(const ByteBuffer & input) : std::unique_ptr<FujiBusPacket>
++param(unsigned int index) const : std::uint32_t
++paramCount() const : unsigned int
+-parse(const ByteBuffer & input) : bool
+-processArg(const ByteBuffer & buf) : void
+-processArg(ByteBuffer && buf) : void
+-processArg(const std::string & s) : void
+-processArg(std::uint32_t v) : void
+-processArg(std::uint16_t v) : void
+-processArg(std::uint8_t v) : void
++serialize() const : ByteBuffer
+__
+-_command : FujiCommandId
+-_data : std::optional<ByteBuffer>
+-_device : FujiDeviceId
+-_params : std::vector<PacketParam>
+}
+class "io::protocol::FujiBusHeader" as C_0009954510640382192371
+class C_0009954510640382192371 {
+__
++checksum : std::uint8_t
++command : std::uint8_t
++descr : std::uint8_t
++device : std::uint8_t
++length : std::uint16_t
+}
+abstract "io::IRequestHandler" as C_0007350464861923755413
+abstract C_0007350464861923755413 {
++~IRequestHandler() constexpr = default : void
+..
+{abstract} +handleRequest(const IORequest & request) = 0 : IOResponse
+__
+}
+abstract "io::VirtualDevice" as C_0010069830097413987109
+abstract C_0010069830097413987109 {
++~VirtualDevice() constexpr = default : void
+..
+{abstract} +handle(const IORequest & request) = 0 : IOResponse
++poll() : void
+__
+}
+class "io::IODeviceManager" as C_0010794218937492142358
+class C_0010794218937492142358 {
++IODeviceManager() = default : void
++IODeviceManager(const IODeviceManager &) = deleted : void
+..
++operator=(const IODeviceManager &) = deleted : IODeviceManager &
+..
++getDevice(DeviceID id) : VirtualDevice *
++getDevice(DeviceID id) const : const VirtualDevice *
++handleRequest(const IORequest & request) : IOResponse
++pollDevices() : void
++registerDevice(DeviceID id, std::unique_ptr<VirtualDevice> device) : bool
++unregisterDevice(DeviceID id) : bool
+__
+-_devices : std::unordered_map<DeviceID,std::unique_ptr<VirtualDevice>>
+}
+class "io::RoutingManager" as C_0005273847708888915350
+class C_0005273847708888915350 {
++RoutingManager(IODeviceManager & deviceManager) : void
+..
++clearOverrideHandler() : void
++deviceManager() : IODeviceManager &
++deviceManager() const : const IODeviceManager &
++handleRequest(const IORequest & request) : IOResponse
++hasOverrideHandler() const : bool
++setOverrideHandler(IRequestHandler * handler) : void
+__
+-_deviceManager : IODeviceManager &
+-_overrideHandler : IRequestHandler *
+}
+class "io::IOService" as C_0007645722238685656096
+class C_0007645722238685656096 {
++IOService(IRequestHandler & handler) : void
+..
++addTransport(ITransport * transport) : void
++serviceOnce() : void
+__
+-_handler : IRequestHandler &
+-_transports : std::vector<ITransport *>
+}
+class "core::FujinetCore" as C_0011474842863539673819
+class C_0011474842863539673819 {
++FujinetCore() : void
+..
++addTransport(io::ITransport * transport) : void
++deviceManager() : io::IODeviceManager &
++deviceManager() const : const io::IODeviceManager &
++ioService() : io::IOService &
++ioService() const : const io::IOService &
++routingManager() : io::RoutingManager &
++routingManager() const : const io::RoutingManager &
++tick() : void
++tick_count() const noexcept : std::uint64_t
+__
+-_deviceManager : io::IODeviceManager
+-_ioService : io::IOService
+-_routing : io::RoutingManager
+-_tickCount : std::uint64_t
+}
+C_0002386736627821114488 o-- C_0015173710654558847960 : +type
+C_0002942984525013396621 o-- C_0012496700434923238249 : +status
+C_0015529497257294770104 ..> C_0002386736627821114488
+C_0015529497257294770104 ..> C_0002942984525013396621
+C_0015782707598099127908 ..> C_0002386736627821114488
+C_0015782707598099127908 ..> C_0002942984525013396621
+C_0015782707598099127908 --> C_0008542343802949846318 : -_channel
+C_0015529497257294770104 <|-- C_0015782707598099127908
+C_0017232777488057089840 o-- C_0000782810335588983435 : -_device
+C_0017232777488057089840 o-- C_0003386160999608540497 : -_command
+C_0017232777488057089840 o-- C_0003277087640557799971 : -_params
+C_0007350464861923755413 ..> C_0002386736627821114488
+C_0007350464861923755413 ..> C_0002942984525013396621
+C_0010069830097413987109 ..> C_0002386736627821114488
+C_0010069830097413987109 ..> C_0002942984525013396621
+C_0010794218937492142358 ..> C_0002386736627821114488
+C_0010794218937492142358 ..> C_0002942984525013396621
+C_0010794218937492142358 o-- C_0010069830097413987109 : -_devices
+C_0007350464861923755413 <|-- C_0010794218937492142358
+C_0005273847708888915350 ..> C_0002386736627821114488
+C_0005273847708888915350 ..> C_0002942984525013396621
+C_0005273847708888915350 --> C_0010794218937492142358 : -_deviceManager
+C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
+C_0007350464861923755413 <|-- C_0005273847708888915350
+C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
+C_0007645722238685656096 --> C_0015529497257294770104 : -_transports
+C_0011474842863539673819 ..> C_0015529497257294770104
+C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
+C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
+C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
+
+'Generated with clang-uml, version 0.6.2
+'LLVM version clang version 21.1.6
+@enduml
