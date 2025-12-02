@@ -24,4 +24,4 @@ diagrams:
     # Optional, just to show how to inject raw PlantUML
     plantuml:
       before:
-        - "title Core + IO (auto-generated)"
+        - "title Core + IO (auto-gen from clang-uml)"
