@@ -12,7 +12,7 @@ static const char* TAG = "nio";
 
 using namespace fujinet;
 
-// Dummy device just to exercise the pipeline.
+// Dummy device just to exercise the pipeline
 class DummyDevice : public io::VirtualDevice {
 public:
     io::IOResponse handle(const io::IORequest& request) override {
