@@ -13,7 +13,7 @@ idf_component_register(
         lib/io_device_manager.cpp
         lib/io_service.cpp
         lib/routing_manager.cpp
-        lib/rs232_transport.cpp
+        lib/fujibus_transport.cpp
         platform/esp32/channel_factory.cpp
         platform/esp32/usb_cdc_channel.cpp
     INCLUDE_DIRS

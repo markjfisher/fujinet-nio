@@ -83,18 +83,18 @@ package "fujinet::io::transport" {
         + send(IOResponse): void
     }
 
-    class Rs232Transport {
+    class FujiBusTransport {
         - Channel& _channel
         - std::vector<uint8_t> _rxBuffer
         - RequestID _nextRequestId
         --
-        + Rs232Transport(Channel&)
+        + FujiBusTransport(Channel&)
         + poll(): void
         + receive(out IORequest): bool
         + send(IOResponse): void
     }
 
-    Rs232Transport ..|> ITransport
+    FujiBusTransport ..|> ITransport
 }
 
 ' ---------- Core ----------
@@ -120,6 +120,6 @@ Esp32Factory --> UsbCdcChannel
 
 Host --> FujinetCore : owns core
 FujinetCore --> ITransport : addTransport()
-Rs232Transport --> Channel : uses underlying I/O
+FujiBusTransport --> Channel : uses underlying I/O
 
 @enduml

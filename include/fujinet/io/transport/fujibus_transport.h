@@ -8,14 +8,11 @@
 
 namespace fujinet::io {
 
-// Skeleton RS232-based transport.
+// Skeleton FujiBus transport.
 //
-// For now, this does nothing in receive() (always returns false) and
-// writes a simple placeholder in send(). We'll flesh out the real
-// framing/decoding later.
-class Rs232Transport : public ITransport {
+class FujiBusTransport : public ITransport {
 public:
-    explicit Rs232Transport(Channel& channel)
+    explicit FujiBusTransport(Channel& channel)
         : _channel(channel)
         , _nextRequestId(1)
     {}

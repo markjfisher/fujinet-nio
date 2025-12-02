@@ -6,7 +6,7 @@ skinparam shadowing false
 actor Host as Host
 participant "/dev/ttyACM1\n(or PTY)" as Serial
 participant "Channel\n(UsbCdcChannel / PtyChannel)" as Channel
-participant "Rs232Transport" as Transport
+participant "FujiBusTransport" as Transport
 participant "FujinetCore" as Core
 participant "IOService" as IOService
 participant "RoutingManager" as Router

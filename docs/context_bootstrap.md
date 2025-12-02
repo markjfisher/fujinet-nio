@@ -50,7 +50,7 @@ Responsibility: **raw byte I/O, no framing**.
 Interface: `fujinet::io::ITransport`
 
 Current implementation:  
-`Rs232Transport` (will be renamed; it now handles FujiBus+SLIP, not RS232)
+`FujiBusTransport`
 
 Responsibilities:
 - Accumulate bytes from Channel
@@ -173,7 +173,6 @@ tick():
 ### In progress:
 - Creating real **FujiDevice** implementation
 - Mapping Fuji commands → device logic
-- Updating Rs232Transport naming
 - Strengthening protocol parsing
 - Expanding developer documentation & UML diagrams
 
@@ -184,9 +183,8 @@ tick():
 1. Improve `fuji_send.py` output (decode header/fields neatly)
 2. Implement the first real Fuji virtual device
 3. Replace DummyDevice in ESP32 app
-4. Update Rs232Transport naming and behavior to match FujiBus semantics
-5. Expand test suite
-6. Continue improving architecture diagrams
+4. Expand test suite
+5. Continue improving architecture diagrams
 
 ---
 

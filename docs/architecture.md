@@ -171,7 +171,7 @@ They are portable and trivial to test.
 
 ## **2. Transport (framing + protocol layer)**
 
-Current: `Rs232Transport` (will be renamed `FujiBusTransport`)
+Current: `FujiBusTransport`
 
 ### Responsibilities
 - maintain `_rxBuffer`
@@ -384,22 +384,19 @@ platform/esp32/channel_factory.cpp
 
 # **Future Enhancements**
 
-### 1. Rename `Rs232Transport` → `FujiBusTransport`
-Reflects real function (parsing FujiBus, not RS232).
-
-### 2. Multi-transport support
+### 1. Multi-transport support
 SIO + USB simultaneously.
 
-### 3. WebAssembly build target
+### 2. WebAssembly build target
 Expose Channel via JS → WASM layer.
 
-### 4. Better routing (RoutingManager)
+### 3. Better routing (RoutingManager)
 Support multiple transports, overrides for devices.
 
-### 5. Device hotplug
+### 4. Device hotplug
 Allow dynamic addition/removal of VirtualDevices.
 
-### 6. Rich error reporting
+### 5. Rich error reporting
 Map FujiBus error conditions → internal StatusCodes.
 
 ---

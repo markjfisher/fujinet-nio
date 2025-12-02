@@ -101,12 +101,12 @@ package "fujinet::io (channels & transports)" {
         + send(response: IOResponse): void
     }
 
-    class Rs232Transport {
+    class FujiBusTransport {
         - Channel&                       _channel
         - std::vector<std::uint8_t>      _rxBuffer
         - RequestID                      _nextRequestId
         --
-        + Rs232Transport(channel: Channel&)
+        + FujiBusTransport(channel: Channel&)
         + poll(): void
         + receive(out request: IORequest): bool
         + send(response: IOResponse): void
@@ -121,8 +121,8 @@ package "fujinet::io (channels & transports)" {
         + serviceOnce(): void
     }
 
-    Rs232Transport ..|> ITransport
-    Rs232Transport --> Channel : uses >
+    FujiBusTransport ..|> ITransport
+    FujiBusTransport --> Channel : uses >
     IOService --> ITransport : holds 0..* >
     IOService --> IRequestHandler : routes requests to >
 }

@@ -1,4 +1,4 @@
-#include "fujinet/io/transport/rs232_transport.h"
+#include "fujinet/io/transport/fujibus_transport.h"
 
 #include "fujinet/io/protocol/fuji_bus_packet.h"
 
@@ -13,7 +13,7 @@ using fujinet::io::protocol::FujiCommandId;
 using fujinet::io::protocol::ByteBuffer;
 using fujinet::io::protocol::SlipByte;
 
-void Rs232Transport::poll()
+void FujiBusTransport::poll()
 {
     std::uint8_t temp[256];
 
@@ -73,7 +73,7 @@ static bool extractSlipFrame(std::vector<std::uint8_t>& buffer, ByteBuffer& outF
 //  - receive() looks for one full SLIP frame (END ... END).
 //  - FujiBusPacket::fromSerialized() parses that into a FujiBusPacket.
 //  - We then map FujiBusPacket → IORequest.
-bool Rs232Transport::receive(IORequest& outReq)
+bool FujiBusTransport::receive(IORequest& outReq)
 {
     ByteBuffer frame;
     if (!extractSlipFrame(_rxBuffer, frame)) {
@@ -83,7 +83,7 @@ bool Rs232Transport::receive(IORequest& outReq)
 
     auto packetPtr = FujiBusPacket::fromSerialized(frame);
     if (!packetPtr) {
-        std::cout << "[Rs232Transport] invalid FujiBus frame, dropped\n";
+        std::cout << "[FujiBusTransport] invalid FujiBus frame, dropped\n";
         return false;
     }
 
@@ -106,7 +106,7 @@ bool Rs232Transport::receive(IORequest& outReq)
         outReq.payload.insert(outReq.payload.end(), dataOpt->begin(), dataOpt->end());
     }
 
-    std::cout << "[Rs232Transport] receive: id=" << outReq.id
+    std::cout << "[FujiBusTransport] receive: id=" << outReq.id
               << " deviceId=" << static_cast<int>(outReq.deviceId)
               << " command=0x" << std::hex << outReq.command << std::dec
               << " params=" << outReq.params.size()
@@ -116,9 +116,9 @@ bool Rs232Transport::receive(IORequest& outReq)
     return true;
 }
 
-void Rs232Transport::send(const IOResponse& resp)
+void FujiBusTransport::send(const IOResponse& resp)
 {
-    std::cout << "[Rs232Transport] send: deviceId="
+    std::cout << "[FujiBusTransport] send: deviceId="
               << static_cast<int>(resp.deviceId)
               << " status=" << static_cast<int>(resp.status)
               << " command=0x" << std::hex << resp.command << std::dec

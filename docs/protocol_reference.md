@@ -414,7 +414,7 @@ Located in:
 
 ```
 src/lib/protocol/
-src/lib/rs232_transport.cpp
+src/lib/fujibus_transport.cpp
 src/lib/fuji_bus_packet.cpp
 ```
 

@@ -18,7 +18,7 @@ We split responsibilities into three layers:
 
 1. **Core I/O (pure logic)**  
    - `IODeviceManager`, `RoutingManager`, `IOService`, `VirtualDevice`,
-     `Channel`, `ITransport`, `Rs232Transport`, `SioTransport`, etc.  
+     `Channel`, `ITransport`, `FujiBusTransport`, `SioTransport`, etc.  
    - Knows nothing about build flags, boards, or pinmaps.  
    - Works in both POSIX and ESP-IDF.
 
@@ -153,7 +153,7 @@ File: `src/lib/bootstrap.cpp`
 ```cpp
 #include "fujinet/core/bootstrap.h"
 
-#include "fujinet/io/transport/rs232_transport.h"
+#include "fujinet/io/transport/fujibus_transport.h"
 
 namespace fujinet::core {
 
@@ -167,7 +167,7 @@ io::ITransport* setup_transports(
 
     switch (profile.primaryTransport) {
     case TransportKind::SerialDebug: {
-        auto* t = new io::Rs232Transport(channel);
+        auto* t = new io::FujiBusTransport(channel);
         core.addTransport(t);
         primary = t;
         break;
@@ -177,7 +177,7 @@ io::ITransport* setup_transports(
         // Implement later
         break;
     case TransportKind::PTY: {
-        auto* t = new io::Rs232Transport(channel);
+        auto* t = new io::FujiBusTransport(channel);
         core.addTransport(t);
         primary = t;
         break;
@@ -284,7 +284,7 @@ No core surgery required.
 
 - Channel: PTY vs UART vs USB vs socket (implementation detail)
 - TransportKind: what protocol/framing we’re using on that channel (debug line vs FujiSlip vs SIO)
-- ITransport implementation (Rs232Transport, later SlipTransport, etc.): maps bytes to IORequest/IOResponse
+- ITransport implementation (FujiBusTransport, later SlipTransport, etc.): maps bytes to IORequest/IOResponse
 - BuildProfile + FN_BUILD_*: chooses TransportKind and Machine
 
 ## Clearing up the mental model (PTY vs RS232 vs SLIP)
@@ -295,7 +295,7 @@ Right now we have three concepts:
 “How do raw bytes move?”
 Examples: PTY, UART0, USB CDC, TCP socket
 
-2. Transport (ITransport, e.g. Rs232Transport)
+2. Transport (ITransport, e.g. FujiBusTransport)
 “How do I frame & interpret those bytes as IORequests / IOResponses?”
 
 e.g.: simple “newline-delimited” frames

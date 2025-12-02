@@ -77,7 +77,7 @@ Responsibilities:
 - encode `IOResponse`
 
 Current implementation:
-- `Rs232Transport` (soon renamed → `FujiBusTransport`)
+- `FujiBusTransport`
 
 ---
 

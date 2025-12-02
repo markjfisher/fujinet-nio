@@ -31,7 +31,7 @@ target_sources(fujinet-nio
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
         src/lib/routing_manager.cpp
-        src/lib/rs232_transport.cpp
+        src/lib/fujibus_transport.cpp
         src/platform/posix/channel_factory.cpp
 )
 

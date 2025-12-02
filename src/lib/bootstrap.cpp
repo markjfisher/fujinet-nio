@@ -1,6 +1,6 @@
 #include "fujinet/core/bootstrap.h"
 
-#include "fujinet/io/transport/rs232_transport.h"
+#include "fujinet/io/transport/fujibus_transport.h"
 // #include "fujinet/io/transport/sio_transport.h"
 // #include "fujinet/io/transport/iec_transport.h"
 // etc.
@@ -16,7 +16,7 @@ io::ITransport* setup_transports(FujinetCore& core,
 
     switch (profile.primaryTransport) {
     case TransportKind::SerialDebug: {
-        auto* t = new io::Rs232Transport(channel);
+        auto* t = new io::FujiBusTransport(channel);
         core.addTransport(t);
         primary = t;
         break;
