@@ -58,7 +58,7 @@ static std::string host_type_to_string(HostType t)
 
 static void from_yaml(const YAML::Node& node, GeneralConfig& out)
 {
-    out.deviceName        = get_or<std::string>(node, "device_name", "");
+    out.deviceName        = get_or<std::string>(node, "device_name", "fujinet");
     auto bootModeStr      = get_or<std::string>(node, "boot_mode", "normal");
     out.bootMode          = parse_boot_mode(bootModeStr);
     out.altConfigFile     = get_or<std::string>(node, "alt_config_file", "");

@@ -21,8 +21,9 @@ idf_component_register(
         platform/esp32/fuji_device_factory.cpp
         platform/esp32/logging.cpp
         platform/esp32/usb_cdc_channel.cpp
-        platform/esp32/usb_cdc_channel_factory.cpp
-
     INCLUDE_DIRS
         "../include"
 )
+
+# Link yaml-cpp into this ESP-IDF component
+target_link_libraries(${COMPONENT_LIB} PUBLIC yaml-cpp)

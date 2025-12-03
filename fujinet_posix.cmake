@@ -3,6 +3,15 @@ project(fujinet_nio
     LANGUAGES CXX
 )
 
+# Configure yaml-cpp to only build the core library, no tests/tools/contrib.
+set(YAML_CPP_BUILD_TESTS   OFF CACHE BOOL "Disable yaml-cpp tests"   FORCE)
+set(YAML_CPP_BUILD_TOOLS   OFF CACHE BOOL "Disable yaml-cpp tools"   FORCE)
+set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "Disable yaml-cpp contrib" FORCE)
+set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "Build yaml-cpp as static" FORCE)
+
+# Bring in yaml-cpp (third-party YAML library)
+add_subdirectory(third_party/yaml-cpp)
+
 # Options
 option(FN_BUILD_POSIX_APP "Build POSIX console application" ON)
 option(FN_BUILD_TESTS     "Build unit tests" ON)
@@ -47,6 +56,12 @@ target_include_directories(fujinet-nio
 )
 
 target_compile_features(fujinet-nio PUBLIC cxx_std_20)
+
+# Link yaml-cpp
+target_link_libraries(fujinet-nio
+    PUBLIC
+        yaml-cpp
+)
 
 # --------------------------------------------------
 # POSIX app (Linux/macOS/Windows console)
