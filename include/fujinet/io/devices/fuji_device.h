@@ -8,7 +8,7 @@
 #include "fujinet/io/protocol/fuji_command_ids.h"
 #include "fujinet/io/protocol/fuji_device_ids.h"
 
-#include "fujinet/core/fuji_config.h"
+#include "fujinet/config/fuji_config.h"
 
 namespace fujinet::io {
 
@@ -17,7 +17,7 @@ public:
     using ResetHandler = std::function<void()>;
 
     FujiDevice(ResetHandler resetHandler,
-               std::unique_ptr<fujinet::core::FujiConfigStore> configStore);
+               std::unique_ptr<fujinet::config::FujiConfigStore> configStore);
 
     IOResponse handle(const IORequest& request) override;
     void       poll() override;
@@ -33,9 +33,9 @@ private:
     void save_config();
 
 private:
-    ResetHandler                                      _resetHandler;
-    std::unique_ptr<fujinet::core::FujiConfigStore>   _configStore;
-    fujinet::core::FujiConfig                         _config;
+    ResetHandler                                        _resetHandler;
+    std::unique_ptr<fujinet::config::FujiConfigStore>   _configStore;
+    fujinet::config::FujiConfig                         _config;
 };
 
 } // namespace fujinet::io

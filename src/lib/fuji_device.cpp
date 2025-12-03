@@ -2,12 +2,12 @@
 
 namespace fujinet::io {
 
-using fujinet::core::FujiConfigStore;
-using fujinet::core::FujiConfig;
+using fujinet::config::FujiConfigStore;
+using fujinet::config::FujiConfig;
 
-using fujinet::io::protocol::FujiCommandId;
-using fujinet::io::protocol::FujiDeviceId;
-using fujinet::io::protocol::to_fuji_command;
+using protocol::FujiCommandId;
+using protocol::FujiDeviceId;
+using protocol::to_fuji_command;
 
 FujiDevice::FujiDevice(ResetHandler resetHandler,
                        std::unique_ptr<FujiConfigStore> configStore)
