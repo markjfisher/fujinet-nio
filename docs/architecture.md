@@ -308,9 +308,9 @@ namespace fujinet::config {
 
 Profile examples:
 ```
-FN_BUILD_ATARI → Transport=SIO
-FN_BUILD_RS232 → Transport=SerialDebug
-Default POSIX  → Transport=SerialDebug
+FN_BUILD_ATARI          → Transport=SIO
+FN_BUILD_ESP32_USB_CDC  → Transport=FijiBus
+Default POSIX           → Transport=FujiBus
 ```
 
 Platform factory selects correct Channel:

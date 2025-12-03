@@ -25,7 +25,7 @@ We split responsibilities into three layers:
 2. **Build Profile (machine + transport choice)**  
    - `build_profile.{h,cpp}`  
    - Turns **compile-time macros**
-     (e.g. `FN_BUILD_ATARI`, `FN_BUILD_RS232`)
+     (e.g. `FN_BUILD_ATARI`, `FN_BUILD_ESP32_USB_CDC`)
      into a **simple struct**:
      - which machine type
      - which primary transport
@@ -98,19 +98,25 @@ BuildProfile current_build_profile()
     return BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
+        .primaryChannel   = ChannelKind::Pty,   // placeholder until we have real SIO HW
         .name             = "Atari + SIO",
     };
-#elif defined(FN_BUILD_RS232)
+#elif defined(FN_BUILD_ESP32_USB_CDC)
+    // This is your "Generic + FujiBus" build, which on ESP32 currently
+    // uses TinyUSB CDC-ACM. So treat it as a USB CDC device channel.
     return BuildProfile{
         .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::SerialDebug,
-        .name             = "Generic + RS232",
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::UsbCdcDevice,
+        .name             = "S3 USB + FujiBus",
     };
 #else
+    // Default POSIX dev build, etc. Uses PTY.
     return BuildProfile{
         .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::PTY,
-        .name             = "POSIX + PTY",
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::Pty,
+        .name             = "POSIX + FujiBus",
     };
 #endif
 }
@@ -297,10 +303,6 @@ Examples: PTY, UART0, USB CDC, TCP socket
 
 2. Transport (ITransport, e.g. FujiBusTransport)
 “How do I frame & interpret those bytes as IORequests / IOResponses?”
-
-e.g.: simple “newline-delimited” frames
-
-Later: FujiNet SLIP + headers
 
 3. BuildProfile::TransportKind
 

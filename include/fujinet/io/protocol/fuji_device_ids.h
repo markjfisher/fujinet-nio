@@ -27,11 +27,4 @@ enum class FujiDeviceId : std::uint8_t {
 };
 
 
-enum class FujiCommandId : std::uint8_t {
-    Reset             = 0xFF,  // to FujiNet control device
-    SpecialQuery      = 0xFF,  // to Network device
-    GetSsid           = 0xFE,
-    // ...
-};
-
 } // namespace fujinet::io::protocol

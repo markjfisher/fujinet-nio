@@ -6,7 +6,7 @@
 namespace fujinet::io {
 
 // Logical device identifier inside your system.
-// Transports (SerialDebug / FujiBus / SIO / IEC / …) map bus-level
+// Transports (FujiBus / SIO / IEC / …) map bus-level
 // addressing (e.g. FujiDeviceId on the wire) to this.
 using DeviceID  = std::uint8_t;
 

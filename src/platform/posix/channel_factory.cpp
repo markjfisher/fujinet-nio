@@ -1,4 +1,4 @@
-#include "fujinet/platform/posix/channel_factory.h"
+#include "fujinet/platform/channel_factory.h"
 
 #include <memory>
 #include <iostream>
@@ -21,7 +21,7 @@
     #include <pty.h>
 #endif
 
-namespace fujinet::platform::posix {
+namespace fujinet::platform {
 
 class PtyChannel : public fujinet::io::Channel {
 public:
@@ -113,31 +113,32 @@ static std::unique_ptr<fujinet::io::Channel> create_pty_channel()
 std::unique_ptr<fujinet::io::Channel>
 create_channel_for_profile(const config::BuildProfile& profile)
 {
-    using config::TransportKind;
+    using config::ChannelKind;
 
-    switch (profile.primaryTransport) {
+    switch (profile.primaryChannel) {
 
-    case TransportKind::SerialDebug:
-        // In future, this could open a real TTY (e.g. /dev/ttyS0) or a
-        // configurable path. For now, we can reuse PTY as a dev stand-in.
-        std::cout << "[ChannelFactory] SerialDebug on POSIX uses PTY.\n";
+    case ChannelKind::Pty:
+        std::cout << "[ChannelFactory] Using PTY channel (Pty).\n";
         return create_pty_channel();
 
-    case TransportKind::SIO:
-    case TransportKind::IEC:
-        // These don't really make sense on POSIX yet; fall back or return null.
-        std::cout << "[ChannelFactory] SIO/IEC not supported on POSIX yet.\n";
+    case ChannelKind::UsbCdcDevice:
+        std::cout << "[ChannelFactory] UsbCdcDevice not supported on POSIX.\n";
+        return nullptr;
+
+    case ChannelKind::TcpSocket:
+        std::cout << "[ChannelFactory] TcpSocket channel not implemented yet.\n";
         return nullptr;
     }
 
+    std::cout << "[ChannelFactory] Unknown ChannelKind.\n";
     return nullptr;
 }
 
-} // namespace fujinet::platform::posix
+} // namespace fujinet::platform
 
 #else // _WIN32
 
-namespace fujinet::platform::posix {
+namespace fujinet::platform {
 
 class DummyChannel : public fujinet::io::Channel {
 public:
@@ -158,6 +159,6 @@ create_channel_for_profile(const config::BuildProfile& /*profile*/)
     return std::make_unique<DummyChannel>();
 }
 
-} // namespace fujinet::platform::posix
+} // namespace fujinet::platform
 
 #endif // !_WIN32

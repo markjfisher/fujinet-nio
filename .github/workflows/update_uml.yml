@@ -39,16 +39,24 @@ jobs:
           chmod +x tools/gen_uml.sh
           ./tools/gen_uml.sh
 
-      - name: Debug UML changes
-        run: |
-          echo "== git status (filtered) =="
-          git status -sb -- docs/uml docs/images
-          echo
-          echo "== Diff for PUML =="
-          git diff -- docs/uml
-          echo
-          echo "== Diff for SVGs =="
-          git diff -- docs/images
+      - name: Upload UML artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: uml-diagrams-${{ github.run_id }}
+          path: |
+            docs/uml/*.puml
+            docs/images/*.svg
+
+      # - name: Debug UML changes
+      #   run: |
+      #     echo "== git status (filtered) =="
+      #     git status -sb -- docs/uml docs/images
+      #     echo
+      #     echo "== Diff for PUML =="
+      #     git diff -- docs/uml
+      #     echo
+      #     echo "== Diff for SVGs =="
+      #     git diff -- docs/images
 
       - name: Commit updated diagrams
         if: github.event_name == 'push'

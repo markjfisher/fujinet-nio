@@ -15,7 +15,7 @@ io::ITransport* setup_transports(FujinetCore& core,
     io::ITransport* primary = nullptr;
 
     switch (profile.primaryTransport) {
-    case TransportKind::SerialDebug: {
+    case TransportKind::FujiBus: {
         auto* t = new io::FujiBusTransport(channel);
         core.addTransport(t);
         primary = t;

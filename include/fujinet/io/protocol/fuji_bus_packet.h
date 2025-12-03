@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "fujinet/io/protocol/fuji_command_ids.h"
 #include "fujinet/io/protocol/fuji_device_ids.h"
 
 namespace fujinet::io::protocol {

@@ -1,4 +1,4 @@
-#include "fujinet/platform/esp32/channel_factory.h"
+#include "fujinet/platform/channel_factory.h"
 
 #include <memory>
 
@@ -10,27 +10,31 @@ extern "C" {
 #include "esp_log.h"
 }
 
-namespace fujinet::platform::esp32 {
+namespace fujinet::platform {
 
 static const char* TAG = "channel_factory";
 
 std::unique_ptr<fujinet::io::Channel>
 create_channel_for_profile(const config::BuildProfile& profile)
 {
-    using config::TransportKind;
+    using config::ChannelKind;
 
-    switch (profile.primaryTransport) {
-    case TransportKind::SerialDebug:
-        ESP_LOGI(TAG, "Using TinyUSB CDC-ACM channel for SerialDebug");
-        return std::make_unique<UsbCdcChannel>();
+    switch (profile.primaryChannel) {
+    case ChannelKind::UsbCdcDevice:
+        ESP_LOGI(TAG, "Using TinyUSB CDC-ACM channel (UsbCdcDevice)");
+        return std::make_unique<esp32::UsbCdcChannel>();
 
-    case TransportKind::SIO:
-    case TransportKind::IEC:
-        ESP_LOGE(TAG, "SIO/IEC channels not implemented on ESP32 yet");
+    case ChannelKind::Pty:
+        ESP_LOGE(TAG, "Pty channel kind not supported on ESP32");
+        return nullptr;
+
+    case ChannelKind::TcpSocket:
+        ESP_LOGE(TAG, "TcpSocket channel kind not implemented on ESP32");
         return nullptr;
     }
 
+    ESP_LOGE(TAG, "Unknown ChannelKind in create_channel_for_profile");
     return nullptr;
 }
 
-} // namespace fujinet::platform::esp32
+} // namespace fujinet::platform

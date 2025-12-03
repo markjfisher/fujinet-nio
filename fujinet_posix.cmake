@@ -26,13 +26,16 @@ target_sources(fujinet-nio
         src/lib/bootstrap.cpp
         src/lib/build_profile.cpp
         src/lib/fuji_bus_packet.cpp
+        src/lib/fujibus_transport.cpp
+        src/lib/fuji_device.cpp
         src/lib/fujinet_core.cpp
         src/lib/fujinet_init.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
         src/lib/routing_manager.cpp
-        src/lib/fujibus_transport.cpp
         src/platform/posix/channel_factory.cpp
+        src/platform/posix/fuji_config_store.cpp
+        src/platform/posix/fuji_device_factory.cpp
 )
 
 target_include_directories(fujinet-nio

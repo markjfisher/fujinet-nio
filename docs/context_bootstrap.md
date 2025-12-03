@@ -159,6 +159,43 @@ tick():
 
 ---
 
+### 8. FujiCommandId
+
+This holds the commands that the host may send. The same code may mean different things to different devices
+
+```
+enum class FujiCommandId : std::uint8_t {
+    Reset             = 0xFF,  // to FujiNet control device
+    SpecialQuery      = 0xFF,  // to Network device
+    GetSsid           = 0xFE,
+    // ...
+};
+```
+
+---
+
+### 9. FujiDeviceId
+
+This is how the device manager will know what device a request needs to be routed to:
+
+```
+enum class FujiDeviceId : std::uint8_t {
+    FujiNet      = 0x70,
+    DiskFirst    = 0x31,
+    DiskLast     = 0x3F,
+    PrinterFirst = 0x40,
+    PrinterLast  = 0x43,
+    Voice        = 0x43,
+    Clock        = 0x45,
+    NetworkFirst = 0x71,
+    NetworkLast  = 0x78,
+    Midi         = 0x99,
+    Dbc          = 0xFF,
+};
+```
+There will be more devices and ids added later
+---
+
 ## CURRENT STATUS
 
 ### Working:
