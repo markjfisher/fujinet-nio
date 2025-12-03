@@ -16,7 +16,7 @@ using fujinet::io::VirtualDevice;
 using fujinet::core::FujiConfigStore;
 
 std::unique_ptr<VirtualDevice>
-create_fuji_device(const fujinet::config::BuildProfile& profile,
+create_fuji_device(const fujinet::build::BuildProfile& profile,
                    const FujiDeviceHooks& hooks)
 {
     (void)profile; // we don’t use it yet, but might later

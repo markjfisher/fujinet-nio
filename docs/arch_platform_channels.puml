@@ -5,7 +5,7 @@ skinparam packageStyle rectangle
 skinparam shadowing false
 
 ' ---------- Build Profile ----------
-package "fujinet::config" {
+package "fujinet::build" {
     enum Machine {
         Generic
         Atari8Bit

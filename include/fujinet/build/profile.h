@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace fujinet::config {
+namespace fujinet::build {
 
 enum class Machine {
     Generic,
@@ -40,4 +40,4 @@ struct BuildProfile {
 // One global build-time profile.
 BuildProfile current_build_profile();
 
-} // namespace fujinet::config
+} // namespace fujinet::build

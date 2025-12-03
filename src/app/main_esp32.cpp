@@ -2,7 +2,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 #include "fujinet/core/core.h"
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/io/core/channel.h"
@@ -21,7 +21,7 @@ extern "C" void fujinet_core_task(void* arg)
     core::FujinetCore core;
 
     // 1. Determine build profile.
-    auto profile = config::current_build_profile();
+    auto profile = build::current_build_profile();
     ESP_LOGI(TAG, "Build profile: %.*s",
              static_cast<int>(profile.name.size()),
              profile.name.data());

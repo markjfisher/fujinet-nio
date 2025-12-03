@@ -9,9 +9,9 @@ namespace fujinet::core {
 
 io::ITransport* setup_transports(FujinetCore& core,
                                  io::Channel& channel,
-                                 const config::BuildProfile& profile)
+                                 const build::BuildProfile& profile)
 {
-    using config::TransportKind;
+    using build::TransportKind;
     io::ITransport* primary = nullptr;
 
     switch (profile.primaryTransport) {

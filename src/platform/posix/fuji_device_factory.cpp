@@ -8,7 +8,7 @@ namespace fujinet::platform {
 using fujinet::io::FujiDevice;
 
 std::unique_ptr<fujinet::io::VirtualDevice>
-create_fuji_device(const fujinet::config::BuildProfile& /*profile*/,
+create_fuji_device(const fujinet::build::BuildProfile& /*profile*/,
                    const FujiDeviceHooks& hooks)
 {
     auto resetHandler = hooks.onReset ? hooks.onReset

@@ -4,7 +4,7 @@
 #include <memory>
 
 #include "fujinet/io/devices/virtual_device.h"
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 
 namespace fujinet::platform {
 
@@ -14,7 +14,7 @@ struct FujiDeviceHooks {
 };
 
 std::unique_ptr<fujinet::io::VirtualDevice>
-create_fuji_device(const fujinet::config::BuildProfile& profile,
+create_fuji_device(const fujinet::build::BuildProfile& profile,
                    const FujiDeviceHooks& hooks = {});
 
 } // namespace fujinet::platform

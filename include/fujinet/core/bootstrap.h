@@ -1,7 +1,7 @@
 #pragma once
 
 #include "fujinet/core/core.h"
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 #include "fujinet/io/core/channel.h"
 
 namespace fujinet::core {
@@ -10,6 +10,6 @@ namespace fujinet::core {
 // attach them to the core, and return (optionally) the primary transport.
 io::ITransport* setup_transports(FujinetCore& core,
                                  io::Channel& channel,
-                                 const config::BuildProfile& profile);
+                                 const build::BuildProfile& profile);
 
 } // namespace fujinet::core

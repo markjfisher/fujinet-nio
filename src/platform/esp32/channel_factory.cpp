@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "fujinet/io/core/channel.h"
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 #include "fujinet/platform/esp32/usb_cdc_channel.h"
 
 extern "C" {
@@ -15,9 +15,9 @@ namespace fujinet::platform {
 static const char* TAG = "channel_factory";
 
 std::unique_ptr<fujinet::io::Channel>
-create_channel_for_profile(const config::BuildProfile& profile)
+create_channel_for_profile(const build::BuildProfile& profile)
 {
-    using config::ChannelKind;
+    using build::ChannelKind;
 
     switch (profile.primaryChannel) {
     case ChannelKind::UsbCdcDevice:

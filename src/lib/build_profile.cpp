@@ -1,6 +1,6 @@
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 
-namespace fujinet::config {
+namespace fujinet::build {
 
 /*
     // Future definition for atari SIO on GPIO
@@ -50,4 +50,4 @@ BuildProfile current_build_profile()
 #endif
 }
 
-} // namespace fujinet::config
+} // namespace fujinet::build

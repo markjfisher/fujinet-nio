@@ -111,9 +111,9 @@ static std::unique_ptr<fujinet::io::Channel> create_pty_channel()
 }
 
 std::unique_ptr<fujinet::io::Channel>
-create_channel_for_profile(const config::BuildProfile& profile)
+create_channel_for_profile(const build::BuildProfile& profile)
 {
-    using config::ChannelKind;
+    using build::ChannelKind;
 
     switch (profile.primaryChannel) {
 
@@ -152,7 +152,7 @@ public:
 };
 
 std::unique_ptr<fujinet::io::Channel>
-create_channel_for_profile(const config::BuildProfile& /*profile*/)
+create_channel_for_profile(const build::BuildProfile& /*profile*/)
 {
     std::cout << "[PtyChannel] PTY not supported on this platform; "
                  "using dummy Channel.\n";

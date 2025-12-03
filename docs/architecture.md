@@ -301,7 +301,7 @@ Build profile determines:
 - Channel factory to use
 
 ```
-namespace fujinet::config {
+namespace fujinet::build {
     BuildProfile current_build_profile();
 }
 ```

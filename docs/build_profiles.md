@@ -50,14 +50,14 @@ build flags and board specifics.
 
 ### Public API
 
-File: `include/fujinet/config/build_profile.h`
+File: `include/fujinet/build/profile.h`
 
 ```cpp
 #pragma once
 
 #include <string_view>
 
-namespace fujinet::config {
+namespace fujinet::build {
 
 enum class Machine {
     Generic,
@@ -80,7 +80,7 @@ struct BuildProfile {
 
 BuildProfile current_build_profile();
 
-} // namespace fujinet::config
+} // namespace fujinet::build
 ```
 
 ### Mapping build flags → profile
@@ -88,9 +88,9 @@ BuildProfile current_build_profile();
 File: `src/lib/build_profile.cpp`
 
 ```cpp
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 
-namespace fujinet::config {
+namespace fujinet::build {
 
 BuildProfile current_build_profile()
 {
@@ -121,7 +121,7 @@ BuildProfile current_build_profile()
 #endif
 }
 
-} // namespace fujinet::config
+} // namespace fujinet::build
 ```
 
 This is the **only place** in the codebase where build macros are interpreted.
@@ -138,7 +138,7 @@ File: `include/fujinet/core/bootstrap.h`
 #pragma once
 
 #include "fujinet/core/core.h"
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 #include "fujinet/io/core/channel.h"
 
 namespace fujinet::core {
@@ -146,7 +146,7 @@ namespace fujinet::core {
 io::ITransport* setup_transports(
     FujinetCore& core,
     io::Channel& channel,
-    const config::BuildProfile& profile
+    const build::BuildProfile& profile
 );
 
 } // namespace fujinet::core
@@ -166,9 +166,9 @@ namespace fujinet::core {
 io::ITransport* setup_transports(
     FujinetCore& core,
     io::Channel& channel,
-    const config::BuildProfile& profile)
+    const build::BuildProfile& profile)
 {
-    using config::TransportKind;
+    using build::TransportKind;
     io::ITransport* primary = nullptr;
 
     switch (profile.primaryTransport) {
@@ -234,7 +234,7 @@ Only these platform files may see:
 POSIX:
 
 ```cpp
-auto profile = config::current_build_profile();
+auto profile = build::current_build_profile();
 auto channel = platform::posix::create_default_channel();
 core::setup_transports(core, *channel, profile);
 ```
@@ -242,7 +242,7 @@ core::setup_transports(core, *channel, profile);
 ESP32:
 
 ```cpp
-auto profile = config::current_build_profile();
+auto profile = build::current_build_profile();
 auto channel = platform::esp32::create_default_channel();
 core::setup_transports(core, *channel, profile);
 ```

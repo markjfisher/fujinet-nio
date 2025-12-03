@@ -4,7 +4,7 @@
 #include <string_view>
 #include <thread>
 
-#include "fujinet/config/build_profile.h"
+#include "fujinet/build/profile.h"
 #include "fujinet/core/core.h"
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/io/core/channel.h"
@@ -29,7 +29,7 @@ int main()
     core::FujinetCore core;
 
     // 2. Determine build profile.
-    auto profile = config::current_build_profile();
+    auto profile = build::current_build_profile();
     std::cout << "Build profile: " << profile.name << "\n";
 
     // Reset hook — version 1: just log; later we can add restart loop.
