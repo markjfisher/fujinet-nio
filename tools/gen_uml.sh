@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set -x
 
 # 1. Ensure build dir + compile_commands.json exist
 mkdir -p build
@@ -13,4 +14,4 @@ clang-uml -c clang-uml.yml
 #    Note: output_directory in clang-uml.yml is docs/uml,
 #          so we render those into docs/images.
 mkdir -p docs/images
-plantuml -tsvg docs/uml/*.puml -o ../images
+plantuml -v --duration -tsvg docs/uml/*.puml -o ../images

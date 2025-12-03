@@ -39,11 +39,21 @@ jobs:
           chmod +x tools/gen_uml.sh
           ./tools/gen_uml.sh
 
+      - name: Debug UML changes
+        run: |
+          echo "== git status (filtered) =="
+          git status -sb -- docs/uml docs/images
+          echo
+          echo "== Diff for PUML =="
+          git diff -- docs/uml
+          echo
+          echo "== Diff for SVGs =="
+          git diff -- docs/images
+
       - name: Commit updated diagrams
         if: github.event_name == 'push'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update auto-generated UML diagrams"
-          file_pattern: |
-            docs/uml/*.puml
-            docs/images/*.svg
+          file_pattern: "docs/uml docs/images"
+          disable_globbing: true
