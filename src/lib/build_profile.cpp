@@ -23,31 +23,33 @@ namespace fujinet::build {
 
 BuildProfile current_build_profile()
 {
+    BuildProfile profile{};
+
 #if defined(FN_BUILD_ATARI)
-    return BuildProfile{
+    profile = BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::Pty,   // placeholder until we have real SIO HW
+        .primaryChannel   = ChannelKind::Pty,   // placeholder
         .name             = "Atari + SIO",
     };
 #elif defined(FN_BUILD_ESP32_USB_CDC)
-    // This is your "Generic + FujiBus" build, which on ESP32 currently
-    // uses TinyUSB CDC-ACM. So treat it as a USB CDC device channel.
-    return BuildProfile{
+    profile = BuildProfile{
         .machine          = Machine::FujiNetESP32,
         .primaryTransport = TransportKind::FujiBus,
         .primaryChannel   = ChannelKind::UsbCdcDevice,
         .name             = "S3 + FujiBus over USB CDC",
     };
 #else
-    // Default POSIX dev build, etc. Uses PTY.
-    return BuildProfile{
+    profile = BuildProfile{
         .machine          = Machine::Generic,
         .primaryTransport = TransportKind::FujiBus,
         .primaryChannel   = ChannelKind::Pty,
         .name             = "POSIX + FujiBus over PTY",
     };
 #endif
+
+    profile.hw = detect_hardware_capabilities();
+    return profile;
 }
 
 } // namespace fujinet::build

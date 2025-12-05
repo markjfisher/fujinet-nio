@@ -248,7 +248,7 @@ def main():
                         help="Fuji device ID (on-wire); 1 for your DummyDevice test")
     parser.add_argument("--command", "-c", type=int, default=0x01,
                         help="Fuji command byte")
-    parser.add_argument("--payload", "-P", default="hello",
+    parser.add_argument("--payload", "-P", default="",
                         help="String payload to send (will be sent as raw bytes)")
     parser.add_argument("--read", "-r", action="store_true",
                         help="Read back and decode response after sending")

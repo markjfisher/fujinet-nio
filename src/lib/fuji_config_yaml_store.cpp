@@ -224,7 +224,7 @@ FujiConfig YamlFujiConfigStore::load()
     std::ifstream in(_path);
     if (!in.is_open()) {
         FN_LOGW(TAG, "Config file '%s' not found, writing defaults.", _path.c_str());
-        save(cfg);
+        // save(cfg);
         return cfg;
     }
 

@@ -9,7 +9,10 @@
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/fuji_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
+#include "fujinet/platform/esp32/fs_init.h"
 #include "fujinet/platform/fuji_device_factory.h"
+
+#include "fujinet/core/logging.h"
 
 static const char* TAG = "nio";
 
@@ -53,6 +56,7 @@ extern "C" void fujinet_core_task(void* arg)
     core::setup_transports(core, *channel, profile);
 
     ESP_LOGI(TAG, "fujinet-nio core task starting (transport initialized)");
+    // FN_LOGI(TAG, "fujinet-nio core task starting (transport initialized - FNLOGI)");
 
     // 5. Run the core loop forever.
     for (;;) {
@@ -70,6 +74,12 @@ extern "C" void fujinet_core_task(void* arg)
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "fujinet-nio (ESP32-S3 / ESP-IDF) starting up...");
+    // FN_LOGI(TAG, "fujinet-nio (ESP32-S3 / ESP-IDF) starting up... (FN_LOGI)");
+
+    if (!fujinet::platform::esp32::init_littlefs()) {
+        ESP_LOGE(TAG, "Failed to initialise LittleFS; config persistence will not work.");
+        // ... what to do?
+    }
 
     xTaskCreate(
         &fujinet_core_task,

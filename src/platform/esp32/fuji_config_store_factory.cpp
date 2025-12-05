@@ -8,7 +8,7 @@ std::unique_ptr<fujinet::config::FujiConfigStore>
 create_fuji_config_store(const std::string& rootHint)
 {
     // TODO: decide SD vs flash; for now, assume SD at /sdcard/fujinet
-    std::string root = rootHint.empty() ? "/sdcard/fujinet" : rootHint;
+    std::string root = rootHint.empty() ? "/fujifs" : rootHint;
     std::string path = root + "/fujinet.yaml";
     return std::make_unique<fujinet::config::YamlFujiConfigStore>(std::move(path));
 }

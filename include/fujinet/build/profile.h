@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string_view>
+#include <cstddef>
 
 namespace fujinet::build {
 
@@ -15,29 +16,61 @@ enum class Machine {
 };
 
 // Logical protocol / framing on the link.
+// (FujiBus is SLIP + FujiBus header framing)
 enum class TransportKind {
-    FujiBus,        // SLIP + FujiBus headers, the standard transport
-    SIO,            // legacy SIO transport (future)
-    IEC,            // C64 IEC bus (future)
+    FujiBus,
+    SIO,
+    IEC,
     // ...
 };
 
-// Physical / OS-level mechanism for moving bytes.
+// Physical / OS-level byte transport mechanism.
 enum class ChannelKind {
-    Pty,            // POSIX pseudo-terminal, for dev/debug
-    UsbCdcDevice,   // device-side USB CDC (ESP32 TinyUSB, later Pi gadget)
-    TcpSocket,      // future: TCP-based link for emulators
-    // add RealTty, HardwareSio, etc later if needed
+    Pty,
+    UsbCdcDevice,
+    TcpSocket,
+    // Future: HardwareSio, RealTty, SpiBridge, etc.
 };
+
+// --------------------------
+//  Hardware Capabilities
+// --------------------------
+
+struct NetworkCapabilities {
+    bool hasLocalNetwork{false};        // Can open TCP/UDP sockets at all
+    bool managesItsOwnLink{false};      // ESP32 manages WiFi via on-device config
+    bool supportsAccessPointMode{false}; // SoftAP for config portals
+};
+
+struct MemoryCapabilities {
+    std::size_t persistentStorageBytes{0}; // FS capacity (flash partition, disk, ...)
+    std::size_t largeMemoryPoolBytes{0};   // Big RAM pool (e.g., PSRAM)
+    bool hasDedicatedLargePool{false};     // True if separate from main RAM (ESP32 PSRAM)
+};
+
+struct HardwareCapabilities {
+    NetworkCapabilities network;
+    MemoryCapabilities  memory;
+
+    bool hasUsbDevice{false};
+    bool hasUsbHost{false};
+};
+
+// ------------------------
 
 struct BuildProfile {
-    Machine       machine;
-    TransportKind primaryTransport;
-    ChannelKind   primaryChannel;
+    Machine          machine;
+    TransportKind    primaryTransport;
+    ChannelKind      primaryChannel;
     std::string_view name;
+
+    HardwareCapabilities hw;
 };
 
-// One global build-time profile.
+// Filled by platform-specific code.
+HardwareCapabilities detect_hardware_capabilities();
+
+// Global build-time/runtime profile.
 BuildProfile current_build_profile();
 
 } // namespace fujinet::build

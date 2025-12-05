@@ -30,14 +30,15 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 add_library(fujinet-nio)
 
 # For now, it's tiny; we'll add more sources as the IO system grows.
+# __TARGET_SOURCES_START__
 target_sources(fujinet-nio
     PRIVATE
         src/lib/bootstrap.cpp
         src/lib/build_profile.cpp
         src/lib/fuji_bus_packet.cpp
-        src/lib/fujibus_transport.cpp
         src/lib/fuji_config_yaml_store.cpp
         src/lib/fuji_device.cpp
+        src/lib/fujibus_transport.cpp
         src/lib/fujinet_core.cpp
         src/lib/fujinet_init.cpp
         src/lib/io_device_manager.cpp
@@ -46,9 +47,10 @@ target_sources(fujinet-nio
         src/platform/posix/channel_factory.cpp
         src/platform/posix/fuji_config_store_factory.cpp
         src/platform/posix/fuji_device_factory.cpp
+        src/platform/posix/hardware_caps.cpp
         src/platform/posix/logging.cpp
-
 )
+# __TARGET_SOURCES_END__
 
 target_include_directories(fujinet-nio
     PUBLIC
