@@ -74,7 +74,7 @@ def generate_esp32_block(all_cpp):
             rel = path
         filtered.append(rel)
 
-    lines = ["idf_component_register(", "    SRCS"]
+    lines = []
     for path in filtered:
         lines.append(f"        {path}")
     return "\n".join(lines) + "\n"

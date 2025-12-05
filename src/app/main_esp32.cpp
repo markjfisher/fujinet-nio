@@ -1,6 +1,5 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
 
 #include "fujinet/build/profile.h"
 #include "fujinet/core/core.h"
@@ -25,7 +24,7 @@ extern "C" void fujinet_core_task(void* arg)
 
     // 1. Determine build profile.
     auto profile = build::current_build_profile();
-    ESP_LOGI(TAG, "Build profile: %.*s",
+    FN_LOGI(TAG, "Build profile: %.*s",
              static_cast<int>(profile.name.size()),
              profile.name.data());
 
@@ -39,7 +38,7 @@ extern "C" void fujinet_core_task(void* arg)
 
         bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
         if (!ok) {
-            ESP_LOGE(TAG, "Failed to register FujiDevice on DeviceID %u",
+            FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %u",
                      static_cast<unsigned>(fujiDeviceId));
         }
     }
@@ -47,7 +46,7 @@ extern "C" void fujinet_core_task(void* arg)
     // 3. Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
     auto channel = platform::create_channel_for_profile(profile);
     if (!channel) {
-        ESP_LOGE(TAG, "Failed to create Channel for profile");
+        FN_LOGE(TAG, "Failed to create Channel for profile");
         vTaskDelete(nullptr);
         return;
     }
@@ -55,7 +54,7 @@ extern "C" void fujinet_core_task(void* arg)
     // 4. Set up transports based on profile (FujiBus, SIO, etc.).
     core::setup_transports(core, *channel, profile);
 
-    ESP_LOGI(TAG, "fujinet-nio core task starting (transport initialized)");
+    FN_LOGI(TAG, "fujinet-nio core task starting (transport initialized)");
     // FN_LOGI(TAG, "fujinet-nio core task starting (transport initialized - FNLOGI)");
 
     // 5. Run the core loop forever.
@@ -63,7 +62,7 @@ extern "C" void fujinet_core_task(void* arg)
         core.tick();
 
         // if (core.tick_count() % 50 == 0) {
-        //     ESP_LOGI(TAG, "tick_count=%llu",
+        //     FN_LOGI(TAG, "tick_count=%llu",
         //              static_cast<unsigned long long>(core.tick_count()));
         // }
 
@@ -73,11 +72,10 @@ extern "C" void fujinet_core_task(void* arg)
 
 extern "C" void app_main(void)
 {
-    ESP_LOGI(TAG, "fujinet-nio (ESP32-S3 / ESP-IDF) starting up...");
-    // FN_LOGI(TAG, "fujinet-nio (ESP32-S3 / ESP-IDF) starting up... (FN_LOGI)");
+    FN_LOGI(TAG, "fujinet-nio (ESP32-S3 / ESP-IDF) starting up...");
 
     if (!fujinet::platform::esp32::init_littlefs()) {
-        ESP_LOGE(TAG, "Failed to initialise LittleFS; config persistence will not work.");
+        FN_LOGE(TAG, "Failed to initialise LittleFS; config persistence will not work.");
         // ... what to do?
     }
 

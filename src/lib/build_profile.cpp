@@ -31,6 +31,7 @@ BuildProfile current_build_profile()
         .primaryTransport = TransportKind::SIO,
         .primaryChannel   = ChannelKind::Pty,   // placeholder
         .name             = "Atari + SIO",
+        .hw               = {},
     };
 #elif defined(FN_BUILD_ESP32_USB_CDC)
     profile = BuildProfile{
@@ -38,6 +39,7 @@ BuildProfile current_build_profile()
         .primaryTransport = TransportKind::FujiBus,
         .primaryChannel   = ChannelKind::UsbCdcDevice,
         .name             = "S3 + FujiBus over USB CDC",
+        .hw               = {},
     };
 #else
     profile = BuildProfile{
@@ -45,6 +47,7 @@ BuildProfile current_build_profile()
         .primaryTransport = TransportKind::FujiBus,
         .primaryChannel   = ChannelKind::Pty,
         .name             = "POSIX + FujiBus over PTY",
+        .hw               = {},
     };
 #endif
 

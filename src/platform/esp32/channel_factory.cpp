@@ -1,4 +1,5 @@
 #include "fujinet/platform/channel_factory.h"
+#include "fujinet/core/logging.h"
 
 #include <memory>
 
@@ -7,7 +8,7 @@
 #include "fujinet/platform/esp32/usb_cdc_channel.h"
 
 extern "C" {
-#include "esp_log.h"
+#include "sdkconfig.h"
 }
 
 namespace fujinet::platform {
@@ -21,19 +22,24 @@ create_channel_for_profile(const build::BuildProfile& profile)
 
     switch (profile.primaryChannel) {
     case ChannelKind::UsbCdcDevice:
-        ESP_LOGI(TAG, "Using TinyUSB CDC-ACM channel (UsbCdcDevice)");
+#if CONFIG_TINYUSB_CDC_ENABLED
+        FN_LOGI(TAG, "Using TinyUSB CDC-ACM channel for UsbCdcDevice");
         return std::make_unique<esp32::UsbCdcChannel>();
+#else
+        FN_LOGE(TAG, "UsbCdcDevice selected but TinyUSB CDC is disabled in sdkconfig");
+        return nullptr;
+#endif
 
     case ChannelKind::Pty:
-        ESP_LOGE(TAG, "Pty channel kind not supported on ESP32");
+        FN_LOGE(TAG, "Pty channel kind not supported on ESP32");
         return nullptr;
 
     case ChannelKind::TcpSocket:
-        ESP_LOGE(TAG, "TcpSocket channel kind not implemented on ESP32");
+        FN_LOGE(TAG, "TcpSocket channel kind not implemented on ESP32");
         return nullptr;
     }
 
-    ESP_LOGE(TAG, "Unknown ChannelKind in create_channel_for_profile");
+    FN_LOGE(TAG, "Unknown ChannelKind in create_channel_for_profile");
     return nullptr;
 }
 

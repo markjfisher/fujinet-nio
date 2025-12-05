@@ -1,12 +1,19 @@
 #include "fujinet/platform/esp32/usb_cdc_channel.h"
+#include "fujinet/core/logging.h"
 
 #include <cstddef>
+
+extern "C" {
+#include "sdkconfig.h"   // <-- add this
+}
+
+// this has to be at compiler, as the header files do the check for TINYUSB
+#if CONFIG_TINYUSB_CDC_ENABLED
 
 extern "C" {
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 #include "tinyusb_cdc_acm.h"
-#include "esp_log.h"
 }
 
 namespace fujinet::platform::esp32 {
@@ -25,7 +32,7 @@ static void ensure_tinyusb_init()
 
     esp_err_t err = tinyusb_driver_install(&tusb_cfg);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "tinyusb_driver_install failed: %d", static_cast<int>(err));
+        FN_LOGE(TAG, "tinyusb_driver_install failed: %d", static_cast<int>(err));
         return;
     }
 
@@ -42,11 +49,11 @@ static void ensure_tinyusb_init()
     // New-style init function suggested by the compiler
     err = tinyusb_cdcacm_init(&acm_cfg);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "tinyusb_cdcacm_init failed: %d", static_cast<int>(err));
+        FN_LOGE(TAG, "tinyusb_cdcacm_init failed: %d", static_cast<int>(err));
         return;
     }
 
-    ESP_LOGI(TAG, "TinyUSB CDC-ACM initialised");
+    FN_LOGI(TAG, "TinyUSB CDC-ACM initialised");
     s_tinyusb_inited = true;
 }
 
@@ -104,3 +111,31 @@ void UsbCdcChannel::write(const std::uint8_t* buffer, std::size_t len)
 }
 
 } // namespace fujinet::platform::esp32
+
+#else // !CONFIG_TINYUSB_CDC_ENABLED
+
+namespace fujinet::platform::esp32 {
+
+// Stub implementation when TinyUSB CDC is disabled.
+// Keeps the type linkable but does nothing.
+
+UsbCdcChannel::UsbCdcChannel() = default;
+
+bool UsbCdcChannel::available()
+{
+    return false;
+}
+
+std::size_t UsbCdcChannel::read(std::uint8_t* /*buffer*/, std::size_t /*maxLen*/)
+{
+    return 0;
+}
+
+void UsbCdcChannel::write(const std::uint8_t* /*buffer*/, std::size_t /*len*/)
+{
+    // no-op
+}
+
+} // namespace fujinet::platform::esp32
+
+#endif // CONFIG_TINYUSB_CDC_ENABLED

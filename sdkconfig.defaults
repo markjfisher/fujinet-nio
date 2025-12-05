@@ -1,26 +1,109 @@
-# Filesystem
-CONFIG_FS_LITTLEFS=y
-CONFIG_LITTLEFS_MOUNT_PATH="/littlefs"
-
-# Logging
-CONFIG_LOG_DEFAULT_LEVEL=3
-
-# WiFi (can grow later)
-CONFIG_ESP_WIFI_ENABLED=y
-
+###########################################################################
 # C++ (important!)
+###########################################################################
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
 CONFIG_COMPILER_CXX_RTTI=y
 
+###########################################################################
+# Filesystem
+###########################################################################
+CONFIG_FS_LITTLEFS=y
+#CONFIG_LITTLEFS_MOUNT_PATH="/littlefs"
 
-## Some optimizations from FN - don't seem to be doing anything to help
+###########################################################################
+# Logging
+###########################################################################
+CONFIG_LOG_DEFAULT_LEVEL=3
+CONFIG_LOG_BOOTLOADER_LEVEL=3
+CONFIG_LOG_BOOTLOADER_LEVEL_ERROR=y
+CONFIG_LOG_BOOTLOADER_LEVEL_INFO=y
+CONFIG_LOG_BOOTLOADER_LEVEL_WARN=y
+
+###########################################################################
+# WiFi
+###########################################################################
+CONFIG_ESP_WIFI_ENABLED=y
+
+###########################################################################
+# TinyUSB
+###########################################################################
+#CONFIG_TINYUSB_CDC_ENABLED=y
+#CONFIG_TINYUSB_CDC_COUNT=1
+#
+## These two implicitly tell IDF we’re a CDC-only device:
+#CONFIG_TINYUSB_HID_COUNT=0
+#CONFIG_TINYUSB_MIDI_COUNT=0
+#CONFIG_TINYUSB_NET_MODE_NONE=y
+#CONFIG_TINYUSB_VENDOR_COUNT=0
+#
+#CONFIG_TINYUSB_DFU_MODE_NONE=y
+#CONFIG_TINYUSB_MODE_DMA=y
+#CONFIG_TINYUSB_DEBUG_LEVEL=0
+
+###########################################################################
+# SPI RAM config
+###########################################################################
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_CLK_IO=30
+CONFIG_SPIRAM_CS_IO=26
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+
+
+# -----------------------------------------------------------------------------
+# TESTING AND NOTES BELOW HERE - DO NOT ENABLE ANY OF THESE, COPY THEM TO ABOVE
+# -----------------------------------------------------------------------------
+
+# SPIRAM ALL ENTRIES from FN
+#CONFIG_SOC_SPIRAM_SUPPORTED=y
+#CONFIG_SOC_SPIRAM_XIP_SUPPORTED=y
+#CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
+#CONFIG_SPIRAM=y
+#CONFIG_SPIRAM_MODE_OCT=y
+#CONFIG_SPIRAM_TYPE_AUTO=y
+#CONFIG_SPIRAM_CLK_IO=30
+#CONFIG_SPIRAM_CS_IO=26
+#CONFIG_SPIRAM_SPEED_80M=y
+#CONFIG_SPIRAM_SPEED=80
+#CONFIG_SPIRAM_BOOT_INIT=y
+#CONFIG_SPIRAM_USE_MALLOC=y
+#CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=32768
+#CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+#CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+#CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+#CONFIG_STDATOMIC_S32C1I_SPIRAM_WORKAROUND=y
+#CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+
+## Some optimizations from FN to review
 #CONFIG_FREERTOS_HZ=1000
 #CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
 #CONFIG_BOOTLOADER_LOG_LEVEL=0
 #CONFIG_RTC_CLK_SRC_INT_RC=y
 #CONFIG_RTC_CLK_CAL_CYCLES=0
-#CONFIG_SPIRAM_SPEED_80M=y
-#CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=32768
 #CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 #CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 #CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# FULL TINYUSB config from enabling via menuconfig
+#CONFIG_TINYUSB_CDC_COUNT=1
+#CONFIG_TINYUSB_CDC_ENABLED=y
+#CONFIG_TINYUSB_CDC_EP_BUFSIZE=512
+#CONFIG_TINYUSB_CDC_RX_BUFSIZE=512
+#CONFIG_TINYUSB_CDC_TX_BUFSIZE=512
+#CONFIG_TINYUSB_DEBUG_LEVEL=1
+#CONFIG_TINYUSB_DESC_BCD_DEVICE=0x0100
+#CONFIG_TINYUSB_DESC_CDC_STRING="Espressif CDC Device"
+#CONFIG_TINYUSB_DESC_MANUFACTURER_STRING="Espressif Systems"
+#CONFIG_TINYUSB_DESC_PRODUCT_STRING="Espressif Device"
+#CONFIG_TINYUSB_DESC_SERIAL_STRING="123456"
+#CONFIG_TINYUSB_DESC_USE_DEFAULT_PID=y
+#CONFIG_TINYUSB_DESC_USE_ESPRESSIF_VID=y
+#CONFIG_TINYUSB_DFU_MODE_NONE=y
+#CONFIG_TINYUSB_HID_COUNT=0
+#CONFIG_TINYUSB_MIDI_COUNT=0
+#CONFIG_TINYUSB_MODE_DMA=y
+#CONFIG_TINYUSB_NET_MODE_NONE=y
+#CONFIG_TINYUSB_VENDOR_COUNT=0
