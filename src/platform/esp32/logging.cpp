@@ -2,9 +2,7 @@
 
 #if !defined(FN_DEBUG)
 
-// In non-debug builds, we provide *no* implementation here.
-// The inline stubs in the header are enough, and the linker
-// will have nothing to pull in from this TU.
+// Non-debug build: nothing here. Inline stubs in the header handle calls.
 
 #else
 
@@ -17,29 +15,21 @@ extern "C" {
 
 namespace fujinet::log {
 
-static esp_log_level_t to_esp_level(Level lvl)
+static const char* to_esp_tag(const char* tag)
 {
-    switch (lvl) {
-    case Level::Error:   return ESP_LOG_ERROR;
-    case Level::Warn:    return ESP_LOG_WARN;
-    case Level::Info:    return ESP_LOG_INFO;
-    case Level::Debug:   return ESP_LOG_DEBUG;
-    case Level::Verbose: return ESP_LOG_VERBOSE;
-    }
-    return ESP_LOG_INFO;
+    return tag ? tag : "log";
 }
 
-// Debug-only, so we can afford heap + two passes with vsnprintf
+// Debug-only, so we can afford heap + two-pass vsnprintf.
 void vlogf(Level level, const char* tag, const char* fmt, std::va_list args)
 {
     if (!fmt) {
         return;
     }
 
-    esp_log_level_t esp_level = to_esp_level(level);
-    const char*     esp_tag   = tag ? tag : "log";
+    const char* esp_tag = to_esp_tag(tag);
 
-    // First pass: compute required size
+    // First pass: determine needed size
     va_list args_copy;
     va_copy(args_copy, args);
     int needed = std::vsnprintf(nullptr, 0, fmt, args_copy);
@@ -49,23 +39,35 @@ void vlogf(Level level, const char* tag, const char* fmt, std::va_list args)
         return;
     }
 
-    // Allocate buffer (+2 for optional '\n' and '\0')
+    // Allocate buffer (no +1 trickery; std::string manages the null)
     std::string buf;
     buf.resize(static_cast<std::size_t>(needed));
 
-    // Second pass: actually format
+    // Second pass: actually format into the buffer
     va_list args_copy2;
     va_copy(args_copy2, args);
     std::vsnprintf(buf.data(), buf.size() + 1, fmt, args_copy2);
     va_end(args_copy2);
 
-    // Ensure newline at end
-    if (buf.empty() || buf.back() != '\n') {
-        buf.push_back('\n');
-    }
+    // DO NOT append '\n' here. ESP_LOGx already terminates lines.
 
-    // esp_log_write prints the message as-is, no extra newline.
-    esp_log_write(esp_level, esp_tag, "%s", buf.c_str());
+    switch (level) {
+    case Level::Error:
+        ESP_LOGE(esp_tag, "%s", buf.c_str());
+        break;
+    case Level::Warn:
+        ESP_LOGW(esp_tag, "%s", buf.c_str());
+        break;
+    case Level::Info:
+        ESP_LOGI(esp_tag, "%s", buf.c_str());
+        break;
+    case Level::Debug:
+        ESP_LOGD(esp_tag, "%s", buf.c_str());
+        break;
+    case Level::Verbose:
+        ESP_LOGV(esp_tag, "%s", buf.c_str());
+        break;
+    }
 }
 
 void logf(Level level, const char* tag, const char* fmt, ...)
@@ -78,7 +80,6 @@ void logf(Level level, const char* tag, const char* fmt, ...)
 
 void log(Level level, const char* tag, std::string_view message)
 {
-    // Preformatted string variant
     logf(level, tag, "%.*s",
          static_cast<int>(message.size()),
          message.data());

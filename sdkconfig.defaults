@@ -9,15 +9,26 @@ CONFIG_COMPILER_CXX_RTTI=y
 ###########################################################################
 CONFIG_FS_LITTLEFS=y
 #CONFIG_LITTLEFS_MOUNT_PATH="/littlefs"
+CONFIG_ESP32_ENABLE_COREDUMP_TO_NONE=y
 
 ###########################################################################
 # Logging
 ###########################################################################
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_DEFAULT_LEVEL=3
-CONFIG_LOG_BOOTLOADER_LEVEL=3
-CONFIG_LOG_BOOTLOADER_LEVEL_ERROR=y
-CONFIG_LOG_BOOTLOADER_LEVEL_INFO=y
-CONFIG_LOG_BOOTLOADER_LEVEL_WARN=y
+
+CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
+CONFIG_BOOTLOADER_LOG_LEVEL=0
+#CONFIG_LOG_BOOTLOADER_LEVEL_NONE=y
+#CONFIG_LOG_BOOTLOADER_LEVEL_ERROR=n
+#CONFIG_LOG_BOOTLOADER_LEVEL_INFO=n
+#CONFIG_LOG_BOOTLOADER_LEVEL_WARN=n
+
+# APPTRACE
+CONFIG_APPTRACE_DEST_NONE=y
+CONFIG_APPTRACE_DEST_UART_NONE=y
+CONFIG_APPTRACE_UART_TASK_PRIO=1
+CONFIG_APPTRACE_LOCK_ENABLE=y
 
 ###########################################################################
 # WiFi
@@ -27,18 +38,18 @@ CONFIG_ESP_WIFI_ENABLED=y
 ###########################################################################
 # TinyUSB
 ###########################################################################
-#CONFIG_TINYUSB_CDC_ENABLED=y
-#CONFIG_TINYUSB_CDC_COUNT=1
-#
-## These two implicitly tell IDF we’re a CDC-only device:
-#CONFIG_TINYUSB_HID_COUNT=0
-#CONFIG_TINYUSB_MIDI_COUNT=0
-#CONFIG_TINYUSB_NET_MODE_NONE=y
-#CONFIG_TINYUSB_VENDOR_COUNT=0
-#
-#CONFIG_TINYUSB_DFU_MODE_NONE=y
-#CONFIG_TINYUSB_MODE_DMA=y
-#CONFIG_TINYUSB_DEBUG_LEVEL=0
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=1
+
+# These two implicitly tell IDF we’re a CDC-only device:
+CONFIG_TINYUSB_HID_COUNT=0
+CONFIG_TINYUSB_MIDI_COUNT=0
+CONFIG_TINYUSB_NET_MODE_NONE=y
+CONFIG_TINYUSB_VENDOR_COUNT=0
+
+CONFIG_TINYUSB_DFU_MODE_NONE=y
+CONFIG_TINYUSB_MODE_DMA=y
+CONFIG_TINYUSB_DEBUG_LEVEL=0
 
 ###########################################################################
 # SPI RAM config
@@ -51,6 +62,18 @@ CONFIG_SPIRAM_CS_IO=26
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_BOOT_INIT=y
 CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM_MEMTEST=n
+
+###########################################################################
+## Some optimizations from FN to review
+###########################################################################
+#CONFIG_FREERTOS_HZ=1000
+#CONFIG_RTC_CLK_SRC_INT_RC=y
+#CONFIG_RTC_CLK_CAL_CYCLES=0
+#CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+#CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+#CONFIG_COMPILER_OPTIMIZATION_PERF=y
+#CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_PERF=y
 
 
 # -----------------------------------------------------------------------------
