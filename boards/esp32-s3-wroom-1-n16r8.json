@@ -14,7 +14,7 @@
     "flash_mode": "qio",
     "mcu": "esp32s3",
     "variant": "esp32s3",
-    "partitions": "partitions_16MB.csv"
+    "partitions": "pio-build/partitions/partitions_16MB.csv"
 },
   "connectivity": [
     "wifi"
