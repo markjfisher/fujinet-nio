@@ -13,8 +13,12 @@ set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "Build yaml-cpp as static" FORCE)
 add_subdirectory(third_party/yaml-cpp)
 
 # Options
-option(FN_BUILD_POSIX_APP "Build POSIX console application" ON)
-option(FN_BUILD_TESTS     "Build unit tests" ON)
+option(FN_BUILD_POSIX_APP     "Build POSIX console application"       ON)
+option(FN_BUILD_TESTS         "Build unit tests"                      ON)
+
+# Build options, used in build_profile.cpp, these need reflecting in the target_compile_definitions below
+option (FN_BUILD_ATARI        "Build for Atari SIO Legacy profile"    OFF)
+option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,7 +33,16 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # --------------------------------------------------
 add_library(fujinet-nio)
 
-# For now, it's tiny; we'll add more sources as the IO system grows.
+target_compile_definitions(fujinet-nio
+    PUBLIC
+        FN_PLATFORM_POSIX               # always true in this toolchain
+        $<$<CONFIG:Debug>:FN_DEBUG>
+        $<$<BOOL:${FN_BUILD_ATARI}>:FN_BUILD_ATARI>
+        $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
+        # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
+)
+
+# Use script tools/update_cmake_sources.py to amend the src list:
 # __TARGET_SOURCES_START__
 target_sources(fujinet-nio
     PRIVATE

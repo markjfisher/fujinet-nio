@@ -1,0 +1,80 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "fujibus-pty-debug",
+      "displayName": "FujiBus over PTY (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_BUILD_FUJIBUS_PTY": "ON",
+        "FN_BUILD_ATARI": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "fujibus-pty-release",
+      "displayName": "FujiBus over PTY (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FN_BUILD_FUJIBUS_PTY": "ON",
+        "FN_BUILD_ATARI": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "atari-release",
+      "displayName": "Atari SIO profile (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FN_BUILD_ATARI": "ON",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "lib-only",
+      "displayName": "library only (no app, tests on)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_BUILD_FUJIBUS_PTY": "ON",
+        "FN_BUILD_ATARI": "OFF",
+        "FN_BUILD_POSIX_APP": "OFF",
+        "FN_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "fujibus-pty-debug-build",
+      "configurePreset": "fujibus-pty-debug"
+    },
+    {
+      "name": "fujibus-pty-release-build",
+      "configurePreset": "fujibus-pty-release"
+    },
+    {
+      "name": "atari-release-build",
+      "configurePreset": "atari-release"
+    },
+    {
+      "name": "lib-only-build",
+      "configurePreset": "lib-only"
+    }
+  ]
+}

@@ -324,3 +324,136 @@ E.g. FujiBus over USB, or FujiBus over TCP.
 - TransportKind = protocol/framing (FujiBus, SIO).
 - All build flags are interpreted once.
 - Core stays 100% portable and clean.
+
+## Build Profiles and Compile-Time Flags
+
+FujiNet-NIO uses **compile-time build profiles** to describe *what* kind of
+device / transport / channel a build is targeting. These are expressed as
+`FN_BUILD_*` macros and are interpreted **only once** in
+`src/lib/build_profile.cpp`.
+
+### Available build profile flags
+
+Currently supported profiles:
+
+- `FN_BUILD_ATARI`  
+  - `machine          = Machine::Atari8Bit`  
+  - `primaryTransport = TransportKind::SIO`  
+  - `primaryChannel   = ChannelKind::Pty` (placeholder until real SIO on GPIO)
+
+- `FN_BUILD_ESP32_USB_CDC`  
+  - `machine          = Machine::FujiNetESP32`  
+  - `primaryTransport = TransportKind::FujiBus`  
+  - `primaryChannel   = ChannelKind::UsbCdcDevice`  
+  - Used by the ESP32-S3 build via PlatformIO.
+
+- `FN_BUILD_FUJIBUS_PTY`  
+  - `machine          = Machine::Generic`  
+  - `primaryTransport = TransportKind::FujiBus`  
+  - `primaryChannel   = ChannelKind::Pty`  
+  - POSIX dev / test build with FujiBus over a PTY.
+
+Exactly **one** of these must be defined when building the core. If none is
+defined, `build_profile.cpp` triggers a compile-time error via:
+
+```cpp
+#error "No build profile selected. Define one of: \
+FN_BUILD_ATARI, FN_BUILD_ESP32_USB_CDC, FN_BUILD_FUJIBUS_PTY."
+```
+
+This ensures we never silently “default” to some arbitrary environment.
+
+### FN_DEBUG and logging
+
+`FN_DEBUG` controls whether the `FN_LOG*` macros expand to real logging calls or
+compile away to no-ops.
+
+- When `FN_DEBUG` is **defined**, `FN_LOGI/W/E(...)` call into the platform
+  logging implementation (`src/platform/*/logging.cpp`).
+- When `FN_DEBUG` is **not defined**, all `FN_LOG*` macros are compiled out,
+  so there is effectively no runtime cost for logging in release builds.
+
+On the POSIX side, `FN_DEBUG` is usually wired to CMake’s build type:
+
+```cmake
+target_compile_definitions(fujinet-nio
+    PUBLIC
+        FN_PLATFORM_POSIX
+        $<$<CONFIG:Debug>:FN_DEBUG>
+        $<$<BOOL:${FN_BUILD_ATARI}>:FN_BUILD_ATARI>
+        $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
+)
+```
+
+That means:
+
+- `Debug` configuration → `FN_DEBUG` is defined  
+- `Release` / `RelWithDebInfo` / `MinSizeRel` → `FN_DEBUG` is not defined
+
+### How these flags are set
+
+#### POSIX (CMake)
+
+For native / POSIX builds, these are regular CMake cache options:
+
+```cmake
+option(FN_BUILD_ATARI             "Build for Atari SIO profile"          OFF)
+option(FN_BUILD_ESP32_USB_CDC     "Build for ESP32 USB CDC profile"      OFF)
+option(FN_BUILD_FUJIBUS_PTY       "Build for POSIX FujiBus over PTY"     OFF)
+```
+
+You pass them on the CMake configure line:
+
+```bash
+# POSIX FujiBus over PTY, Debug build
+cmake -B build/posix-fujibus-pty-debug \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DFN_BUILD_FUJIBUS_PTY=ON
+
+# Atari profile, Release build
+cmake -B build/atari-release \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DFN_BUILD_ATARI=ON
+```
+
+The `target_compile_definitions(fujinet-nio ...)` call then turns those options
+into real `-DFN_BUILD_…` defines for all code that links `fujinet-nio`
+(including tests).
+
+#### ESP32 (PlatformIO)
+
+For ESP32 / ESP-IDF builds, the profile is selected via `build_flags` in
+`platformio.ini`, for example:
+
+```ini
+[env:esp32s3-espidf]
+platform  = espressif32@6.10.0
+framework = espidf
+board     = esp32-s3-devkitc-1
+build_type = debug
+build_unflags = -std=gnu++20
+build_flags =
+    -std=gnu++17
+    -DFN_PLATFORM_ESP32
+    -DFN_PLATFORM_ESP32S3
+    -DFN_BUILD_ESP32_USB_CDC
+```
+
+PlatformIO injects `-DFN_BUILD_ESP32_USB_CDC` into the ESP-IDF CMake build, so
+the same `build_profile.cpp` logic is used on both ESP32 and POSIX.
+
+---
+
+## Embedding & Tests
+
+All of these flags are interpreted in **one place**:
+`src/lib/build_profile.cpp`. Everywhere else, code uses the strongly-typed
+`BuildProfile` struct.
+
+Tests and embedding examples only need to:
+
+- link against `fujinet-nio`, and
+- use `build::current_build_profile()`.
+
+The compile-time flags are handled by CMake / PlatformIO and “flow through” via
+`target_compile_definitions`.

@@ -41,7 +41,7 @@ BuildProfile current_build_profile()
         .name             = "S3 + FujiBus over USB CDC",
         .hw               = {},
     };
-#else
+#elif defined(FN_BUILD_FUJIBUS_PTY)
     profile = BuildProfile{
         .machine          = Machine::Generic,
         .primaryTransport = TransportKind::FujiBus,
@@ -49,6 +49,9 @@ BuildProfile current_build_profile()
         .name             = "POSIX + FujiBus over PTY",
         .hw               = {},
     };
+#else
+    // throw a compile time error for the compiler
+#   error "No build profile defined. Please specify one of the following: FN_BUILD_ATARI, FN_BUILD_ESP32_USB_CDC, FN_BUILD_FUJIBUS_PTY, etc."
 #endif
 
     profile.hw = detect_hardware_capabilities();

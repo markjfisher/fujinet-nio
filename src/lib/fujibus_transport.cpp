@@ -107,7 +107,7 @@ bool FujiBusTransport::receive(IORequest& outReq)
     }
 
     std::cout << "[FujiBusTransport] receive: id=" << outReq.id
-              << " deviceId=" << static_cast<int>(outReq.deviceId)
+              << " deviceId=0x" << std::hex << static_cast<int>(outReq.deviceId) << std::dec
               << " command=0x" << std::hex << outReq.command << std::dec
               << " params=" << outReq.params.size()
               << " payloadSize=" << outReq.payload.size()
@@ -118,8 +118,8 @@ bool FujiBusTransport::receive(IORequest& outReq)
 
 void FujiBusTransport::send(const IOResponse& resp)
 {
-    std::cout << "[FujiBusTransport] send: deviceId="
-              << static_cast<int>(resp.deviceId)
+    std::cout << "[FujiBusTransport] send: deviceId=0x"
+              << std::hex << static_cast<int>(resp.deviceId) << std::dec
               << " status=" << static_cast<int>(resp.status)
               << " command=0x" << std::hex << resp.command << std::dec
               << " payloadSize=" << resp.payload.size()

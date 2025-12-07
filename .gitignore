@@ -4,13 +4,17 @@ CMakeCache.txt
 CMakeFiles/
 
 # platformio files
-.pio/
-managed_components/
+/.pio/
+/managed_components/
 .pioenvs/
 .pioinitcache.py
 sdkconfig.*
 # allow the defaults file. Must come after wild card version above.
 !sdkconfig.defaults
+/Testing/
+platformio.ini
+platformio.ini.*
+platformio.local.ini
 
 # IDE files
 .vscode/
