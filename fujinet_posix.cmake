@@ -17,6 +17,7 @@ option(FN_BUILD_POSIX_APP     "Build POSIX console application"       ON)
 option(FN_BUILD_TESTS         "Build unit tests"                      ON)
 
 # Build options, used in build_profile.cpp, these need reflecting in the target_compile_definitions below
+# These can then be used as flags for the build type in cmake via CMakePresets.json
 option (FN_BUILD_ATARI        "Build for Atari SIO Legacy profile"    OFF)
 option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 
@@ -58,6 +59,7 @@ target_sources(fujinet-nio
         src/lib/io_service.cpp
         src/lib/routing_manager.cpp
         src/platform/posix/channel_factory.cpp
+        src/platform/posix/fs_posix.cpp
         src/platform/posix/fuji_config_store_factory.cpp
         src/platform/posix/fuji_device_factory.cpp
         src/platform/posix/hardware_caps.cpp
