@@ -1,0 +1,29 @@
+###########################################################################
+# C++ (important!)
+###########################################################################
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+CONFIG_COMPILER_CXX_RTTI=y
+
+###########################################################################
+# Logging
+###########################################################################
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
+CONFIG_BOOTLOADER_LOG_LEVEL=0
+#CONFIG_LOG_BOOTLOADER_LEVEL_NONE=y
+#CONFIG_LOG_BOOTLOADER_LEVEL_ERROR=n
+#CONFIG_LOG_BOOTLOADER_LEVEL_INFO=n
+#CONFIG_LOG_BOOTLOADER_LEVEL_WARN=n
+
+# APPTRACE
+CONFIG_APPTRACE_DEST_NONE=y
+CONFIG_APPTRACE_DEST_UART_NONE=y
+CONFIG_APPTRACE_UART_TASK_PRIO=1
+CONFIG_APPTRACE_LOCK_ENABLE=y
+
+###########################################################################
+# WiFi
+###########################################################################
+CONFIG_ESP_WIFI_ENABLED=y

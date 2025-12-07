@@ -8,13 +8,12 @@ CMakeFiles/
 /managed_components/
 .pioenvs/
 .pioinitcache.py
-sdkconfig.*
-# allow the defaults file. Must come after wild card version above.
-!sdkconfig.defaults
+/sdkconfig.*
 /Testing/
-platformio.ini
-platformio.ini.*
-platformio.local.ini
+/platformio.ini
+/platformio.ini.*
+/platformio.local.ini
+
 
 # IDE files
 .vscode/

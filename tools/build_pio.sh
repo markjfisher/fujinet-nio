@@ -21,11 +21,14 @@ ZIP_MODE=0
 AUTOCLEAN=1
 SETUP_NEW_BOARD=""
 ANSWER_YES=0
+CREATE_SDKCONFIG_DEFAULTS=""
 
 # These are no longer specified as args, that was only for firmware build to ensure users didn't lose the hand crafted ini.
 # This build will always generate the platformio.ini from combining local and global ini files
 INI_FILE="${SCRIPT_DIR}/platformio.ini"
 LOCAL_PIO_INI="${SCRIPT_DIR}/platformio.local.ini"
+LOCAL_SKDCONFIG_DEFAULTS="${SCRIPT_DIR}/sdkconfig.local.defaults"
+SDKCONFIG_MAP_FILE="${SCRIPT_DIR}/pio-build/sdkconfig/platform_sdkconfig_map.txt"
 
 function display_board_names {
   while IFS= read -r piofile; do
@@ -37,7 +40,7 @@ function display_board_names {
 function show_help {
   echo "Usage: $(basename $0) [options] -- [additional args]"
   echo ""
-  echo "fujinet-firmware (pio) options:"
+  echo "fujinet-nio options:"
   echo "   -c       # run clean before build"
   echo "   -b       # run build"
   echo "   -u       # upload firmware"
@@ -45,8 +48,8 @@ function show_help {
   echo "   -m       # run monitor after build"
   echo "   -n       # do not autoclean"
   echo ""
-  echo "fujinet-firmware board setup options:"
-  echo "   -s NAME  # Setup a new board from name, writes a new file 'platformio.local.ini'"
+  echo "fujinet-nio board setup options:"
+  echo "   -s NAME  # Setup a new board from name, writes a new file 'platformio.local.ini', and 'sdkconfig.local.defaults' file"
   echo ""
   echo "other options:"
   echo "   -y       # answers any questions with Y automatically, for unattended builds"
@@ -142,7 +145,7 @@ fi
 
 if [ -z "$SETUP_NEW_BOARD" ] ; then
   # Did not specify -s flag, so do not overwrite local changes with new board
-  # but do re-generate the INI file, this ensures upstream changes are pulled into
+  # but do re-generate the INI/SDKDEFAULTS files, this ensures upstream changes are pulled into
   # existing builds (e.g. upgrading platformio version)
 
   # Check the local ini file has been previously generated as we need to read which board the user is building
@@ -153,6 +156,8 @@ if [ -z "$SETUP_NEW_BOARD" ] ; then
   fi
 
   ${PYTHON} ${SCRIPT_DIR}/pio-build/scripts/create-platformio-ini.py -o $INI_FILE -l $LOCAL_PIO_INI ${ZIP_INI_ARGS}
+  # creates if it doesn't exist, but leaves existing file unchanged
+  touch ${LOCAL_SKDCONFIG_DEFAULTS}
 else
   # this will create a clean platformio INI file, but honours the command line args
   if [ -e ${LOCAL_PIO_INI} -a $ANSWER_YES -eq 0 ] ; then
@@ -166,11 +171,16 @@ else
     fi
   fi
   ${PYTHON} ${SCRIPT_DIR}/pio-build/scripts/create-platformio-ini.py -n $SETUP_NEW_BOARD -o $INI_FILE -l $LOCAL_PIO_INI ${ZIP_INI_ARGS}
-
+  rm -f ${LOCAL_SKDCONFIG_DEFAULTS}
+  touch ${LOCAL_SKDCONFIG_DEFAULTS}
 fi
 
+# Create the sdkconfig.defaults file from the map file
+${PYTHON} ${SCRIPT_DIR}/pio-build/scripts/create-sdkconfig.py -o sdkconfig.defaults -m ${SDKCONFIG_MAP_FILE} -b ${SETUP_NEW_BOARD}
+
 ##############################################################
-# NORMAL BUILD MODES USING pio
+# Now call pio to run the various build steps
+##############################################################
 
 TARGET_ARG=""
 if [ -n "${TARGET_NAME}" ] ; then
