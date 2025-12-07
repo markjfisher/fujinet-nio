@@ -176,7 +176,7 @@ else
 fi
 
 # Create the sdkconfig.defaults file from the map file
-${PYTHON} ${SCRIPT_DIR}/pio-build/scripts/create-sdkconfig.py -o sdkconfig.defaults -m ${SDKCONFIG_MAP_FILE} -b ${SETUP_NEW_BOARD}
+${PYTHON} ${SCRIPT_DIR}/pio-build/scripts/create-sdkconfig.py -o sdkconfig.defaults -m ${SDKCONFIG_MAP_FILE} -i ${INI_FILE}
 
 ##############################################################
 # Now call pio to run the various build steps

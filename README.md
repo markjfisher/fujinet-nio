@@ -1,5 +1,7 @@
 # fujinet-nio
 
+## About
+
 **fujinet-nio** is a modern, clean re-implementation of FujiNet I/O services in C++.
 
 This project is a fresh start, intentionally designed to:
@@ -7,6 +9,69 @@ This project is a fresh start, intentionally designed to:
 - use modern C++ with strong memory-safety guarantees,
 - support multiple deployment targets from a single codebase, and
 - be testable, extensible, and maintainable long-term.
+
+## Building TL;DR:
+
+### esp32 initial setup
+
+You need to create an appropriate `sdkconfig.defaults` and `platformio.ini` file for your board type.
+This can be done with the `./build.sh` script, and should not be done manually as it will be overwritten on each build.
+
+```bash
+# list the board types that can be built
+$ ./build.sh -S
+cdc-fujibus-s3-wroom-1-n16r8
+sio-legacy-s3-wroom-1-n16r8
+
+# setup the build environment for the board type
+# WARNING: this will overwrite the sdkconfig.local.defaults file, and platformio.local.ini files
+# and should only be done once unless you want to reset the build environment
+$ ./build.sh -s cdc-fujibus-s3-wroom-1-n16r8
+```
+
+### local configuration files
+
+The files `sdkconfig.defaults` and `platformio.ini` are generated from the board type and should not be edited directly as they are overwritten on each build.
+
+There are 2 editable config files that you can use to affect the build.
+
+- `sdkconfig.local.defaults` - this is appended to the `sdkconfig.defaults` generated file when you run a build.
+- `platformio.local.ini` - values in here are merged into the `platformio.ini` file when you run a build.
+
+### build the firmware
+
+```bash
+# run a clean/build/upload/monitor for pio target
+$ ./build.sh -cbum
+```
+
+### posix build
+
+The posix build is done with cmake, and presets.
+
+You can view the posix presets with
+
+```bash
+$ ./tools/build_posix.sh -S
+Available profiles:
+fujibus-pty-debug   - FujiBus over PTY (Debug)
+fujibus-pty-release - FujiBus over PTY (Release)
+atari-release       - Atari SIO profile (Release)
+lib-only            - library only (no app, tests on)
+```
+
+#### build the posix target
+
+```bash
+# clean and build the posix target. Omit the -c to skip the clean step
+$ ./build.sh -cp fujibus-pty-debug
+```
+
+### build locations
+
+For the platformio builds, the build files are located in the `.pio` directory at the root of the project.
+
+For the posix builds, the build files are located in the `build` directory at the root of the project, and under the subfolder for the target name, e.g. `build/fujibus-pty-debug`.
 
 ---
 

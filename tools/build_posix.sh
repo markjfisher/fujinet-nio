@@ -49,7 +49,7 @@ if [ $# -eq 0 ] ; then
   show_help
 fi
 
-while getopts "chp:V:" flag
+while getopts "chp:SV:" flag
 do
   case "$flag" in
     c) DO_CLEAN=1 ;;

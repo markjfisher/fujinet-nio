@@ -5,9 +5,7 @@
 # otherwise call build_pio.sh
 
 if [[ "$*" == *"-p"* ]]; then
-    echo "Building for POSIX"
     ./tools/build_posix.sh "$@"
 else
-    echo "Building for PlatformIO"
     ./tools/build_pio.sh "$@"
 fi
