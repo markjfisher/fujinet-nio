@@ -3,11 +3,10 @@
 
 namespace fujinet {
 
-std::string_view version()
+const char* version()
 {
     // TODO: maybe later generate this from git or CMake configure_file
-    static constexpr std::string_view v = "0.1.1";
-    return v;
+    return "0.1.1";
 }
 
 } // namespace fujinet

@@ -6,6 +6,7 @@ FujinetCore::FujinetCore()
     : _deviceManager()
     , _routing(_deviceManager)
     , _ioService(_routing)
+    , _storageManager()
 {
 }
 

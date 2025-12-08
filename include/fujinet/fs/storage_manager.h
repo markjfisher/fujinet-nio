@@ -9,44 +9,28 @@
 
 namespace fujinet::fs {
 
+// Simple name-based registry for filesystems.
 class StorageManager {
 public:
     StorageManager() = default;
+    ~StorageManager() = default;
 
-    // Registers a filesystem under its own name(). Returns false if that name already exists.
-    bool registerFileSystem(std::unique_ptr<IFileSystem> fs)
-    {
-        if (!fs) {
-            return false;
-        }
-        auto key = fs->name();
-        auto [it, inserted] = _fileSystems.emplace(std::move(key), std::move(fs));
-        return inserted;
-    }
+    StorageManager(const StorageManager&) = delete;
+    StorageManager& operator=(const StorageManager&) = delete;
 
-    // Lookup by name (e.g. "flash", "sd0").
-    IFileSystem* get(const std::string& name)
-    {
-        auto it = _fileSystems.find(name);
-        return (it == _fileSystems.end()) ? nullptr : it->second.get();
-    }
+    // Registers a filesystem under the given name (e.g. "host", "flash", "sd0") taken from the fs.
+    // Returns false if that name already exists or fs is null.
+    bool registerFileSystem(std::unique_ptr<IFileSystem> fs);
 
-    const IFileSystem* get(const std::string& name) const
-    {
-        auto it = _fileSystems.find(name);
-        return (it == _fileSystems.end()) ? nullptr : it->second.get();
-    }
+    // Remove a filesystem by name. Returns false if not found.
+    bool unregisterFileSystem(const std::string& name);
 
-    // Optional helpers for enumeration (might be nice for config UI later).
-    std::vector<std::string> listNames() const
-    {
-        std::vector<std::string> out;
-        out.reserve(_fileSystems.size());
-        for (auto const& [name, _] : _fileSystems) {
-            out.push_back(name);
-        }
-        return out;
-    }
+    // Lookup by name.
+    IFileSystem*       get(const std::string& name);
+    const IFileSystem* get(const std::string& name) const;
+
+    // Optional helpers for enumeration.
+    std::vector<std::string> listNames() const;
 
 private:
     std::unordered_map<std::string, std::unique_ptr<IFileSystem>> _fileSystems;

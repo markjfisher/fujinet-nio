@@ -49,6 +49,7 @@ target_sources(fujinet-nio
     PRIVATE
         src/lib/bootstrap.cpp
         src/lib/build_profile.cpp
+        src/lib/fs_stdio.cpp
         src/lib/fuji_bus_packet.cpp
         src/lib/fuji_config_yaml_store.cpp
         src/lib/fuji_device.cpp
@@ -58,8 +59,9 @@ target_sources(fujinet-nio
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
         src/lib/routing_manager.cpp
+        src/lib/storage_manager.cpp
         src/platform/posix/channel_factory.cpp
-        src/platform/posix/fs_posix.cpp
+        src/platform/posix/fs_factory.cpp
         src/platform/posix/fuji_config_store_factory.cpp
         src/platform/posix/fuji_device_factory.cpp
         src/platform/posix/hardware_caps.cpp

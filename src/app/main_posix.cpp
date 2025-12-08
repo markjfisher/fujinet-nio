@@ -2,21 +2,21 @@
 #include <cstdint>
 #include <iostream>
 #include <string_view>
+#include <memory>
 #include <thread>
 
 #include "fujinet/build/profile.h"
-#include "fujinet/core/core.h"
 #include "fujinet/core/bootstrap.h"
+#include "fujinet/core/core.h"
+#include "fujinet/core/logging.h"
+#include "fujinet/fs/filesystem.h"
+#include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/fuji_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
-
-#include "fujinet/fs/storage_manager.h"
-#include "fujinet/fs/filesystem.h"
-#include "fujinet/core/logging.h"
-#include "fujinet/platform/posix/filesystem_factory.h"
+#include "fujinet/platform/posix/fs_factory.h"
 
 // Quick forward declaration (we’ll make a proper header later).
 namespace fujinet {
@@ -26,40 +26,54 @@ namespace fujinet {
 using namespace fujinet;
 using namespace fujinet::io::protocol;
 
+static const char* TAG = "posix-main";
+
 int main()
 {
-    std::cout << "fujinet-nio starting (POSIX app)\n";
-    std::cout << "Version: " << fujinet::version() << "\n";
-
-    fs::StorageManager storage;
-    auto hostFs = platform::posix::create_host_filesystem("./fujinet-root", "host");
-    storage.registerFileSystem(std::move(hostFs));
+    FN_LOGI(TAG, "fujinet-nio starting (POSIX app)");
+    FN_LOGI(TAG, "Version: %s", fujinet::version());
 
     core::FujinetCore core;
 
     // 2. Determine build profile.
     auto profile = build::current_build_profile();
-    std::cout << "Build profile: " << profile.name << "\n";
+    auto profile_name = profile.name;
+    FN_LOGI(TAG, "Build profile: %.*s", static_cast<int>(profile_name.size()), profile.name.data());
+
+    // Register a host filesystem rooted at ./fujinet-root
+    {
+        auto hostFs = fujinet::platform::posix::create_host_filesystem("./fujinet-data");
+
+        if (!hostFs) {
+            FN_LOGE(TAG, "Failed to create POSIX host filesystem");
+            return 1;
+        }
+
+        if (!core.storageManager().registerFileSystem(std::move(hostFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'host' filesystem");
+            return 1;
+        }
+
+        FN_LOGI(TAG, "Host filesystem registered as 'host'");
+    }
 
     // Reset hook — version 1: just log; later we can add restart loop.
     fujinet::platform::FujiDeviceHooks hooks{
         .onReset = []{
-            std::cout << "[FujiDevice] Reset requested (POSIX)"
-                      << std::endl;
+            FN_LOGI(TAG, "[FujiDevice] Reset requested (POSIX)");
             // TODO: set a restart flag or similar
         }
     };
 
     {
-        auto dev = platform::create_fuji_device(profile, hooks);
+        auto dev = platform::create_fuji_device(core, profile, hooks);
 
         constexpr io::DeviceID fujiDeviceId =
             static_cast<io::DeviceID>(FujiDeviceId::FujiNet);
 
         bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
         if (!ok) {
-            std::cerr << "Failed to register FujiDevice on DeviceID "
-                      << static_cast<unsigned>(fujiDeviceId) << "\n";
+            FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %d", static_cast<unsigned>(fujiDeviceId));
             return 1;
         }
     }
@@ -67,7 +81,7 @@ int main()
     // 3. Create a Channel appropriate for this profile (PTY, RS232, etc.).
     auto channel = platform::create_channel_for_profile(profile);
     if (!channel) {
-        std::cerr << "Failed to create Channel for profile\n";
+        FN_LOGE(TAG, "Failed to create Channel for profile");
         return 1;
     }
 
@@ -81,7 +95,7 @@ int main()
     }
 
     // (Unreachable for now, but kept for future clean shutdown logic.)
-    std::cout << "fujinet-nio exiting.\n";
+    FN_LOGI(TAG, "fujinet-nio exiting.");
     return 0;
 }
 

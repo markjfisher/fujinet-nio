@@ -75,7 +75,7 @@ struct FujiConfig {
 };
 
 
-// Abstract storage interface (unchanged idea).
+// Abstract storage interface.
 class FujiConfigStore {
 public:
     virtual ~FujiConfigStore() = default;

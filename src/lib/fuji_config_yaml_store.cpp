@@ -1,13 +1,15 @@
-#include "fujinet/config/fuji_config_yaml_store.h"
+#include "fujinet/config/fuji_config_yaml_store_fs.h"
 #include "fujinet/core/logging.h"
 
 #include <fstream>
 #include <stdexcept>
+#include <vector>
 
 #include <yaml-cpp/yaml.h>
 
 namespace fujinet::config {
 
+using fujinet::log::Level;
 static constexpr const char* TAG = "config_yaml";
 
 // ---------- tiny helpers ----------
@@ -210,51 +212,169 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     out << YAML::EndMap; // root
 }
 
-// ---------- YamlFujiConfigStore methods ----------
+// --- small local helpers using IFile ---
 
-YamlFujiConfigStore::YamlFujiConfigStore(std::string path)
-    : _path(std::move(path))
+static std::string read_all(fs::IFile& file)
+{
+    std::string out;
+    std::vector<std::uint8_t> buf(1024);
+
+    for (;;) {
+        std::size_t n = file.read(buf.data(), buf.size());
+        if (n == 0) {
+            break;
+        }
+        out.append(reinterpret_cast<const char*>(buf.data()), n);
+    }
+    return out;
+}
+
+static void write_all(fs::IFile& file, const std::string& data)
+{
+    const auto* ptr = reinterpret_cast<const std::uint8_t*>(data.data());
+    std::size_t remaining = data.size();
+
+    while (remaining > 0) {
+        std::size_t written = file.write(ptr, remaining);
+        if (written == 0) {
+            throw std::runtime_error("short write while saving config");
+        }
+        remaining -= written;
+        ptr       += written;
+    }
+    (void)file.flush();
+}
+
+// ---------- YamlFujiConfigStoreFs methods ----------
+
+YamlFujiConfigStoreFs::YamlFujiConfigStoreFs(fs::IFileSystem* primary,
+                                             fs::IFileSystem* backup,
+                                             std::string      relativePath)
+    : _primary(primary)
+    , _backup(backup)
+    , _relPath(std::move(relativePath))
 {
 }
 
-FujiConfig YamlFujiConfigStore::load()
+FujiConfig YamlFujiConfigStoreFs::load()
 {
-    FujiConfig cfg;  // defaults
+    FujiConfig cfg{}; // defaults
 
-    std::ifstream in(_path);
-    if (!in.is_open()) {
-        FN_LOGW(TAG, "Config file '%s' not found, writing defaults.", _path.c_str());
-        save(cfg);
-        return cfg;
+    // Try primary first if present
+    if (_primary && _primary->exists(_relPath)) {
+        try {
+            return loadFromFs(*_primary);
+        } catch (const std::exception& ex) {
+            FN_LOGE(TAG,
+                    "Failed to load config from primary '%s' on '%s': %s",
+                    _relPath.c_str(),
+                    _primary->name().c_str(),
+                    ex.what());
+        }
     }
 
+    // Then backup
+    if (_backup && _backup->exists(_relPath)) {
+        try {
+            return loadFromFs(*_backup);
+        } catch (const std::exception& ex) {
+            FN_LOGE(TAG,
+                    "Failed to load config from backup '%s' on '%s': %s",
+                    _relPath.c_str(),
+                    _backup->name().c_str(),
+                    ex.what());
+        }
+    }
+
+    // Nothing found anywhere: write defaults so the file exists for next boot.
+    FN_LOGW(TAG,
+            "Config '%s' not found on any filesystem; writing defaults",
+            _relPath.c_str());
+
     try {
-        YAML::Node root = YAML::Load(in);
-        from_yaml(root, cfg);
-        FN_LOGI(TAG, "Loaded config from '%s'.", _path.c_str());
-    } catch (const std::exception& e) {
-        FN_LOGE(TAG, "Failed to parse config file '%s': %s",
-                _path.c_str(), e.what());
-        // Keep defaults.
+        save(cfg);
+    } catch (const std::exception& ex) {
+        FN_LOGE(TAG,
+                "Failed to write default config '%s': %s",
+                _relPath.c_str(),
+                ex.what());
     }
 
     return cfg;
 }
 
+void YamlFujiConfigStoreFs::save(const FujiConfig& cfg)
+{
+    // primary is the "authoritative" copy
+    if (_primary) {
+        try {
+            saveToFs(*_primary, cfg);
+        } catch (const std::exception& ex) {
+            FN_LOGE(TAG,
+                    "Failed to save config to primary '%s' on '%s': %s",
+                    _relPath.c_str(),
+                    _primary->name().c_str(),
+                    ex.what());
+        }
+    }
 
-void YamlFujiConfigStore::save(const FujiConfig& cfg)
+    // backup is a best-effort mirror
+    if (_backup) {
+        try {
+            saveToFs(*_backup, cfg);
+        } catch (const std::exception& ex) {
+            FN_LOGE(TAG,
+                    "Failed to save config to backup '%s' on '%s': %s",
+                    _relPath.c_str(),
+                    _backup->name().c_str(),
+                    ex.what());
+        }
+    }
+}
+
+FujiConfig YamlFujiConfigStoreFs::loadFromFs(fs::IFileSystem& fs)
+{
+    auto file = fs.open(_relPath, "rb");
+    if (!file) {
+        throw std::runtime_error("open for read failed");
+    }
+
+    std::string yamlText = read_all(*file);
+    if (yamlText.empty()) {
+        FN_LOGW(TAG,
+                "Config '%s' on '%s' is empty; using defaults",
+                _relPath.c_str(), fs.name().c_str());
+        return FujiConfig{};
+    }
+
+    YAML::Node root = YAML::Load(yamlText);
+
+    FujiConfig cfg{};
+    // <== reuse your existing mapping helper:
+    from_yaml(root, cfg);
+
+    FN_LOGI(TAG,
+            "Loaded config from '%s' on '%s'",
+            _relPath.c_str(), fs.name().c_str());
+    return cfg;
+}
+
+void YamlFujiConfigStoreFs::saveToFs(fs::IFileSystem& fs, const FujiConfig& cfg)
 {
     YAML::Emitter out;
     to_yaml(out, cfg);
 
-    std::ofstream f(_path, std::ios::trunc);
-    if (!f.is_open()) {
-        FN_LOGE(TAG, "Failed to open config file '%s' for write.", _path.c_str());
-        return;
+    auto file = fs.open(_relPath, "wb");
+    if (!file) {
+        throw std::runtime_error("open for write failed");
     }
 
-    f << out.c_str();
-    FN_LOGI(TAG, "Saved config to '%s'.", _path.c_str());
+    const std::string text = out.c_str();
+    write_all(*file, text);
+
+    FN_LOGI(TAG,
+            "Saved config to '%s' on '%s'",
+            _relPath.c_str(), fs.name().c_str());
 }
 
 } // namespace fujinet::config

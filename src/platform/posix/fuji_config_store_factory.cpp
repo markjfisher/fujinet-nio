@@ -1,16 +1,30 @@
-#include "fujinet/platform/fuji_config_store_factory.h"
+// src/platform/posix/fuji_config_store_factory.cpp
 
-#include "fujinet/config/fuji_config_yaml_store.h"
+#include "fujinet/platform/fuji_config_store_factory.h"
+#include "fujinet/fs/storage_manager.h"
+#include "fujinet/config/fuji_config_yaml_store_fs.h"
+#include "fujinet/core/logging.h"
 
 namespace fujinet::platform {
 
-std::unique_ptr<fujinet::config::FujiConfigStore>
-create_fuji_config_store(const std::string& rootHint)
+using fujinet::log::Level;
+static constexpr const char* TAG = "config_factory";
+
+std::unique_ptr<config::FujiConfigStore>
+create_fuji_config_store(fs::StorageManager& storage)
 {
-    // e.g. "./fujinet.yaml"
-    std::string root = rootHint.empty() ? "." : rootHint;
-    std::string path = root + "/fujinet.yaml";
-    return std::make_unique<fujinet::config::YamlFujiConfigStore>(std::move(path));
+    auto* host = storage.get("host");
+
+    if (!host) {
+        FN_LOGE(TAG, "No 'host' filesystem registered; config will stay in-memory");
+        return std::make_unique<config::YamlFujiConfigStoreFs>(
+            nullptr, nullptr, "fujinet.yaml"
+        );
+    }
+
+    return std::make_unique<config::YamlFujiConfigStoreFs>(
+        host, nullptr, "fujinet.yaml"
+    );
 }
 
 } // namespace fujinet::platform

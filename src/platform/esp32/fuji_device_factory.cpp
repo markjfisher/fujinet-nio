@@ -2,6 +2,7 @@
 
 #include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/platform/fuji_config_store_factory.h"
+#include "fujinet/core/core.h"
 
 extern "C" {
 #include "esp_system.h"  // esp_restart
@@ -13,8 +14,9 @@ using fujinet::io::FujiDevice;
 using fujinet::io::VirtualDevice;
 
 std::unique_ptr<VirtualDevice>
-create_fuji_device(const fujinet::build::BuildProfile& /*profile*/,
-                   const FujiDeviceHooks& hooks)
+create_fuji_device(fujinet::core::FujinetCore& core,
+                   const build::BuildProfile&  /*profile*/,
+                   const FujiDeviceHooks&      hooks)
 {
     FujiDevice::ResetHandler resetHandler;
 
@@ -26,7 +28,8 @@ create_fuji_device(const fujinet::build::BuildProfile& /*profile*/,
         };
     }
 
-    auto store = create_fuji_config_store(/*rootHint*/ {});
+    // NEW: this now inspects core.storageManager() and picks SD vs flash.
+    auto store = create_fuji_config_store(core.storageManager());
 
     return std::make_unique<FujiDevice>(
         std::move(resetHandler),
