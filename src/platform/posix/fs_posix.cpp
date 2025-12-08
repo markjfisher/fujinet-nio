@@ -1,4 +1,5 @@
 #include "fujinet/fs/filesystem.h"
+#include "fujinet/platform/posix/filesystem_factory.h"
 
 #include <cstdio>
 #include <cstring>
@@ -102,6 +103,13 @@ public:
         // Normalize root: remove trailing slash if present.
         if (!_root.empty() && _root.back() == '/') {
             _root.pop_back();
+        }
+
+        // Ensure root exists
+        struct stat st{};
+        if (stat(_root.c_str(), &st) != 0) {
+            // mkdir -p equivalent (single level)
+            ::mkdir(_root.c_str(), 0775);
         }
     }
 

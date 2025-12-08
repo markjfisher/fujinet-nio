@@ -13,6 +13,11 @@
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
 
+#include "fujinet/fs/storage_manager.h"
+#include "fujinet/fs/filesystem.h"
+#include "fujinet/core/logging.h"
+#include "fujinet/platform/posix/filesystem_factory.h"
+
 // Quick forward declaration (we’ll make a proper header later).
 namespace fujinet {
     std::string_view version();
@@ -25,6 +30,10 @@ int main()
 {
     std::cout << "fujinet-nio starting (POSIX app)\n";
     std::cout << "Version: " << fujinet::version() << "\n";
+
+    fs::StorageManager storage;
+    auto hostFs = platform::posix::create_host_filesystem("./fujinet-root", "host");
+    storage.registerFileSystem(std::move(hostFs));
 
     core::FujinetCore core;
 
