@@ -19,6 +19,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+            submodules: recursive   # or 'true' if you don't have nested submodules
+            fetch-depth: 0          # optional, but nice if submodules need full history
 
       - name: Install system dependencies
         run: |
