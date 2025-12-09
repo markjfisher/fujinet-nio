@@ -1,4 +1,5 @@
-compilation_database_dir: build
+# This will be specified on the command line, so we can gen for differnt build folders and types
+# compilation_database_dir: build
 
 # All generated .puml files will go here.
 output_directory: docs/uml
