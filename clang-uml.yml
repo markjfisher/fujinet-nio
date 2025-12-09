@@ -1,28 +1,94 @@
-# This will be specified on the command line, so we can gen for differnt build folders and types
-# compilation_database_dir: build
-
-# All generated .puml files will go here.
+# All generated .puml files go here
 output_directory: docs/uml
 
+# Shared settings applied to all diagrams
+glob:
+  - src/lib/**/*.cpp
+  - include/fujinet/**/*.h
+
+using_namespace:
+  - fujinet
+
 diagrams:
-  core_io:
+  gen_core_io:
     type: class
-
-    # Limit analysis to our core + IO code
-    glob:
-      - src/lib/**/*.cpp
-      - include/fujinet/**/*.h
-
-    # Render names relative to this namespace
-    using_namespace:
-      - fujinet
+    filter_mode: advanced    # <— important
 
     include:
-      namespaces:
-        - fujinet::core
-        - fujinet::io
+      anyof:
+        namespaces:
+          - fujinet::core
+          - fujinet::io
+        elements:
+          - fujinet::fs::StorageManager
 
-    # Optional, just to show how to inject raw PlantUML
+    exclude:
+      namespaces:
+        - fujinet::io::protocol
+
     plantuml:
       before:
         - "title Core + IO (auto-gen from clang-uml)"
+
+  gen_fs:
+    type: class
+    include:
+      namespaces:
+        - fujinet::fs
+    plantuml:
+      before:
+        - "title Filesystem (auto-gen from clang-uml)"
+
+  gen_config:
+    type: class
+    include:
+      namespaces:
+        - fujinet::config
+    plantuml:
+      before:
+        - "title Config (auto-gen from clang-uml)"
+
+  gen_io_protocol:
+    type: class
+    include:
+      namespaces:
+        - fujinet::io::protocol
+    plantuml:
+      before:
+        - "title IO Protocols (auto-gen from clang-uml)"
+
+  gen_build_support:
+    type: class
+    include:
+      namespaces:
+        - fujinet::build
+    plantuml:
+      before:
+        - "title Build Support (auto-gen from clang-uml)"
+
+  gen_core_spider:
+    type: class
+
+    include:
+      context:
+        - match:
+            pattern: fujinet::core::FujinetCore
+            radius: 4              # tweak 2–4 as needed
+            direction: any         # both “out” and “in”
+            relationships:         # only relationships we care about
+              - composition
+              - aggregation
+              - association
+              - ownership
+              - dependency         # adds method/arg/return-use too
+
+    exclude:
+      namespaces:
+        - std
+
+    using_namespace:
+      - fujinet
+
+    plantuml:
+      before:
+        - "title FujinetCore dependency spider (auto-gen from clang-uml)"
