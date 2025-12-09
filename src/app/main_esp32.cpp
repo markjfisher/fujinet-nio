@@ -27,11 +27,13 @@ extern "C" void fujinet_core_task(void* arg)
     core::FujinetCore core;
 
     // Register flash FS
+    FN_LOGI(TAG, "Registering flash filesystem");
     if (auto flashFs = platform::esp32::create_flash_filesystem()) {
         core.storageManager().registerFileSystem(std::move(flashFs));
     }
 
     // Register SD FS (optional; may be nullptr if SD not present/mounted)
+    FN_LOGI(TAG, "Registering SD filesystem");
     if (auto sdFs = platform::esp32::create_sdcard_filesystem()) {
         core.storageManager().registerFileSystem(std::move(sdFs));
     }
@@ -42,11 +44,13 @@ extern "C" void fujinet_core_task(void* arg)
 
     // 2. Register FujiDevice
     {
+        FN_LOGI(TAG, "Creating FujiDevice");
         auto dev = platform::create_fuji_device(core, profile);
         // FujiDeviceId::FujiNet is a FujiBus concept; the routing layer
         // should map it to DeviceID, but for now we can just pick one.
         constexpr io::DeviceID fujiDeviceId = static_cast<io::DeviceID>(FujiDeviceId::FujiNet);
 
+        FN_LOGI(TAG, "Registering FujiDevice on DeviceID %u", static_cast<unsigned>(fujiDeviceId));
         bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
         if (!ok) {
             FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %u",
@@ -82,6 +86,7 @@ extern "C" void fujinet_core_task(void* arg)
 
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+    FN_LOGI(TAG, "fujinet-nio core task exiting");
 }
 
 extern "C" void app_main(void)
@@ -92,7 +97,14 @@ extern "C" void app_main(void)
     // Turn our own tags back up a bit
     esp_log_level_set("nio", ESP_LOG_INFO);
     esp_log_level_set("fs_init", ESP_LOG_INFO);
-    esp_log_level_set("config_yaml", ESP_LOG_WARN); // or INFO if you want
+    esp_log_level_set("config_yaml", ESP_LOG_WARN);
+    esp_log_level_set("fuji_device_factory", ESP_LOG_INFO);
+    esp_log_level_set("posix-main", ESP_LOG_INFO);
+    esp_log_level_set("fs_stdio", ESP_LOG_INFO);
+    esp_log_level_set("channel_factory", ESP_LOG_INFO);
+    esp_log_level_set("fs_init", ESP_LOG_INFO);
+    esp_log_level_set("UsbCdcChannel", ESP_LOG_INFO);
+    esp_log_level_set("config_factory", ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init", ESP_LOG_ERROR);
