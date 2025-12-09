@@ -178,7 +178,7 @@ __
 }
 class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
-+FujiDevice(ResetHandler resetHandler, std::unique_ptr<core::FujiConfigStore> configStore) : void
++FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore) : void
 ..
 +handle(const IORequest & request) : IOResponse
 -handle_reset(const IORequest & request) : IOResponse
@@ -188,8 +188,8 @@ class C_0016024516082849980408 {
 +poll() : void
 -save_config() : void
 __
--_config : core::FujiConfig
--_configStore : std::unique_ptr<core::FujiConfigStore>
+-_config : config::FujiConfig
+-_configStore : std::unique_ptr<config::FujiConfigStore>
 -_resetHandler : ResetHandler
 }
 abstract "io::Channel" as C_0008542343802949846318
@@ -224,33 +224,16 @@ class C_0011474842863539673819 {
 +ioService() const : const io::IOService &
 +routingManager() : io::RoutingManager &
 +routingManager() const : const io::RoutingManager &
++storageManager() : fs::StorageManager &
++storageManager() const : const fs::StorageManager &
 +tick() : void
 +tick_count() const noexcept : std::uint64_t
 __
 -_deviceManager : io::IODeviceManager
 -_ioService : io::IOService
 -_routing : io::RoutingManager
+-_storageManager : fs::StorageManager
 -_tickCount : std::uint64_t
-}
-class "core::HostSlot" as C_0009636730873371844088
-class C_0009636730873371844088 {
-__
-+enabled : bool
-+name : std::string
-+url : std::string
-}
-class "core::FujiConfig" as C_0014687976170328609703
-class C_0014687976170328609703 {
-__
-+hosts : std::vector<HostSlot>
-}
-abstract "core::FujiConfigStore" as C_0003296274854644671878
-abstract C_0003296274854644671878 {
-+~FujiConfigStore() constexpr = default : void
-..
-{abstract} +load() = 0 : FujiConfig
-{abstract} +save(const FujiConfig & cfg) = 0 : void
-__
 }
 C_0002386736627821114488 o-- C_0015173710654558847960 : +type
 C_0002942984525013396621 o-- C_0012496700434923238249 : +status
@@ -277,8 +260,6 @@ C_0007350464861923755413 <|-- C_0005273847708888915350
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
 C_0016024516082849980408 ..> C_0012496700434923238249
-C_0016024516082849980408 o-- C_0003296274854644671878 : -_configStore
-C_0016024516082849980408 o-- C_0014687976170328609703 : -_config
 C_0010069830097413987109 <|-- C_0016024516082849980408
 C_0003433839086217597071 ..> C_0002386736627821114488
 C_0003433839086217597071 ..> C_0002942984525013396621
@@ -288,8 +269,6 @@ C_0011474842863539673819 ..> C_0015529497257294770104
 C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
 C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
 C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
-C_0014687976170328609703 o-- C_0009636730873371844088 : +hosts
-C_0003296274854644671878 ..> C_0014687976170328609703
 
 'Generated with clang-uml, version 0.6.2
 'LLVM version Ubuntu clang version 18.1.3 (1ubuntu1)
