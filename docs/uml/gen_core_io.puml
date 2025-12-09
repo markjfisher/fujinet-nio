@@ -1,0 +1,216 @@
+@startuml
+title Core + IO (auto-gen from clang-uml)
+class "fs::StorageManager" as C_0001279065520068563954
+class C_0001279065520068563954 {
++StorageManager() = default : void
++StorageManager(const StorageManager &) = deleted : void
++~StorageManager() = default : void
+..
++operator=(const StorageManager &) = deleted : StorageManager &
+..
++get(const std::string & name) : IFileSystem *
++get(const std::string & name) const : const IFileSystem *
++listNames() const : std::vector<std::string>
++registerFileSystem(std::unique_ptr<IFileSystem> fs) : bool
++unregisterFileSystem(const std::string & name) : bool
+__
+-_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
+}
+enum "io::RequestType" as C_0015173710654558847960
+enum C_0015173710654558847960 {
+Command
+Read
+Write
+Open
+Close
+Control
+}
+class "io::IORequest" as C_0002386736627821114488
+class C_0002386736627821114488 {
+__
++command : std::uint16_t
++deviceId : DeviceID
++id : RequestID
++params : std::vector<std::uint32_t>
++payload : std::vector<std::uint8_t>
++type : RequestType
+}
+enum "io::StatusCode" as C_0012496700434923238249
+enum C_0012496700434923238249 {
+Ok
+DeviceNotFound
+InvalidRequest
+DeviceBusy
+NotReady
+IOError
+Timeout
+Unsupported
+}
+class "io::IOResponse" as C_0002942984525013396621
+class C_0002942984525013396621 {
+__
++command : std::uint16_t
++deviceId : DeviceID
++id : RequestID
++payload : std::vector<std::uint8_t>
++status : StatusCode
+}
+abstract "io::IRequestHandler" as C_0007350464861923755413
+abstract C_0007350464861923755413 {
++~IRequestHandler() constexpr = default : void
+..
+{abstract} +handleRequest(const IORequest & request) = 0 : IOResponse
+__
+}
+abstract "io::ITransport" as C_0015529497257294770104
+abstract C_0015529497257294770104 {
++~ITransport() constexpr = default : void
+..
++poll() : void
+{abstract} +receive(IORequest & outReq) = 0 : bool
+{abstract} +send(const IOResponse & resp) = 0 : void
+__
+}
+class "io::IOService" as C_0007645722238685656096
+class C_0007645722238685656096 {
++IOService(IRequestHandler & handler) : void
+..
++addTransport(ITransport * transport) : void
++serviceOnce() : void
+__
+-_handler : IRequestHandler &
+-_transports : std::vector<ITransport *>
+}
+abstract "io::VirtualDevice" as C_0010069830097413987109
+abstract C_0010069830097413987109 {
++~VirtualDevice() constexpr = default : void
+..
+{abstract} +handle(const IORequest & request) = 0 : IOResponse
++poll() : void
+__
+}
+class "io::IODeviceManager" as C_0010794218937492142358
+class C_0010794218937492142358 {
++IODeviceManager() = default : void
++IODeviceManager(const IODeviceManager &) = deleted : void
+..
++operator=(const IODeviceManager &) = deleted : IODeviceManager &
+..
++getDevice(DeviceID id) : VirtualDevice *
++getDevice(DeviceID id) const : const VirtualDevice *
++handleRequest(const IORequest & request) : IOResponse
++pollDevices() : void
++registerDevice(DeviceID id, std::unique_ptr<VirtualDevice> device) : bool
++unregisterDevice(DeviceID id) : bool
+__
+-_devices : std::unordered_map<DeviceID,std::unique_ptr<VirtualDevice>>
+}
+class "io::RoutingManager" as C_0005273847708888915350
+class C_0005273847708888915350 {
++RoutingManager(IODeviceManager & deviceManager) : void
+..
++clearOverrideHandler() : void
++deviceManager() : IODeviceManager &
++deviceManager() const : const IODeviceManager &
++handleRequest(const IORequest & request) : IOResponse
++hasOverrideHandler() const : bool
++setOverrideHandler(IRequestHandler * handler) : void
+__
+-_deviceManager : IODeviceManager &
+-_overrideHandler : IRequestHandler *
+}
+class "io::FujiDevice" as C_0016024516082849980408
+class C_0016024516082849980408 {
++FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore) : void
+..
++handle(const IORequest & request) : IOResponse
+-handle_reset(const IORequest & request) : IOResponse
+-handle_unknown(const IORequest & request) : IOResponse
+-load_config() : void
+-make_base_response(const IORequest & request, StatusCode status = StatusCode::Ok) const : IOResponse
++poll() : void
+-save_config() : void
+__
+-_config : config::FujiConfig
+-_configStore : std::unique_ptr<config::FujiConfigStore>
+-_resetHandler : ResetHandler
+}
+abstract "io::Channel" as C_0008542343802949846318
+abstract C_0008542343802949846318 {
++~Channel() constexpr = default : void
+..
+{abstract} +available() = 0 : bool
+{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
+{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
+__
+}
+class "io::FujiBusTransport" as C_0003433839086217597071
+class C_0003433839086217597071 {
++FujiBusTransport(Channel & channel) : void
+..
++poll() : void
++receive(IORequest & outReq) : bool
++send(const IOResponse & resp) : void
+__
+-_channel : Channel &
+-_nextRequestId : RequestID
+-_rxBuffer : std::vector<std::uint8_t>
+}
+class "core::FujinetCore" as C_0011474842863539673819
+class C_0011474842863539673819 {
++FujinetCore() : void
+..
++addTransport(io::ITransport * transport) : void
++deviceManager() : io::IODeviceManager &
++deviceManager() const : const io::IODeviceManager &
++ioService() : io::IOService &
++ioService() const : const io::IOService &
++routingManager() : io::RoutingManager &
++routingManager() const : const io::RoutingManager &
++storageManager() : fs::StorageManager &
++storageManager() const : const fs::StorageManager &
++tick() : void
++tick_count() const noexcept : std::uint64_t
+__
+-_deviceManager : io::IODeviceManager
+-_ioService : io::IOService
+-_routing : io::RoutingManager
+-_storageManager : fs::StorageManager
+-_tickCount : std::uint64_t
+}
+C_0002386736627821114488 o-- C_0015173710654558847960 : +type
+C_0002942984525013396621 o-- C_0012496700434923238249 : +status
+C_0007350464861923755413 ..> C_0002386736627821114488
+C_0007350464861923755413 ..> C_0002942984525013396621
+C_0015529497257294770104 ..> C_0002386736627821114488
+C_0015529497257294770104 ..> C_0002942984525013396621
+C_0007645722238685656096 ..> C_0015529497257294770104
+C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
+C_0010069830097413987109 ..> C_0002386736627821114488
+C_0010069830097413987109 ..> C_0002942984525013396621
+C_0010794218937492142358 ..> C_0010069830097413987109
+C_0010794218937492142358 ..> C_0002386736627821114488
+C_0010794218937492142358 ..> C_0002942984525013396621
+C_0007350464861923755413 <|-- C_0010794218937492142358
+C_0005273847708888915350 ..> C_0002386736627821114488
+C_0005273847708888915350 ..> C_0002942984525013396621
+C_0005273847708888915350 --> C_0010794218937492142358 : -_deviceManager
+C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
+C_0007350464861923755413 <|-- C_0005273847708888915350
+C_0016024516082849980408 ..> C_0002386736627821114488
+C_0016024516082849980408 ..> C_0002942984525013396621
+C_0016024516082849980408 ..> C_0012496700434923238249
+C_0010069830097413987109 <|-- C_0016024516082849980408
+C_0003433839086217597071 ..> C_0002386736627821114488
+C_0003433839086217597071 ..> C_0002942984525013396621
+C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
+C_0015529497257294770104 <|-- C_0003433839086217597071
+C_0011474842863539673819 ..> C_0015529497257294770104
+C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
+C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
+C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
+C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
+
+'Generated with clang-uml, version 0.6.2
+'LLVM version Ubuntu clang version 18.1.3 (1ubuntu1)
+@enduml

@@ -1,0 +1,111 @@
+@startuml
+title Config (auto-gen from clang-uml)
+enum "config::BootMode" as C_0012427176626669726738
+enum C_0012427176626669726738 {
+Normal
+Config
+Cpm
+Unknown
+}
+class "config::GeneralConfig" as C_0016837659718836839167
+class C_0016837659718836839167 {
+__
++altConfigFile : std::string
++bootMode : BootMode
++deviceName : std::string
+}
+class "config::WifiConfig" as C_0016905784937528219397
+class C_0016905784937528219397 {
+__
++enabled : bool
++passphrase : std::string
++ssid : std::string
+}
+enum "config::HostType" as C_0000279772037409680357
+enum C_0000279772037409680357 {
+Sd
+Tnfs
+Unknown
+}
+class "config::HostConfig" as C_0006762991430694965068
+class C_0006762991430694965068 {
+__
++address : std::string
++enabled : bool
++id : int
++name : std::string
++type : HostType
+}
+class "config::MountConfig" as C_0013943630642961179492
+class C_0013943630642961179492 {
+__
++hostId : int
++id : int
++mode : std::string
++path : std::string
+}
+class "config::ModemConfig" as C_0005975997772767504221
+class C_0005975997772767504221 {
+__
++enabled : bool
++snifferEnabled : bool
+}
+class "config::CpmConfig" as C_0006472023737076814481
+class C_0006472023737076814481 {
+__
++ccpImage : std::string
++enabled : bool
+}
+class "config::PrinterConfig" as C_0011654528465957303447
+class C_0011654528465957303447 {
+__
++enabled : bool
+}
+class "config::FujiConfig" as C_0013064010099190715901
+class C_0013064010099190715901 {
+__
++cpm : CpmConfig
++general : GeneralConfig
++hosts : std::vector<HostConfig>
++modem : ModemConfig
++mounts : std::vector<MountConfig>
++printer : PrinterConfig
++wifi : WifiConfig
+}
+abstract "config::FujiConfigStore" as C_0010708806357379257038
+abstract C_0010708806357379257038 {
++~FujiConfigStore() constexpr = default : void
+..
+{abstract} +load() = 0 : FujiConfig
+{abstract} +save(const FujiConfig & cfg) = 0 : void
+__
+}
+class "config::YamlFujiConfigStoreFs" as C_0004992050062997423308
+class C_0004992050062997423308 {
++YamlFujiConfigStoreFs(fs::IFileSystem * primary, fs::IFileSystem * backup, std::string relativePath) : void
+..
++load() : FujiConfig
+-loadFromFs(fs::IFileSystem & fs) : FujiConfig
++save(const FujiConfig & cfg) : void
+-saveToFs(fs::IFileSystem & fs, const FujiConfig & cfg) : void
+__
+-_backup : fs::IFileSystem *
+-_primary : fs::IFileSystem *
+-_relPath : std::string
+}
+C_0016837659718836839167 o-- C_0012427176626669726738 : +bootMode
+C_0006762991430694965068 o-- C_0000279772037409680357 : +type
+C_0013064010099190715901 o-- C_0016837659718836839167 : +general
+C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
+C_0013064010099190715901 o-- C_0006762991430694965068 : +hosts
+C_0013064010099190715901 o-- C_0013943630642961179492 : +mounts
+C_0013064010099190715901 o-- C_0005975997772767504221 : +modem
+C_0013064010099190715901 o-- C_0006472023737076814481 : +cpm
+C_0013064010099190715901 o-- C_0011654528465957303447 : +printer
+C_0010708806357379257038 ..> C_0013064010099190715901
+C_0004992050062997423308 ..> C_0013064010099190715901
+C_0010708806357379257038 <|-- C_0004992050062997423308
+
+'Generated with clang-uml, version 0.6.2
+'LLVM version Ubuntu clang version 18.1.3 (1ubuntu1)
+@enduml
