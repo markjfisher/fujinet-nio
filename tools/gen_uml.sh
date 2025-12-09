@@ -2,6 +2,9 @@
 set -euo pipefail
 set -x
 
+echo "Generating UML diagrams..."
+date
+
 # 1. Ensure build dir + compile_commands.json exist
 mkdir -p build
 cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
@@ -15,3 +18,6 @@ clang-uml -c clang-uml.yml
 #          so we render those into docs/images.
 mkdir -p docs/images
 plantuml -v --duration -tsvg docs/uml/*.puml -o ../images
+
+echo "Done generating UML diagrams."
+date
