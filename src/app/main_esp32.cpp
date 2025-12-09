@@ -38,6 +38,10 @@ extern "C" void fujinet_core_task(void* arg)
         core.storageManager().registerFileSystem(std::move(sdFs));
     }
 
+    for (auto& name : core.storageManager().listNames()) {
+        FN_LOGI(TAG, "Registered filesystem: %s", name.c_str());
+    }
+
     // 1. Determine build profile.
     auto profile = build::current_build_profile();
     FN_LOGI(TAG, "Build profile: %.*s", static_cast<int>(profile.name.size()), profile.name.data());
@@ -95,16 +99,16 @@ extern "C" void app_main(void)
     esp_log_level_set("*", ESP_LOG_ERROR);
 
     // Turn our own tags back up a bit
-    esp_log_level_set("nio", ESP_LOG_INFO);
-    esp_log_level_set("fs_init", ESP_LOG_INFO);
-    esp_log_level_set("config_yaml", ESP_LOG_WARN);
-    esp_log_level_set("fuji_device_factory", ESP_LOG_INFO);
-    esp_log_level_set("posix-main", ESP_LOG_INFO);
-    esp_log_level_set("fs_stdio", ESP_LOG_INFO);
     esp_log_level_set("channel_factory", ESP_LOG_INFO);
-    esp_log_level_set("fs_init", ESP_LOG_INFO);
-    esp_log_level_set("UsbCdcChannel", ESP_LOG_INFO);
     esp_log_level_set("config_factory", ESP_LOG_INFO);
+    esp_log_level_set("config_yaml", ESP_LOG_WARN);
+    esp_log_level_set("fs_init", ESP_LOG_INFO);
+    esp_log_level_set("fs_stdio", ESP_LOG_INFO);
+    esp_log_level_set("fuji_device_factory", ESP_LOG_INFO);
+    esp_log_level_set("nio", ESP_LOG_INFO);
+    esp_log_level_set("pinmap", ESP_LOG_INFO);
+    esp_log_level_set("posix-main", ESP_LOG_INFO);
+    esp_log_level_set("UsbCdcChannel", ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init", ESP_LOG_ERROR);
@@ -126,7 +130,12 @@ extern "C" void app_main(void)
         FN_LOGE(TAG, "Failed to initialise LittleFS; config persistence will not work.");
         // ... what to do?
     }
-    // unlink("/fujifs/fujinet.yaml");
+
+    if (!fujinet::platform::esp32::init_sdcard_spi()) {
+        FN_LOGE(TAG, "Failed to initialise SD card.");
+        // ... what to do?
+    }
+
     xTaskCreate(
         &fujinet_core_task,
         "fujinet_core",

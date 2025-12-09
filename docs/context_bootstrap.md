@@ -204,7 +204,6 @@ There will be more devices and ids added later
 - SLIP decode/encode
 - FujiBusPacket (C++ + Python)
 - End-to-end I/O flow from host → device → host
-- DummyDevice functioning end-to-end
 - Python tool can send/receive Fuji packets
 
 ### In progress:
@@ -217,11 +216,9 @@ There will be more devices and ids added later
 
 ## NEXT STEPS (WHERE WE LEFT OFF)
 
-1. Improve `fuji_send.py` output (decode header/fields neatly)
-2. Implement the first real Fuji virtual device
-3. Replace DummyDevice in ESP32 app
-4. Expand test suite
-5. Continue improving architecture diagrams
+1. Implement the first real Fuji virtual device
+2. Expand test suite
+3. Continue improving architecture diagrams
 
 ---
 

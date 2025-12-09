@@ -26,6 +26,7 @@ idf_component_register(
         platform/esp32/fuji_device_factory.cpp
         platform/esp32/hardware_caps.cpp
         platform/esp32/logging.cpp
+        platform/esp32/pinmap.cpp
         platform/esp32/usb_cdc_channel.cpp
 # __TARGET_SOURCES_END__
     INCLUDE_DIRS
