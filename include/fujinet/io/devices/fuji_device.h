@@ -26,7 +26,6 @@ public:
 
 private:
     IOResponse handle_reset(const IORequest& request);
-    IOResponse handle_debug(const IORequest& request);
     IOResponse handle_unknown(const IORequest& request);
 
     IOResponse make_base_response(const IORequest& request,

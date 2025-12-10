@@ -8,7 +8,6 @@ enum class FujiCommandId : std::uint8_t {
     Reset             = 0xFF,  // to FujiNet control device
     SpecialQuery      = 0xFF,  // to Network device
     GetSsid           = 0xFE,
-    DEBUG             = 0xF0,
     // ...
 };
 

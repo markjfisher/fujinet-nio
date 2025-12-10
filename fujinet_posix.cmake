@@ -49,6 +49,8 @@ target_sources(fujinet-nio
     PRIVATE
         src/lib/bootstrap.cpp
         src/lib/build_profile.cpp
+        src/lib/file_device.cpp
+        src/lib/file_device_init.cpp
         src/lib/fs_stdio.cpp
         src/lib/fuji_bus_packet.cpp
         src/lib/fuji_config_yaml_store.cpp

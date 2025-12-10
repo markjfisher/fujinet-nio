@@ -8,6 +8,7 @@
 #include "fujinet/build/profile.h"
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/core/core.h"
+#include "fujinet/core/file_device_init.h"
 #include "fujinet/core/logging.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
@@ -26,7 +27,7 @@ namespace fujinet {
 using namespace fujinet;
 using namespace fujinet::io::protocol;
 
-static const char* TAG = "posix-main";
+static const char* TAG = "nio";
 
 int main()
 {
@@ -77,6 +78,7 @@ int main()
             return 1;
         }
     }
+    fujinet::core::register_file_device(core);
 
     // 3. Create a Channel appropriate for this profile (PTY, RS232, etc.).
     auto channel = platform::create_channel_for_profile(profile);

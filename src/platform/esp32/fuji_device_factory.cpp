@@ -11,7 +11,7 @@ extern "C" {
 
 namespace fujinet::platform {
 
-const char* TAG = "fuji_device_factory";
+const char* TAG = "platform";
 
 using fujinet::io::FujiDevice;
 using fujinet::io::VirtualDevice;

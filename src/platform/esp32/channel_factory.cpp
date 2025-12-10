@@ -13,7 +13,7 @@ extern "C" {
 
 namespace fujinet::platform {
 
-static const char* TAG = "channel_factory";
+static const char* TAG = "platform";
 
 std::unique_ptr<fujinet::io::Channel>
 create_channel_for_profile(const build::BuildProfile& profile)

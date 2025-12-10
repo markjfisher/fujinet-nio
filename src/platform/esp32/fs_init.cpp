@@ -12,7 +12,7 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "fs_init";
+static const char* TAG = "platform";
 
 // Keep a static card handle so we can unmount if needed later
 static sdmmc_card_t* s_sdcard = nullptr;

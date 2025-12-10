@@ -77,6 +77,7 @@ enum class StatusCode : std::uint8_t
     NotReady,
     IOError,
     Timeout,
+    InternalError,
     Unsupported,
 };
 

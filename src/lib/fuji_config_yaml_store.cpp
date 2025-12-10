@@ -10,7 +10,7 @@
 namespace fujinet::config {
 
 using fujinet::log::Level;
-static constexpr const char* TAG = "config_yaml";
+static constexpr const char* TAG = "config";
 
 // ---------- tiny helpers ----------
 

@@ -8,6 +8,8 @@ idf_component_register(
         app/main_esp32.cpp
         lib/bootstrap.cpp
         lib/build_profile.cpp
+        lib/file_device.cpp
+        lib/file_device_init.cpp
         lib/fs_stdio.cpp
         lib/fuji_bus_packet.cpp
         lib/fuji_config_yaml_store.cpp

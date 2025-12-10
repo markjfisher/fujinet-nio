@@ -18,7 +18,8 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "UsbCdcChannel";
+static const char* TAG = "platform";
+
 static bool s_tinyusb_inited = false;
 
 static void ensure_tinyusb_init()

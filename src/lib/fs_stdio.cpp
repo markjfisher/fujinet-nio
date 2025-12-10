@@ -17,7 +17,7 @@ using fujinet::fs::FileSystemKind;
 using fujinet::fs::IFile;
 using fujinet::fs::IFileSystem;
 
-static constexpr const char* TAG = "fs_stdio";
+static constexpr const char* TAG = "fs";
 
 // ----------------------
 // StdioFile

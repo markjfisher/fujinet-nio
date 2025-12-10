@@ -5,6 +5,7 @@
 #include "fujinet/build/profile.h"
 #include "fujinet/core/core.h"
 #include "fujinet/core/bootstrap.h"
+#include "fujinet/core/file_device_init.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/fuji_device_ids.h"
@@ -46,21 +47,24 @@ extern "C" void fujinet_core_task(void* arg)
     auto profile = build::current_build_profile();
     FN_LOGI(TAG, "Build profile: %.*s", static_cast<int>(profile.name.size()), profile.name.data());
 
-    // 2. Register FujiDevice
+    // 2a. Register FujiDevice
     {
         FN_LOGI(TAG, "Creating FujiDevice");
         auto dev = platform::create_fuji_device(core, profile);
         // FujiDeviceId::FujiNet is a FujiBus concept; the routing layer
         // should map it to DeviceID, but for now we can just pick one.
         constexpr io::DeviceID fujiDeviceId = static_cast<io::DeviceID>(FujiDeviceId::FujiNet);
-
+        
         FN_LOGI(TAG, "Registering FujiDevice on DeviceID %u", static_cast<unsigned>(fujiDeviceId));
         bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
         if (!ok) {
             FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %u",
-                     static_cast<unsigned>(fujiDeviceId));
+                static_cast<unsigned>(fujiDeviceId));
         }
     }
+
+    // 2b. Register FileDevice
+    fujinet::core::register_file_device(core);
 
     // 3. Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
     auto channel = platform::create_channel_for_profile(profile);
@@ -73,7 +77,7 @@ extern "C" void fujinet_core_task(void* arg)
     // 4. Set up transports based on profile (FujiBus, SIO, etc.).
     core::setup_transports(core, *channel, profile);
 
-    FN_LOGI(TAG, "fujinet-nio core task starting (transport initialized)");
+    FN_LOGI(TAG, "core task starting (transport initialized)");
 
     // 5. Run the core loop forever.
     for (;;) {
@@ -90,7 +94,7 @@ extern "C" void fujinet_core_task(void* arg)
 
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    FN_LOGI(TAG, "fujinet-nio core task exiting");
+    FN_LOGI(TAG, "core task exiting");
 }
 
 extern "C" void app_main(void)
@@ -99,32 +103,28 @@ extern "C" void app_main(void)
     esp_log_level_set("*", ESP_LOG_ERROR);
 
     // Turn our own tags back up a bit
-    esp_log_level_set("channel_factory", ESP_LOG_INFO);
-    esp_log_level_set("config_factory", ESP_LOG_INFO);
-    esp_log_level_set("config_yaml", ESP_LOG_WARN);
-    esp_log_level_set("fs_init", ESP_LOG_INFO);
-    esp_log_level_set("fs_stdio", ESP_LOG_INFO);
-    esp_log_level_set("fuji_device_factory", ESP_LOG_INFO);
-    esp_log_level_set("nio", ESP_LOG_INFO);
-    esp_log_level_set("pinmap", ESP_LOG_INFO);
-    esp_log_level_set("posix-main", ESP_LOG_INFO);
-    esp_log_level_set("UsbCdcChannel", ESP_LOG_INFO);
+    esp_log_level_set("config",      ESP_LOG_INFO);
+    esp_log_level_set("core",        ESP_LOG_INFO);
+    esp_log_level_set("fs",          ESP_LOG_INFO);
+    esp_log_level_set("io",          ESP_LOG_INFO);
+    esp_log_level_set("nio",         ESP_LOG_INFO);
+    esp_log_level_set("platform",    ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
-    esp_log_level_set("heap_init", ESP_LOG_ERROR);
-    esp_log_level_set("spi_flash", ESP_LOG_ERROR);
-    esp_log_level_set("sleep_gpio", ESP_LOG_ERROR);
-    esp_log_level_set("app_init", ESP_LOG_ERROR);
-    esp_log_level_set("efuse_init", ESP_LOG_ERROR);
+    esp_log_level_set("heap_init",   ESP_LOG_ERROR);
+    esp_log_level_set("spi_flash",   ESP_LOG_ERROR);
+    esp_log_level_set("sleep_gpio",  ESP_LOG_ERROR);
+    esp_log_level_set("app_init",    ESP_LOG_ERROR);
+    esp_log_level_set("efuse_init",  ESP_LOG_ERROR);
     esp_log_level_set("octal_psram", ESP_LOG_ERROR);
-    esp_log_level_set("cpu_start", ESP_LOG_ERROR);
-    esp_log_level_set("main_task", ESP_LOG_ERROR);
+    esp_log_level_set("cpu_start",   ESP_LOG_ERROR);
+    esp_log_level_set("main_task",   ESP_LOG_ERROR);
 
     // TinyUSB glue:
-    esp_log_level_set("tusb_desc", ESP_LOG_ERROR);
-    esp_log_level_set("TinyUSB",   ESP_LOG_ERROR);
+    esp_log_level_set("tusb_desc",   ESP_LOG_ERROR);
+    esp_log_level_set("TinyUSB",     ESP_LOG_ERROR);
 
-    FN_LOGI(TAG, "fujinet-nio (ESP32-S3 / ESP-IDF) starting up...");
+    FN_LOGI(TAG, "(ESP32-S3 / ESP-IDF) starting up...");
 
     if (!fujinet::platform::esp32::init_littlefs()) {
         FN_LOGE(TAG, "Failed to initialise LittleFS; config persistence will not work.");

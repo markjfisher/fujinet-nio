@@ -23,6 +23,9 @@ enum class FujiDeviceId : std::uint8_t {
     NetworkLast  = 0x78,
     Midi         = 0x99,
     Dbc          = 0xFF,
+
+    // New devices
+    FileService  = 0xFE,
 #endif
 };
 

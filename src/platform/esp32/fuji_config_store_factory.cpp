@@ -8,7 +8,7 @@
 namespace fujinet::platform {
 
 using fujinet::log::Level;
-static constexpr const char* TAG = "config_factory";
+static constexpr const char* TAG = "platform";
 
 std::unique_ptr<config::FujiConfigStore>
 create_fuji_config_store(fs::StorageManager& storage)
