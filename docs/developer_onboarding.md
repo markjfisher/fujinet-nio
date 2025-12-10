@@ -108,6 +108,45 @@ Device examples:
 
 ---
 
+## Dependency Injection (How Devices Access Core Services)
+
+FujiNet-NIO does **not** use global singletons or service locators.  
+Instead, it follows a simple and explicit *dependency injection* model:
+
+### Design Rules
+
+- **VirtualDevices never fetch global state.**  
+  They should not reach into `FujinetCore` or platform APIs directly.
+
+- **All dependencies are passed through constructors.**  
+  If a device needs something (e.g., `StorageManager`, `FujiConfigStore`, network clients), the platform/bootstrap code injects it:
+
+  ```cpp
+  auto device = std::make_unique<FujiDevice>(
+      reset_handler,
+      std::move(config_store),
+      core.storageManager()
+  );
+  core.deviceManager().registerDevice(FujiDeviceId::FujiNet, std::move(device));
+  ```
+
+- **The platform layer is the “composition root.”**  
+  It wires together devices, transports, channels, and configuration.
+
+- **Each device explicitly declares what it needs.**  
+  This makes devices unit-testable on POSIX and reduces coupling.
+
+### Why This Matters
+
+- Devices become reusable and testable.
+- The core library stays clean and platform-agnostic.
+- ESP32 vs POSIX differences never leak into device logic.
+- No global state ⇒ predictable, debuggable behaviour.
+
+This pattern mirrors dependency injection approaches from Micronaut or NestJS, but implemented manually and explicitly in C++.
+
+---
+
 # 4. Build Setup
 
 ## 4.1 POSIX (Linux/macOS)

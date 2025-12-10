@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/protocol/fuji_command_ids.h"
@@ -17,13 +18,15 @@ public:
     using ResetHandler = std::function<void()>;
 
     FujiDevice(ResetHandler resetHandler,
-               std::unique_ptr<fujinet::config::FujiConfigStore> configStore);
+               std::unique_ptr<fujinet::config::FujiConfigStore> configStore,
+               fs::StorageManager& storage);
 
     IOResponse handle(const IORequest& request) override;
     void       poll() override;
 
 private:
     IOResponse handle_reset(const IORequest& request);
+    IOResponse handle_debug(const IORequest& request);
     IOResponse handle_unknown(const IORequest& request);
 
     IOResponse make_base_response(const IORequest& request,
@@ -36,6 +39,7 @@ private:
     ResetHandler                                        _resetHandler;
     std::unique_ptr<fujinet::config::FujiConfigStore>   _configStore;
     fujinet::config::FujiConfig                         _config;
+    fs::StorageManager&                                 _storage;
 };
 
 } // namespace fujinet::io

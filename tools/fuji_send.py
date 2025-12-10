@@ -237,6 +237,52 @@ def build_fuji_packet(device: int, command: int, payload: bytes) -> bytes:
 
     return slip_encode(pkt)
 
+def send_fuji_command(
+    port: str,
+    device: int,
+    command: int,
+    payload: bytes,
+    baud: int = 115200,
+    timeout: float = 1.0,
+    debug: bool = False,
+) -> dict | None:
+    """
+    High-level helper to:
+      - build a FujiBus+SLIP packet
+      - send it over serial
+      - read a response
+      - decode and parse it
+
+    Returns:
+      dict as from parse_fuji_packet(), or None if no/invalid response.
+    """
+
+    packet = build_fuji_packet(device, command, payload)
+
+    if debug:
+        print_packet("Outgoing request", packet)
+
+    with serial.Serial(port, baud, timeout=timeout) as ser:
+        ser.write(packet)
+        ser.flush()
+
+        # Read some bytes back; you can tune this as needed
+        resp = ser.read(512)
+
+    if debug:
+        print_packet("Incoming response", resp)
+
+    if not resp:
+        return None
+
+    frame = extract_first_slip_frame(resp)
+    if frame is None:
+        return None
+
+    decoded = slip_decode(frame)
+    pkt = parse_fuji_packet(decoded)
+    return pkt
+
 
 def main():
     parser = argparse.ArgumentParser(description="Send a simple FujiBus+SLIP packet")

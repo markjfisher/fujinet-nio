@@ -1,6 +1,6 @@
 project(fujinet_nio
     VERSION 0.1.1
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 # Configure yaml-cpp to only build the core library, no tests/tools/contrib.
@@ -66,12 +66,16 @@ target_sources(fujinet-nio
         src/platform/posix/fuji_device_factory.cpp
         src/platform/posix/hardware_caps.cpp
         src/platform/posix/logging.cpp
-)
 # __TARGET_SOURCES_END__
+        third_party/cjson/cJSON.c
+)
+
 
 target_include_directories(fujinet-nio
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cjson
 )
 
 target_compile_features(fujinet-nio PUBLIC cxx_std_20)

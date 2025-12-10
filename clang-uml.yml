@@ -30,6 +30,53 @@ diagrams:
       before:
         - "title Core + IO (auto-gen from clang-uml)"
 
+  gen_core_io_sequence:
+    type: sequence
+    filter_mode: advanced
+
+    from:
+      - function: fujinet::io::IOService::serviceOnce()
+
+    include:
+      anyof:
+        namespaces:
+          - fujinet::io
+          - fujinet::core
+        elements:
+          - fujinet::fs::StorageManager
+          - fujinet::io::IODeviceManager
+          - fujinet::io::VirtualDevice
+
+    plantuml:
+      before:
+        - "title Core I/O request flow (IOService tick)"
+        - "caption IOService::serviceOnce() – transports → handler"
+
+  gen_core_device_sequence:
+    type: sequence
+    filter_mode: advanced
+    generate_return_types: true
+    generate_return_values: true
+    generate_condition_statements: true
+    generate_method_arguments: full
+
+    from:
+      - function: fujinet::io::IODeviceManager::handleRequest(const IORequest &)
+
+    include:
+      anyof:
+        namespaces:
+          - fujinet::io
+        elements:
+          - fujinet::io::IOResponse
+          - fujinet::io::IORequest
+
+    plantuml:
+      before:
+        - "title Device dispatch flow (IODeviceManager)"
+        - "caption IODeviceManager::handleRequest() – device lookup → VirtualDevice::handle()"
+
+
   gen_fs:
     type: class
     include:

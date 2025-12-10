@@ -22,7 +22,8 @@ create_fuji_device(core::FujinetCore&         core,
 
     return std::make_unique<FujiDevice>(
         std::move(resetHandler),
-        std::move(store)
+        std::move(store),
+        core.storageManager()
     );
 }
 

@@ -48,7 +48,6 @@ def generate_posix_block(all_cpp):
     lines = ["target_sources(fujinet-nio", "    PRIVATE"]
     for path in filtered:
         lines.append(f"        {path}")
-    lines.append(")")
     return "\n".join(lines) + "\n"
 
 

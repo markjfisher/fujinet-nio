@@ -416,6 +416,83 @@ The platform main loop calls `core.tick()` on a schedule (e.g., every 20–50ms)
 
 ---
 
+## Dependency Injection Architecture
+
+FujiNet-NIO uses **explicit constructor-based dependency injection** to maintain clear boundaries between layers.
+
+Unlike many C++ codebases, VirtualDevices do **not**:
+
+- access global singletons  
+- reach into `FujinetCore`  
+- call platform APIs directly  
+- perform hidden cross-layer lookups  
+
+Instead, all dependencies are passed in at creation time by the platform bootstrap code.
+
+### Example: Injecting StorageManager
+
+```cpp
+class FujiDevice : public VirtualDevice {
+public:
+    FujiDevice(ResetHandler reset,
+               std::unique_ptr<FujiConfigStore> configStore,
+               fs::StorageManager& storage)
+        : _reset(std::move(reset))
+        , _configStore(std::move(configStore))
+        , _storage(storage)
+    {}
+};
+```
+
+Wiring occurs at the platform level (ESP32 or POSIX):
+
+```cpp
+auto config = create_fuji_config_store(core.storageManager());
+auto device = std::make_unique<FujiDevice>(
+    reset_handler,
+    std::move(config),
+    core.storageManager()
+);
+
+core.deviceManager().registerDevice(FujiDeviceId::FujiNet,
+                                    std::move(device));
+```
+
+### Why We Do This
+
+1. **Encapsulation**  
+   Each VirtualDevice knows only what it needs; nothing more.
+
+2. **Testability**  
+   Devices can be tested in isolation using mock `StorageManager`, mock network clients, etc.
+
+3. **Platform independence**  
+   ESP32-specific or POSIX-specific behavior never leaks into device code.
+
+4. **Predictable architecture**  
+   The platform layer becomes the *composition root*, similar to DI containers in frameworks such as Micronaut or NestJS.
+
+### What Devices May Depend On
+
+A VirtualDevice may receive:
+
+- `StorageManager&`
+- `RoutingManager&`
+- `FujiConfigStore`
+- network or filesystem facades
+- any other well-defined, platform-agnostic interfaces
+
+### What Devices Must Not Depend On
+
+- Platform APIs (ESP-IDF, POSIX syscalls)
+- Global variables
+- Full `FujinetCore` access
+- Transports, channels, or other low-level components
+
+These boundaries ensure that FujiNet-NIO remains portable, maintainable, and scalable as we add more platforms, devices, and protocols.
+
+---
+
 # **Build Profiles, Channels & Transports**
 
 ## BuildProfile

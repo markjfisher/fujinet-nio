@@ -13,7 +13,7 @@ mkdir -p docs/images
 mkdir -p docs/uml
 
 # remove old files in case their UML is removed.
-rm -f docs/images/gen_*.svg
+#rm -f docs/images/gen_*.svg
 rm -f docs/uml/gen_*.puml
 
 # generate new versions
