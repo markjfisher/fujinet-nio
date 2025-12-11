@@ -67,7 +67,7 @@ Transport → Core → Device → Transport loop works.
 We removed legacy enums and standardized naming:
 
 ```
-enum class FujiDeviceId : uint8_t { ... };
+enum class WireDeviceId : uint8_t { ... };
 enum class FujiCommandId : uint8_t { ... };
 enum class SlipByte : uint8_t { End=0xC0, Escape=0xDB, EscEnd=0xDC, EscEsc=0xDD };
 constexpr uint8_t to_byte(SlipByte b);
@@ -174,12 +174,12 @@ enum class FujiCommandId : std::uint8_t {
 
 ---
 
-### 9. FujiDeviceId
+### 9. WireDeviceId
 
 This is how the device manager will know what device a request needs to be routed to:
 
 ```
-enum class FujiDeviceId : std::uint8_t {
+enum class WireDeviceId : std::uint8_t {
     FujiNet      = 0x70,
     DiskFirst    = 0x31,
     DiskLast     = 0x3F,

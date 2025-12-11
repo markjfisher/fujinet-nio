@@ -7,7 +7,7 @@ namespace fujinet::io {
 
 // Logical device identifier inside your system.
 // Transports (FujiBus / SIO / IEC / …) map bus-level
-// addressing (e.g. FujiDeviceId on the wire) to this.
+// addressing (e.g. WireDeviceId on the wire) to this.
 using DeviceID  = std::uint8_t;
 
 // Used to correlate request/response pairs.
@@ -40,7 +40,7 @@ struct IORequest
     RequestID   id{};       
 
     // Which virtual device this is for (post-routing).
-    // For FujiBus, this is derived from the FujiDeviceId on the wire.
+    // For FujiBus, this is derived from the WireDeviceId on the wire.
     DeviceID    deviceId{}; 
 
     // Broad operation type; may be ignored by some protocols/devices.
@@ -48,7 +48,7 @@ struct IORequest
 
     // Optional extra command / subcode, device- or protocol-specific.
     //
-    // For FujiBus, this maps nicely to FujiCommandId (0x00–0xFF), but
+    // For FujiBus, this maps nicely to FujiCommand (0x00–0xFF), but
     // we use 16 bits here so other protocols can use larger ranges if
     // needed.
     std::uint16_t command{0};

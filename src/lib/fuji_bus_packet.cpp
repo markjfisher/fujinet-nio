@@ -184,8 +184,8 @@ bool FujiBusPacket::parse(const ByteBuffer& input)
         return false;
     }
 
-    _device  = static_cast<FujiDeviceId>(hdr.device);
-    _command = static_cast<FujiCommandId>(hdr.command);
+    _device  = static_cast<WireDeviceId>(hdr.device);
+    _command = hdr.command;
 
     // ---- Descriptors & params ----
 

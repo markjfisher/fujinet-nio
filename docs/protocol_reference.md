@@ -439,7 +439,7 @@ No — SLIP boundaries are required.
 Devices may treat parameters as *commands* and payload as *data*.
 
 ### Q: Are device IDs globally assigned?  
-Yes — see `FujiDeviceId` in `protocol_ids.h`.
+Yes — see `WireDeviceId` in `protocol_ids.h`.
 
 ### Q: Can FujiBus packets be nested?  
 No.

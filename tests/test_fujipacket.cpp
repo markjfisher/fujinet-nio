@@ -12,8 +12,8 @@ static ByteBuffer corrupt_one_byte(ByteBuffer buf)
 
 static FujiBusPacket make_reference_packet()
 {
-    auto dev = static_cast<FujiDeviceId>(42);
-    auto cmd = static_cast<FujiCommandId>(99);
+    auto dev = static_cast<WireDeviceId>(42);
+    auto cmd = static_cast<std::uint8_t>(99);
 
     // 3 params of different sizes + no payload
     return FujiBusPacket(dev, cmd,
@@ -59,8 +59,8 @@ static void check_slip_framed(const ByteBuffer& bytes)
 TEST_CASE("serialize() produces a SLIP-framed packet")
 {
     // Use some arbitrary device/command IDs:
-    auto dev = static_cast<FujiDeviceId>(1);
-    auto cmd = static_cast<FujiCommandId>(2);
+    auto dev = static_cast<WireDeviceId>(1);
+    auto cmd = static_cast<std::uint8_t>(2);
 
     FujiBusPacket pkt(dev, cmd, std::uint8_t{0x12}, std::uint16_t{0x3456});
     ByteBuffer serialized = pkt.serialize();
@@ -70,8 +70,8 @@ TEST_CASE("serialize() produces a SLIP-framed packet")
 
 TEST_CASE("simple roundtrip: no payload, a few params")
 {
-    auto dev = static_cast<FujiDeviceId>(1);
-    auto cmd = static_cast<FujiCommandId>(2);
+    auto dev = static_cast<WireDeviceId>(1);
+    auto cmd = static_cast<std::uint8_t>(2);
 
     FujiBusPacket pkt(dev, cmd,
                       std::uint8_t{0x11},
@@ -97,8 +97,8 @@ TEST_CASE("simple roundtrip: no payload, a few params")
 
 TEST_CASE("roundtrip with binary payload (includes SLIP specials)")
 {
-    auto dev = static_cast<FujiDeviceId>(3);
-    auto cmd = static_cast<FujiCommandId>(4);
+    auto dev = static_cast<WireDeviceId>(3);
+    auto cmd = static_cast<std::uint8_t>(4);
 
     ByteBuffer payload{0x00, 0xC0, 0xDB, 0xFF}; // includes SLIP_END and SLIP_ESCAPE
 
@@ -127,8 +127,8 @@ TEST_CASE("roundtrip with binary payload (includes SLIP specials)")
 
 TEST_CASE("roundtrip with textual payload via std::string")
 {
-    auto dev = static_cast<FujiDeviceId>(5);
-    auto cmd = static_cast<FujiCommandId>(6);
+    auto dev = static_cast<WireDeviceId>(5);
+    auto cmd = static_cast<std::uint8_t>(6);
 
     std::string tz = "Europe/London";
 
@@ -153,8 +153,8 @@ TEST_CASE("roundtrip with textual payload via std::string")
 
 TEST_CASE("checksum detects corruption")
 {
-    auto dev = static_cast<FujiDeviceId>(7);
-    auto cmd = static_cast<FujiCommandId>(8);
+    auto dev = static_cast<WireDeviceId>(7);
+    auto cmd = static_cast<std::uint8_t>(8);
 
     FujiBusPacket pkt(dev, cmd,
                       std::uint8_t{0x10},
@@ -173,8 +173,8 @@ TEST_CASE("checksum detects corruption")
 
 TEST_CASE("multiple descriptors: many u8 followed by u16")
 {
-    auto dev = static_cast<FujiDeviceId>(9);
-    auto cmd = static_cast<FujiCommandId>(10);
+    auto dev = static_cast<WireDeviceId>(9);
+    auto cmd = static_cast<std::uint8_t>(10);
 
     // 5 uint8_t params forces:
     // - first descriptor: 4×u8

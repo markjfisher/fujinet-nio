@@ -1,4 +1,5 @@
 #include "fujinet/io/devices/fuji_device.h"
+#include "fujinet/io/devices/fuji_commands.h"
 
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/fs/filesystem.h"
@@ -12,10 +13,8 @@ namespace fujinet::io {
 
 using fujinet::config::FujiConfigStore;
 using fujinet::config::FujiConfig;
-
-using protocol::FujiCommandId;
-using protocol::FujiDeviceId;
-using protocol::to_fuji_command;
+using fujinet::io::protocol::FujiCommand;
+using fujinet::io::protocol::to_fuji_command;
 
 FujiDevice::FujiDevice(ResetHandler resetHandler,
                        std::unique_ptr<FujiConfigStore> configStore,
@@ -43,11 +42,11 @@ IOResponse FujiDevice::handle(const IORequest& request)
     auto cmd = to_fuji_command(request.command);
 
     switch (cmd) {
-        case FujiCommandId::Reset:
+        case FujiCommand::Reset:
             return handle_reset(request);
 
         // later:
-        // case FujiCommandId::GetSsid:
+        // case FujiCommand::GetSsid:
         //     return handle_get_ssid(request);
 
         default:

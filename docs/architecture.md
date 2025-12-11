@@ -454,7 +454,7 @@ auto device = std::make_unique<FujiDevice>(
     core.storageManager()
 );
 
-core.deviceManager().registerDevice(FujiDeviceId::FujiNet,
+core.deviceManager().registerDevice(WireDeviceId::FujiNet,
                                     std::move(device));
 ```
 

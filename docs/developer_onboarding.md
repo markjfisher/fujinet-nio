@@ -127,7 +127,7 @@ Instead, it follows a simple and explicit *dependency injection* model:
       std::move(config_store),
       core.storageManager()
   );
-  core.deviceManager().registerDevice(FujiDeviceId::FujiNet, std::move(device));
+  core.deviceManager().registerDevice(WireDeviceId::FujiNet, std::move(device));
   ```
 
 - **The platform layer is the “composition root.”**  

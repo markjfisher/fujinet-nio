@@ -14,7 +14,7 @@
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/virtual_device.h"
-#include "fujinet/io/protocol/fuji_device_ids.h"
+#include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
 #include "fujinet/platform/posix/fs_factory.h"
@@ -69,8 +69,7 @@ int main()
     {
         auto dev = platform::create_fuji_device(core, profile, hooks);
 
-        constexpr io::DeviceID fujiDeviceId =
-            static_cast<io::DeviceID>(FujiDeviceId::FujiNet);
+        io::DeviceID fujiDeviceId = to_device_id(WireDeviceId::FujiNet);
 
         bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
         if (!ok) {

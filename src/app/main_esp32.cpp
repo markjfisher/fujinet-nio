@@ -8,7 +8,7 @@
 #include "fujinet/core/file_device_init.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/virtual_device.h"
-#include "fujinet/io/protocol/fuji_device_ids.h"
+#include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/esp32/fs_init.h"
 #include "fujinet/platform/esp32/fs_factory.h"
@@ -51,9 +51,7 @@ extern "C" void fujinet_core_task(void* arg)
     {
         FN_LOGI(TAG, "Creating FujiDevice");
         auto dev = platform::create_fuji_device(core, profile);
-        // FujiDeviceId::FujiNet is a FujiBus concept; the routing layer
-        // should map it to DeviceID, but for now we can just pick one.
-        constexpr io::DeviceID fujiDeviceId = static_cast<io::DeviceID>(FujiDeviceId::FujiNet);
+        io::DeviceID fujiDeviceId = to_device_id(WireDeviceId::FujiNet);
         
         FN_LOGI(TAG, "Registering FujiDevice on DeviceID %u", static_cast<unsigned>(fujiDeviceId));
         bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));

@@ -118,7 +118,7 @@ TEST_CASE("FujinetCore can be embedded with a custom Channel")
     CHECK(primary != nullptr);
 
     // 5) Register a simple VirtualDevice on some DeviceID.
-    constexpr io::DeviceID kDeviceId = 0x70; // same as FujiDeviceId::FujiNet
+    constexpr io::DeviceID kDeviceId = 0x70; // same as WireDeviceId::FujiNet
     bool registered = core.deviceManager().registerDevice(
         kDeviceId,
         std::make_unique<EchoDevice>()

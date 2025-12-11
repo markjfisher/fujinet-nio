@@ -8,8 +8,7 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "fujinet/io/protocol/fuji_command_ids.h"
-#include "fujinet/io/protocol/fuji_device_ids.h"
+#include "fujinet/io/protocol/wire_device_ids.h"
 
 namespace fujinet::io::protocol {
     enum class SlipByte : std::uint8_t {
@@ -54,8 +53,8 @@ namespace fujinet::io::protocol {
     class FujiBusPacket
     {
     private:
-        FujiDeviceId _device{};
-        FujiCommandId _command{};
+        WireDeviceId _device{};
+        std::uint8_t _command{};
         std::vector<PacketParam> _params;
         std::optional<ByteBuffer> _data;   // raw payload bytes
     
@@ -84,7 +83,7 @@ namespace fujinet::io::protocol {
         FujiBusPacket() = default;
     
         template<typename... Args>
-        FujiBusPacket(FujiDeviceId dev, FujiCommandId cmd, Args&&... args)
+        FujiBusPacket(WireDeviceId dev, std::uint8_t cmd, Args&&... args)
             : _device(dev)
             , _command(cmd)
         {
@@ -97,8 +96,8 @@ namespace fujinet::io::protocol {
         ByteBuffer serialize() const;
     
         // Accessors
-        FujiDeviceId device() const { return _device; }
-        FujiCommandId command() const { return _command; }
+        WireDeviceId device() const { return _device; }
+        std::uint8_t command() const { return _command; }
     
         std::uint32_t param(unsigned int index) const {
             return _params[index].value;

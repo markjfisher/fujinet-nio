@@ -1,6 +1,7 @@
 #include "fujinet/io/transport/fujibus_transport.h"
 
 #include "fujinet/io/protocol/fuji_bus_packet.h"
+#include "fujinet/io/protocol/wire_device_ids.h"
 
 #include <iostream>   // temporary for debug
 #include <algorithm>  // for std::find
@@ -8,10 +9,9 @@
 namespace fujinet::io {
 
 using fujinet::io::protocol::FujiBusPacket;
-using fujinet::io::protocol::FujiDeviceId;
-using fujinet::io::protocol::FujiCommandId;
 using fujinet::io::protocol::ByteBuffer;
 using fujinet::io::protocol::SlipByte;
+using fujinet::io::protocol::WireDeviceId;
 
 void FujiBusTransport::poll()
 {
@@ -137,8 +137,8 @@ void FujiBusTransport::send(const IOResponse& resp)
     ByteBuffer data;
     data.insert(data.end(), resp.payload.begin(), resp.payload.end());
 
-    FujiDeviceId  dev = static_cast<FujiDeviceId>(resp.deviceId);
-    FujiCommandId cmd = static_cast<FujiCommandId>(resp.command & 0xFF);
+    WireDeviceId  dev = static_cast<WireDeviceId>(resp.deviceId);
+    std::uint8_t cmd = static_cast<std::uint8_t>(resp.command & 0xFF);
 
     // status as first param, plus payload as raw data.
     FujiBusPacket packet(

@@ -6,10 +6,8 @@
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/core/io_message.h"
-#include "fujinet/io/protocol/fuji_command_ids.h"
-#include "fujinet/io/protocol/fuji_device_ids.h"
-
 #include "fujinet/config/fuji_config.h"
+
 
 namespace fujinet::io {
 
