@@ -111,6 +111,7 @@ DeviceBusy
 NotReady
 IOError
 Timeout
+InternalError
 Unsupported
 }
 class "io::IOResponse" as C_0002942984525013396621
@@ -186,9 +187,28 @@ __
 -_deviceManager : IODeviceManager &
 -_overrideHandler : IRequestHandler *
 }
+abstract "io::Channel" as C_0008542343802949846318
+abstract C_0008542343802949846318 {
++~Channel() constexpr = default : void
+..
+{abstract} +available() = 0 : bool
+{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
+{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
+__
+}
+class "io::FileDevice" as C_0018348317585229177251
+class C_0018348317585229177251 {
++FileDevice(fs::StorageManager & storage) : void
+..
++handle(const IORequest & request) : IOResponse
+-handle_list_directory(const IORequest & request) : IOResponse
++poll() : void
+__
+-_storage : fs::StorageManager &
+}
 class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
-+FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore) : void
++FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
 ..
 +handle(const IORequest & request) : IOResponse
 -handle_reset(const IORequest & request) : IOResponse
@@ -201,15 +221,7 @@ __
 -_config : config::FujiConfig
 -_configStore : std::unique_ptr<config::FujiConfigStore>
 -_resetHandler : ResetHandler
-}
-abstract "io::Channel" as C_0008542343802949846318
-abstract C_0008542343802949846318 {
-+~Channel() constexpr = default : void
-..
-{abstract} +available() = 0 : bool
-{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
-{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
-__
+-_storage : fs::StorageManager &
 }
 class "io::FujiBusTransport" as C_0003433839086217597071
 class C_0003433839086217597071 {
@@ -244,6 +256,54 @@ __
 -_routing : io::RoutingManager
 -_storageManager : fs::StorageManager
 -_tickCount : std::uint64_t
+}
+class "config::GeneralConfig" as C_0016837659718836839167
+class C_0016837659718836839167 {
+__
++altConfigFile : std::string
++bootMode : BootMode
++deviceName : std::string
+}
+class "config::WifiConfig" as C_0016905784937528219397
+class C_0016905784937528219397 {
+__
++enabled : bool
++passphrase : std::string
++ssid : std::string
+}
+class "config::HostConfig" as C_0006762991430694965068
+class C_0006762991430694965068 {
+__
++address : std::string
++enabled : bool
++id : int
++name : std::string
++type : HostType
+}
+class "config::MountConfig" as C_0013943630642961179492
+class C_0013943630642961179492 {
+__
++hostId : int
++id : int
++mode : std::string
++path : std::string
+}
+class "config::ModemConfig" as C_0005975997772767504221
+class C_0005975997772767504221 {
+__
++enabled : bool
++snifferEnabled : bool
+}
+class "config::CpmConfig" as C_0006472023737076814481
+class C_0006472023737076814481 {
+__
++ccpImage : std::string
++enabled : bool
+}
+class "config::PrinterConfig" as C_0011654528465957303447
+class C_0011654528465957303447 {
+__
++enabled : bool
 }
 class "config::FujiConfig" as C_0013064010099190715901
 class C_0013064010099190715901 {
@@ -304,11 +364,16 @@ C_0005273847708888915350 ..> C_0002942984525013396621
 C_0005273847708888915350 --> C_0010794218937492142358 : -_deviceManager
 C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
 C_0007350464861923755413 <|-- C_0005273847708888915350
+C_0018348317585229177251 ..> C_0002386736627821114488
+C_0018348317585229177251 ..> C_0002942984525013396621
+C_0018348317585229177251 --> C_0001279065520068563954 : -_storage
+C_0010069830097413987109 <|-- C_0018348317585229177251
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
 C_0016024516082849980408 ..> C_0012496700434923238249
 C_0016024516082849980408 o-- C_0010708806357379257038 : -_configStore
 C_0016024516082849980408 o-- C_0013064010099190715901 : -_config
+C_0016024516082849980408 --> C_0001279065520068563954 : -_storage
 C_0010069830097413987109 <|-- C_0016024516082849980408
 C_0003433839086217597071 ..> C_0002386736627821114488
 C_0003433839086217597071 ..> C_0002942984525013396621
@@ -319,6 +384,13 @@ C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
 C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
 C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
 C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
+C_0013064010099190715901 o-- C_0016837659718836839167 : +general
+C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
+C_0013064010099190715901 o-- C_0006762991430694965068 : +hosts
+C_0013064010099190715901 o-- C_0013943630642961179492 : +mounts
+C_0013064010099190715901 o-- C_0005975997772767504221 : +modem
+C_0013064010099190715901 o-- C_0006472023737076814481 : +cpm
+C_0013064010099190715901 o-- C_0011654528465957303447 : +printer
 C_0010708806357379257038 ..> C_0013064010099190715901
 C_0004992050062997423308 ..> C_0013064010099190715901
 C_0004992050062997423308 --> C_0012397556205933868732 : -_primary

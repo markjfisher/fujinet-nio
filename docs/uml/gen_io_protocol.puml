@@ -1,13 +1,7 @@
 @startuml
 title IO Protocols (auto-gen from clang-uml)
-enum "io::protocol::FujiCommandId" as C_0003386160999608540497
-enum C_0003386160999608540497 {
-Reset
-SpecialQuery
-GetSsid
-}
-enum "io::protocol::FujiDeviceId" as C_0000782810335588983435
-enum C_0000782810335588983435 {
+enum "io::protocol::WireDeviceId" as C_0015225225004340369839
+enum C_0015225225004340369839 {
 FujiNet
 DiskFirst
 DiskLast
@@ -19,6 +13,7 @@ NetworkFirst
 NetworkLast
 Midi
 Dbc
+FileService
 }
 enum "io::protocol::SlipByte" as C_0010627602090167488081
 enum C_0010627602090167488081 {
@@ -38,14 +33,14 @@ __
 class "io::protocol::FujiBusPacket" as C_0017232777488057089840
 class C_0017232777488057089840 {
 +FujiBusPacket() = default : void
-+FujiBusPacket<Args...>(FujiDeviceId dev, FujiCommandId cmd, Args &&... args) : void
++FujiBusPacket<Args...>(WireDeviceId dev, std::uint8_t cmd, Args &&... args) : void
 ..
 -calcChecksum(const ByteBuffer & buf) const : std::uint8_t
-+command() const : FujiCommandId
++command() const : std::uint8_t
 +data() const : const std::optional<ByteBuffer> &
 +dataAsString() const : std::optional<std::string>
 -decodeSLIP(const ByteBuffer & input) const : ByteBuffer
-+device() const : FujiDeviceId
++device() const : WireDeviceId
 -encodeSLIP(const ByteBuffer & input) const : ByteBuffer
 {static} +fromSerialized(const ByteBuffer & input) : std::unique_ptr<FujiBusPacket>
 +param(unsigned int index) const : std::uint32_t
@@ -59,9 +54,9 @@ class C_0017232777488057089840 {
 -processArg(std::uint8_t v) : void
 +serialize() const : ByteBuffer
 __
--_command : FujiCommandId
+-_command : std::uint8_t
 -_data : std::optional<ByteBuffer>
--_device : FujiDeviceId
+-_device : WireDeviceId
 -_params : std::vector<PacketParam>
 }
 class "io::protocol::FujiBusHeader" as C_0009954510640382192371
@@ -73,8 +68,12 @@ __
 +device : std::uint8_t
 +length : std::uint16_t
 }
-C_0017232777488057089840 o-- C_0000782810335588983435 : -_device
-C_0017232777488057089840 o-- C_0003386160999608540497 : -_command
+enum "io::protocol::FujiCommand" as C_0004628219160953719395
+enum C_0004628219160953719395 {
+Reset
+GetSsid
+}
+C_0017232777488057089840 o-- C_0015225225004340369839 : -_device
 C_0017232777488057089840 o-- C_0003277087640557799971 : -_params
 
 'Generated with clang-uml, version 0.6.2
