@@ -56,6 +56,44 @@ __
 +payload : std::vector<std::uint8_t>
 +status : StatusCode
 }
+abstract "io::VirtualDevice" as C_0010069830097413987109
+abstract C_0010069830097413987109 {
++~VirtualDevice() constexpr = default : void
+..
+{abstract} +handle(const IORequest & request) = 0 : IOResponse
++poll() : void
+__
+}
+class "io::ClockDevice" as C_0006193474076654383504
+class C_0006193474076654383504 {
++handle(const IORequest & request) : IOResponse
++poll() : void
+__
+}
+class "io::fileproto::Reader" as C_0015932373852588118997
+class C_0015932373852588118997 {
++Reader(const std::uint8_t * data, std::size_t size) : void
+..
++ok() const : bool
++pos() const : std::size_t
++read_bytes(const std::uint8_t *& ptr, std::size_t n) : bool
++read_sv(std::string_view & out, std::size_t n) : bool
++read_u16le(std::uint16_t & out) : bool
++read_u32le(std::uint32_t & out) : bool
++read_u64le(std::uint64_t & out) : bool
++read_u8(std::uint8_t & out) : bool
++remaining() const : std::size_t
++skip(std::size_t n) : bool
+__
+-_begin : const std::uint8_t *
+-_end : const std::uint8_t *
+-_p : const std::uint8_t *
+}
+enum "io::ClockCommand" as C_0006646916694369797139
+enum C_0006646916694369797139 {
+GetTime
+SetTime
+}
 abstract "io::IRequestHandler" as C_0007350464861923755413
 abstract C_0007350464861923755413 {
 +~IRequestHandler() constexpr = default : void
@@ -81,14 +119,6 @@ class C_0007645722238685656096 {
 __
 -_handler : IRequestHandler &
 -_transports : std::vector<ITransport *>
-}
-abstract "io::VirtualDevice" as C_0010069830097413987109
-abstract C_0010069830097413987109 {
-+~VirtualDevice() constexpr = default : void
-..
-{abstract} +handle(const IORequest & request) = 0 : IOResponse
-+poll() : void
-__
 }
 class "io::IODeviceManager" as C_0010794218937492142358
 class C_0010794218937492142358 {
@@ -142,25 +172,6 @@ class C_0018348317585229177251 {
 __
 -_storage : fs::StorageManager &
 }
-class "io::fileproto::Reader" as C_0015932373852588118997
-class C_0015932373852588118997 {
-+Reader(const std::uint8_t * data, std::size_t size) : void
-..
-+ok() const : bool
-+pos() const : std::size_t
-+read_bytes(const std::uint8_t *& ptr, std::size_t n) : bool
-+read_sv(std::string_view & out, std::size_t n) : bool
-+read_u16le(std::uint16_t & out) : bool
-+read_u32le(std::uint32_t & out) : bool
-+read_u64le(std::uint64_t & out) : bool
-+read_u8(std::uint8_t & out) : bool
-+remaining() const : std::size_t
-+skip(std::size_t n) : bool
-__
--_begin : const std::uint8_t *
--_end : const std::uint8_t *
--_p : const std::uint8_t *
-}
 class "io::CommonPrefix" as C_0010415374062290681357
 class C_0010415374062290681357 {
 __
@@ -175,7 +186,6 @@ class C_0016024516082849980408 {
 -handle_reset(const IORequest & request) : IOResponse
 -handle_unknown(const IORequest & request) : IOResponse
 -load_config() : void
--make_base_response(const IORequest & request, StatusCode status = StatusCode::Ok) const : IOResponse
 +poll() : void
 -save_config() : void
 __
@@ -221,14 +231,17 @@ __
 }
 C_0002386736627821114488 o-- C_0015173710654558847960 : +type
 C_0002942984525013396621 o-- C_0012496700434923238249 : +status
+C_0010069830097413987109 ..> C_0002386736627821114488
+C_0010069830097413987109 ..> C_0002942984525013396621
+C_0006193474076654383504 ..> C_0002386736627821114488
+C_0006193474076654383504 ..> C_0002942984525013396621
+C_0010069830097413987109 <|-- C_0006193474076654383504
 C_0007350464861923755413 ..> C_0002386736627821114488
 C_0007350464861923755413 ..> C_0002942984525013396621
 C_0015529497257294770104 ..> C_0002386736627821114488
 C_0015529497257294770104 ..> C_0002942984525013396621
 C_0007645722238685656096 ..> C_0015529497257294770104
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
-C_0010069830097413987109 ..> C_0002386736627821114488
-C_0010069830097413987109 ..> C_0002942984525013396621
 C_0010794218937492142358 ..> C_0010069830097413987109
 C_0010794218937492142358 ..> C_0002386736627821114488
 C_0010794218937492142358 ..> C_0002942984525013396621
@@ -244,7 +257,6 @@ C_0018348317585229177251 --> C_0001279065520068563954 : -_storage
 C_0010069830097413987109 <|-- C_0018348317585229177251
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
-C_0016024516082849980408 ..> C_0012496700434923238249
 C_0016024516082849980408 --> C_0001279065520068563954 : -_storage
 C_0010069830097413987109 <|-- C_0016024516082849980408
 C_0003433839086217597071 ..> C_0002386736627821114488
