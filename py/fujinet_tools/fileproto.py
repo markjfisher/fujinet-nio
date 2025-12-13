@@ -1,214 +1,232 @@
-#!/usr/bin/env python3
+# py/fujinet_tools/fileproto.py
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
-import struct
+import datetime
+
 
 FILEPROTO_VERSION = 1
 
-# Common prefix:
-# u8  version
-# u8  fsNameLen
-# u8[] fsName
-# u16 pathLen (LE)
-# u8[] path
-def build_common(fs: str, path: str) -> bytes:
-    if not fs:
-        raise ValueError("fs must not be empty")
-    if not path:
-        raise ValueError("path must not be empty")
+# Wire device id for FileDevice
+FILE_DEVICE_ID = 0xFE
 
+# FileCommand (matches C++)
+CMD_STAT = 0x01
+CMD_LIST = 0x02
+CMD_READ = 0x03
+CMD_WRITE = 0x04
+
+
+def u16le(x: int) -> bytes:
+    return bytes((x & 0xFF, (x >> 8) & 0xFF))
+
+
+def u32le(x: int) -> bytes:
+    return bytes((
+        x & 0xFF,
+        (x >> 8) & 0xFF,
+        (x >> 16) & 0xFF,
+        (x >> 24) & 0xFF,
+    ))
+
+
+def u64le(x: int) -> bytes:
+    return bytes((x >> (8 * i)) & 0xFF for i in range(8))
+
+
+def read_u8(b: bytes, off: int) -> Tuple[int, int]:
+    if off + 1 > len(b):
+        raise ValueError("read_u8 out of bounds")
+    return b[off], off + 1
+
+
+def read_u16le(b: bytes, off: int) -> Tuple[int, int]:
+    if off + 2 > len(b):
+        raise ValueError("read_u16le out of bounds")
+    return b[off] | (b[off + 1] << 8), off + 2
+
+
+def read_u32le(b: bytes, off: int) -> Tuple[int, int]:
+    if off + 4 > len(b):
+        raise ValueError("read_u32le out of bounds")
+    return (
+        b[off]
+        | (b[off + 1] << 8)
+        | (b[off + 2] << 16)
+        | (b[off + 3] << 24)
+    ), off + 4
+
+
+def read_u64le(b: bytes, off: int) -> Tuple[int, int]:
+    if off + 8 > len(b):
+        raise ValueError("read_u64le out of bounds")
+    v = 0
+    for i in range(8):
+        v |= b[off + i] << (8 * i)
+    return v, off + 8
+
+
+def build_common_prefix(fs: str, path: str) -> bytes:
     fs_b = fs.encode("utf-8")
     path_b = path.encode("utf-8")
 
-    if len(fs_b) > 255:
-        raise ValueError("fs name too long (>255)")
-    if len(path_b) > 65535:
-        raise ValueError("path too long (>65535)")
+    if not (1 <= len(fs_b) <= 255):
+        raise ValueError("fs name must be 1..255 bytes")
+    if not (1 <= len(path_b) <= 65535):
+        raise ValueError("path must be 1..65535 bytes")
 
-    return struct.pack("<BB", FILEPROTO_VERSION, len(fs_b)) + fs_b + struct.pack("<H", len(path_b)) + path_b
+    return bytes([FILEPROTO_VERSION, len(fs_b)]) + fs_b + u16le(len(path_b)) + path_b
 
 
-# --------------------
-# Stat (0x01)
-# --------------------
+# -------- Requests --------
+
+def build_stat_req(fs: str, path: str) -> bytes:
+    return build_common_prefix(fs, path)
+
+
+def build_list_req(fs: str, path: str, start: int, max_entries: int) -> bytes:
+    if not (0 <= start <= 0xFFFF):
+        raise ValueError("start must fit u16")
+    if not (1 <= max_entries <= 0xFFFF):
+        raise ValueError("max_entries must fit u16 and be >0")
+    return build_common_prefix(fs, path) + u16le(start) + u16le(max_entries)
+
+
+def build_read_req(fs: str, path: str, offset: int, max_bytes: int) -> bytes:
+    if not (0 <= offset <= 0xFFFFFFFF):
+        raise ValueError("offset must fit u32")
+    if not (1 <= max_bytes <= 0xFFFF):
+        raise ValueError("max_bytes must fit u16 and be >0")
+    return build_common_prefix(fs, path) + u32le(offset) + u16le(max_bytes)
+
+
+def build_write_req(fs: str, path: str, offset: int, data: bytes) -> bytes:
+    if not (0 <= offset <= 0xFFFFFFFF):
+        raise ValueError("offset must fit u32")
+    if len(data) > 0xFFFF:
+        raise ValueError("data chunk too large for u16 length; split it")
+    return build_common_prefix(fs, path) + u32le(offset) + u16le(len(data)) + data
+
+
+# -------- Responses --------
+
 @dataclass
-class StatResult:
+class StatResp:
     exists: bool
     is_dir: bool
     size_bytes: int
     mtime_unix: int
 
-def build_stat(fs: str, path: str) -> bytes:
-    return build_common(fs, path)
 
-def parse_stat(payload: bytes) -> StatResult:
-    # u8 version
-    # u8 flags (bit0=isDir, bit1=exists)
-    # u16 reserved
-    # u64 sizeBytes
-    # u64 modifiedUnixTime
-    if len(payload) < 1 + 1 + 2 + 8 + 8:
-        raise ValueError("stat response too short")
-
-    ver, flags, _reserved = struct.unpack_from("<BBH", payload, 0)
-    if ver != FILEPROTO_VERSION:
-        raise ValueError(f"bad version {ver}")
-
-    size, mtime = struct.unpack_from("<QQ", payload, 4)
-    return StatResult(
-        exists=bool(flags & 0x02),
-        is_dir=bool(flags & 0x01),
-        size_bytes=size,
-        mtime_unix=mtime,
-    )
-
-
-# --------------------
-# ListDirectory (0x02)
-# --------------------
 @dataclass
-class DirEntry:
-    name: str
+class ListEntry:
     is_dir: bool
+    name: str
     size_bytes: int
     mtime_unix: int
 
+
 @dataclass
-class ListDirResult:
+class ListResp:
     more: bool
-    entries: List[DirEntry]
-
-def build_listdir(fs: str, path: str, start_index: int = 0, max_entries: int = 64) -> bytes:
-    if not (0 <= start_index <= 65535):
-        raise ValueError("start_index out of range")
-    if not (1 <= max_entries <= 65535):
-        raise ValueError("max_entries out of range")
-    return build_common(fs, path) + struct.pack("<HH", start_index, max_entries)
-
-def parse_listdir(payload: bytes) -> ListDirResult:
-    # u8 version
-    # u8 flags (bit0=more)
-    # u16 reserved
-    # u16 returnedCount
-    # repeated entries:
-    #   u8 eflags (bit0=isDir)
-    #   u8 nameLen
-    #   u8[] name
-    #   u64 sizeBytes
-    #   u64 modifiedUnixTime
-    if len(payload) < 1 + 1 + 2 + 2:
-        raise ValueError("listdir response too short")
-
-    ver, flags, _res, count = struct.unpack_from("<BBHH", payload, 0)
-    if ver != FILEPROTO_VERSION:
-        raise ValueError(f"bad version {ver}")
-
-    more = bool(flags & 0x01)
-    off = 6
-    entries: List[DirEntry] = []
-
-    for _ in range(count):
-        if off + 2 > len(payload):
-            raise ValueError("truncated entry header")
-        eflags = payload[off]
-        name_len = payload[off + 1]
-        off += 2
-
-        if off + name_len + 8 + 8 > len(payload):
-            raise ValueError("truncated entry body")
-
-        name_b = payload[off:off + name_len]
-        off += name_len
-
-        size, mtime = struct.unpack_from("<QQ", payload, off)
-        off += 16
-
-        entries.append(
-            DirEntry(
-                name=name_b.decode("utf-8", errors="replace"),
-                is_dir=bool(eflags & 0x01),
-                size_bytes=size,
-                mtime_unix=mtime,
-            )
-        )
-
-    return ListDirResult(more=more, entries=entries)
+    entries: List[ListEntry]
 
 
-# --------------------
-# ReadFile (0x03)
-# --------------------
 @dataclass
-class ReadResult:
-    offset: int
+class ReadResp:
     eof: bool
     truncated: bool
+    offset: int
     data: bytes
 
-def build_read(fs: str, path: str, offset: int = 0, max_bytes: int = 1024) -> bytes:
-    if not (0 <= offset <= 0xFFFFFFFF):
-        raise ValueError("offset out of range")
-    if not (1 <= max_bytes <= 65535):
-        raise ValueError("max_bytes out of range")
-    return build_common(fs, path) + struct.pack("<IH", offset, max_bytes)
 
-def parse_read(payload: bytes) -> ReadResult:
-    # u8 version
-    # u8 flags bit0=eof bit1=truncated
-    # u16 reserved
-    # u32 offset (echo)
-    # u16 dataLen
-    # u8[] data
-    if len(payload) < 1 + 1 + 2 + 4 + 2:
-        raise ValueError("read response too short")
-
-    ver, flags, _res = struct.unpack_from("<BBH", payload, 0)
-    if ver != FILEPROTO_VERSION:
-        raise ValueError(f"bad version {ver}")
-
-    offset = struct.unpack_from("<I", payload, 4)[0]
-    data_len = struct.unpack_from("<H", payload, 8)[0]
-    data = payload[10:10 + data_len]
-    if len(data) != data_len:
-        raise ValueError("truncated read data")
-
-    return ReadResult(
-        offset=offset,
-        eof=bool(flags & 0x01),
-        truncated=bool(flags & 0x02),
-        data=data,
-    )
-
-
-# --------------------
-# WriteFile (0x04)
-# --------------------
 @dataclass
-class WriteResult:
+class WriteResp:
     offset: int
-    written_len: int
+    written: int
 
-def build_write(fs: str, path: str, offset: int, data: bytes) -> bytes:
-    if not (0 <= offset <= 0xFFFFFFFF):
-        raise ValueError("offset out of range")
-    if len(data) > 65535:
-        raise ValueError("data too large for one packet (>65535)")
-    return build_common(fs, path) + struct.pack("<IH", offset, len(data)) + data
 
-def parse_write(payload: bytes) -> WriteResult:
-    # u8 version
-    # u8 flags
-    # u16 reserved
-    # u32 offset
-    # u16 writtenLen
-    if len(payload) < 1 + 1 + 2 + 4 + 2:
-        raise ValueError("write response too short")
-
-    ver = payload[0]
+def _check_version(b: bytes, off: int) -> int:
+    ver, off = read_u8(b, off)
     if ver != FILEPROTO_VERSION:
-        raise ValueError(f"bad version {ver}")
+        raise ValueError(f"bad version {ver}, expected {FILEPROTO_VERSION}")
+    return off
 
-    offset = struct.unpack_from("<I", payload, 4)[0]
-    written = struct.unpack_from("<H", payload, 8)[0]
-    return WriteResult(offset=offset, written_len=written)
+
+def parse_stat_resp(payload: bytes) -> StatResp:
+    off = 0
+    off = _check_version(payload, off)
+    flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    size, off = read_u64le(payload, off)
+    mtime, off = read_u64le(payload, off)
+
+    is_dir = bool(flags & 0x01)
+    exists = bool(flags & 0x02)
+    return StatResp(exists=exists, is_dir=is_dir, size_bytes=size, mtime_unix=mtime)
+
+
+def parse_list_resp(payload: bytes) -> ListResp:
+    off = 0
+    off = _check_version(payload, off)
+    flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    count, off = read_u16le(payload, off)
+
+    more = bool(flags & 0x01)
+    entries: List[ListEntry] = []
+
+    for _ in range(count):
+        eflags, off = read_u8(payload, off)
+        name_len, off = read_u8(payload, off)
+        if off + name_len > len(payload):
+            raise ValueError("name out of bounds")
+        name = payload[off:off + name_len].decode("utf-8", errors="replace")
+        off += name_len
+
+        size, off = read_u64le(payload, off)
+        mtime, off = read_u64le(payload, off)
+
+        entries.append(ListEntry(
+            is_dir=bool(eflags & 0x01),
+            name=name,
+            size_bytes=size,
+            mtime_unix=mtime,
+        ))
+
+    return ListResp(more=more, entries=entries)
+
+
+def parse_read_resp(payload: bytes) -> ReadResp:
+    off = 0
+    off = _check_version(payload, off)
+    flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    offset, off = read_u32le(payload, off)
+    data_len, off = read_u16le(payload, off)
+
+    if off + data_len > len(payload):
+        raise ValueError("read data out of bounds")
+    data = payload[off:off + data_len]
+
+    eof = bool(flags & 0x01)
+    truncated = bool(flags & 0x02)
+    return ReadResp(eof=eof, truncated=truncated, offset=offset, data=data)
+
+
+def parse_write_resp(payload: bytes) -> WriteResp:
+    off = 0
+    off = _check_version(payload, off)
+    _flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    offset, off = read_u32le(payload, off)
+    written, off = read_u16le(payload, off)
+    return WriteResp(offset=offset, written=written)
+
+
+def fmt_utc(ts: int) -> str:
+    if ts == 0:
+        return "-"
+    # Fix the deprecation you hit: use timezone-aware objects
+    return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat().replace("+00:00", "Z")

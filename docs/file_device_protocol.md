@@ -13,22 +13,6 @@ This protocol sits **above** the filesystem abstraction (`IFileSystem`/`IFile`) 
 
 ---
 
-## Where this spec lives
-
-This protocol is **device semantics**, not filesystem architecture. It should live in a new document:
-
-- `docs/file_device_protocol.md`
-
-Rationale:
-- `docs/filesystem.md` describes the **filesystem abstraction layer** (interfaces and mounting) used by many systems.
-- This document describes the **wire-visible command protocol** for a specific **VirtualDevice** (FileDevice).
-
-Keeping them separate prevents conflating:
-- *how we store/read bytes* (filesystem layer)
-- *how the host asks the device to do so* (device protocol)
-
----
-
 ## Terminology
 
 - **Host**: the remote client sending requests (modern Python tooling, emulator, or 8-bit machine).
@@ -49,7 +33,10 @@ All multi-byte numeric values are **little-endian**.
 Strings are **length-prefixed** and contain raw bytes (typically ASCII/UTF-8). They are **not null-terminated**.
 
 - `u8 len` + `len bytes` for short strings (FS name)
-- `u16 len` + `len bytes` for paths and filenames
+- `u16 len` + `len bytes` for paths
+
+**Note:** v1 uses `u8 nameLen` for directory entry names in `ListDirectory` to keep entries compact.
+If an entry name exceeds 255 bytes, it is truncated to 255 bytes in v1.
 
 ### Versioning
 Every request payload begins with:
@@ -80,6 +67,26 @@ Command IDs (initial set):
 
 ---
 
+## Transport Wrapping (Important)
+
+This spec defines **only** the FileDevice **payload** format.
+
+When carried over FujiBus/FEP-004 today:
+
+- `IOResponse.status` is encoded by the transport as the **first FujiBus parameter** (`params[0]`), width `u8`.
+- The FileDevice **response bytes defined below** are carried entirely in the FujiBus **data payload**.
+
+So the host must check *two layers*:
+
+1. **Transport status**: `params[0]` (maps to `StatusCode`)
+2. **FileDevice payload**: begins with `version` and command-specific fields
+
+If transport status is not `Ok`, the FileDevice payload may be empty or undefined.
+
+(Other transports may carry status differently; the FileDevice payload remains unchanged.)
+
+---
+
 ## Common Request Prefix
 
 Most commands require selecting a filesystem and a path.
@@ -94,9 +101,12 @@ u16  pathLen            // LE
 u8[] path               // length pathLen
 ```
 
-If `fsNameLen` or `pathLen` exceeds remaining payload size, respond `InvalidRequest`.
+Validation:
+- If `fsNameLen` or `pathLen` exceeds remaining payload size → `InvalidRequest`
+- `fsNameLen==0` → `InvalidRequest`
+- `pathLen==0`   → `InvalidRequest`
 
-If the filesystem name does not exist in `StorageManager`, respond `DeviceNotFound` (future: `FsNotFound`).
+If the filesystem name does not exist in `StorageManager`, respond `DeviceNotFound`.
 
 ---
 
@@ -132,7 +142,7 @@ Returns metadata for a file or directory.
 u8   version            // = 1
 u8   flags              // bit0=isDir, bit1=exists
 u16  reserved           // = 0
-u64  sizeBytes          // LE, 0 for directories or unknown
+u64  sizeBytes          // LE, 0 for directories
 u64  modifiedUnixTime   // LE seconds since epoch; 0 if unavailable
 ```
 
@@ -144,8 +154,8 @@ u64  modifiedUnixTime   // LE seconds since epoch; 0 if unavailable
 - `IOError`: stat failed unexpectedly
 
 Notes:
-- Returning `exists=false` under `Ok` is allowed (lets host avoid separate Exists command).
-- If path does not exist, respond `Ok` with `exists=false` (preferred), or `IOError` if backend cannot distinguish.
+- **Normative:** If the path does not exist, respond `Ok` with `exists=false` (preferred).
+- `sizeBytes` is only meaningful for regular files in v1.
 
 ---
 
@@ -180,14 +190,14 @@ repeat returnedCount times:
 ### Status codes
 
 - `Ok`: listing chunk returned (possibly `returnedCount=0`)
-- `InvalidRequest`: malformed payload, `maxEntries=0`, or pathLen invalid
+- `InvalidRequest`: malformed payload, `maxEntries=0`
 - `DeviceNotFound`: filesystem name not found
 - `IOError`: listDirectory failed (nonexistent directory, permission, etc.)
 
 Notes:
 - Basename-only avoids repeating the directory path per entry.
-- `startIndex`/`maxEntries` make this stateless for the device.
-- If a backend cannot provide stable ordering, the results may vary between calls; this is acceptable for v1, but can be improved later with cookies/handles.
+- `startIndex`/`maxEntries` make this **stateless** for the device.
+- Ordering is filesystem-defined; v1 does not guarantee stable ordering across calls.
 
 ---
 
@@ -207,7 +217,7 @@ u16  maxBytes           // LE; requested bytes to read
 
 ```
 u8   version            // = 1
-u8   flags              // bit0=eof (reached end of file), bit1=truncated (read < maxBytes)
+u8   flags              // bit0=eof, bit1=truncated (read < maxBytes)
 u16  reserved           // = 0
 u32  offset             // LE; echoed from request
 u16  dataLen            // LE; actual bytes returned
@@ -222,7 +232,8 @@ u8[] data               // length dataLen
 - `IOError`: open/read/seek failed
 
 Notes:
-- Host continues reading by setting `offset += dataLen` until `eof=1` or `dataLen=0`.
+- Host continues reading by setting `offset += dataLen` until `eof=1`.
+- **Normative (v1):** If `offset` is at/after EOF, respond `Ok` with `dataLen=0` and `eof=1`.
 - Device should not allocate more than needed; ideally read directly into the response payload buffer.
 
 ---
@@ -258,9 +269,9 @@ u16  writtenLen         // LE; actual bytes written
 - `IOError`: open/write/seek failed
 
 Notes:
-- File open mode rules (v1 recommendation):
+- v1 open mode convention:
   - If `offset==0`, open with truncate/create semantics.
-  - If `offset>0`, open existing with read/write semantics and seek.
+  - If `offset>0`, open existing with read/write semantics and seek (best effort).
 - Future `flags` can add explicit mode control: create, append, truncate, etc.
 
 ---
@@ -309,3 +320,4 @@ Reserved fields (`flags`, `reserved`) and versioning allow future expansion:
 - richer metadata (attributes, permissions, long filenames)
 - filesystem mount discovery / list filesystems
 - negotiated maximum payload sizes per transport
+- write flush / fsync semantics
