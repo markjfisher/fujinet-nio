@@ -30,6 +30,7 @@ enum class WireDeviceId : std::uint8_t {
     Dbc          = 0xFF,
 
     // New NIO devices
+    NetworkService = 0xFD,
     FileService  = 0xFE,
 #endif
 };

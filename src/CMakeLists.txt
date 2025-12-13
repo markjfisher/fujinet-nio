@@ -12,6 +12,8 @@ idf_component_register(
         lib/clock_device_init.cpp
         lib/file_device.cpp
         lib/file_device_init.cpp
+        lib/network_device.cpp
+        lib/network_device_init.cpp
         lib/fs_stdio.cpp
         lib/fuji_bus_packet.cpp
         lib/fuji_config_yaml_store.cpp

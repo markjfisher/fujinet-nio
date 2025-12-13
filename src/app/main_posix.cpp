@@ -82,6 +82,7 @@ int main()
     // TODO: use config to decide if we want to start these or not
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
+    fujinet::core::register_network_device(core);
 
     // Create a Channel appropriate for this profile (PTY, RS232, etc.).
     auto channel = platform::create_channel_for_profile(profile);

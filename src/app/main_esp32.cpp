@@ -65,6 +65,7 @@ extern "C" void fujinet_core_task(void* arg)
     // TODO: use config to decide if we want to start these or not
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
+    fujinet::core::register_network_device(core);
 
     // 3. Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
     auto channel = platform::create_channel_for_profile(profile);
