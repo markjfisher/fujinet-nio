@@ -38,17 +38,151 @@ Host Machine (Atari/C64/etc.)
 
 # 2. Repository Structure
 
+This can be generated as follows:
+
 ```
-/docs                → Architecture, onboarding, diagrams
-/include/fujinet     → Public headers
-/src/app             → POSIX + ESP32 entry points
-/src/lib             → Core engine, IO service, transports, routing
-/src/platform        → Channel factories + platform-specific channels
-/tests               → Unit tests (POSIX)
-/tools               → Python scripts (e.g., fuji_send.py)
-platformio.ini       → ESP32 build config
-CMakeLists.txt       → POSIX build config
+❯ tree -a -I '.pio|build|.git|managed_components|docs|third_party|.git*|*.lock|.vscode|sdkconfig.*'
+.
+├── boards
+│   └── esp32-s3-wroom-1-n16r8.json
+├── build.sh
+├── clang-uml.yml
+├── CMakeLists.txt
+├── CMakePresets.json
+├── fujinet_posix.cmake
+├── include
+│   └── fujinet
+│       ├── config
+│       │   ├── fuji_config.h
+│       │   └── fuji_config_yaml_store_fs.h
+│       ├── core
+│       │   ├── bootstrap.h
+│       │   ├── core.h
+│       │   ├── file_device_init.h
+│       │   └── logging.h
+│       ├── fs
+│       │   ├── filesystem.h
+│       │   ├── fs_stdio.h
+│       │   └── storage_manager.h
+│       ├── io
+│       │   ├── core
+│       │   │   ├── channel.h
+│       │   │   ├── io_device_manager.h
+│       │   │   ├── io_message.h
+│       │   │   ├── request_handler.h
+│       │   │   └── routing_manager.h
+│       │   ├── devices
+│       │   │   ├── file_codec.h
+│       │   │   ├── file_commands.h
+│       │   │   ├── file_device.h
+│       │   │   ├── fuji_commands.h
+│       │   │   ├── fuji_device.h
+│       │   │   └── virtual_device.h
+│       │   ├── protocol
+│       │   │   ├── fuji_bus_packet.h
+│       │   │   └── wire_device_ids.h
+│       │   └── transport
+│       │       ├── fujibus_transport.h
+│       │       ├── io_service.h
+│       │       └── transport.h
+│       └── platform
+│           ├── channel_factory.h
+│           ├── esp32
+│           │   ├── fs_factory.h
+│           │   ├── fs_init.h
+│           │   ├── pinmap.h
+│           │   └── usb_cdc_channel.h
+│           ├── fuji_config_store_factory.h
+│           ├── fuji_device_factory.h
+│           └── posix
+│               └── fs_factory.h
+├── LICENSE
+├── pio-build
+│   ├── ini
+│   │   ├── platformio.common.ini
+│   │   ├── platformio.zip-options.ini
+│   │   └── platforms
+│   │       ├── platformio-cdc-fujibus-s3-wroom-1-n16r8.ini
+│   │       ├── platformio-sio-legacy-s3-wroom-1-n16r8.ini
+│   │       └── README.md
+│   ├── partitions
+│   │   └── partitions_16MB.csv
+│   ├── scripts
+│   │   ├── create-platformio-ini.py
+│   │   └── create-sdkconfig.py
+│   └── sdkconfig
+│       ├── platform_sdkconfig_map.txt
+│       ├── sdkconfig-common.defaults
+│       ├── sdkconfig-fs-littlefs.defaults
+│       ├── sdkconfig-optimizations-to-review.defaults
+│       ├── sdkconfig-spiram-oct80.defaults
+│       └── sdkconfig-tinyusb.defaults
+├── platformio.ini
+├── platformio.local.ini
+├── py
+│   └── fujinet_tools
+│       ├── cli.py
+│       ├── fileproto.py
+│       ├── fujibus.py
+│       └── __init__.py
+├── pyproject.toml
+├── README.md
+├── scripts
+│   ├── build_pio.sh
+│   ├── build_posix.sh
+│   ├── fujinet
+│   ├── gen_uml.sh
+│   └── update_cmake_sources.py
+├── src
+│   ├── app
+│   │   ├── main_esp32.cpp
+│   │   └── main_posix.cpp
+│   ├── CMakeLists.txt
+│   ├── idf_component.yml
+│   ├── lib
+│   │   ├── bootstrap.cpp
+│   │   ├── build_profile.cpp
+│   │   ├── file_device.cpp
+│   │   ├── file_device_init.cpp
+│   │   ├── fs_stdio.cpp
+│   │   ├── fuji_bus_packet.cpp
+│   │   ├── fujibus_transport.cpp
+│   │   ├── fuji_config_yaml_store.cpp
+│   │   ├── fuji_device.cpp
+│   │   ├── fujinet_core.cpp
+│   │   ├── fujinet_init.cpp
+│   │   ├── io_device_manager.cpp
+│   │   ├── io_service.cpp
+│   │   ├── routing_manager.cpp
+│   │   └── storage_manager.cpp
+│   └── platform
+│       ├── esp32
+│       │   ├── channel_factory.cpp
+│       │   ├── fs_factory.cpp
+│       │   ├── fs_init.cpp
+│       │   ├── fuji_config_store_factory.cpp
+│       │   ├── fuji_device_factory.cpp
+│       │   ├── hardware_caps.cpp
+│       │   ├── logging.cpp
+│       │   ├── pinmap.cpp
+│       │   └── usb_cdc_channel.cpp
+│       └── posix
+│           ├── channel_factory.cpp
+│           ├── fs_factory.cpp
+│           ├── fuji_config_store_factory.cpp
+│           ├── fuji_device_factory.cpp
+│           ├── hardware_caps.cpp
+│           └── logging.cpp
+└── tests
+    ├── CMakeLists.txt
+    ├── doctest.h
+    ├── run_main.cpp
+    ├── test_embed_core.cpp
+    ├── test_fujipacket.cpp
+    └── test_smoke.cpp
 ```
+
+
 
 ---
 
@@ -178,7 +312,7 @@ The POSIX app uses a **PTY channel**, so you will see:
 
 You can send FujiBus packets with:
 ```
-python tools/fuji_send.py --port /dev/pts/7 ...
+scripts/fujinet TODO PARAMS
 ```
 
 ---
@@ -215,7 +349,7 @@ On ESP32-S3, communication is handled through **TinyUSB CDC-ACM**:
 Use the provided Python script:
 
 ```
-python tools/fuji_send.py \
+scripts/fujinet TODO \
     --port /dev/ttyACM1 \
     --device 1 \
     --command 1 \

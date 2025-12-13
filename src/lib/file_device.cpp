@@ -25,7 +25,8 @@ using fujinet::fs::IFileSystem;
 using fujinet::fs::StorageManager;
 using fujinet::io::fileproto::Reader;
 
-static const char* TAG = "file_device";
+// Uncomment if we do any logging in here
+// static const char* TAG = "io";
 
 static constexpr std::uint8_t FILEPROTO_VERSION = 1;
 
@@ -145,8 +146,8 @@ IOResponse FileDevice::handle_stat(const IORequest& request)
     std::string out;
     out.reserve(1 + 1 + 2 + 8 + 8);
 
-    out.push_back(static_cast<char>(FILEPROTO_VERSION));
-    out.push_back(static_cast<char>(flags));
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, flags);
     fileproto::write_u16le(out, 0);
     fileproto::write_u64le(out, size);
     fileproto::write_u64le(out, mtime);
@@ -211,8 +212,8 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     std::string out;
     out.reserve(64 + returned * 32);
 
-    out.push_back(static_cast<char>(FILEPROTO_VERSION));
-    out.push_back(static_cast<char>(more ? 0x01 : 0x00));
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, more ? 0x01 : 0x00);
     fileproto::write_u16le(out, 0);
     fileproto::write_u16le(out, returned);
 
@@ -221,12 +222,13 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         const auto name = basename(e.path);
 
         std::uint8_t eflags = e.isDirectory ? 0x01 : 0x00;
-        out.push_back(static_cast<char>(eflags));
+        // ... if there are more flags, then they can grow here
+        fileproto::write_u8(out, eflags);
 
         const std::uint8_t nameLen =
             static_cast<std::uint8_t>(std::min<std::size_t>(name.size(), 255));
-        out.push_back(static_cast<char>(nameLen));
-        out.append(name.data(), nameLen);
+        fileproto::write_u8(out, nameLen);
+        fileproto::write_bytes(out, name.data(), nameLen);
 
         fileproto::write_u64le(out, e.sizeBytes);
         fileproto::write_u64le(out, to_unix_seconds(e.modifiedTime));
@@ -284,8 +286,8 @@ IOResponse FileDevice::handle_read_file(const IORequest& request)
     std::string out;
     out.reserve(1 + 1 + 2 + 4 + 2 + maxBytes);
 
-    out.push_back(static_cast<char>(FILEPROTO_VERSION));
-    out.push_back(static_cast<char>(0)); // flags placeholder
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, 0); // flags placeholder
     fileproto::write_u16le(out, 0);
     fileproto::write_u32le(out, offset);
 
@@ -379,8 +381,8 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
     std::string out;
     out.reserve(1 + 1 + 2 + 4 + 2);
 
-    out.push_back(static_cast<char>(FILEPROTO_VERSION));
-    out.push_back(static_cast<char>(0));
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, 0); // flags
     fileproto::write_u16le(out, 0);
     fileproto::write_u32le(out, offset);
     fileproto::write_u16le(out, static_cast<std::uint16_t>(written));

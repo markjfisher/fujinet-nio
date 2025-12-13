@@ -52,7 +52,7 @@ The posix build is done with cmake, and presets.
 You can view the posix presets with
 
 ```bash
-$ ./tools/build_posix.sh -S
+$ ./scripts/build_posix.sh -S
 Available profiles:
 fujibus-pty-debug   - FujiBus over PTY (Debug)
 fujibus-pty-release - FujiBus over PTY (Release)

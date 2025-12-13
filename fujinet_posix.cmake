@@ -43,7 +43,7 @@ target_compile_definitions(fujinet-nio
         # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
 )
 
-# Use script tools/update_cmake_sources.py to amend the src list:
+# Use script scripts/update_cmake_sources.py to amend the src list:
 # __TARGET_SOURCES_START__
 target_sources(fujinet-nio
     PRIVATE

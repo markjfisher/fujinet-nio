@@ -81,7 +81,15 @@ namespace fujinet::io::protocol {
     
     public:
         FujiBusPacket() = default;
-    
+
+        // Builder helpers (explicit, readable at call sites)
+        FujiBusPacket& addParamU8(std::uint8_t v)   { _params.emplace_back(v); return *this; }
+        FujiBusPacket& addParamU16(std::uint16_t v) { _params.emplace_back(v); return *this; }
+        FujiBusPacket& addParamU32(std::uint32_t v) { _params.emplace_back(v); return *this; }
+
+        FujiBusPacket& setData(ByteBuffer data) { _data = std::move(data); return *this; }
+        FujiBusPacket& clearData()              { _data.reset(); return *this; }
+
         template<typename... Args>
         FujiBusPacket(WireDeviceId dev, std::uint8_t cmd, Args&&... args)
             : _device(dev)
@@ -116,5 +124,15 @@ namespace fujinet::io::protocol {
             if (!_data) return std::nullopt;
             return std::string(_data->begin(), _data->end());
         }
+
+        bool tryParamU8(unsigned int index, std::uint8_t& out) const
+        {
+            if (index >= _params.size()) return false;
+            const auto& p = _params[index];
+            if (p.size != 1) return false;
+            out = static_cast<std::uint8_t>(p.value & 0xFF);
+            return true;
+        }
+
     };
 } // namespace fujinet::io::protocol

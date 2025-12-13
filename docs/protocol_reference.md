@@ -420,7 +420,7 @@ src/lib/fuji_bus_packet.cpp
 
 ### Python (testing)
 ```
-tools/fuji_send.py
+scripts/fujinet help
 ```
 
 Supports:

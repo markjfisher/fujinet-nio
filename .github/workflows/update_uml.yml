@@ -6,7 +6,7 @@ on:
       - 'src/**'
       - 'include/**'
       - 'clang-uml.yml'
-      - 'tools/gen_uml.sh'
+      - 'scripts/gen_uml.sh'
   workflow_dispatch: {}
 
 permissions:
@@ -39,8 +39,8 @@ jobs:
 
       - name: Generate UML diagrams
         run: |
-          chmod +x tools/gen_uml.sh
-          ./tools/gen_uml.sh
+          chmod +x scripts/gen_uml.sh
+          ./scripts/gen_uml.sh
 
       - name: Upload UML artifacts
         uses: actions/upload-artifact@v4

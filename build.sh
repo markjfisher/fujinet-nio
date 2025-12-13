@@ -5,7 +5,7 @@
 # otherwise call build_pio.sh
 
 if [[ "$*" == *"-p"* ]]; then
-    ./tools/build_posix.sh "$@"
+    ./scripts/build_posix.sh "$@"
 else
-    ./tools/build_pio.sh "$@"
+    ./scripts/build_pio.sh "$@"
 fi

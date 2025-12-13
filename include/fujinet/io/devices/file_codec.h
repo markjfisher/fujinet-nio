@@ -1,16 +1,21 @@
 #pragma once
+
 #include <cstdint>
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <vector>
+#include <type_traits>
 
 namespace fujinet::io::fileproto {
 
-// Simple bounds-checked reader over a byte span.
+// -----------------------------
+// Reader (bounds-checked)
+// -----------------------------
 class Reader {
 public:
     Reader(const std::uint8_t* data, std::size_t size)
-        : _p(data), _end(data + size) {}
+        : _begin(data), _p(data), _end(data + size) {}
 
     bool read_u8(std::uint8_t& out) {
         if (_p + 1 > _end) return false;
@@ -50,25 +55,81 @@ public:
         return true;
     }
 
+    // Convenience: read into string_view (non-owning view into payload)
+    bool read_sv(std::string_view& out, std::size_t n) {
+        const std::uint8_t* ptr = nullptr;
+        if (!read_bytes(ptr, n)) return false;
+        out = std::string_view(reinterpret_cast<const char*>(ptr), n);
+        return true;
+    }
+
+    bool skip(std::size_t n) {
+        if (_p + n > _end) return false;
+        _p += n;
+        return true;
+    }
+
     std::size_t remaining() const { return (std::size_t)(_end - _p); }
+    std::size_t pos() const { return (std::size_t)(_p - _begin); }
+    bool ok() const { return _p <= _end; }
 
 private:
+    const std::uint8_t* _begin{};
     const std::uint8_t* _p{};
     const std::uint8_t* _end{};
 };
 
-inline void write_u16le(std::string& out, std::uint16_t v) {
-    out.push_back(char(v & 0xFF));
-    out.push_back(char((v >> 8) & 0xFF));
+// -----------------------------
+// Writer helpers
+// (works with std::string and std::vector<uint8_t>)
+// -----------------------------
+namespace detail {
+inline void push_byte(std::string& out, std::uint8_t b) {
+    out.push_back(static_cast<char>(b));
 }
-inline void write_u32le(std::string& out, std::uint32_t v) {
-    out.push_back(char(v & 0xFF));
-    out.push_back(char((v >> 8) & 0xFF));
-    out.push_back(char((v >> 16) & 0xFF));
-    out.push_back(char((v >> 24) & 0xFF));
+inline void push_byte(std::vector<std::uint8_t>& out, std::uint8_t b) {
+    out.push_back(b);
 }
-inline void write_u64le(std::string& out, std::uint64_t v) {
-    for (int i = 0; i < 8; ++i) out.push_back(char((v >> (8 * i)) & 0xFF));
+template <typename Buf>
+inline void push_bytes(Buf& out, const void* data, std::size_t n) {
+    const auto* p = static_cast<const std::uint8_t*>(data);
+    for (std::size_t i = 0; i < n; ++i) push_byte(out, p[i]);
+}
+} // namespace detail
+
+template <typename Buf>
+inline void write_u8(Buf& out, std::uint8_t v) {
+    detail::push_byte(out, v);
+}
+
+template <typename Buf>
+inline void write_u16le(Buf& out, std::uint16_t v) {
+    detail::push_byte(out, (std::uint8_t)(v & 0xFF));
+    detail::push_byte(out, (std::uint8_t)((v >> 8) & 0xFF));
+}
+
+template <typename Buf>
+inline void write_u32le(Buf& out, std::uint32_t v) {
+    detail::push_byte(out, (std::uint8_t)(v & 0xFF));
+    detail::push_byte(out, (std::uint8_t)((v >> 8) & 0xFF));
+    detail::push_byte(out, (std::uint8_t)((v >> 16) & 0xFF));
+    detail::push_byte(out, (std::uint8_t)((v >> 24) & 0xFF));
+}
+
+template <typename Buf>
+inline void write_u64le(Buf& out, std::uint64_t v) {
+    for (int i = 0; i < 8; ++i)
+        detail::push_byte(out, (std::uint8_t)((v >> (8 * i)) & 0xFF));
+}
+
+template <typename Buf>
+inline void write_bytes(Buf& out, const void* data, std::size_t n) {
+    detail::push_bytes(out, data, n);
+}
+
+template <typename Buf>
+inline void write_sv(Buf& out, std::string_view s) {
+    write_bytes(out, s.data(), s.size());
 }
 
 } // namespace fujinet::io::fileproto

@@ -80,7 +80,7 @@ FujiBus header is 6 bytes:
 - checksum
 - descriptor
 
-Python script (`tools/fuji_send.py`) can:
+Python script (via `scripts/fujinet`) can:
 - Build SLIP+FujiBus packet
 - Send it
 - Read response

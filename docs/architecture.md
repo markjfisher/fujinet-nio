@@ -900,7 +900,7 @@ Transport → IORequest → RoutingManager → IODeviceManager → VirtualDevice
 
 ## Integration Tests (POSIX)
 
-- PTY-based tests using Python scripts (`tools/fuji_send.py`)
+- PTY-based tests using Python scripts (invoke via `scripts/fujinet`)
 - End-to-end FujiBus → IORequest → VirtualDevice → IOResponse → bytes
 
 ## ESP32 Hardware Tests

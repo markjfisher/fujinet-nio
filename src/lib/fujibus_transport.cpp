@@ -1,12 +1,14 @@
 #include "fujinet/io/transport/fujibus_transport.h"
-
 #include "fujinet/io/protocol/fuji_bus_packet.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 
-#include <iostream>   // temporary for debug
+#include "fujinet/core/logging.h"
+
 #include <algorithm>  // for std::find
 
 namespace fujinet::io {
+
+static constexpr const char* TAG = "fujibus";
 
 using fujinet::io::protocol::FujiBusPacket;
 using fujinet::io::protocol::ByteBuffer;
@@ -83,7 +85,7 @@ bool FujiBusTransport::receive(IORequest& outReq)
 
     auto packetPtr = FujiBusPacket::fromSerialized(frame);
     if (!packetPtr) {
-        std::cout << "[FujiBusTransport] invalid FujiBus frame, dropped\n";
+        FN_LOGW(TAG, "invalid FujiBus frame (response), dropped");
         return false;
     }
 
@@ -106,52 +108,90 @@ bool FujiBusTransport::receive(IORequest& outReq)
         outReq.payload.insert(outReq.payload.end(), dataOpt->begin(), dataOpt->end());
     }
 
-    std::cout << "[FujiBusTransport] receive: id=" << outReq.id
-              << " deviceId=0x" << std::hex << static_cast<int>(outReq.deviceId) << std::dec
-              << " command=0x" << std::hex << outReq.command << std::dec
-              << " params=" << outReq.params.size()
-              << " payloadSize=" << outReq.payload.size()
-              << std::endl;
+    // TODO: change to LOGD to reduce noise after initial debugging
+    FN_LOGI(TAG,
+        "receive: id=%u dev=0x%02X cmd=0x%02X params=%u payload=%u",
+        (unsigned)outReq.id,
+        (unsigned)outReq.deviceId,
+        (unsigned)(outReq.command & 0xFF),
+        (unsigned)outReq.params.size(),
+        (unsigned)outReq.payload.size());
 
     return true;
 }
 
 void FujiBusTransport::send(const IOResponse& resp)
 {
-    std::cout << "[FujiBusTransport] send: deviceId=0x"
-              << std::hex << static_cast<int>(resp.deviceId) << std::dec
-              << " status=" << static_cast<int>(resp.status)
-              << " command=0x" << std::hex << resp.command << std::dec
-              << " payloadSize=" << resp.payload.size()
-              << std::endl;
+    FN_LOGI(TAG,
+        "send: dev=0x%02X status=%u cmd=0x%02X payload=%u",
+        (unsigned)resp.deviceId,
+        (unsigned)resp.status,
+        (unsigned)(resp.command & 0xFF),
+        (unsigned)resp.payload.size());
 
-    // Map IOResponse → FujiBusPacket.
-    //
-    // For now we:
-    //   - use the same deviceId and command as the request/response pair
-    //   - encode status as a 1-byte parameter (first param)
-    //   - use IOResponse::payload as the FujiBus "data" block
-    //
-    // This is easy to evolve later as we tighten to FEP-004 specifics.
+    // Payload is the device-specific protocol blob.
+    ByteBuffer data(resp.payload.begin(), resp.payload.end());
 
-    ByteBuffer data;
-    data.insert(data.end(), resp.payload.begin(), resp.payload.end());
+    // FujiBus uses an 8-bit command on-wire.
+    const auto dev = static_cast<WireDeviceId>(resp.deviceId);
+    const auto cmd = static_cast<std::uint8_t>(resp.command & 0xFF);
 
-    WireDeviceId  dev = static_cast<WireDeviceId>(resp.deviceId);
-    std::uint8_t cmd = static_cast<std::uint8_t>(resp.command & 0xFF);
-
-    // status as first param, plus payload as raw data.
-    FujiBusPacket packet(
-        dev,
-        cmd,
-        static_cast<std::uint8_t>(resp.status), // status param
-        std::move(data)
-    );
+    // Convention (transport-local):
+    //  - param[0] = status (u8)
+    //  - data     = device payload (opaque to transport)
+    FujiBusPacket packet(dev, cmd);
+    packet.addParamU8(static_cast<std::uint8_t>(resp.status))
+          .setData(std::move(data));
 
     ByteBuffer serialized = packet.serialize();
     if (!serialized.empty()) {
         _channel.write(serialized.data(), serialized.size());
     }
 }
+
+bool FujiBusTransport::receiveResponse(IOResponse& outResp)
+{
+    ByteBuffer frame;
+    if (!extractSlipFrame(_rxBuffer, frame)) {
+        return false;
+    }
+
+    auto packetPtr = FujiBusPacket::fromSerialized(frame);
+    if (!packetPtr) {
+        FN_LOGW(TAG, "invalid FujiBus frame (response), dropped");
+        return false;
+    }
+
+    const FujiBusPacket& packet = *packetPtr;
+
+    outResp.id       = _nextRequestId++; // still synthetic (no on-wire correlation yet)
+    outResp.deviceId = static_cast<DeviceID>(packet.device());
+    outResp.command  = static_cast<std::uint16_t>(packet.command());
+
+    // Convention: param[0] is status (u8)
+    std::uint8_t st = static_cast<std::uint8_t>(StatusCode::InternalError);
+    if (!packet.tryParamU8(0, st)) {
+        FN_LOGW(TAG, "response missing status param[0] u8; defaulting InternalError");
+        outResp.status = StatusCode::InternalError;
+    } else {
+        outResp.status = static_cast<StatusCode>(st);
+    }
+
+    outResp.payload.clear();
+    if (const auto& dataOpt = packet.data()) {
+        outResp.payload.insert(outResp.payload.end(), dataOpt->begin(), dataOpt->end());
+    }
+
+    FN_LOGI(TAG,
+        "receiveResponse: id=%u dev=0x%02X cmd=0x%02X status=%u payload=%u",
+        (unsigned)outResp.id,
+        (unsigned)outResp.deviceId,
+        (unsigned)(outResp.command & 0xFF),
+        (unsigned)outResp.status,
+        (unsigned)outResp.payload.size());
+
+    return true;
+}
+
 
 } // namespace fujinet::io
