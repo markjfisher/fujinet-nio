@@ -35,7 +35,11 @@ class C_0017232777488057089840 {
 +FujiBusPacket() = default : void
 +FujiBusPacket<Args...>(WireDeviceId dev, std::uint8_t cmd, Args &&... args) : void
 ..
++addParamU16(std::uint16_t v) : FujiBusPacket &
++addParamU32(std::uint32_t v) : FujiBusPacket &
++addParamU8(std::uint8_t v) : FujiBusPacket &
 -calcChecksum(const ByteBuffer & buf) const : std::uint8_t
++clearData() : FujiBusPacket &
 +command() const : std::uint8_t
 +data() const : const std::optional<ByteBuffer> &
 +dataAsString() const : std::optional<std::string>
@@ -46,13 +50,15 @@ class C_0017232777488057089840 {
 +param(unsigned int index) const : std::uint32_t
 +paramCount() const : unsigned int
 -parse(const ByteBuffer & input) : bool
--processArg(const ByteBuffer & buf) : void
--processArg(ByteBuffer && buf) : void
 -processArg(const std::string & s) : void
+-processArg(ByteBuffer && buf) : void
+-processArg(const ByteBuffer & buf) : void
 -processArg(std::uint32_t v) : void
 -processArg(std::uint16_t v) : void
 -processArg(std::uint8_t v) : void
 +serialize() const : ByteBuffer
++setData(ByteBuffer data) : FujiBusPacket &
++tryParamU8(unsigned int index, std::uint8_t & out) const : bool
 __
 -_command : std::uint8_t
 -_data : std::optional<ByteBuffer>
@@ -67,6 +73,13 @@ __
 +descr : std::uint8_t
 +device : std::uint8_t
 +length : std::uint16_t
+}
+enum "io::protocol::FileCommand" as C_0003895064208135060769
+enum C_0003895064208135060769 {
+Stat
+ListDirectory
+ReadFile
+WriteFile
 }
 enum "io::protocol::FujiCommand" as C_0004628219160953719395
 enum C_0004628219160953719395 {

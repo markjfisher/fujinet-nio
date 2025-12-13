@@ -135,13 +135,37 @@ class C_0018348317585229177251 {
 ..
 +handle(const IORequest & request) : IOResponse
 -handle_list_directory(const IORequest & request) : IOResponse
+-handle_read_file(const IORequest & request) : IOResponse
+-handle_stat(const IORequest & request) : IOResponse
+-handle_write_file(const IORequest & request) : IOResponse
 +poll() : void
 __
 -_storage : fs::StorageManager &
 }
-enum "io::FileCommand" as C_0018116508942845171561
-enum C_0018116508942845171561 {
-ListDirectory
+class "io::fileproto::Reader" as C_0015932373852588118997
+class C_0015932373852588118997 {
++Reader(const std::uint8_t * data, std::size_t size) : void
+..
++ok() const : bool
++pos() const : std::size_t
++read_bytes(const std::uint8_t *& ptr, std::size_t n) : bool
++read_sv(std::string_view & out, std::size_t n) : bool
++read_u16le(std::uint16_t & out) : bool
++read_u32le(std::uint32_t & out) : bool
++read_u64le(std::uint64_t & out) : bool
++read_u8(std::uint8_t & out) : bool
++remaining() const : std::size_t
++skip(std::size_t n) : bool
+__
+-_begin : const std::uint8_t *
+-_end : const std::uint8_t *
+-_p : const std::uint8_t *
+}
+class "io::CommonPrefix" as C_0010415374062290681357
+class C_0010415374062290681357 {
+__
++fs : std::string
++path : std::string
 }
 class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
@@ -166,6 +190,7 @@ class C_0003433839086217597071 {
 ..
 +poll() : void
 +receive(IORequest & outReq) : bool
++receiveResponse(IOResponse & outResp) : bool
 +send(const IOResponse & resp) : void
 __
 -_channel : Channel &

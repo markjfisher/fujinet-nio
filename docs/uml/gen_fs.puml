@@ -44,6 +44,7 @@ abstract C_0012397556205933868732 {
 {abstract} +removeDirectory(const std::string & path) = 0 : bool
 {abstract} +removeFile(const std::string & path) = 0 : bool
 {abstract} +rename(const std::string & from, const std::string & to) = 0 : bool
+{abstract} +stat(const std::string & path, FileInfo & outInfo) = 0 : bool
 __
 }
 class "fs::StorageManager" as C_0001279065520068563954
@@ -91,6 +92,7 @@ class C_0001007711765235056436 {
 +removeDirectory(const std::string & path) : bool
 +removeFile(const std::string & path) : bool
 +rename(const std::string & from, const std::string & to) : bool
++stat(const std::string & path, FileInfo & out) : bool
 __
 -_kind : FileSystemKind
 -_name : std::string
