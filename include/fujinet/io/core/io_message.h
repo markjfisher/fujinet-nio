@@ -106,4 +106,26 @@ struct IOResponse
     std::vector<std::uint8_t> payload;
 };
 
+// ---- Convenience helpers ----
+//
+// These are protocol-agnostic helpers for building responses.
+// They keep VirtualDevices small and consistent.
+//
+// Note: payload is intentionally left empty by default; callers fill it.
+
+inline IOResponse make_base_response(const IORequest& req, StatusCode status) noexcept
+{
+    IOResponse resp;
+    resp.id       = req.id;
+    resp.deviceId = req.deviceId;
+    resp.command  = req.command;
+    resp.status   = status;
+    return resp;
+}
+
+inline IOResponse make_success_response(const IORequest& req) noexcept
+{
+    return make_base_response(req, StatusCode::Ok);
+}
+
 } // namespace fujinet::io

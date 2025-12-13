@@ -5,7 +5,7 @@
 #include "fujinet/build/profile.h"
 #include "fujinet/core/core.h"
 #include "fujinet/core/bootstrap.h"
-#include "fujinet/core/file_device_init.h"
+#include "fujinet/core/device_init.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
@@ -61,8 +61,10 @@ extern "C" void fujinet_core_task(void* arg)
         }
     }
 
-    // 2b. Register FileDevice
+    // 2b. Register Core Devices
+    // TODO: use config to decide if we want to start these or not
     fujinet::core::register_file_device(core);
+    fujinet::core::register_clock_device(core);
 
     // 3. Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
     auto channel = platform::create_channel_for_profile(profile);

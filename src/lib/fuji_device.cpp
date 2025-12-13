@@ -22,17 +22,6 @@ FujiDevice::FujiDevice(ResetHandler resetHandler,
     load_config();
 }
 
-IOResponse FujiDevice::make_base_response(const IORequest& request,
-                                          StatusCode status) const
-{
-    IOResponse resp;
-    resp.id       = request.id;
-    resp.deviceId = request.deviceId;
-    resp.command  = request.command;
-    resp.status   = status;
-    return resp;
-}
-
 IOResponse FujiDevice::handle(const IORequest& request)
 {
     auto cmd = to_fuji_command(request.command);
@@ -58,7 +47,7 @@ void FujiDevice::poll()
 IOResponse FujiDevice::handle_reset(const IORequest& request)
 {
     // We *could* respond first, then reset.
-    auto resp = make_base_response(request, StatusCode::Ok);
+    auto resp = make_success_response(request);
 
     if (_resetHandler) {
         _resetHandler();

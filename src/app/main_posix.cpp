@@ -8,7 +8,7 @@
 #include "fujinet/build/profile.h"
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/core/core.h"
-#include "fujinet/core/file_device_init.h"
+#include "fujinet/core/device_init.h"
 #include "fujinet/core/logging.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
@@ -77,9 +77,13 @@ int main()
             return 1;
         }
     }
-    fujinet::core::register_file_device(core);
 
-    // 3. Create a Channel appropriate for this profile (PTY, RS232, etc.).
+    // Register Core Devices
+    // TODO: use config to decide if we want to start these or not
+    fujinet::core::register_file_device(core);
+    fujinet::core::register_clock_device(core);
+
+    // Create a Channel appropriate for this profile (PTY, RS232, etc.).
     auto channel = platform::create_channel_for_profile(profile);
     if (!channel) {
         FN_LOGE(TAG, "Failed to create Channel for profile");

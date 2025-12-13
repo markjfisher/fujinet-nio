@@ -30,16 +30,6 @@ using fujinet::io::fileproto::Reader;
 
 static constexpr std::uint8_t FILEPROTO_VERSION = 1;
 
-static IOResponse make_base_response(const IORequest& req, StatusCode status)
-{
-    IOResponse resp;
-    resp.id       = req.id;
-    resp.deviceId = req.deviceId;
-    resp.command  = req.command;
-    resp.status   = status;
-    return resp;
-}
-
 // Common request prefix:
 // u8 version
 // u8 fsNameLen
@@ -110,7 +100,7 @@ IOResponse FileDevice::handle(const IORequest& request)
 // --------------------
 IOResponse FileDevice::handle_stat(const IORequest& request)
 {
-    auto resp = make_base_response(request, StatusCode::Ok);
+    auto resp = make_success_response(request);
 
     Reader r(request.payload.data(), request.payload.size());
     CommonPrefix p{};
@@ -161,7 +151,7 @@ IOResponse FileDevice::handle_stat(const IORequest& request)
 // --------------------
 IOResponse FileDevice::handle_list_directory(const IORequest& request)
 {
-    auto resp = make_base_response(request, StatusCode::Ok);
+    auto resp = make_success_response(request);
 
     Reader r(request.payload.data(), request.payload.size());
     CommonPrefix p{};
@@ -243,7 +233,7 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
 // --------------------
 IOResponse FileDevice::handle_read_file(const IORequest& request)
 {
-    auto resp = make_base_response(request, StatusCode::Ok);
+    auto resp = make_success_response(request);
 
     Reader r(request.payload.data(), request.payload.size());
     CommonPrefix p{};
@@ -322,7 +312,7 @@ IOResponse FileDevice::handle_read_file(const IORequest& request)
 // --------------------
 IOResponse FileDevice::handle_write_file(const IORequest& request)
 {
-    auto resp = make_base_response(request, StatusCode::Ok);
+    auto resp = make_success_response(request);
 
     Reader r(request.payload.data(), request.payload.size());
     CommonPrefix p{};

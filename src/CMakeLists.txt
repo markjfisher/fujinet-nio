@@ -8,6 +8,8 @@ idf_component_register(
         app/main_esp32.cpp
         lib/bootstrap.cpp
         lib/build_profile.cpp
+        lib/clock_device.cpp
+        lib/clock_device_init.cpp
         lib/file_device.cpp
         lib/file_device_init.cpp
         lib/fs_stdio.cpp
@@ -29,6 +31,7 @@ idf_component_register(
         platform/esp32/hardware_caps.cpp
         platform/esp32/logging.cpp
         platform/esp32/pinmap.cpp
+        platform/esp32/time.cpp
         platform/esp32/usb_cdc_channel.cpp
 # __TARGET_SOURCES_END__
         ../third_party/cjson/cJSON.c
