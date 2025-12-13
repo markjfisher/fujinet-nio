@@ -6,8 +6,8 @@ import fuji_send
 
 def list_dir(port: str, fs_name: str, path: str):
     # Temporary example: device 0x70, command 0xF0
-    device = 0x70
-    command = 0xF0
+    device = 0xFE
+    command = 0x01
 
     payload_obj = {"fs": fs_name, "path": path}
     payload = json.dumps(payload_obj).encode("utf-8")

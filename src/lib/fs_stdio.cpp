@@ -1,6 +1,7 @@
 #include "fujinet/fs/fs_stdio.h"
 #include "fujinet/core/logging.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -97,15 +98,14 @@ public:
 
     bool exists(const std::string& path) override
     {
-        struct stat st{};
-        return ::stat(fullPath(path).c_str(), &st) == 0;
+        FileInfo info{};
+        return stat(path, info);
     }
 
     bool isDirectory(const std::string& path) override
     {
-        struct stat st{};
-        if (::stat(fullPath(path).c_str(), &st) != 0) return false;
-        return S_ISDIR(st.st_mode);
+        FileInfo info{};
+        return stat(path, info) && info.isDirectory;
     }
 
     bool createDirectory(const std::string& path) override
@@ -141,40 +141,63 @@ public:
         return std::make_unique<StdioFile>(fp);
     }
 
-    bool listDirectory(const std::string& path,
-                       std::vector<FileInfo>& outEntries) override
+    bool stat(const std::string& path, FileInfo& out) override
     {
-        const std::string dirPath = fullPath(path);
-        DIR* dir = ::opendir(dirPath.c_str());
-        if (!dir) {
+        struct stat st{};
+        if (::stat(fullPath(path).c_str(), &st) != 0) {
             return false;
         }
 
-        // Ensure '.' and '..' always have valid-looking paths
+        out.path = path;
+        out.isDirectory = S_ISDIR(st.st_mode);
+        out.sizeBytes   = S_ISREG(st.st_mode)
+                            ? static_cast<std::uint64_t>(st.st_size)
+                            : 0;
+
+        if (st.st_mtime != 0) {
+            out.modifiedTime =
+                std::chrono::system_clock::from_time_t(st.st_mtime);
+        } else {
+            out.modifiedTime = {};
+        }
+
+        return true;
+    }
+
+    bool listDirectory(const std::string &path,
+                       std::vector<FileInfo> &outEntries) override
+    {
+        const std::string dirPath = fullPath(path);
+        DIR *dir = ::opendir(dirPath.c_str());
+        if (!dir)
+        {
+            return false;
+        }
+
         outEntries.clear();
 
-        struct dirent* de;
-        while ((de = ::readdir(dir)) != nullptr) {
-            const char* name = de->d_name;
-            if (!name) continue;
+        struct dirent *de;
+        while ((de = ::readdir(dir)) != nullptr)
+        {
+            const char *name = de->d_name;
+            if (!name)
+                continue;
 
-            // Skip '.' and '..' (we'll add them manually)
-            if (std::strcmp(name, ".") == 0 || std::strcmp(name, "..") == 0) {
+            // Skip '.' and '..'
+            if (std::strcmp(name, ".") == 0 || std::strcmp(name, "..") == 0)
+            {
                 continue;
             }
 
-            FileInfo info{};
-            info.path = join(path, name);
+            const std::string childPath = join(path, name);
 
-            struct stat st{};
-            if (::stat(fullPath(info.path).c_str(), &st) == 0) {
-                info.isDirectory = S_ISDIR(st.st_mode);
-                if (S_ISREG(st.st_mode)) {
-                    info.sizeBytes = static_cast<std::uint64_t>(st.st_size);
-                }
-                if (st.st_mtime != 0) {
-                    info.modifiedTime = std::chrono::system_clock::from_time_t(st.st_mtime);
-                }
+            FileInfo info{};
+            // stat() is now the authoritative metadata fill.
+            // If stat fails (race / broken entry), we still include the path
+            // but leave metadata at defaults.
+            if (!stat(childPath, info))
+            {
+                info.path = childPath;
             }
 
             outEntries.push_back(std::move(info));

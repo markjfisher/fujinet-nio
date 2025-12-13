@@ -5,10 +5,6 @@
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/core/logging.h"
 
-extern "C" {
-#include "cJSON.h"
-}
-
 namespace fujinet::io {
 
 using fujinet::config::FujiConfigStore;

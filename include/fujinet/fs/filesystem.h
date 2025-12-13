@@ -78,6 +78,13 @@ public:
         const char* mode
     ) = 0;
 
+    // Query metadata for a single path.
+    // Returns false if path does not exist or on error.
+    virtual bool stat(
+        const std::string& path,
+        FileInfo& outInfo
+    ) = 0;
+
     // List entries in a directory. `path` is relative to this FS root.
     // Returns false on error.
     virtual bool listDirectory(

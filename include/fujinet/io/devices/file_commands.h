@@ -4,8 +4,10 @@
 namespace fujinet::io::protocol {
 
 enum class FileCommand : std::uint8_t {
-    ListDirectory = 0x01,
-    // future: Open, Read, Write, Remove, etc.
+    Stat          = 0x01,
+    ListDirectory = 0x02,
+    ReadFile      = 0x03,
+    WriteFile     = 0x04,
 };
 
 inline FileCommand to_file_command(std::uint16_t raw)

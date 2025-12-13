@@ -712,6 +712,183 @@ Example:
 
 ---
 
+## Wire IDs vs Internal Device & Command IDs
+
+FujiNet-NIO makes a **strict distinction** between *wire-level identifiers* used by transports and *device-level command semantics* used by virtual devices.
+
+This separation is intentional and foundational to supporting multiple transports (FujiBus, legacy FujiNet wire protocol, future transports) without coupling protocol details to device logic.
+
+---
+
+### 1. Wire Device IDs
+
+**Wire device IDs** are the numeric identifiers that appear on the wire in a transport protocol.
+
+Examples:
+- FujiBus device byte
+- Legacy FujiNet frame device byte
+- Future protocol device selectors
+
+These identifiers are **transport concepts**, not virtual device concepts.
+
+They are defined centrally in:
+
+```
+include/fujinet/io/protocol/wire_device_ids.h
+```
+
+Example:
+
+```
+enum class WireDeviceId : std::uint8_t {
+    FujiNet     = 0x70,
+    DiskFirst   = 0x31,
+    DiskLast    = 0x3F,
+    NetworkFirst= 0x71,
+    NetworkLast = 0x78,
+
+    // FujiNet-NIO extensions
+    FileService = 0xFE,
+};
+```
+
+Key properties:
+
+- Wire device IDs are **stable and protocol-visible**
+- They are **shared across all transports**
+- They do **not imply ownership** by any particular `VirtualDevice` class
+- They are mapped directly into `IORequest.deviceId`
+
+> The previous name `FujiDeviceId` was retired because it incorrectly implied ownership by the `FujiDevice` virtual device. These IDs belong to the *wire protocol*, not the device implementation.
+
+---
+
+### 2. FujiBusPacket: Wire-Level Only
+
+`FujiBusPacket` represents the **raw FEP-004 protocol frame**, not a semantic command.
+
+As such, it contains only **wire-level fields**:
+
+```
+class FujiBusPacket {
+private:
+    WireDeviceId   _device;    // 1-byte wire device id
+    std::uint8_t   _command;   // 1-byte wire command
+    std::vector<PacketParam> _params;
+    std::optional<ByteBuffer> _data;
+};
+```
+
+Important constraints:
+
+- `FujiBusPacket` does **not** know about virtual devices
+- It does **not** contain device-specific command enums
+- It only models what is physically present on the wire
+
+Any interpretation of `_command` happens **after** conversion into an `IORequest`.
+
+---
+
+### 3. IORequest: Transport-Agnostic Core Message
+
+All transports convert their incoming frames into a common core type:
+
+```
+struct IORequest {
+    RequestID     id;
+    DeviceID      deviceId;
+    std::uint16_t command;
+    std::vector<uint8_t> payload;
+};
+```
+
+Notes:
+
+- `command` is **16-bit by design**
+- Transports may populate only the low 8 bits (FujiBus, legacy)
+- Future transports may use the full 16-bit range
+- Core routing logic treats `command` as opaque
+
+This allows the core to remain protocol-agnostic.
+
+---
+
+### 4. Device-Specific Command IDs
+
+Each `VirtualDevice` defines **its own command enum**, scoped to its behavior and responsibilities.
+
+Commands are **not shared across devices**.
+
+Examples:
+
+#### FujiDevice commands
+
+```
+enum class FujiCommand : std::uint8_t {
+    Reset   = 0xFF,
+    GetSsid = 0xFE,
+};
+
+inline FujiCommand to_fuji_command(std::uint16_t raw)
+{
+    return static_cast<FujiCommand>(
+        static_cast<std::uint8_t>(raw)
+    );
+}
+```
+
+#### FileDevice commands
+
+```
+enum class FileCommand : std::uint8_t {
+    ListDirectory = 0x01,
+    // future: Open, Read, Write, Remove, etc.
+};
+
+inline FileCommand to_file_command(std::uint16_t raw)
+{
+    return static_cast<FileCommand>(
+        static_cast<std::uint8_t>(raw)
+    );
+}
+```
+
+Key principles:
+
+- Devices decide how much of the command space they consume
+- 8-bit command devices intentionally ignore the high byte
+- This enables compatibility with legacy 8-bit protocols
+- Devices with future 16-bit command spaces can opt in explicitly
+
+---
+
+### 5. Why Command Masking Happens in the Device
+
+Command truncation (e.g. `raw & 0xFF`) is **not a transport responsibility**.
+
+It is a **device-level decision** that expresses:
+
+> “This device defines its command vocabulary in an 8-bit space.”
+
+Benefits:
+
+- Keeps transports simple and uniform
+- Allows legacy and modern transports to target the same devices
+- Makes device capabilities explicit and self-contained
+- Enables future devices to use wider command spaces without breaking existing ones
+
+---
+
+### 6. Routing and Device Lookup
+
+Routing operates purely on `IORequest.deviceId`:
+
+```
+Transport → IORequest → RoutingManager → IODeviceManager → VirtualDevice
+```
+
+---
+
 # **Testing Strategy**
 
 ## Unit Tests (host / POSIX)
