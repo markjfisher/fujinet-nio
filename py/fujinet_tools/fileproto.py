@@ -5,6 +5,15 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 import datetime
 
+from .byte_proto import (
+    u16le,
+    u32le,
+    u64le,
+    read_u8,
+    read_u16le,
+    read_u32le,
+    read_u64le,
+)
 
 FILEPROTO_VERSION = 1
 
@@ -16,55 +25,6 @@ CMD_STAT = 0x01
 CMD_LIST = 0x02
 CMD_READ = 0x03
 CMD_WRITE = 0x04
-
-
-def u16le(x: int) -> bytes:
-    return bytes((x & 0xFF, (x >> 8) & 0xFF))
-
-
-def u32le(x: int) -> bytes:
-    return bytes((
-        x & 0xFF,
-        (x >> 8) & 0xFF,
-        (x >> 16) & 0xFF,
-        (x >> 24) & 0xFF,
-    ))
-
-
-def u64le(x: int) -> bytes:
-    return bytes((x >> (8 * i)) & 0xFF for i in range(8))
-
-
-def read_u8(b: bytes, off: int) -> Tuple[int, int]:
-    if off + 1 > len(b):
-        raise ValueError("read_u8 out of bounds")
-    return b[off], off + 1
-
-
-def read_u16le(b: bytes, off: int) -> Tuple[int, int]:
-    if off + 2 > len(b):
-        raise ValueError("read_u16le out of bounds")
-    return b[off] | (b[off + 1] << 8), off + 2
-
-
-def read_u32le(b: bytes, off: int) -> Tuple[int, int]:
-    if off + 4 > len(b):
-        raise ValueError("read_u32le out of bounds")
-    return (
-        b[off]
-        | (b[off + 1] << 8)
-        | (b[off + 2] << 16)
-        | (b[off + 3] << 24)
-    ), off + 4
-
-
-def read_u64le(b: bytes, off: int) -> Tuple[int, int]:
-    if off + 8 > len(b):
-        raise ValueError("read_u64le out of bounds")
-    v = 0
-    for i in range(8):
-        v |= b[off + i] << (8 * i)
-    return v, off + 8
 
 
 def build_common_prefix(fs: str, path: str) -> bytes:
