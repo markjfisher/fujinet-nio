@@ -152,7 +152,7 @@ __
 }
 class "io::NetworkDevice" as C_0006245826437162508923
 class C_0006245826437162508923 {
-+NetworkDevice() : void
++NetworkDevice(ProtocolRegistry registry) : void
 ..
 +handle(const IORequest & request) : IOResponse
 {static} -handle_generation(std::uint16_t h) noexcept : std::uint8_t
