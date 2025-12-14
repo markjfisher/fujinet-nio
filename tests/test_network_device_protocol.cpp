@@ -4,6 +4,8 @@
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/network_device.h"
 #include "fujinet/io/devices/net_codec.h"
+#include "fujinet/io/devices/network_protocol_registry.h"
+#include "fujinet/io/devices/network_protocol_stub.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 
 #include <string>
@@ -30,7 +32,9 @@ static std::vector<std::uint8_t> to_vec(const std::string& s)
 
 TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
 {
-    NetworkDevice dev;
+    fujinet::io::ProtocolRegistry reg;
+    reg.register_scheme("http", [] { return std::make_unique<fujinet::io::StubNetworkProtocol>(); });
+    NetworkDevice dev(std::move(reg));
 
     const auto deviceId = to_device_id(WireDeviceId::NetworkService);
 
@@ -183,7 +187,9 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
 
 TEST_CASE("NetworkDevice v1: Write (POST) returns writtenLen via stub backend")
 {
-    NetworkDevice dev;
+    fujinet::io::ProtocolRegistry reg;
+    reg.register_scheme("http", [] { return std::make_unique<fujinet::io::StubNetworkProtocol>(); });
+    NetworkDevice dev(std::move(reg));
     const auto deviceId = to_device_id(WireDeviceId::NetworkService);
 
     // ---- Open POST ----

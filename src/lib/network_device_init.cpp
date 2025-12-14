@@ -3,22 +3,24 @@
 #include "fujinet/io/devices/network_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/core/logging.h"
+#include "fujinet/platform/network_registry.h"
 
 namespace fujinet::core {
 
 using fujinet::io::DeviceID;
 using fujinet::io::NetworkDevice;
+using fujinet::io::ProtocolRegistry;
 using fujinet::io::protocol::WireDeviceId;
 using fujinet::io::protocol::to_device_id;
 
 static const char* TAG = "core";
 
-void register_network_device(FujinetCore& core)
+void register_network_device(FujinetCore& core, ProtocolRegistry registry)
 {
     // IMPORTANT: only register ONE network device for now.
     // We can discuss later how to scale out without allocating/registering
     // multiple device instances up front.
-    auto dev = std::make_unique<NetworkDevice>();
+    auto dev = std::make_unique<NetworkDevice>(std::move(registry));
     DeviceID id = to_device_id(WireDeviceId::NetworkService); // 0xFD
 
     bool ok = core.deviceManager().registerDevice(id, std::move(dev));
@@ -27,6 +29,12 @@ void register_network_device(FujinetCore& core)
     } else {
         FN_LOGI(TAG, "Registered NetworkDevice on DeviceID %u", static_cast<unsigned>(id));
     }
+}
+
+void register_network_device(FujinetCore& core)
+{
+    auto reg = fujinet::platform::make_default_network_registry();
+    register_network_device(core, std::move(reg));
 }
 
 } // namespace fujinet::core

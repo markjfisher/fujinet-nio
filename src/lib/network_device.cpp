@@ -6,7 +6,6 @@
 #include "fujinet/io/devices/net_commands.h"
 #include "fujinet/io/devices/network_protocol.h"
 #include "fujinet/io/devices/network_protocol_registry.h"
-#include "fujinet/io/devices/network_protocol_stub.h"
 
 #include <algorithm>
 #include <cctype>
@@ -45,12 +44,9 @@ static bool extract_scheme_lower(std::string_view url, std::string& outSchemeLow
     return !outSchemeLower.empty();
 }
 
-NetworkDevice::NetworkDevice()
+NetworkDevice::NetworkDevice(ProtocolRegistry registry)
+    : _registry(std::move(registry))
 {
-    // Default registrations (core/lib) to unblock usage; platform can override later.
-    _registry.register_scheme("http", [] { return std::make_unique<StubNetworkProtocol>(); });
-    _registry.register_scheme("https", [] { return std::make_unique<StubNetworkProtocol>(); });
-    _registry.register_scheme("tcp", [] { return std::make_unique<StubNetworkProtocol>(); });
 }
 
 void NetworkDevice::poll()
@@ -89,33 +85,13 @@ IOResponse NetworkDevice::handle(const IORequest& request)
         return &s;
     };
 
-    auto allocate_session = [this](std::uint8_t method, std::uint8_t flags, std::string url,
-                                   std::unique_ptr<INetworkProtocol> proto) -> std::uint16_t {
-        int chosen = -1;
+    auto find_free_slot = [this]() -> int {
         for (std::size_t i = 0; i < MAX_SESSIONS; ++i) {
             if (!_sessions[i].active) {
-                chosen = static_cast<int>(i);
-                break;
+                return static_cast<int>(i);
             }
         }
-        if (chosen < 0) {
-            if (proto) {
-                proto->close();
-            }
-            return 0;
-        }
-
-        auto& s = _sessions[static_cast<std::size_t>(chosen)];
-        s.active = true;
-        s.generation = static_cast<std::uint8_t>(s.generation + 1);
-        if (s.generation == 0) s.generation = 1;
-
-        s.method = method;
-        s.flags = flags;
-        s.url = std::move(url);
-        s.proto = std::move(proto);
-
-        return make_handle(static_cast<std::uint8_t>(chosen), s.generation);
+        return -1;
     };
 
     auto free_session = [this](Session& s) {
@@ -176,6 +152,12 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
 
+            const int chosen = find_free_slot();
+            if (chosen < 0) {
+                resp.status = StatusCode::DeviceBusy;
+                return resp;
+            }
+
             // Determine URL scheme -> protocol backend
             std::string schemeLower;
             if (!extract_scheme_lower(urlView, schemeLower)) {
@@ -202,12 +184,23 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            const std::uint16_t handle = allocate_session(method, flags, openReq.url, std::move(proto));
-            if (handle == 0) {
-                // no session slots; best-effort close protocol instance
+            // Claim session slot (now that open succeeded).
+            auto& s = _sessions[static_cast<std::size_t>(chosen)];
+            if (s.active) {
+                // Should be impossible since chosen came from find_free_slot(), but be defensive.
+                proto->close();
                 resp.status = StatusCode::DeviceBusy;
                 return resp;
             }
+            s.active = true;
+            s.generation = static_cast<std::uint8_t>(s.generation + 1);
+            if (s.generation == 0) s.generation = 1;
+            s.method = method;
+            s.flags = flags;
+            s.url = openReq.url;
+            s.proto = std::move(proto);
+
+            const std::uint16_t handle = make_handle(static_cast<std::uint8_t>(chosen), s.generation);
 
             // Response: version, flags(bit0 accepted, bit1 needs_body_write), reserved, handle
             std::string out;

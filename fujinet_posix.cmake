@@ -93,7 +93,9 @@ target_sources(fujinet-nio
         src/platform/posix/fuji_config_store_factory.cpp
         src/platform/posix/fuji_device_factory.cpp
         src/platform/posix/hardware_caps.cpp
+        src/platform/posix/http_network_protocol_curl.cpp
         src/platform/posix/logging.cpp
+        src/platform/posix/network_registry.cpp
         src/platform/posix/time.cpp
 # __TARGET_SOURCES_END__
         third_party/cjson/cJSON.c

@@ -17,7 +17,7 @@ namespace fujinet::io {
 // See docs/network_device_protocol.md.
 class NetworkDevice : public VirtualDevice {
 public:
-    NetworkDevice();
+    explicit NetworkDevice(ProtocolRegistry registry);
 
     IOResponse handle(const IORequest& request) override;
     void poll() override;
