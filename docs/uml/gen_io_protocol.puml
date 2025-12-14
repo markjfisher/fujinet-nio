@@ -13,6 +13,7 @@ NetworkFirst
 NetworkLast
 Midi
 Dbc
+NetworkService
 FileService
 }
 enum "io::protocol::SlipByte" as C_0010627602090167488081
@@ -85,6 +86,14 @@ enum "io::protocol::FujiCommand" as C_0004628219160953719395
 enum C_0004628219160953719395 {
 Reset
 GetSsid
+}
+enum "io::protocol::NetworkCommand" as C_0007700754280455587098
+enum C_0007700754280455587098 {
+Open
+Read
+Write
+Close
+Info
 }
 C_0017232777488057089840 o-- C_0015225225004340369839 : -_device
 C_0017232777488057089840 o-- C_0003277087640557799971 : -_params
