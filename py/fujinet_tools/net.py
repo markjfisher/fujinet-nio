@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 from .fujibus import send_command
+from .status import format_status
 from . import netproto as np
 
 
@@ -33,7 +34,11 @@ def cmd_net_open(args) -> int:
         print("No response")
         return 2
     if not _status_ok(pkt):
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        code = pkt.params[0] if pkt.params else None
+        if code is None:
+            print("Device status=??")
+        else:
+            print(f"Device status={format_status(code)}")
         return 1
 
     orr = np.parse_open_resp(pkt.payload)
@@ -57,7 +62,11 @@ def cmd_net_close(args) -> int:
         print("No response")
         return 2
     if not _status_ok(pkt):
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        code = pkt.params[0] if pkt.params else None
+        if code is None:
+            print("Device status=??")
+        else:
+            print(f"Device status={format_status(code)}")
         return 1
     # payload is optional/minimal
     print("closed")
@@ -80,7 +89,11 @@ def cmd_net_info(args) -> int:
         print("No response")
         return 2
     if not _status_ok(pkt):
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        code = pkt.params[0] if pkt.params else None
+        if code is None:
+            print("Device status=??")
+        else:
+            print(f"Device status={format_status(code)}")
         return 1
 
     ir = np.parse_info_resp(pkt.payload)
@@ -110,7 +123,11 @@ def cmd_net_write(args) -> int:
         print("No response")
         return 2
     if not _status_ok(pkt):
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        code = pkt.params[0] if pkt.params else None
+        if code is None:
+            print("Device status=??")
+        else:
+            print(f"Device status={format_status(code)}")
         return 1
 
     wr = np.parse_write_resp(pkt.payload)
@@ -134,7 +151,11 @@ def cmd_net_read(args) -> int:
         print("No response")
         return 2
     if not _status_ok(pkt):
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        code = pkt.params[0] if pkt.params else None
+        if code is None:
+            print("Device status=??")
+        else:
+            print(f"Device status={format_status(code)}")
         return 1
 
     rr = np.parse_read_resp(pkt.payload)
@@ -172,7 +193,11 @@ def cmd_net_get(args) -> int:
         print("No response")
         return 2
     if not _status_ok(pkt):
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        code = pkt.params[0] if pkt.params else None
+        if code is None:
+            print("Device status=??")
+        else:
+            print(f"Device status={format_status(code)}")
         return 1
     orr = np.parse_open_resp(pkt.payload)
     if not orr.accepted:
@@ -303,7 +328,11 @@ def cmd_net_head(args) -> int:
         print("No response")
         return 2
     if not _status_ok(pkt):
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        code = pkt.params[0] if pkt.params else None
+        if code is None:
+            print("Device status=??")
+        else:
+            print(f"Device status={format_status(code)}")
         return 1
     orr = np.parse_open_resp(pkt.payload)
     handle = orr.handle
