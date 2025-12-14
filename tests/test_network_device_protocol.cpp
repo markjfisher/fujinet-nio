@@ -97,6 +97,7 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
             CHECK(ihandle == handle);
             CHECK(httpStatus == 200);
             CHECK((iflags & 0x02) != 0); // hasContentLength
+            CHECK((iflags & 0x04) != 0); // hasHttpStatus
             CHECK(hdrLen > 0);
 
             const std::uint8_t* hdrPtr = nullptr;
@@ -111,7 +112,7 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
             netproto::write_u8(rp, V);
             netproto::write_u16le(rp, handle);
             netproto::write_u32le(rp, 0);    // offset
-            netproto::write_u16le(rp, 8);    // maxBytes small to force truncation sometimes
+            netproto::write_u16le(rp, 1024); // maxBytes
 
             IORequest rreq{};
             rreq.id = 3;
@@ -136,7 +137,13 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
             CHECK(rver == V);
             CHECK(rhandle == handle);
             CHECK(offEcho == 0);
-            CHECK(dataLen <= 8);
+            CHECK(dataLen > 0);
+
+            const std::uint8_t* dataPtr = nullptr;
+            REQUIRE(rr.read_bytes(dataPtr, dataLen));
+            std::string body(reinterpret_cast<const char*>(dataPtr), dataLen);
+            CHECK(body.find("stub response for: http://example.com/hello") != std::string::npos);
+            CHECK((rflags & 0x01) != 0); // eof should be set (stub body is small)
         }
 
         // ---- Close ----
@@ -171,6 +178,95 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
             IOResponse iresp = dev.handle(ireq);
             CHECK(iresp.status == StatusCode::InvalidRequest);
         }
+    }
+}
+
+TEST_CASE("NetworkDevice v1: Write (POST) returns writtenLen via stub backend")
+{
+    NetworkDevice dev;
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    // ---- Open POST ----
+    std::uint16_t handle = 0;
+    {
+        std::string p;
+        netproto::write_u8(p, V);       // version
+        netproto::write_u8(p, 2);       // method=POST
+        netproto::write_u8(p, 0);       // flags
+        netproto::write_lp_u16_string(p, "http://example.com/post");
+        netproto::write_u16le(p, 0);    // headerCount
+        netproto::write_u32le(p, 4);    // bodyLenHint
+
+        IORequest req{};
+        req.id = 10;
+        req.deviceId = deviceId;
+        req.command = 0x01; // Open
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+
+        netproto::Reader r(resp.payload.data(), resp.payload.size());
+        std::uint8_t ver = 0, flags = 0;
+        std::uint16_t reserved = 0;
+        REQUIRE(r.read_u8(ver));
+        REQUIRE(r.read_u8(flags));
+        REQUIRE(r.read_u16le(reserved));
+        REQUIRE(r.read_u16le(handle));
+        CHECK(ver == V);
+        CHECK((flags & 0x01) != 0); // accepted
+        CHECK((flags & 0x02) != 0); // needs_body_write
+        CHECK(handle != 0);
+    }
+
+    // ---- Write ----
+    {
+        std::string wp;
+        netproto::write_u8(wp, V);
+        netproto::write_u16le(wp, handle);
+        netproto::write_u32le(wp, 0); // offset
+        netproto::write_u16le(wp, 4); // dataLen
+        wp.append("ABCD", 4);
+
+        IORequest wreq{};
+        wreq.id = 11;
+        wreq.deviceId = deviceId;
+        wreq.command = 0x03; // Write
+        wreq.payload = to_vec(wp);
+
+        IOResponse wresp = dev.handle(wreq);
+        REQUIRE(wresp.status == StatusCode::Ok);
+
+        netproto::Reader wr(wresp.payload.data(), wresp.payload.size());
+        std::uint8_t ver = 0, flags = 0;
+        std::uint16_t reserved = 0, h = 0, written = 0;
+        std::uint32_t offEcho = 0;
+        REQUIRE(wr.read_u8(ver));
+        REQUIRE(wr.read_u8(flags));
+        REQUIRE(wr.read_u16le(reserved));
+        REQUIRE(wr.read_u16le(h));
+        REQUIRE(wr.read_u32le(offEcho));
+        REQUIRE(wr.read_u16le(written));
+        CHECK(ver == V);
+        CHECK(h == handle);
+        CHECK(offEcho == 0);
+        CHECK(written == 4);
+    }
+
+    // ---- Close ----
+    {
+        std::string cp;
+        netproto::write_u8(cp, V);
+        netproto::write_u16le(cp, handle);
+
+        IORequest creq{};
+        creq.id = 12;
+        creq.deviceId = deviceId;
+        creq.command = 0x04; // Close
+        creq.payload = to_vec(cp);
+
+        IOResponse cresp = dev.handle(creq);
+        CHECK(cresp.status == StatusCode::Ok);
     }
 }
 

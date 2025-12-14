@@ -1,9 +1,12 @@
 #pragma once
 
 #include "fujinet/io/devices/virtual_device.h"
+#include "fujinet/io/devices/network_protocol.h"
+#include "fujinet/io/devices/network_protocol_registry.h"
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,6 +17,8 @@ namespace fujinet::io {
 // See docs/network_device_protocol.md.
 class NetworkDevice : public VirtualDevice {
 public:
+    NetworkDevice();
+
     IOResponse handle(const IORequest& request) override;
     void poll() override;
 
@@ -29,16 +34,11 @@ private:
         std::uint8_t flags{0};
         std::string url;
 
-        // Stub backend data (v1 brings up the protocol first).
-        std::uint16_t httpStatus{0};
-        std::uint64_t contentLength{0};
-        std::string headers;            // raw "Key: Value\r\n"
-        std::vector<std::uint8_t> body; // response body bytes
-
-        bool eof{false};
+        std::unique_ptr<INetworkProtocol> proto;
     };
 
     std::array<Session, MAX_SESSIONS> _sessions{};
+    ProtocolRegistry _registry;
 
     static std::uint16_t make_handle(std::uint8_t idx, std::uint8_t gen) noexcept
     {
@@ -57,5 +57,3 @@ private:
 };
 
 } // namespace fujinet::io
-
-

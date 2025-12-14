@@ -120,8 +120,9 @@ def parse_open_resp(payload: bytes) -> OpenResp:
 class InfoResp:
     headers_included: bool
     has_content_length: bool
+    has_http_status: bool
     handle: int
-    http_status: int
+    http_status: Optional[int]
     content_length: Optional[int]
     header_bytes: bytes
 
@@ -141,14 +142,45 @@ def parse_info_resp(payload: bytes) -> InfoResp:
     if off != len(payload):
         raise ValueError("trailing bytes in info response")
     has_len = bool(flags & 0x02)
+    has_status = bool(flags & 0x04)
     return InfoResp(
         headers_included=bool(flags & 0x01),
         has_content_length=has_len,
+        has_http_status=has_status,
         handle=handle,
-        http_status=http_status,
+        http_status=http_status if has_status else None,
         content_length=content_length if has_len else None,
         header_bytes=hdr,
     )
+
+
+@dataclass
+class WriteResp:
+    handle: int
+    offset: int
+    written: int
+
+
+def build_write_req(handle: int, offset: int, data: bytes) -> bytes:
+    if not (0 <= handle <= 0xFFFF):
+        raise ValueError("handle must fit u16")
+    if not (0 <= offset <= 0xFFFFFFFF):
+        raise ValueError("offset must fit u32")
+    if len(data) > 0xFFFF:
+        raise ValueError("data too large for u16 length; split it")
+    return bytes([NETPROTO_VERSION]) + u16le(handle) + u32le(offset) + u16le(len(data)) + data
+
+
+def parse_write_resp(payload: bytes) -> WriteResp:
+    off = _check_version(payload, 0)
+    _flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    handle, off = read_u16le(payload, off)
+    offset, off = read_u32le(payload, off)
+    written, off = read_u16le(payload, off)
+    if off != len(payload):
+        raise ValueError("trailing bytes in write response")
+    return WriteResp(handle=handle, offset=offset, written=written)
 
 
 @dataclass

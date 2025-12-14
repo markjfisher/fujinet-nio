@@ -93,6 +93,31 @@ def cmd_net_info(args) -> int:
     return 0
 
 
+def cmd_net_write(args) -> int:
+    data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
+    req = np.build_write_req(args.handle, args.offset, data)
+    pkt = send_command(
+        port=args.port,
+        device=np.NETWORK_DEVICE_ID,
+        command=np.CMD_WRITE,
+        payload=req,
+        baud=args.baud,
+        timeout=args.timeout,
+        read_max=args.read_max,
+        debug=args.debug,
+    )
+    if pkt is None:
+        print("No response")
+        return 2
+    if not _status_ok(pkt):
+        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        return 1
+
+    wr = np.parse_write_resp(pkt.payload)
+    print(f"handle={wr.handle} offset={wr.offset} written={wr.written}")
+    return 0
+
+
 def cmd_net_read(args) -> int:
     req = np.build_read_req(args.handle, args.offset, args.max_bytes)
     pkt = send_command(
@@ -344,6 +369,14 @@ def register_subcommands(subparsers) -> None:
     pnr.add_argument("--out", help="Write chunk to this file (else stdout)")
     pnr.add_argument("handle", type=int)
     pnr.set_defaults(fn=cmd_net_read)
+
+    pnw = nsub.add_parser("write", help="Write request body bytes (single chunk)")
+    pnw.add_argument("--offset", type=int, default=0)
+    src = pnw.add_mutually_exclusive_group(required=True)
+    src.add_argument("--inp", help="Read bytes from this file")
+    src.add_argument("--data", help="Send these UTF-8 bytes")
+    pnw.add_argument("handle", type=int)
+    pnw.set_defaults(fn=cmd_net_write)
 
     pnc = nsub.add_parser("close", help="Close a handle")
     pnc.add_argument("handle", type=int)

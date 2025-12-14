@@ -4,9 +4,16 @@
 
 #include "fujinet/io/devices/net_codec.h"
 #include "fujinet/io/devices/net_commands.h"
+#include "fujinet/io/devices/network_protocol.h"
+#include "fujinet/io/devices/network_protocol_registry.h"
+#include "fujinet/io/devices/network_protocol_stub.h"
 
 #include <algorithm>
+#include <cctype>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace fujinet::io {
 
@@ -18,10 +25,41 @@ static std::vector<std::uint8_t> to_vec(const std::string& s)
     return std::vector<std::uint8_t>(s.begin(), s.end());
 }
 
+static std::string to_lower_ascii(std::string_view s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return out;
+}
+
+static bool extract_scheme_lower(std::string_view url, std::string& outSchemeLower)
+{
+    const auto pos = url.find("://");
+    if (pos == std::string_view::npos || pos == 0) {
+        return false;
+    }
+    outSchemeLower = to_lower_ascii(url.substr(0, pos));
+    return !outSchemeLower.empty();
+}
+
+NetworkDevice::NetworkDevice()
+{
+    // Default registrations (core/lib) to unblock usage; platform can override later.
+    _registry.register_scheme("http", [] { return std::make_unique<StubNetworkProtocol>(); });
+    _registry.register_scheme("https", [] { return std::make_unique<StubNetworkProtocol>(); });
+    _registry.register_scheme("tcp", [] { return std::make_unique<StubNetworkProtocol>(); });
+}
+
 void NetworkDevice::poll()
 {
-    // Stub backend: nothing asynchronous yet.
-    // Later (ESP32 backend) this will progress in-flight sessions.
+    for (auto& s : _sessions) {
+        if (s.active && s.proto) {
+            s.proto->poll();
+        }
+    }
 }
 
 static void write_common_prefix(std::string& out, std::uint8_t version, std::uint8_t flags)
@@ -49,6 +87,46 @@ IOResponse NetworkDevice::handle(const IORequest& request)
         if (!s.active) return nullptr;
         if (s.generation != gen) return nullptr;
         return &s;
+    };
+
+    auto allocate_session = [this](std::uint8_t method, std::uint8_t flags, std::string url,
+                                   std::unique_ptr<INetworkProtocol> proto) -> std::uint16_t {
+        int chosen = -1;
+        for (std::size_t i = 0; i < MAX_SESSIONS; ++i) {
+            if (!_sessions[i].active) {
+                chosen = static_cast<int>(i);
+                break;
+            }
+        }
+        if (chosen < 0) {
+            if (proto) {
+                proto->close();
+            }
+            return 0;
+        }
+
+        auto& s = _sessions[static_cast<std::size_t>(chosen)];
+        s.active = true;
+        s.generation = static_cast<std::uint8_t>(s.generation + 1);
+        if (s.generation == 0) s.generation = 1;
+
+        s.method = method;
+        s.flags = flags;
+        s.url = std::move(url);
+        s.proto = std::move(proto);
+
+        return make_handle(static_cast<std::uint8_t>(chosen), s.generation);
+    };
+
+    auto free_session = [this](Session& s) {
+        if (s.proto) {
+            s.proto->close();
+            s.proto.reset();
+        }
+        s.active = false;
+        s.method = 0;
+        s.flags = 0;
+        s.url.clear();
     };
 
     switch (cmd) {
@@ -81,13 +159,15 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            // Consume headers (we store them later; for now just skip safely).
+            std::vector<std::pair<std::string, std::string>> headers;
+            headers.reserve(headerCount);
             for (std::uint16_t i = 0; i < headerCount; ++i) {
                 std::string_view k, v;
                 if (!r.read_lp_u16_string(k) || !r.read_lp_u16_string(v)) {
                     resp.status = StatusCode::InvalidRequest;
                     return resp;
                 }
+                headers.emplace_back(std::string(k), std::string(v));
             }
 
             std::uint32_t bodyLenHint = 0;
@@ -96,39 +176,38 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            // Allocate a session.
-            int chosen = -1;
-            for (std::size_t i = 0; i < MAX_SESSIONS; ++i) {
-                if (!_sessions[i].active) {
-                    chosen = static_cast<int>(i);
-                    break;
-                }
-            }
-            if (chosen < 0) {
-                resp.status = StatusCode::DeviceBusy;
+            // Determine URL scheme -> protocol backend
+            std::string schemeLower;
+            if (!extract_scheme_lower(urlView, schemeLower)) {
+                resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
 
-            auto& s = _sessions[static_cast<std::size_t>(chosen)];
-            s.active = true;
-            s.generation = static_cast<std::uint8_t>(s.generation + 1);
-            if (s.generation == 0) s.generation = 1; // avoid 0 generation if it wraps
+            auto proto = _registry.create(schemeLower);
+            if (!proto) {
+                resp.status = StatusCode::Unsupported;
+                return resp;
+            }
 
-            s.method = method;
-            s.flags = flags;
-            s.url.assign(urlView.data(), urlView.size());
+            NetworkOpenRequest openReq{};
+            openReq.method = method;
+            openReq.flags = flags;
+            openReq.url.assign(urlView.data(), urlView.size());
+            openReq.headers = std::move(headers);
+            openReq.bodyLenHint = bodyLenHint;
 
-            // Stub backend: pretend the request is immediately completed.
-            s.httpStatus = 200;
-            s.headers = "Content-Type: text/plain\r\nServer: fujinet-nio-stub\r\n";
+            const StatusCode st = proto->open(openReq);
+            if (st != StatusCode::Ok) {
+                resp.status = st;
+                return resp;
+            }
 
-            // Fake response body includes the URL so tooling can validate end-to-end.
-            const std::string bodyStr = std::string("stub response for: ") + s.url + "\n";
-            s.body.assign(bodyStr.begin(), bodyStr.end());
-            s.contentLength = static_cast<std::uint64_t>(s.body.size());
-            s.eof = false;
-
-            const std::uint16_t handle = make_handle(static_cast<std::uint8_t>(chosen), s.generation);
+            const std::uint16_t handle = allocate_session(method, flags, openReq.url, std::move(proto));
+            if (handle == 0) {
+                // no session slots; best-effort close protocol instance
+                resp.status = StatusCode::DeviceBusy;
+                return resp;
+            }
 
             // Response: version, flags(bit0 accepted, bit1 needs_body_write), reserved, handle
             std::string out;
@@ -165,14 +244,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            // Release
-            s->active = false;
-            s->url.clear();
-            s->headers.clear();
-            s->body.clear();
-            s->httpStatus = 0;
-            s->contentLength = 0;
-            s->eof = false;
+            free_session(*s);
 
             // Optional minimal response payload: version + reserved prefix
             std::string out;
@@ -198,26 +270,34 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
 
             auto* s = session_for_handle(handle);
-            if (!s) {
+            if (!s || !s->proto) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
 
-            std::string out;
-            out.reserve(32 + std::min<std::size_t>(s->headers.size(), maxHeaderBytes));
+            NetworkInfo info{};
+            const StatusCode st = s->proto->info(maxHeaderBytes, info);
+            if (st != StatusCode::Ok) {
+                resp.status = st;
+                return resp;
+            }
 
             std::uint8_t flags = 0;
-            // bit0=headersIncluded, bit1=hasContentLength
-            const std::size_t hdrLen = std::min<std::size_t>(s->headers.size(), maxHeaderBytes);
+            // bit0=headersIncluded, bit1=hasContentLength, bit2=hasHttpStatus
+            const std::size_t hdrLen = info.headersBlock.size();
             if (hdrLen > 0) flags |= 0x01;
-            flags |= 0x02; // hasContentLength (stub always has it)
+            if (info.hasContentLength) flags |= 0x02;
+            if (info.hasHttpStatus) flags |= 0x04;
+
+            std::string out;
+            out.reserve(32 + hdrLen);
 
             write_common_prefix(out, NETPROTO_VERSION, flags);
             netproto::write_u16le(out, handle);
-            netproto::write_u16le(out, s->httpStatus);
-            netproto::write_u64le(out, s->contentLength);
+            netproto::write_u16le(out, info.hasHttpStatus ? info.httpStatus : 0);
+            netproto::write_u64le(out, info.hasContentLength ? info.contentLength : 0);
             netproto::write_u16le(out, static_cast<std::uint16_t>(hdrLen));
-            out.append(s->headers.data(), hdrLen);
+            out.append(info.headersBlock.data(), hdrLen);
 
             resp.payload = to_vec(out);
             return resp;
@@ -240,39 +320,91 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
 
             auto* s = session_for_handle(handle);
-            if (!s) {
+            if (!s || !s->proto) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
 
-            const std::size_t total = s->body.size();
-            const std::size_t off = (offset <= total) ? static_cast<std::size_t>(offset) : total;
-            const std::size_t n = std::min<std::size_t>(maxBytes, total - off);
-            const bool eof = (off + n) >= total;
-            const bool truncated = n < static_cast<std::size_t>(maxBytes);
+            std::vector<std::uint8_t> buf;
+            buf.resize(maxBytes);
+
+            std::uint16_t n = 0;
+            bool eof = false;
+            const StatusCode st = s->proto->read_body(offset, buf.data(), buf.size(), n, eof);
+            if (st != StatusCode::Ok) {
+                resp.status = st;
+                return resp;
+            }
+
+            if (n > buf.size()) {
+                n = static_cast<std::uint16_t>(buf.size());
+            }
 
             std::string out;
             out.reserve(1 + 1 + 2 + 2 + 4 + 2 + n);
 
             std::uint8_t flags = 0;
             if (eof) flags |= 0x01;
-            if (truncated) flags |= 0x02;
+            if (n < maxBytes) flags |= 0x02; // truncated
 
             write_common_prefix(out, NETPROTO_VERSION, flags);
             netproto::write_u16le(out, handle);
             netproto::write_u32le(out, offset);
-            netproto::write_u16le(out, static_cast<std::uint16_t>(n));
-            if (n > 0) {
-                netproto::write_bytes(out, s->body.data() + off, n);
+            netproto::write_u16le(out, n);
+            if (n > 0 && !buf.empty()) {
+                netproto::write_bytes(out, buf.data(), n);
             }
 
             resp.payload = to_vec(out);
             return resp;
         }
 
-        case NetworkCommand::Write:
-            // v1 per brief: implement later (POST body streaming).
-            return make_base_response(request, StatusCode::Unsupported);
+        case NetworkCommand::Write: {
+            auto resp = make_success_response(request);
+            Reader r(request.payload.data(), request.payload.size());
+            if (!check_version(r, NETPROTO_VERSION)) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            std::uint16_t handle = 0;
+            std::uint32_t offset = 0;
+            std::uint16_t dataLen = 0;
+            if (!r.read_u16le(handle) || !r.read_u32le(offset) || !r.read_u16le(dataLen)) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            const std::uint8_t* dataPtr = nullptr;
+            if (!r.read_bytes(dataPtr, dataLen) || r.remaining() != 0) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            auto* s = session_for_handle(handle);
+            if (!s || !s->proto) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            std::uint16_t written = 0;
+            const StatusCode st = s->proto->write_body(offset,
+                                                       dataPtr, dataLen,
+                                                       written);
+            if (st != StatusCode::Ok) {
+                resp.status = st;
+                return resp;
+            }
+
+            std::string out;
+            out.reserve(1 + 1 + 2 + 2 + 4 + 2);
+            write_common_prefix(out, NETPROTO_VERSION, 0);
+            netproto::write_u16le(out, handle);
+            netproto::write_u32le(out, offset);
+            netproto::write_u16le(out, written);
+            resp.payload = to_vec(out);
+            return resp;
+        }
 
         default:
             return make_base_response(request, StatusCode::Unsupported);

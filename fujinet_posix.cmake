@@ -53,8 +53,6 @@ target_sources(fujinet-nio
         src/lib/clock_device_init.cpp
         src/lib/file_device.cpp
         src/lib/file_device_init.cpp
-        src/lib/network_device.cpp
-        src/lib/network_device_init.cpp
         src/lib/fs_stdio.cpp
         src/lib/fuji_bus_packet.cpp
         src/lib/fuji_config_yaml_store.cpp
@@ -64,6 +62,10 @@ target_sources(fujinet-nio
         src/lib/fujinet_init.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
+        src/lib/network_device.cpp
+        src/lib/network_device_init.cpp
+        src/lib/network_protocol_registry.cpp
+        src/lib/network_protocol_stub.cpp
         src/lib/routing_manager.cpp
         src/lib/storage_manager.cpp
         src/platform/posix/channel_factory.cpp

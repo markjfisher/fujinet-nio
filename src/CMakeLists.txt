@@ -12,8 +12,6 @@ idf_component_register(
         lib/clock_device_init.cpp
         lib/file_device.cpp
         lib/file_device_init.cpp
-        lib/network_device.cpp
-        lib/network_device_init.cpp
         lib/fs_stdio.cpp
         lib/fuji_bus_packet.cpp
         lib/fuji_config_yaml_store.cpp
@@ -23,6 +21,10 @@ idf_component_register(
         lib/fujinet_init.cpp
         lib/io_device_manager.cpp
         lib/io_service.cpp
+        lib/network_device.cpp
+        lib/network_device_init.cpp
+        lib/network_protocol_registry.cpp
+        lib/network_protocol_stub.cpp
         lib/routing_manager.cpp
         lib/storage_manager.cpp
         platform/esp32/channel_factory.cpp
