@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 
 // curl headers are only included in curl-specific files
@@ -13,33 +14,79 @@
 
 namespace fujinet::platform::posix {
 
+static void ensure_curl_global_init()
+{
+    static const bool inited = []{
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        return true;
+    }();
+    (void)inited;
+}
+
 static bool method_supported(std::uint8_t method)
 {
     // v1: GET(1), HEAD(5)
     return method == 1 || method == 5;
 }
 
-std::size_t HttpNetworkProtocolCurl::write_body_cb(char* ptr, std::size_t size, std::size_t nmemb, void* userdata)
+std::size_t HttpNetworkProtocolCurl::write_body_cb(
+    char *ptr,
+    std::size_t size,
+    std::size_t nmemb,
+    void *userdata)
 {
-    auto* self = static_cast<HttpNetworkProtocolCurl*>(userdata);
+    auto *self = static_cast<HttpNetworkProtocolCurl *>(userdata);
+
+    // Abort if we have nowhere to write.
+    if (!self)
+        return 0;
+
+    // Guard overflow: n = size * nmemb
+    if (size != 0 && nmemb > (std::numeric_limits<std::size_t>::max() / size))
+    {
+        return 0; // abort transfer
+    }
+
     const std::size_t n = size * nmemb;
-    if (!self || !ptr || n == 0) return 0;
+    if (n == 0)
+        return 0;
+
+    // libcurl should not call with ptr==nullptr if n>0, but be defensive.
+    if (!ptr)
+        return 0;
+
     self->_body.insert(self->_body.end(),
-                       reinterpret_cast<std::uint8_t*>(ptr),
-                       reinterpret_cast<std::uint8_t*>(ptr) + n);
+                       reinterpret_cast<const std::uint8_t *>(ptr),
+                       reinterpret_cast<const std::uint8_t *>(ptr) + n);
     return n;
 }
 
-std::size_t HttpNetworkProtocolCurl::write_header_cb(char* ptr, std::size_t size, std::size_t nmemb, void* userdata)
+std::size_t HttpNetworkProtocolCurl::write_header_cb(
+    char *ptr,
+    std::size_t size,
+    std::size_t nmemb,
+    void *userdata)
 {
-    auto* self = static_cast<HttpNetworkProtocolCurl*>(userdata);
+    auto *self = static_cast<HttpNetworkProtocolCurl *>(userdata);
+    if (!self)
+        return 0;
+
+    if (size != 0 && nmemb > (std::numeric_limits<std::size_t>::max() / size))
+    {
+        return 0; // abort transfer
+    }
+
     const std::size_t n = size * nmemb;
-    if (!self || !ptr || n == 0) return 0;
+    if (n == 0)
+        return 0;
+    if (!ptr)
+        return 0;
 
     // libcurl passes header lines including trailing \r\n.
-    // We only keep "Key: Value\r\n" lines (skip status lines and blanks).
+    // Keep only "Key: Value\r\n" lines (skip status lines and blanks).
     const std::string_view line(ptr, n);
-    if (line.find(':') != std::string_view::npos) {
+    if (line.find(':') != std::string_view::npos)
+    {
         self->_headersBlock.append(line.data(), line.size());
     }
     return n;
@@ -53,6 +100,8 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
         return io::StatusCode::Unsupported;
     }
 
+    ensure_curl_global_init();
+
     _req = req;
 
     CURL* curl = curl_easy_init();
@@ -60,41 +109,58 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
         return io::StatusCode::InternalError;
     }
 
-    // Basic URL + callbacks
+    curl_slist* slist = nullptr;
+    for (const auto& kv : _req.headers) {
+        std::string line;
+        line.reserve(kv.first.size() + 2 + kv.second.size());
+        line.append(kv.first);
+        line.append(": ");
+        line.append(kv.second);
+        slist = curl_slist_append(slist, line.c_str());
+    }
+    if (slist) {
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
+    }
+
     curl_easy_setopt(curl, CURLOPT_URL, _req.url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &HttpNetworkProtocolCurl::write_body_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
 
-    const bool wantHeaders = (_req.flags & 0x04) != 0;
-    if (wantHeaders) {
-        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &HttpNetworkProtocolCurl::write_header_cb);
-        curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
-    }
+    // Always collect headers on POSIX so Info() can return them later if requested.
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &HttpNetworkProtocolCurl::write_header_cb);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
 
     const bool follow = (_req.flags & 0x02) != 0;
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, follow ? 1L : 0L);
 
-    // HEAD: no body
-    if (_req.method == 5) {
+    if (_req.method == 5) { // HEAD
         curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+    } else { // GET
+        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     }
 
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
     CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-        curl_easy_cleanup(curl);
-        close();
-        return io::StatusCode::IOError;
-    }
 
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     _httpStatus = static_cast<std::uint16_t>(httpCode < 0 ? 0 : httpCode);
 
     curl_easy_cleanup(curl);
+    if (slist) {
+        curl_slist_free_all(slist);
+    }
 
-    // For v1, we publish contentLength as actual body size.
+    if (res != CURLE_OK) {
+        close();
+        return io::StatusCode::IOError;
+    }
+
     return io::StatusCode::Ok;
 }
+
 
 io::StatusCode HttpNetworkProtocolCurl::write_body(std::uint32_t,
                                                    const std::uint8_t*,
