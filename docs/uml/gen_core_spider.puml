@@ -136,23 +136,32 @@ class "io::NetworkDevice" as C_0006245826437162508923
 class C_0006245826437162508923 {
 +NetworkDevice(ProtocolRegistry registry) : void
 ..
+-close_and_free(Session & s) noexcept : void
 +handle(const IORequest & request) : IOResponse
 {static} -handle_generation(std::uint16_t h) noexcept : std::uint8_t
 {static} -handle_index(std::uint16_t h) noexcept : std::uint8_t
 {static} -make_handle(std::uint8_t idx, std::uint8_t gen) noexcept : std::uint16_t
+-pick_lru_victim() noexcept : Session *
 +poll() : void
+-touch(Session & s) noexcept : void
 __
+{static} -IDLE_TIMEOUT_TICKS : const std::uint64_t
+{static} -MAX_LIFETIME_TICKS : const std::uint64_t
 {static} -MAX_SESSIONS : const std::size_t
 {static} -NETPROTO_VERSION : const std::uint8_t
 -_registry : ProtocolRegistry
 -_sessions : std::array<Session,MAX_SESSIONS>
+-_tickNow : std::uint64_t
 }
 class "io::NetworkDevice::Session" as C_0011301425670680674257
 class C_0011301425670680674257 {
 __
 +active : bool
++completed : bool
++createdTick : std::uint64_t
 +flags : std::uint8_t
 +generation : std::uint8_t
++lastActivityTick : std::uint64_t
 +method : std::uint8_t
 +proto : std::unique_ptr<INetworkProtocol>
 +url : std::string
