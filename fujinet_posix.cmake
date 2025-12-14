@@ -13,8 +13,9 @@ set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "Build yaml-cpp as static" FORCE)
 add_subdirectory(third_party/yaml-cpp)
 
 # Options
-option(FN_BUILD_POSIX_APP     "Build POSIX console application"       ON)
-option(FN_BUILD_TESTS         "Build unit tests"                      ON)
+option(FN_BUILD_POSIX_APP     "Build POSIX console application"           ON)
+option(FN_BUILD_TESTS         "Build unit tests"                          ON)
+option(FN_WITH_CURL           "Enable libcurl-backed HTTP/HTTPS on POSIX" ON)
 
 # Build options, used in build_profile.cpp, these need reflecting in the target_compile_definitions below
 # These can then be used as flags for the build type in cmake via CMakePresets.json
@@ -34,6 +35,25 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # --------------------------------------------------
 add_library(fujinet-nio)
 
+# --------------------------------------------------
+# CURL
+# --------------------------------------------------
+if(FN_WITH_CURL)
+  find_package(CURL QUIET)
+  if(CURL_FOUND)
+    target_compile_definitions(fujinet-nio PUBLIC FN_WITH_CURL=1)
+    target_link_libraries(fujinet-nio PRIVATE CURL::libcurl)
+  else()
+    message(WARNING "FN_WITH_CURL=ON but libcurl not found; disabling HTTP/HTTPS backend.")
+    target_compile_definitions(fujinet-nio PUBLIC FN_WITH_CURL=0)
+  endif()
+else()
+  target_compile_definitions(fujinet-nio PUBLIC FN_WITH_CURL=0)
+endif()
+
+# --------------------------------------------------
+# Build Flags
+# --------------------------------------------------
 target_compile_definitions(fujinet-nio
     PUBLIC
         FN_PLATFORM_POSIX               # always true in this toolchain
