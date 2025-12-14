@@ -51,9 +51,24 @@ NetworkDevice::NetworkDevice(ProtocolRegistry registry)
 
 void NetworkDevice::poll()
 {
+    ++_tickNow;
+
     for (auto& s : _sessions) {
-        if (s.active && s.proto) {
-            s.proto->poll();
+        if (!s.active || !s.proto) continue;
+
+        // Allow backend to progress (future async backends)
+        s.proto->poll();
+
+        // If backend can signal progress/completion later, we can update s.completed
+        // and/or touch(s) here when progress is made.
+        const std::uint64_t age  = _tickNow - s.createdTick;
+        const std::uint64_t idle = _tickNow - s.lastActivityTick;
+
+        // Reap dead/leaked handles:
+        // - Always enforce max lifetime
+        // - Enforce idle timeout
+        if (age > MAX_LIFETIME_TICKS || idle > IDLE_TIMEOUT_TICKS) {
+            close_and_free(s);
         }
     }
 }
@@ -94,47 +109,36 @@ IOResponse NetworkDevice::handle(const IORequest& request)
         return -1;
     };
 
-    auto free_session = [this](Session& s) {
-        if (s.proto) {
-            s.proto->close();
-            s.proto.reset();
-        }
-        s.active = false;
-        s.method = 0;
-        s.flags = 0;
-        s.url.clear();
-    };
-
     switch (cmd) {
         case NetworkCommand::Open: {
             auto resp = make_success_response(request);
-
+        
             Reader r(request.payload.data(), request.payload.size());
             if (!check_version(r, NETPROTO_VERSION)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
-
+        
             std::uint8_t method = 0;
             std::uint8_t flags = 0;
             if (!r.read_u8(method) || !r.read_u8(flags)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
-
+        
             // url: u16 len + bytes
             std::string_view urlView;
             if (!r.read_lp_u16_string(urlView)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
-
+        
             std::uint16_t headerCount = 0;
             if (!r.read_u16le(headerCount)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
-
+        
             std::vector<std::pair<std::string, std::string>> headers;
             headers.reserve(headerCount);
             for (std::uint16_t i = 0; i < headerCount; ++i) {
@@ -145,74 +149,115 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 }
                 headers.emplace_back(std::string(k), std::string(v));
             }
-
+        
             std::uint32_t bodyLenHint = 0;
             if (!r.read_u32le(bodyLenHint) || r.remaining() != 0) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
-
-            const int chosen = find_free_slot();
-            if (chosen < 0) {
-                resp.status = StatusCode::DeviceBusy;
-                return resp;
-            }
-
+        
             // Determine URL scheme -> protocol backend
             std::string schemeLower;
             if (!extract_scheme_lower(urlView, schemeLower)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
-
+        
             auto proto = _registry.create(schemeLower);
             if (!proto) {
                 resp.status = StatusCode::Unsupported;
                 return resp;
             }
-
+        
             NetworkOpenRequest openReq{};
             openReq.method = method;
             openReq.flags = flags;
             openReq.url.assign(urlView.data(), urlView.size());
             openReq.headers = std::move(headers);
             openReq.bodyLenHint = bodyLenHint;
-
-            const StatusCode st = proto->open(openReq);
-            if (st != StatusCode::Ok) {
-                resp.status = st;
-                return resp;
+        
+            // ---- (C) Reserve slot BEFORE proto->open() ----
+            auto reserve_slot = [this]() -> Session* {
+                for (auto& s : _sessions) {
+                    if (s.active) continue;
+        
+                    s.active = true; // reserve
+                    s.generation = static_cast<std::uint8_t>(s.generation + 1);
+                    if (s.generation == 0) s.generation = 1;
+        
+                    s.createdTick = _tickNow;
+                    s.lastActivityTick = _tickNow;
+                    s.completed = false;
+        
+                    // Clear any stale fields just in case
+                    s.method = 0;
+                    s.flags = 0;
+                    s.url.clear();
+                    if (s.proto) {
+                        s.proto->close();
+                        s.proto.reset();
+                    }
+        
+                    return &s;
+                }
+                return nullptr;
+            };
+        
+            Session* slot = reserve_slot();
+        
+            // ---- (D) Optional eviction: if busy, evict LRU and retry once ----
+            if (!slot) {
+                if (auto* victim = pick_lru_victim()) {
+                    // You can be stricter here if you want:
+                    // e.g. only evict if victim->completed or victim idle > some threshold.
+                    close_and_free(*victim);
+                    slot = reserve_slot();
+                }
             }
-
-            // Claim session slot (now that open succeeded).
-            auto& s = _sessions[static_cast<std::size_t>(chosen)];
-            if (s.active) {
-                // Should be impossible since chosen came from find_free_slot(), but be defensive.
+        
+            if (!slot) {
+                // No free slots even after eviction attempt.
+                // Best-effort close protocol instance (not strictly necessary since unique_ptr).
                 proto->close();
                 resp.status = StatusCode::DeviceBusy;
                 return resp;
             }
-            s.active = true;
-            s.generation = static_cast<std::uint8_t>(s.generation + 1);
-            if (s.generation == 0) s.generation = 1;
-            s.method = method;
-            s.flags = flags;
-            s.url = openReq.url;
-            s.proto = std::move(proto);
+        
+            // Actually open the protocol now that we own a slot.
+            const StatusCode st = proto->open(openReq);
+            if (st != StatusCode::Ok) {
+                // Release slot on failure.
+                close_and_free(*slot);
+                resp.status = st;
+                return resp;
+            }
+        
+            // Fill the reserved session now that open succeeded.
+            slot->method = method;
+            slot->flags = flags;
+            slot->url = openReq.url;
+            slot->proto = std::move(proto);
+            touch(*slot);
+        
+            auto session_index = [this](const Session* s) -> std::uint8_t {
+                // std::array is contiguous; pointer arithmetic is valid.
+                return static_cast<std::uint8_t>(s - _sessions.data());
+            };
 
-            const std::uint16_t handle = make_handle(static_cast<std::uint8_t>(chosen), s.generation);
-
+            const std::uint16_t handle = make_handle(session_index(slot), slot->generation);
+        
             // Response: version, flags(bit0 accepted, bit1 needs_body_write), reserved, handle
             std::string out;
             out.reserve(1 + 1 + 2 + 2);
-
+        
             std::uint8_t oflags = 0x01; // accepted
-            const bool needsBodyWrite = (method == 2 /*POST*/ || method == 3 /*PUT*/) && (bodyLenHint > 0);
+            const bool needsBodyWrite =
+                (method == 2 /*POST*/ || method == 3 /*PUT*/) && (bodyLenHint > 0);
             if (needsBodyWrite) oflags |= 0x02;
-
+        
             write_common_prefix(out, NETPROTO_VERSION, oflags);
             netproto::write_u16le(out, handle);
-
+        
             resp.payload = to_vec(out);
             return resp;
         }
@@ -237,7 +282,8 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            free_session(*s);
+            touch(*s);
+            close_and_free(*s);
 
             // Optional minimal response payload: version + reserved prefix
             std::string out;
@@ -267,6 +313,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
+            touch(*s);
 
             NetworkInfo info{};
             const StatusCode st = s->proto->info(maxHeaderBytes, info);
@@ -317,6 +364,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
+            touch(*s);
 
             std::vector<std::uint8_t> buf;
             buf.resize(maxBytes);
@@ -337,7 +385,10 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             out.reserve(1 + 1 + 2 + 2 + 4 + 2 + n);
 
             std::uint8_t flags = 0;
-            if (eof) flags |= 0x01;
+            if (eof) {
+                flags |= 0x01;
+                s->completed = true;
+            }
             if (n < maxBytes) flags |= 0x02; // truncated
 
             write_common_prefix(out, NETPROTO_VERSION, flags);
@@ -379,6 +430,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
+            touch(*s);
 
             std::uint16_t written = 0;
             const StatusCode st = s->proto->write_body(offset,

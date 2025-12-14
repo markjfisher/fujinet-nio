@@ -21,7 +21,7 @@ create_host_filesystem(const std::string& rootDir)
     // - If the root path is relative, we consider it "owned" by the app
     //   and create it if missing.
     // - Absolute paths are assumed to be user-/system-managed.
-    if (root.is_relative() && fs::exists(root)) {
+    if (root.is_relative() && !fs::exists(root)) {
         std::error_code ec;
         fs::create_directories(root, ec);
         if (ec) {
