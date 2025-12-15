@@ -62,6 +62,7 @@ extern "C" void fujinet_core_task(void* arg)
 
     // 1c. Optional Wi-Fi bring-up (STA) from config.
     // Keep lifetime for duration of task.
+    FN_LOGI(TAG, "wifi - enabled: %s", cfg.wifi.enabled ? "true" : "false");
     std::unique_ptr<fujinet::platform::esp32::Esp32WifiLink> wifi;
     if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
         wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
@@ -130,11 +131,13 @@ extern "C" void app_main(void)
 
     // Turn our own tags back up a bit
     esp_log_level_set("config",      ESP_LOG_INFO);
+    esp_log_level_set("clock",       ESP_LOG_INFO);
     esp_log_level_set("core",        ESP_LOG_INFO);
     esp_log_level_set("fs",          ESP_LOG_INFO);
     esp_log_level_set("io",          ESP_LOG_INFO);
     esp_log_level_set("nio",         ESP_LOG_INFO);
     esp_log_level_set("platform",    ESP_LOG_INFO);
+    esp_log_level_set("wifi",        ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init",   ESP_LOG_ERROR);

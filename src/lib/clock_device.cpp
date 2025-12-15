@@ -13,7 +13,7 @@ using fujinet::io::fileproto::Reader;
 using fujinet::platform::set_unix_time_seconds;
 using fujinet::platform::unix_time_seconds;
 
-static const char* TAG = "clock_device";
+static const char* TAG = "clock";
 static constexpr std::uint8_t CLOCKPROTO_VERSION = 1;
 
 enum class ClockCommand : std::uint8_t {
