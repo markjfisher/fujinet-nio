@@ -12,6 +12,8 @@
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/esp32/fs_init.h"
 #include "fujinet/platform/esp32/fs_factory.h"
+#include "fujinet/platform/esp32/wifi_link.h"
+#include "fujinet/platform/fuji_config_store_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
 
 #include "fujinet/core/logging.h"
@@ -46,6 +48,22 @@ extern "C" void fujinet_core_task(void* arg)
     // 1. Determine build profile.
     auto profile = build::current_build_profile();
     FN_LOGI(TAG, "Build profile: %.*s", static_cast<int>(profile.name.size()), profile.name.data());
+
+    // 1b. Load config early so platform services (like Wi-Fi) can be started before devices.
+    auto configStore = platform::create_fuji_config_store(core.storageManager());
+    fujinet::config::FujiConfig cfg{};
+    if (configStore) {
+        cfg = configStore->load();
+    }
+
+    // 1c. Optional Wi-Fi bring-up (STA) from config.
+    // Keep lifetime for duration of task.
+    std::unique_ptr<fujinet::platform::esp32::Esp32WifiLink> wifi;
+    if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
+        wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
+        wifi->init();
+        wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
+    }
 
     // 2a. Register FujiDevice
     {
@@ -83,6 +101,9 @@ extern "C" void fujinet_core_task(void* arg)
     // 5. Run the core loop forever.
     for (;;) {
         core.tick();
+        if (wifi) {
+            wifi->poll();
+        }
 
 // Do this later when we want to check the water mark
 // #if defined(FN_DEBUG)

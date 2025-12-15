@@ -99,15 +99,6 @@ IOResponse NetworkDevice::handle(const IORequest& request)
         return &s;
     };
 
-    auto find_free_slot = [this]() -> int {
-        for (std::size_t i = 0; i < MAX_SESSIONS; ++i) {
-            if (!_sessions[i].active) {
-                return static_cast<int>(i);
-            }
-        }
-        return -1;
-    };
-
     switch (cmd) {
         case NetworkCommand::Open: {
             auto resp = make_success_response(request);
