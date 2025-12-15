@@ -2,6 +2,10 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
+extern "C" {
+#include "nvs_flash.h"
+}
+
 #include "fujinet/build/profile.h"
 #include "fujinet/core/core.h"
 #include "fujinet/core/bootstrap.h"
@@ -147,6 +151,22 @@ extern "C" void app_main(void)
     esp_log_level_set("TinyUSB",     ESP_LOG_ERROR);
 
     FN_LOGI(TAG, "(ESP32-S3 / ESP-IDF) starting up...");
+
+    // Platform bootstrap: NVS init (required by Wi-Fi and other ESP-IDF subsystems).
+    {
+        esp_err_t err = nvs_flash_init();
+        if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+            FN_LOGW(TAG, "NVS init needs erase (err=%d), erasing", (int)err);
+            ESP_ERROR_CHECK(nvs_flash_erase());
+            err = nvs_flash_init();
+        }
+        if (err != ESP_OK) {
+            FN_LOGE(TAG, "nvs_flash_init failed: %d", (int)err);
+            // Continue boot; Wi-Fi will fail later if requested.
+        } else {
+            FN_LOGI(TAG, "NVS init ok");
+        }
+    }
 
     if (!fujinet::platform::esp32::init_littlefs()) {
         FN_LOGE(TAG, "Failed to initialise LittleFS; config persistence will not work.");

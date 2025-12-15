@@ -16,7 +16,8 @@ public:
     Esp32WifiLink();
     ~Esp32WifiLink() override;
 
-    // sets up nvs (if needed), esp_netif, event loop, wifi init
+    // sets up esp_netif, event loop, wifi init
+    // NOTE: Requires NVS to be initialized by platform bootstrap.
     void init();
 
     fujinet::net::LinkState state() const override;

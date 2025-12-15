@@ -5,7 +5,6 @@
 extern "C" {
 #include "esp_err.h"
 #include "esp_wifi.h"
-#include "nvs_flash.h"
 #include "lwip/inet.h" // IPSTR/IP2STR
 }
 
@@ -42,23 +41,11 @@ void Esp32WifiLink::init()
         return;
     }
 
-    // NVS is required by Wi-Fi. If it's already initialized elsewhere, this should be cheap.
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        FN_LOGW(TAG, "NVS init needs erase (err=%d), erasing", (int)err);
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    if (err != ESP_OK) {
-        FN_LOGE(TAG, "nvs_flash_init failed: %d", (int)err);
-        _state = fujinet::net::LinkState::Failed;
-        return;
-    }
-
+    // Requires NVS to be initialized by platform bootstrap.
     ESP_ERROR_CHECK(esp_netif_init());
 
     // If default loop already exists, ignore invalid state.
-    err = esp_event_loop_create_default();
+    esp_err_t err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         FN_LOGE(TAG, "esp_event_loop_create_default failed: %d", (int)err);
         _state = fujinet::net::LinkState::Failed;
