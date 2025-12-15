@@ -276,7 +276,12 @@ FujiConfig YamlFujiConfigStoreFs::load()
     // Then backup
     if (_backup && _backup->exists(_relPath)) {
         try {
-            return loadFromFs(*_backup);
+            auto config = loadFromFs(*_backup);
+            if (_primary) {
+                FN_LOGI(TAG, "copying missing config from backup to primary");
+                save(config);
+            }
+            return config;
         } catch (const std::exception& ex) {
             FN_LOGE(TAG,
                     "Failed to load config from backup '%s' on '%s': %s",
