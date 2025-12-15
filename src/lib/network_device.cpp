@@ -61,13 +61,12 @@ void NetworkDevice::poll()
 
         // If backend can signal progress/completion later, we can update s.completed
         // and/or touch(s) here when progress is made.
-        const std::uint64_t age  = _tickNow - s.createdTick;
+        // const std::uint64_t age  = _tickNow - s.createdTick;
         const std::uint64_t idle = _tickNow - s.lastActivityTick;
 
         // Reap dead/leaked handles:
-        // - Always enforce max lifetime
         // - Enforce idle timeout
-        if (age > MAX_LIFETIME_TICKS || idle > IDLE_TIMEOUT_TICKS) {
+        if (idle > IDLE_TIMEOUT_TICKS) {
             close_and_free(s);
         }
     }
@@ -208,8 +207,9 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             // ---- (D) Optional eviction: if busy, evict LRU and retry once ----
             if (!slot) {
                 if (auto* victim = pick_lru_victim()) {
-                    // You can be stricter here if you want:
+                    // We can be stricter here.
                     // e.g. only evict if victim->completed or victim idle > some threshold.
+                    // however, entries are pruned after some time anyway
                     close_and_free(*victim);
                     slot = reserve_slot();
                 }

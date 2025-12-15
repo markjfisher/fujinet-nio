@@ -28,8 +28,7 @@ private:
 
     // Timeouts expressed in "device poll ticks".
     // With a 50ms tick, 20 ticks = 1s.
-    static constexpr std::uint64_t IDLE_TIMEOUT_TICKS     = 20ull * 60ull;   // ~60s
-    static constexpr std::uint64_t MAX_LIFETIME_TICKS     = 20ull * 15ull * 60ull; // ~15m
+    static constexpr std::uint64_t IDLE_TIMEOUT_TICKS = 20ull * 60ull * 20ull; // ~20m
 
     struct Session {
         bool active{false};
@@ -98,6 +97,7 @@ private:
         Session* victim = nullptr;
         for (auto& s : _sessions) {
             if (!s.active) continue;
+            // lower lastActivityTick means it's older
             if (!victim || s.lastActivityTick < victim->lastActivityTick) {
                 victim = &s;
             }
