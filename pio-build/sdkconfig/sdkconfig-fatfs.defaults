@@ -1,6 +1,10 @@
 ###########################################################################
-# Filesystem
+# FATFS
 ###########################################################################
-CONFIG_FS_LITTLEFS=y
-#CONFIG_LITTLEFS_MOUNT_PATH="/littlefs"
-CONFIG_ESP32_ENABLE_COREDUMP_TO_NONE=y
+
+# Enable Long File Name support
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=128
+
+# Use UTF-8 filenames
+CONFIG_FATFS_API_ENCODING_UTF_8=y

@@ -1,4 +1,4 @@
 # List the sdkconfig-<name>.defaults files that should be combined to create the sdkconfig.defaults file for the platform
 
-cdc-fujibus-s3-wroom-1-n16r8=common,fs-littlefs,spiram-oct80,tinyusb
-sio-legacy-s3-wroom-1-n16r8=common,fs-littlefs,spiram-oct80,tinyusb
+cdc-fujibus-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb
+sio-legacy-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb

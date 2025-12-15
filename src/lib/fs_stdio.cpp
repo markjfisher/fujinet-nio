@@ -1,6 +1,7 @@
 #include "fujinet/fs/fs_stdio.h"
 #include "fujinet/core/logging.h"
 
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -132,12 +133,27 @@ public:
                              fullPath(to).c_str()) == 0;
     }
 
-    std::unique_ptr<IFile> open(const std::string& path,
-                                const char* mode) override
+    std::unique_ptr<IFile> open(const std::string &path,
+                                const char *mode) override
     {
-        if (!mode) return nullptr;
-        auto fp = std::fopen(fullPath(path).c_str(), mode);
-        if (!fp) return nullptr;
+        const std::string full = fullPath(path);
+        auto fp = std::fopen(full.c_str(), mode);
+
+        if (!fp)
+        {
+            const int e = errno;
+            FN_LOGE(TAG,
+                    "open failed: fs='%s' mode='%s' path='%s' full='%s' errno=%d (%s)",
+                    name().c_str(),
+                    mode ? mode : "(null)",
+                    path.c_str(),
+                    full.c_str(),
+                    e,
+                    std::strerror(e));
+
+            return nullptr;
+        }
+
         return std::make_unique<StdioFile>(fp);
     }
 

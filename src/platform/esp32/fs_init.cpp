@@ -91,7 +91,7 @@ bool init_sdcard_spi()
     // 4) FAT mount config
     const esp_vfs_fat_mount_config_t mount_config = {
         .format_if_mount_failed   = false,
-        .max_files                = 8,
+        .max_files                = 32,
         .allocation_unit_size     = 16 * 1024,
         .disk_status_check_enable = false,
         .use_one_fat              = false,

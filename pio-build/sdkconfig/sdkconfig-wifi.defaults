@@ -1,6 +1,6 @@
 ###########################################################################
-# Filesystem
+# WIFI
 ###########################################################################
-CONFIG_FS_LITTLEFS=y
-#CONFIG_LITTLEFS_MOUNT_PATH="/littlefs"
-CONFIG_ESP32_ENABLE_COREDUMP_TO_NONE=y
+
+CONFIG_ESP32_WIFI_ENABLED=y
+CONFIG_ESP32_WIFI_NVS_ENABLED=y
