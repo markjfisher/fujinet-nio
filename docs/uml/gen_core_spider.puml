@@ -146,7 +146,6 @@ class C_0006245826437162508923 {
 -touch(Session & s) noexcept : void
 __
 {static} -IDLE_TIMEOUT_TICKS : const std::uint64_t
-{static} -MAX_LIFETIME_TICKS : const std::uint64_t
 {static} -MAX_SESSIONS : const std::size_t
 {static} -NETPROTO_VERSION : const std::uint8_t
 -_registry : ProtocolRegistry
