@@ -1,0 +1,498 @@
+#include "fujinet/platform/esp32/http_network_protocol_espidf.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
+
+#include "fujinet/core/logging.h"
+
+extern "C" {
+#include "esp_err.h"
+#include "esp_http_client.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/stream_buffer.h"
+#include "freertos/task.h"
+}
+
+namespace fujinet::platform::esp32 {
+
+static constexpr const char* TAG = "net.http";
+
+static bool method_supported(std::uint8_t method)
+{
+    // v1: GET(1), HEAD(5)
+    return method == 1 || method == 5;
+}
+
+struct HttpNetworkProtocolEspIdfState {
+    static constexpr std::size_t header_cap_default = 2048;
+    static constexpr std::size_t rb_size = 8192;
+    static constexpr TickType_t  wait_step_ticks = pdMS_TO_TICKS(50);
+
+    // stream buffer (bounded, producer->consumer with backpressure)
+    StreamBufferHandle_t stream{nullptr};
+    StaticStreamBuffer_t stream_storage{};
+    std::uint8_t stream_buf[rb_size + 1]{};
+
+    // protects metadata/header string; keep lock scope small (strings allocate)
+    SemaphoreHandle_t meta_mutex{nullptr};
+    StaticSemaphore_t meta_mutex_storage{};
+
+    // esp_http_client + task
+    esp_http_client_handle_t client{nullptr};
+    TaskHandle_t task{nullptr};
+    SemaphoreHandle_t done_sem{nullptr};
+    StaticSemaphore_t done_sem_storage{};
+
+    // request & state
+    bool want_headers{false};
+    bool header_cap_reached{false};
+    std::size_t header_cap{header_cap_default};
+
+    std::uint8_t method{0};
+
+    bool has_http_status{false};
+    std::uint16_t http_status{0};
+
+    bool has_content_length{false};
+    std::uint64_t content_length{0};
+
+    bool done{false};
+    esp_err_t err{ESP_OK};
+
+    std::uint32_t read_cursor{0};
+
+    volatile bool stop_requested{false};
+
+    void reset_session_state()
+    {
+        want_headers = false;
+        header_cap_reached = false;
+        header_cap = header_cap_default;
+        method = 0;
+
+        has_http_status = false;
+        http_status = 0;
+        has_content_length = false;
+        content_length = 0;
+
+        done = false;
+        err = ESP_OK;
+        read_cursor = 0;
+        stop_requested = false;
+    }
+
+    std::string headers_block;
+};
+
+static void take_mutex(SemaphoreHandle_t m)
+{
+    if (!m) return;
+    (void)xSemaphoreTake(m, portMAX_DELAY);
+}
+
+static void give_mutex(SemaphoreHandle_t m)
+{
+    if (!m) return;
+    (void)xSemaphoreGive(m);
+}
+
+static void set_status_and_length(HttpNetworkProtocolEspIdfState& s)
+{
+    if (!s.client) return;
+
+    // Status becomes valid after response headers are parsed by esp_http_client.
+    if (!s.has_http_status) {
+        const int st = esp_http_client_get_status_code(s.client);
+        if (st > 0) {
+            s.has_http_status = true;
+            s.http_status = static_cast<std::uint16_t>(st);
+        }
+    }
+
+    if (!s.has_content_length) {
+        const long long clen = esp_http_client_get_content_length(s.client);
+        if (clen >= 0) {
+            s.has_content_length = true;
+            s.content_length = static_cast<std::uint64_t>(clen);
+        }
+    }
+}
+
+static bool stream_send_all(HttpNetworkProtocolEspIdfState& s,
+                            const std::uint8_t* data,
+                            std::size_t len)
+{
+    if (!s.stream || !data || len == 0) {
+        return true;
+    }
+
+    const std::uint8_t* p = data;
+    std::size_t remaining = len;
+
+    while (remaining > 0) {
+        if (s.stop_requested) {
+            return false;
+        }
+
+        const std::size_t sent = xStreamBufferSend(s.stream,
+                                                   p,
+                                                   remaining,
+                                                   HttpNetworkProtocolEspIdfState::wait_step_ticks);
+        if (sent == 0) {
+            // no space yet; wait_step_ticks ensures we can observe stop_requested
+            continue;
+        }
+
+        p += sent;
+        remaining -= sent;
+    }
+
+    return true;
+}
+
+static esp_err_t event_handler(esp_http_client_event_t* evt)
+{
+    if (!evt || !evt->user_data) {
+        return ESP_FAIL;
+    }
+
+    auto* s = static_cast<HttpNetworkProtocolEspIdfState*>(evt->user_data);
+    if (!s) {
+        return ESP_FAIL;
+    }
+
+    if (s->stop_requested) {
+        return ESP_FAIL;
+    }
+
+    switch (evt->event_id) {
+    case HTTP_EVENT_ON_HEADER: {
+        take_mutex(s->meta_mutex);
+        set_status_and_length(*s);
+
+        if (s->want_headers && !s->header_cap_reached && evt->header_key && evt->header_value) {
+            // Append "Key: Value\r\n" with a total cap. If cap would be exceeded,
+            // stop collecting further headers (but do not fail the request).
+            const std::size_t klen = std::strlen(evt->header_key);
+            const std::size_t vlen = std::strlen(evt->header_value);
+            const std::size_t needed = klen + 2 + vlen + 2;
+
+            if (s->headers_block.size() + needed <= s->header_cap) {
+                s->headers_block.append(evt->header_key, klen);
+                s->headers_block.append(": ", 2);
+                s->headers_block.append(evt->header_value, vlen);
+                s->headers_block.append("\r\n");
+            } else {
+                s->header_cap_reached = true;
+            }
+        }
+
+        give_mutex(s->meta_mutex);
+        break;
+    }
+
+    case HTTP_EVENT_ON_DATA: {
+        // For HEAD, ignore the body entirely (but allow perform() to drain).
+        if (s->method == 5) {
+            break;
+        }
+
+        if (evt->data && evt->data_len > 0) {
+            const auto* p = static_cast<const std::uint8_t*>(evt->data);
+            if (!stream_send_all(*s, p, static_cast<std::size_t>(evt->data_len))) {
+                return ESP_FAIL;
+            }
+        }
+        break;
+    }
+
+    case HTTP_EVENT_ON_FINISH:
+    case HTTP_EVENT_DISCONNECTED: {
+        take_mutex(s->meta_mutex);
+        set_status_and_length(*s);
+        s->done = true;
+        give_mutex(s->meta_mutex);
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    return ESP_OK;
+}
+
+static void http_task_entry(void* arg)
+{
+    auto* s = static_cast<HttpNetworkProtocolEspIdfState*>(arg);
+    if (!s) {
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    esp_err_t err = ESP_FAIL;
+    if (s->client) {
+        err = esp_http_client_perform(s->client);
+    }
+
+    take_mutex(s->meta_mutex);
+    s->err = err;
+    set_status_and_length(*s);
+    s->done = true;
+    give_mutex(s->meta_mutex);
+
+    // Notify close() that we're done.
+    if (s->done_sem) {
+        (void)xSemaphoreGive(s->done_sem);
+    }
+
+    vTaskDelete(nullptr);
+}
+
+HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
+{
+    _s = new HttpNetworkProtocolEspIdfState();
+    _s->meta_mutex = xSemaphoreCreateMutexStatic(&_s->meta_mutex_storage);
+    _s->done_sem = xSemaphoreCreateBinaryStatic(&_s->done_sem_storage);
+    _s->stream = xStreamBufferCreateStatic(HttpNetworkProtocolEspIdfState::rb_size,
+                                           1,
+                                           _s->stream_buf,
+                                           &_s->stream_storage);
+    _s->headers_block.reserve(HttpNetworkProtocolEspIdfState::header_cap_default);
+}
+
+HttpNetworkProtocolEspIdf::~HttpNetworkProtocolEspIdf()
+{
+    close();
+    delete _s;
+    _s = nullptr;
+}
+
+fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::NetworkOpenRequest& req)
+{
+    close();
+
+    if (!_s) {
+        return fujinet::io::StatusCode::InternalError;
+    }
+
+    if (!method_supported(req.method)) {
+        return fujinet::io::StatusCode::Unsupported;
+    }
+
+    _s->reset_session_state();
+    _s->method = req.method;
+    _s->want_headers = (req.flags & 0x04) != 0;
+
+    // reset buffers
+    if (_s->stream) {
+        (void)xStreamBufferReset(_s->stream);
+    }
+
+    take_mutex(_s->meta_mutex);
+    _s->headers_block.clear();
+    _s->header_cap_reached = false;
+    _s->has_http_status = false;
+    _s->has_content_length = false;
+    _s->done = false;
+    _s->err = ESP_OK;
+    give_mutex(_s->meta_mutex);
+
+    esp_http_client_config_t cfg{};
+    cfg.url = req.url.c_str();
+    cfg.event_handler = &event_handler;
+    cfg.user_data = _s;
+    cfg.buffer_size = 1024;
+    cfg.timeout_ms = 15000;
+
+    const bool follow = (req.flags & 0x02) != 0;
+    cfg.disable_auto_redirect = follow ? false : true;
+
+    _s->client = esp_http_client_init(&cfg);
+    if (!_s->client) {
+        return fujinet::io::StatusCode::InternalError;
+    }
+
+    esp_http_client_set_method(_s->client, (req.method == 5) ? HTTP_METHOD_HEAD : HTTP_METHOD_GET);
+
+    for (const auto& kv : req.headers) {
+        if (!kv.first.empty()) {
+            (void)esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
+        }
+    }
+
+    // Launch task to do network I/O (perform) so open() returns quickly.
+    _s->task = nullptr;
+    if (_s->done_sem) {
+        (void)xSemaphoreTake(_s->done_sem, 0);
+    }
+    BaseType_t ok = xTaskCreate(&http_task_entry,
+                               "fn_http",
+                               4096,
+                               _s,
+                               5,
+                               &_s->task);
+    if (ok != pdPASS || !_s->task) {
+        esp_http_client_cleanup(_s->client);
+        _s->client = nullptr;
+        return fujinet::io::StatusCode::InternalError;
+    }
+
+    return fujinet::io::StatusCode::Ok;
+}
+
+fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(std::uint32_t,
+                                                              const std::uint8_t*,
+                                                              std::size_t,
+                                                              std::uint16_t& written)
+{
+    written = 0;
+    return fujinet::io::StatusCode::Unsupported;
+}
+
+fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offset,
+                                                             std::uint8_t* out,
+                                                             std::size_t outLen,
+                                                             std::uint16_t& read,
+                                                             bool& eof)
+{
+    read = 0;
+    eof = false;
+
+    if (!_s || !out) {
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
+
+    // sequential offsets only
+    if (offset != _s->read_cursor) {
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
+
+    if (!_s->stream || outLen == 0) {
+        take_mutex(_s->meta_mutex);
+        const bool done = _s->done;
+        const esp_err_t err = _s->err;
+        give_mutex(_s->meta_mutex);
+
+        if (done) {
+            eof = true;
+            return (err == ESP_OK) ? fujinet::io::StatusCode::Ok : fujinet::io::StatusCode::IOError;
+        }
+        return fujinet::io::StatusCode::NotReady;
+    }
+
+    const std::size_t max_n = std::min<std::size_t>(outLen, 0xFFFFu);
+    const std::size_t n = xStreamBufferReceive(_s->stream, out, max_n, 0);
+
+    if (n > 0) {
+        _s->read_cursor += static_cast<std::uint32_t>(n);
+        read = static_cast<std::uint16_t>(n);
+        eof = false;
+        return fujinet::io::StatusCode::Ok;
+    }
+
+    take_mutex(_s->meta_mutex);
+    const bool done = _s->done;
+    const esp_err_t err = _s->err;
+    give_mutex(_s->meta_mutex);
+
+    if (done) {
+        eof = true;
+        return (err == ESP_OK) ? fujinet::io::StatusCode::Ok : fujinet::io::StatusCode::IOError;
+    }
+
+    return fujinet::io::StatusCode::NotReady;
+}
+
+fujinet::io::StatusCode HttpNetworkProtocolEspIdf::info(std::size_t maxHeaderBytes, fujinet::io::NetworkInfo& out)
+{
+    out = fujinet::io::NetworkInfo{};
+
+    if (!_s) {
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
+
+    take_mutex(_s->meta_mutex);
+
+    const bool has_status = _s->has_http_status;
+    const std::uint16_t http_status = _s->http_status;
+    const bool has_len = _s->has_content_length;
+    const std::uint64_t len = _s->content_length;
+    const bool done = _s->done;
+    const esp_err_t err = _s->err;
+
+    std::string hdr;
+    if (_s->want_headers && !_s->headers_block.empty() && maxHeaderBytes > 0) {
+        const std::size_t n = std::min<std::size_t>(_s->headers_block.size(), maxHeaderBytes);
+        hdr.assign(_s->headers_block.data(), n);
+    }
+
+    give_mutex(_s->meta_mutex);
+
+    if (!has_status) {
+        // If the transfer failed before status became known, report IOError once it's done.
+        if (done && err != ESP_OK) {
+            return fujinet::io::StatusCode::IOError;
+        }
+        return fujinet::io::StatusCode::NotReady;
+    }
+
+    out.hasHttpStatus = true;
+    out.httpStatus = http_status;
+    out.hasContentLength = has_len;
+    out.contentLength = has_len ? len : 0;
+    out.headersBlock = std::move(hdr);
+    return fujinet::io::StatusCode::Ok;
+}
+
+void HttpNetworkProtocolEspIdf::poll()
+{
+    // Keep lightweight; esp_http_client runs in the dedicated task.
+}
+
+void HttpNetworkProtocolEspIdf::close()
+{
+    if (!_s) {
+        return;
+    }
+
+    _s->stop_requested = true;
+
+    // Best-effort: close the client to break esp_http_client_perform()
+    if (_s->client) {
+        (void)esp_http_client_close(_s->client);
+    }
+
+    // Wait briefly for task to finish (if any). We use a notify on the task handle itself.
+    if (_s->task && _s->done_sem) {
+        // Wait up to ~1s total.
+        (void)xSemaphoreTake(_s->done_sem, pdMS_TO_TICKS(1000));
+    }
+
+    if (_s->client) {
+        esp_http_client_cleanup(_s->client);
+        _s->client = nullptr;
+    }
+
+    _s->task = nullptr;
+
+    if (_s->stream) {
+        (void)xStreamBufferReset(_s->stream);
+    }
+
+    take_mutex(_s->meta_mutex);
+    _s->headers_block.clear();
+    _s->reset_session_state();
+    give_mutex(_s->meta_mutex);
+
+    FN_LOGD(TAG, "close done");
+}
+
+} // namespace fujinet::platform::esp32
+
+

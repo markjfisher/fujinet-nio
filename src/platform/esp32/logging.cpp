@@ -1,16 +1,12 @@
 #include "fujinet/core/logging.h"
 
-#if !defined(FN_DEBUG)
-
-// Non-debug build: nothing here. Inline stubs in the header handle calls.
-
-#else
-
 #include <cstdio>
+#include <cstdarg>
 #include <string>
 
 extern "C" {
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 }
 
 namespace fujinet::log {
@@ -19,6 +15,30 @@ static const char* to_esp_tag(const char* tag)
 {
     return tag ? tag : "log";
 }
+
+void early_logf(const char* fmt, ...)
+{
+    if (!fmt) return;
+
+    std::va_list args;
+    va_start(args, fmt);
+
+    // Very early / fast path; avoids ESP_LOG entirely.
+    // esp_rom_printf doesn't support va_list directly, so we format to a small stack buffer.
+    char buf[256];
+    int n = std::vsnprintf(buf, sizeof(buf), fmt, args);
+    if (n > 0) {
+        esp_rom_printf("%s", buf);
+    }
+
+    va_end(args);
+}
+
+#if !defined(FN_DEBUG)
+
+// Non-debug build: nothing else here. Inline stubs in the header handle calls.
+
+#else
 
 // Debug-only, so we can afford heap + two-pass vsnprintf.
 void vlogf(Level level, const char* tag, const char* fmt, std::va_list args)
@@ -85,25 +105,7 @@ void log(Level level, const char* tag, std::string_view message)
          message.data());
 }
 
-void early_logf(const char* fmt, ...)
-{
-    if (!fmt) return;
-
-    std::va_list args;
-    va_start(args, fmt);
-
-    // Very early / fast path; avoids ESP_LOG entirely.
-    // esp_rom_printf doesn't support va_list directly, so we format to a small stack buffer.
-    char buf[256];
-    int n = std::vsnprintf(buf, sizeof(buf), fmt, args);
-    if (n > 0) {
-        esp_rom_printf("%s", buf);
-    }
-
-    va_end(args);
-}
-
 } // namespace fujinet::log
 
-
 #endif // FN_DEBUG
+

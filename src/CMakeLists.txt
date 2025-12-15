@@ -34,6 +34,7 @@ idf_component_register(
         platform/esp32/fuji_device_factory.cpp
         platform/esp32/hardware_caps.cpp
         platform/esp32/logging.cpp
+        platform/esp32/http_network_protocol_espidf.cpp
         platform/esp32/network_registry.cpp
         platform/esp32/pinmap.cpp
         platform/esp32/time.cpp

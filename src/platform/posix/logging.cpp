@@ -1,15 +1,27 @@
 #include "fujinet/core/logging.h"
 
-#if !defined(FN_DEBUG)
-
-// Non-debug build: nothing here. Inline stubs in the header handle calls.
-
-#else
-
 #include <cstdarg>
 #include <cstdio>
 
 namespace fujinet::log {
+
+void early_logf(const char* fmt, ...)
+{
+    if (!fmt) {
+        return;
+    }
+
+    std::va_list args;
+    va_start(args, fmt);
+    std::vfprintf(stderr, fmt, args);
+    va_end(args);
+}
+
+#if !defined(FN_DEBUG)
+
+// Non-debug build: nothing else here. Inline stubs in the header handle log calls.
+
+#else
 
 static const char* level_to_str(Level lvl)
 {
@@ -55,6 +67,6 @@ void log(Level level, const char* tag, std::string_view message)
                  message.data());
 }
 
-} // namespace fujinet::log
+#endif // defined(FN_DEBUG)
 
-#endif // !defined(FN_DEBUG)
+} // namespace fujinet::log
