@@ -26,10 +26,6 @@ create_fuji_config_store(fs::StorageManager& storage)
     }
 
     // Normal case: SD preferred, flash as backup mirror
-    FN_LOGI(TAG, "Config store: primary=%s, backup=%s",
-            sd    ? "sd0"   : (flash ? "flash" : "none"),
-            flash ? "flash" : "none");
-
     return std::make_unique<config::YamlFujiConfigStoreFs>(
         sd ? sd : flash,               // primary
         sd && flash ? flash : nullptr, // backup (mirror)

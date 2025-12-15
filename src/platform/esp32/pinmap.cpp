@@ -3,8 +3,6 @@
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "platform";
-
 // Compile-time selector values, *visible to the preprocessor*.
 #define FN_PINMAP_BREADBOARD        1
 #define FN_PINMAP_FUJINET_S3_REV_A  2
@@ -36,7 +34,6 @@ static constexpr PinMap SD_PINMAP{
 
 const PinMap& pinmap()
 {
-    FN_LOGI(TAG, "Pinmap compiled with FN_PINMAP=%d", FN_PINMAP);
     return SD_PINMAP;
 }
 

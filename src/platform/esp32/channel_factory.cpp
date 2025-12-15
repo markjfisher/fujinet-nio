@@ -23,7 +23,7 @@ create_channel_for_profile(const build::BuildProfile& profile)
     switch (profile.primaryChannel) {
     case ChannelKind::UsbCdcDevice:
 #if CONFIG_TINYUSB_CDC_ENABLED
-        FN_LOGI(TAG, "Using TinyUSB CDC-ACM channel for UsbCdcDevice");
+        FN_ELOG("Using TinyUSB CDC-ACM channel for UsbCdcDevice");
         return std::make_unique<esp32::UsbCdcChannel>();
 #else
         FN_LOGE(TAG, "UsbCdcDevice selected but TinyUSB CDC is disabled in sdkconfig");

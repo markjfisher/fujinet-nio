@@ -50,6 +50,10 @@ private:
     esp_event_handler_instance_t _wifi_handler{};
     esp_event_handler_instance_t _ip_handler{};
 
+    bool _wifiStarted{false};
+    bool _connectPending{false};
+    bool _userDisconnectRequested{false};
+
     // avoid mutating std::string from event handler
     char _ip_buf[16]{}; // "255.255.255.255" + NUL
     bool _ip_dirty{false};

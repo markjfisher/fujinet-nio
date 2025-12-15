@@ -18,7 +18,7 @@ static const char* TAG = "core";
 void register_network_device(FujinetCore& core, ProtocolRegistry registry)
 {
     // IMPORTANT: only register ONE network device for now.
-    // We can discuss later how to scale out without allocating/registering
+    // We can later work out how/if we need to scale out without allocating/registering
     // multiple device instances up front.
     auto dev = std::make_unique<NetworkDevice>(std::move(registry));
     DeviceID id = to_device_id(WireDeviceId::NetworkService); // 0xFD
@@ -27,7 +27,7 @@ void register_network_device(FujinetCore& core, ProtocolRegistry registry)
     if (!ok) {
         FN_LOGE(TAG, "Failed to register NetworkDevice on DeviceID %u", static_cast<unsigned>(id));
     } else {
-        FN_LOGI(TAG, "Registered NetworkDevice on DeviceID %u", static_cast<unsigned>(id));
+        FN_ELOG("Registered NetworkDevice on DeviceID %u", static_cast<unsigned>(id));
     }
 }
 

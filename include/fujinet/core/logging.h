@@ -13,6 +13,8 @@ enum class Level {
     Verbose,
 };
 
+void early_logf(const char* fmt, ...);
+
 #if defined(FN_DEBUG)
 
 // Real functions exist only in debug builds.
@@ -39,7 +41,10 @@ inline void log(Level, const char*, std::string_view) {}
 // Convenience macros
 // ------------------------------------------------------------------
 
+
 #if defined(FN_DEBUG)
+
+#define FN_ELOG(fmt, ...) ::fujinet::log::early_logf(fmt "\n", ##__VA_ARGS__)
 
 #define FN_LOGE(tag, fmt, ...) \
     ::fujinet::log::logf(::fujinet::log::Level::Error,   tag, fmt, ##__VA_ARGS__)

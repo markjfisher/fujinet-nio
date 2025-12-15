@@ -54,7 +54,6 @@ static void ensure_tinyusb_init()
         return;
     }
 
-    FN_LOGI(TAG, "TinyUSB CDC-ACM initialised");
     s_tinyusb_inited = true;
 }
 

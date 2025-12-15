@@ -21,7 +21,7 @@ create_fuji_device(fujinet::core::FujinetCore& core,
                    const build::BuildProfile&  /*profile*/,
                    const FujiDeviceHooks&      hooks)
 {
-    FN_LOGI(TAG, "Creating FujiDevice");
+    FN_ELOG("Creating FujiDevice");
 
     FujiDevice::ResetHandler resetHandler;
 
@@ -33,7 +33,7 @@ create_fuji_device(fujinet::core::FujinetCore& core,
         };
     }
 
-    FN_LOGI(TAG, "Creating config store.");
+    FN_ELOG("Creating config store");
     auto store = create_fuji_config_store(core.storageManager());
 
     return std::make_unique<FujiDevice>(

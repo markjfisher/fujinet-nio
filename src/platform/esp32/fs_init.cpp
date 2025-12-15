@@ -42,7 +42,7 @@ bool init_littlefs()
     if (err != ESP_OK) {
         FN_LOGW(TAG, "Failed to get LittleFS info (err=0x%x)", static_cast<unsigned>(err));
     } else {
-        FN_LOGI(TAG, "LittleFS mounted at %s, total=%u, used=%u",
+        FN_ELOG("LittleFS mounted at %s, total=%u, used=%u",
                  conf.base_path,
                  static_cast<unsigned>(total),
                  static_cast<unsigned>(used));
@@ -57,7 +57,7 @@ bool init_sdcard_spi()
 
     const auto& pins = pinmap().sd;
 
-    FN_LOGI(TAG,
+    FN_ELOG(
         "Initializing SD card over SPI: MOSI=%d MISO=%d SCK=%d CS=%d",
         pins.mosi, pins.miso, pins.sck, pins.cs);
 
@@ -112,7 +112,7 @@ bool init_sdcard_spi()
 
     // Optional but handy while debugging:
     sdmmc_card_print_info(stdout, s_sdcard);
-    FN_LOGI(TAG, "SD card mounted at %s", mount_point);
+    FN_ELOG("SD card mounted at %s", mount_point);
     return true;
 }
 

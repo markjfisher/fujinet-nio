@@ -24,7 +24,7 @@ void register_file_device(FujinetCore& core)
         FN_LOGE(TAG, "Failed to register FileDevice on DeviceID %u",
                 static_cast<unsigned>(fileDeviceId));
     } else {
-        FN_LOGI(TAG, "Registered FileDevice on DeviceID %u",
+        FN_ELOG("Registered FileDevice on DeviceID %u",
                 static_cast<unsigned>(fileDeviceId));
     }
 }

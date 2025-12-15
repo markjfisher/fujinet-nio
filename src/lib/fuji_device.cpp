@@ -19,6 +19,10 @@ FujiDevice::FujiDevice(ResetHandler resetHandler,
     , _configStore(std::move(configStore))
     , _storage(storage)
 {
+}
+
+void FujiDevice::start()
+{
     load_config();
 }
 

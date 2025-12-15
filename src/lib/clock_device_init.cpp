@@ -23,7 +23,7 @@ void register_clock_device(FujinetCore& core)
     if (!ok) {
         FN_LOGE(TAG, "Failed to register ClockDevice on DeviceID %u", static_cast<unsigned>(id));
     } else {
-        FN_LOGI(TAG, "Registered ClockDevice on DeviceID %u", static_cast<unsigned>(id));
+        FN_ELOG("Registered ClockDevice on DeviceID %u", static_cast<unsigned>(id));
     }
 }
 

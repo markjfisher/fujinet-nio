@@ -1,21 +1,24 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+
 
 extern "C" {
 #include "nvs_flash.h"
 }
 
 #include "fujinet/build/profile.h"
-#include "fujinet/core/core.h"
 #include "fujinet/core/bootstrap.h"
+#include "fujinet/core/core.h"
 #include "fujinet/core/device_init.h"
 #include "fujinet/io/core/channel.h"
+#include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
-#include "fujinet/platform/esp32/fs_init.h"
 #include "fujinet/platform/esp32/fs_factory.h"
+#include "fujinet/platform/esp32/fs_init.h"
 #include "fujinet/platform/esp32/wifi_link.h"
 #include "fujinet/platform/fuji_config_store_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
@@ -29,68 +32,53 @@ static const char* TAG = "nio";
 using namespace fujinet;
 using namespace fujinet::io::protocol;
 
+namespace {
+    struct Esp32Services {
+        fujinet::io::FujiDevice* fuji{nullptr};
+        std::unique_ptr<fujinet::platform::esp32::Esp32WifiLink> wifi;
+        bool phase1_started{false};
+    
+        void start_phase1()
+        {
+            if (phase1_started || !fuji) return;
+            phase1_started = true;
+    
+            // Load config now (not on phase 0 path)
+            fuji->start();
+    
+            const auto& cfg = fuji->config();
+    
+            if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
+                wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
+                wifi->init();
+                wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
+            }
+        }
+    
+        void poll()
+        {
+            if (wifi) wifi->poll();
+        }
+    };
+    
+} // namespace    
+
 extern "C" void fujinet_core_task(void* arg)
 {
     core::FujinetCore core;
-
-    // Register flash FS
-    FN_LOGI(TAG, "Registering flash filesystem");
+    Esp32Services services;
+    
     if (auto flashFs = platform::esp32::create_flash_filesystem()) {
         core.storageManager().registerFileSystem(std::move(flashFs));
     }
 
-    // Register SD FS (optional; may be nullptr if SD not present/mounted)
-    FN_LOGI(TAG, "Registering SD filesystem");
     if (auto sdFs = platform::esp32::create_sdcard_filesystem()) {
         core.storageManager().registerFileSystem(std::move(sdFs));
     }
 
-    for (auto& name : core.storageManager().listNames()) {
-        FN_LOGI(TAG, "Registered filesystem: %s", name.c_str());
-    }
-
-    // 1. Determine build profile.
     auto profile = build::current_build_profile();
-    FN_LOGI(TAG, "Build profile: %.*s", static_cast<int>(profile.name.size()), profile.name.data());
 
-    // 1b. Load config early so platform services (like Wi-Fi) can be started before devices.
-    auto configStore = platform::create_fuji_config_store(core.storageManager());
-    fujinet::config::FujiConfig cfg{};
-    if (configStore) {
-        cfg = configStore->load();
-    }
-
-    // 1c. Optional Wi-Fi bring-up (STA) from config.
-    // Keep lifetime for duration of task.
-    FN_LOGI(TAG, "wifi - enabled: %s", cfg.wifi.enabled ? "true" : "false");
-    std::unique_ptr<fujinet::platform::esp32::Esp32WifiLink> wifi;
-    if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
-        wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
-        wifi->init();
-        wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
-    }
-
-    // 2a. Register FujiDevice
-    {
-        FN_LOGI(TAG, "Creating FujiDevice");
-        auto dev = platform::create_fuji_device(core, profile);
-        io::DeviceID fujiDeviceId = to_device_id(WireDeviceId::FujiNet);
-        
-        FN_LOGI(TAG, "Registering FujiDevice on DeviceID %u", static_cast<unsigned>(fujiDeviceId));
-        bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
-        if (!ok) {
-            FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %u",
-                static_cast<unsigned>(fujiDeviceId));
-        }
-    }
-
-    // 2b. Register Core Devices
-    // TODO: use config to decide if we want to start these or not
-    fujinet::core::register_file_device(core);
-    fujinet::core::register_clock_device(core);
-    fujinet::core::register_network_device(core);
-
-    // 3. Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
+    // Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
     auto channel = platform::create_channel_for_profile(profile);
     if (!channel) {
         FN_LOGE(TAG, "Failed to create Channel for profile");
@@ -98,17 +86,51 @@ extern "C" void fujinet_core_task(void* arg)
         return;
     }
 
-    // 4. Set up transports based on profile (FujiBus, SIO, etc.).
+    // Set up transports based on profile (FujiBus, SIO, etc.).
     core::setup_transports(core, *channel, profile);
+    FN_ELOG("transport initialized");
 
-    FN_LOGI(TAG, "core task starting (transport initialized)");
+    {
+        auto dev = platform::create_fuji_device(core, profile);
+
+        // Keep a non-owning pointer for phase-1 start.
+        if (auto* fuji = dynamic_cast<fujinet::io::FujiDevice*>(dev.get())) {
+            services.fuji = fuji;
+        } else {
+            FN_LOGE(TAG, "create_fuji_device() did not return a FujiDevice; Wi-Fi/config start disabled");
+            services.fuji = nullptr;
+        }
+
+        io::DeviceID fujiDeviceId = to_device_id(WireDeviceId::FujiNet);
+        
+        FN_ELOG("Registering FujiDevice on DeviceID %u", static_cast<unsigned>(fujiDeviceId));
+        bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
+        if (!ok) {
+            FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %u",
+                static_cast<unsigned>(fujiDeviceId));
+        }
+    }
+
+    // TODO: use config to decide if we want to start these or not
+    // HOWEVER they will have to go in Esp32Services, as we delay loading config.
+    fujinet::core::register_file_device(core);
+    fujinet::core::register_clock_device(core);
+    fujinet::core::register_network_device(core);
+
+    const std::uint64_t phase1_at = core.tick_count() + 50;
+    
+    FN_ELOG("[%u ms] starting main loop", (unsigned)(esp_timer_get_time()/1000));
 
     // 5. Run the core loop forever.
     for (;;) {
         core.tick();
-        if (wifi) {
-            wifi->poll();
+
+        // start phase-1 services after a small delay
+        if (!services.phase1_started && core.tick_count() >= phase1_at) {
+            services.start_phase1();
         }
+
+        services.poll();
 
 // Do this later when we want to check the water mark
 // #if defined(FN_DEBUG)
@@ -137,7 +159,7 @@ extern "C" void app_main(void)
     esp_log_level_set("io",          ESP_LOG_INFO);
     esp_log_level_set("nio",         ESP_LOG_INFO);
     esp_log_level_set("platform",    ESP_LOG_INFO);
-    esp_log_level_set("wifi",        ESP_LOG_INFO);
+    esp_log_level_set("nio-wifi",    ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init",   ESP_LOG_ERROR);
@@ -148,12 +170,13 @@ extern "C" void app_main(void)
     esp_log_level_set("octal_psram", ESP_LOG_ERROR);
     esp_log_level_set("cpu_start",   ESP_LOG_ERROR);
     esp_log_level_set("main_task",   ESP_LOG_ERROR);
+    esp_log_level_set("wifi",        ESP_LOG_ERROR);
 
     // TinyUSB glue:
     esp_log_level_set("tusb_desc",   ESP_LOG_ERROR);
     esp_log_level_set("TinyUSB",     ESP_LOG_ERROR);
 
-    FN_LOGI(TAG, "(ESP32-S3 / ESP-IDF) starting up...");
+    FN_ELOG("fujinet-nio - (ESP32-S3 / ESP-IDF) starting up");
 
     // Platform bootstrap: NVS init (required by Wi-Fi and other ESP-IDF subsystems).
     {
@@ -166,8 +189,6 @@ extern "C" void app_main(void)
         if (err != ESP_OK) {
             FN_LOGE(TAG, "nvs_flash_init failed: %d", (int)err);
             // Continue boot; Wi-Fi will fail later if requested.
-        } else {
-            FN_LOGI(TAG, "NVS init ok");
         }
     }
 

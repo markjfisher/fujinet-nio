@@ -259,7 +259,7 @@ create_stdio_filesystem(const std::string& rootDir,
                         const std::string& name,
                         FileSystemKind kind)
 {
-    FN_LOGI(TAG, "Creating stdio filesystem '%s' at root '%s'",
+    FN_ELOG("Creating stdio filesystem '%s' at root '%s'",
         name.c_str(), rootDir.c_str());
     return std::make_unique<StdioFileSystem>(rootDir, name, kind);
 }

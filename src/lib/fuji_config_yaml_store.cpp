@@ -358,8 +358,7 @@ FujiConfig YamlFujiConfigStoreFs::loadFromFs(fs::IFileSystem& fs)
     // <== reuse your existing mapping helper:
     from_yaml(root, cfg);
 
-    FN_LOGI(TAG,
-            "Loaded config from '%s' on '%s'",
+    FN_ELOG("Loaded config from '%s' on '%s'",
             _relPath.c_str(), fs.name().c_str());
     return cfg;
 }

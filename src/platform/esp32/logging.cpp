@@ -85,6 +85,25 @@ void log(Level level, const char* tag, std::string_view message)
          message.data());
 }
 
+void early_logf(const char* fmt, ...)
+{
+    if (!fmt) return;
+
+    std::va_list args;
+    va_start(args, fmt);
+
+    // Very early / fast path; avoids ESP_LOG entirely.
+    // esp_rom_printf doesn't support va_list directly, so we format to a small stack buffer.
+    char buf[256];
+    int n = std::vsnprintf(buf, sizeof(buf), fmt, args);
+    if (n > 0) {
+        esp_rom_printf("%s", buf);
+    }
+
+    va_end(args);
+}
+
 } // namespace fujinet::log
+
 
 #endif // FN_DEBUG
