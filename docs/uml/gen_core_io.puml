@@ -253,12 +253,14 @@ class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
 +FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
 ..
++config() const : const config::FujiConfig &
 +handle(const IORequest & request) : IOResponse
 -handle_reset(const IORequest & request) : IOResponse
 -handle_unknown(const IORequest & request) : IOResponse
 -load_config() : void
 +poll() : void
 -save_config() : void
++start() : void
 __
 -_config : config::FujiConfig
 -_configStore : std::unique_ptr<config::FujiConfigStore>
