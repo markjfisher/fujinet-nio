@@ -592,7 +592,7 @@ def register_subcommands(subparsers) -> None:
     png.add_argument("--show-headers", action="store_true")
     png.add_argument("--max-headers", type=int, default=1024)
     png.add_argument("--info-retries", type=int, default=10)
-    png.add_argument("--info-sleep", type=float, default=0.01)
+    png.add_argument("--info-sleep", type=float, default=0.1)
     png.add_argument("url")
     png.set_defaults(fn=cmd_net_get)
 

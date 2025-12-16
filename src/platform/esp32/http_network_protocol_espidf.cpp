@@ -395,7 +395,6 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
     const std::size_t max_n = std::min<std::size_t>(outLen, 0xFFFFu);
 
     // Small wait so we don't force the host into "timeout-driven polling".
-    // This helps the "last chunk" case collapse into a single READ.
     constexpr TickType_t kWaitTicks = pdMS_TO_TICKS(20);
 
     const std::size_t n = xStreamBufferReceive(_s->stream, out, max_n, kWaitTicks);
@@ -405,17 +404,34 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
         _s->read_cursor += static_cast<std::uint32_t>(n);
         read = static_cast<std::uint16_t>(n);
 
-        // If the producer has finished, and there's nothing left buffered now,
-        // we can safely return eof=true in the same READ (avoids the "extra read").
-        take_mutex(_s->meta_mutex);
-        const bool done = _s->done;
-        const esp_err_t err = _s->err;
-        give_mutex(_s->meta_mutex);
-
-        if (done)
+        // If we just drained the buffer, check if the transfer is finished.
+        // There is a race: the producer may not have set done=true yet.
+        const std::size_t avail = xStreamBufferBytesAvailable(_s->stream);
+        if (avail == 0)
         {
-            const std::size_t avail = xStreamBufferBytesAvailable(_s->stream);
-            if (avail == 0)
+            take_mutex(_s->meta_mutex);
+            bool done = _s->done;
+            esp_err_t err = _s->err;
+            give_mutex(_s->meta_mutex);
+
+            if (!done && _s->done_sem)
+            {
+                // Wait a *tiny* amount for the HTTP task to finish so small responses
+                // can return eof=true in the same READ.
+                constexpr TickType_t kDoneWait = pdMS_TO_TICKS(5);
+                if (xSemaphoreTake(_s->done_sem, kDoneWait) == pdTRUE)
+                {
+                    // Put it back so close() still works unchanged.
+                    (void)xSemaphoreGive(_s->done_sem);
+
+                    take_mutex(_s->meta_mutex);
+                    done = _s->done;
+                    err = _s->err;
+                    give_mutex(_s->meta_mutex);
+                }
+            }
+
+            if (done)
             {
                 eof = true;
                 return (err == ESP_OK) ? fujinet::io::StatusCode::Ok
@@ -427,7 +443,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
         return fujinet::io::StatusCode::Ok;
     }
 
-    // No bytes this instant: if done, EOF; else NotReady (but we avoided 0-wait busy polling above).
+    // No bytes this instant: if done, EOF; else NotReady.
     take_mutex(_s->meta_mutex);
     const bool done = _s->done;
     const esp_err_t err = _s->err;
