@@ -405,17 +405,17 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
         _s->read_cursor += static_cast<std::uint32_t>(n);
         read = static_cast<std::uint16_t>(n);
 
-        // If we just drained the buffer, check if the transfer is already finished.
-        // This is the key: it lets the first READ return eof=true for small responses.
-        const std::size_t avail = xStreamBufferBytesAvailable(_s->stream);
-        if (avail == 0)
-        {
-            take_mutex(_s->meta_mutex);
-            const bool done = _s->done;
-            const esp_err_t err = _s->err;
-            give_mutex(_s->meta_mutex);
+        // If the producer has finished, and there's nothing left buffered now,
+        // we can safely return eof=true in the same READ (avoids the "extra read").
+        take_mutex(_s->meta_mutex);
+        const bool done = _s->done;
+        const esp_err_t err = _s->err;
+        give_mutex(_s->meta_mutex);
 
-            if (done)
+        if (done)
+        {
+            const std::size_t avail = xStreamBufferBytesAvailable(_s->stream);
+            if (avail == 0)
             {
                 eof = true;
                 return (err == ESP_OK) ? fujinet::io::StatusCode::Ok
