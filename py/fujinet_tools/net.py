@@ -7,6 +7,65 @@ from .fujibus import send_command
 from .status import format_status
 from . import netproto as np
 
+STATUS_OK = 0
+STATUS_NOT_READY = 4  # io::StatusCode::NotReady
+
+def _pkt_status(pkt) -> int:
+    return pkt.params[0] if (pkt and pkt.params) else 0xFF
+
+def _send_retry_not_ready(
+    *,
+    args,
+    device: int,
+    command: int,
+    payload: bytes,
+    overall_timeout_s: float = 3.0,
+    sleep_s: float = 0.01,
+):
+    """
+    Send a command repeatedly until we get a reply that is either:
+      - OK
+      - a non-OK status other than NotReady (caller should handle)
+    Retries on:
+      - pkt is None (no response)
+      - NotReady
+    """
+    deadline = time.time() + overall_timeout_s
+
+    # Use a short per-try timeout so we don't block for ages.
+    per_try_timeout = min(getattr(args, "timeout", 0.1) or 0.1, 0.2)
+
+    last_pkt = None
+    while time.time() < deadline:
+        pkt = send_command(
+            port=args.port,
+            device=device,
+            command=command,
+            payload=payload,
+            baud=args.baud,
+            timeout=per_try_timeout,
+            read_max=args.read_max,
+            debug=args.debug,
+        )
+        if pkt is None:
+            time.sleep(sleep_s)
+            continue
+
+        st = _pkt_status(pkt)
+        last_pkt = pkt
+
+        if st == STATUS_OK:
+            return pkt
+
+        if st == STATUS_NOT_READY:
+            time.sleep(sleep_s)
+            continue
+
+        # Some other error: return it to caller to print
+        return pkt
+
+    # Timed out overall – return whatever we last saw (or None)
+    return last_pkt
 
 def _status_ok(pkt) -> bool:
     return bool(pkt.params) and pkt.params[0] == 0
@@ -75,15 +134,23 @@ def cmd_net_close(args) -> int:
 
 def cmd_net_info(args) -> int:
     req = np.build_info_req(args.handle, args.max_headers)
-    pkt = send_command(
-        port=args.port,
+    # pkt = send_command(
+    #     port=args.port,
+    #     device=np.NETWORK_DEVICE_ID,
+    #     command=np.CMD_INFO,
+    #     payload=req,
+    #     baud=args.baud,
+    #     timeout=args.timeout,
+    #     read_max=args.read_max,
+    #     debug=args.debug,
+    # )
+    pkt = _send_retry_not_ready(
+        args=args,
         device=np.NETWORK_DEVICE_ID,
         command=np.CMD_INFO,
         payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
+        overall_timeout_s=getattr(args, "timeout", 1.0) or 1.0,
+        sleep_s=0.01,
     )
     if pkt is None:
         print("No response")
@@ -137,16 +204,25 @@ def cmd_net_write(args) -> int:
 
 def cmd_net_read(args) -> int:
     req = np.build_read_req(args.handle, args.offset, args.max_bytes)
-    pkt = send_command(
-        port=args.port,
+    # pkt = send_command(
+    #     port=args.port,
+    #     device=np.NETWORK_DEVICE_ID,
+    #     command=np.CMD_READ,
+    #     payload=req,
+    #     baud=args.baud,
+    #     timeout=args.timeout,
+    #     read_max=args.read_max,
+    #     debug=args.debug,
+    # )
+    pkt = _send_retry_not_ready(
+        args=args,
         device=np.NETWORK_DEVICE_ID,
         command=np.CMD_READ,
         payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
+        overall_timeout_s=getattr(args, "timeout", 1.0) or 1.0,
+        sleep_s=0.01,
     )
+
     if pkt is None:
         print("No response")
         return 2
@@ -210,22 +286,20 @@ def cmd_net_get(args) -> int:
     if args.show_headers:
         for _ in range(args.info_retries):
             info_req = np.build_info_req(handle, args.max_headers)
-            ipkt = send_command(
-                port=args.port,
+            rpkt = _send_retry_not_ready(
+                args=args,
                 device=np.NETWORK_DEVICE_ID,
-                command=np.CMD_INFO,
-                payload=info_req,
-                baud=args.baud,
-                timeout=args.timeout,
-                read_max=args.read_max,
-                debug=args.debug,
+                command=np.CMD_READ,
+                payload=read_req,
+                overall_timeout_s=getattr(args, "timeout", 0.2) or 0.2,
+                sleep_s=0.005,
             )
-            if ipkt is None:
-                break
-            if not _status_ok(ipkt):
-                # NotReady will surface as a non-zero status; just retry.
-                time.sleep(args.info_sleep)
-                continue
+            if rpkt is None:
+                print("No response")
+                return 2
+            if not _status_ok(rpkt):
+                print(f"Device status={format_status(_pkt_status(rpkt))}")
+                return 1
             ir = np.parse_info_resp(ipkt.payload)
             print(f"http_status={ir.http_status} content_length={ir.content_length}")
             if ir.header_bytes:
@@ -259,7 +333,7 @@ def cmd_net_get(args) -> int:
             return 2
         if not _status_ok(rpkt):
             # NotReady / IOError etc
-            print(f"Device status={rpkt.params[0] if rpkt.params else '??'}")
+            print(f"Device status={format_status(rpkt.params[0]) if rpkt.params else '??'}")
             return 1
 
         rr = np.parse_read_resp(rpkt.payload)
@@ -352,7 +426,7 @@ def cmd_net_head(args) -> int:
         print("No response")
         return 2
     if not _status_ok(ipkt):
-        print(f"Device status={ipkt.params[0] if ipkt.params else '??'}")
+        print(f"Device status={format_status(ipkt.params[0]) if ipkt.params else '??'}")
         return 1
     ir = np.parse_info_resp(ipkt.payload)
     print(f"http_status={ir.http_status} content_length={ir.content_length}")
