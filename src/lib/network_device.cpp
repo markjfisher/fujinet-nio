@@ -380,7 +380,9 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 flags |= 0x01;
                 s->completed = true;
             }
-            if (n < maxBytes) flags |= 0x02; // truncated
+            if (n == maxBytes && !eof) {
+                flags |= 0x02; // truncated: we hit the caller's limit and there is (likely) more to read
+            }
 
             write_common_prefix(out, NETPROTO_VERSION, flags);
             netproto::write_u16le(out, handle);

@@ -356,54 +356,88 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(std::uint32_t,
 }
 
 fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offset,
-                                                             std::uint8_t* out,
+                                                             std::uint8_t *out,
                                                              std::size_t outLen,
-                                                             std::uint16_t& read,
-                                                             bool& eof)
+                                                             std::uint16_t &read,
+                                                             bool &eof)
 {
     read = 0;
     eof = false;
 
-    if (!_s || !out) {
+    if (!_s || !out)
+    {
         return fujinet::io::StatusCode::InvalidRequest;
     }
 
-    // sequential offsets only
-    if (offset != _s->read_cursor) {
+    // v1 semantics: sequential offsets only.
+    if (offset != _s->read_cursor)
+    {
         return fujinet::io::StatusCode::InvalidRequest;
     }
 
-    if (!_s->stream || outLen == 0) {
+    if (!_s->stream || outLen == 0)
+    {
+        // If we can't read, treat this as "check done" / "not ready".
         take_mutex(_s->meta_mutex);
         const bool done = _s->done;
         const esp_err_t err = _s->err;
         give_mutex(_s->meta_mutex);
 
-        if (done) {
+        if (done)
+        {
             eof = true;
-            return (err == ESP_OK) ? fujinet::io::StatusCode::Ok : fujinet::io::StatusCode::IOError;
+            return (err == ESP_OK) ? fujinet::io::StatusCode::Ok
+                                   : fujinet::io::StatusCode::IOError;
         }
         return fujinet::io::StatusCode::NotReady;
     }
 
     const std::size_t max_n = std::min<std::size_t>(outLen, 0xFFFFu);
-    const std::size_t n = xStreamBufferReceive(_s->stream, out, max_n, 0);
 
-    if (n > 0) {
+    // Small wait so we don't force the host into "timeout-driven polling".
+    // This helps the "last chunk" case collapse into a single READ.
+    constexpr TickType_t kWaitTicks = pdMS_TO_TICKS(20);
+
+    const std::size_t n = xStreamBufferReceive(_s->stream, out, max_n, kWaitTicks);
+
+    if (n > 0)
+    {
         _s->read_cursor += static_cast<std::uint32_t>(n);
         read = static_cast<std::uint16_t>(n);
+
+        // If we just drained the buffer, check if the transfer is already finished.
+        // This is the key: it lets the first READ return eof=true for small responses.
+        const std::size_t avail = xStreamBufferBytesAvailable(_s->stream);
+        if (avail == 0)
+        {
+            take_mutex(_s->meta_mutex);
+            const bool done = _s->done;
+            const esp_err_t err = _s->err;
+            give_mutex(_s->meta_mutex);
+
+            if (done)
+            {
+                eof = true;
+                return (err == ESP_OK) ? fujinet::io::StatusCode::Ok
+                                       : fujinet::io::StatusCode::IOError;
+            }
+        }
+
         eof = false;
         return fujinet::io::StatusCode::Ok;
     }
 
+    // No bytes this instant: if done, EOF; else NotReady (but we avoided 0-wait busy polling above).
     take_mutex(_s->meta_mutex);
     const bool done = _s->done;
     const esp_err_t err = _s->err;
     give_mutex(_s->meta_mutex);
 
-    if (done) {
+    if (done)
+    {
         eof = true;
-        return (err == ESP_OK) ? fujinet::io::StatusCode::Ok : fujinet::io::StatusCode::IOError;
+        return (err == ESP_OK) ? fujinet::io::StatusCode::Ok
+                               : fujinet::io::StatusCode::IOError;
     }
 
     return fujinet::io::StatusCode::NotReady;
