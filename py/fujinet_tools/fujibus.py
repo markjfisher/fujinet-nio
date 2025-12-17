@@ -4,6 +4,7 @@
 # - Add robust SLIP frame receive (incremental reads)
 # - Avoid "single ser.read(read_max)" trap
 # - Allow callers to reuse an already-open Serial instance
+# - Add RX diagnostics on timeouts (so we can see what bytes we actually got)
 
 from __future__ import annotations
 
@@ -23,7 +24,9 @@ HEADER_SIZE = 6  # device(1), command(1), length(2), checksum(1), descr(1)
 FIELD_SIZE_TABLE = [0, 1, 1, 1, 1, 2, 2, 4]
 NUM_FIELDS_TABLE = [0, 1, 2, 3, 4, 1, 2, 1]
 
+# Per-Serial instance RX stash so we don't drop trailing bytes after a frame.
 _RX_STASH: dict[int, bytearray] = {}
+
 
 @dataclass
 class FujiPacket:
@@ -42,7 +45,7 @@ def calc_checksum(data: bytes) -> int:
     chk = 0
     for b in data:
         chk += b
-    chk = ((chk >> 8) + (chk & 0xFF)) & 0xFFFF
+        chk = ((chk >> 8) + (chk & 0xFF)) & 0xFFFF
     return chk & 0xFF
 
 
@@ -79,7 +82,7 @@ def slip_decode(frame: bytes) -> bytes:
             elif esc == SLIP_ESC_ESC:
                 out.append(SLIP_ESCAPE)
             else:
-                # unknown escape, keep original
+                # unknown escape, keep original escape byte
                 out.append(b)
         else:
             out.append(b)
@@ -177,6 +180,19 @@ def pretty_ascii(data: bytes) -> str:
     return "".join(chr(b) if 32 <= b < 127 else "." for b in data)
 
 
+def _hexdump_prefix_suffix(data: bytes, prefix: int = 64, suffix: int = 64) -> str:
+    if not data:
+        return "(empty)"
+    if len(data) <= prefix + suffix:
+        return pretty_hex(data)
+    return (
+        pretty_hex(data[:prefix])
+        + " ... "
+        + pretty_hex(data[-suffix:])
+        + f"  (len={len(data)})"
+    )
+
+
 def print_packet(label: str, raw: bytes):
     print(f"\n=== {label} ===")
     if not raw:
@@ -227,6 +243,7 @@ def print_packet(label: str, raw: bytes):
         print("  ascii :", repr(pretty_ascii(payload)))
     else:
         print("  (empty)")
+
     return pkt
 
 
@@ -248,6 +265,8 @@ def _read_one_slip_frame(
         _RX_STASH[key] = buf
 
     in_frame = False
+    total_read = 0
+    loops = 0
 
     # If stash already contains a start delimiter, we are already "in frame".
     if buf and SLIP_END in buf:
@@ -292,10 +311,18 @@ def _read_one_slip_frame(
         if not chunk:
             continue
 
+        total_read += len(chunk)
+        loops += 1
         buf.extend(chunk)
 
-    return None
+    if debug:
+        snapshot = bytes(buf)
+        print(f"[fujibus] RX timeout: total_read={total_read} loops={loops} stash_len={len(snapshot)}")
+        if snapshot:
+            print(f"[fujibus] RX stash (prefix/suffix): {_hexdump_prefix_suffix(snapshot)}")
+            print(f"[fujibus] RX contains SLIP_END? {'yes' if (SLIP_END in snapshot) else 'no'}")
 
+    return None
 
 
 def send_command(
@@ -322,15 +349,25 @@ def send_command(
         ser.flush()
 
         # Overall deadline. We keep reading until we have a full frame.
-        deadline = time.monotonic() + timeout
+        t0 = time.monotonic()
+        deadline = t0 + timeout
         frame = _read_one_slip_frame(ser, deadline=deadline, read_chunk=min(256, read_max), debug=debug)
 
         if frame is None:
             if debug:
+                dt = time.monotonic() - t0
+                print(f"[fujibus] response wait: {dt:.3f}s (timeout={timeout:.3f}s)")
                 print("No complete SLIP frame before timeout")
+                stash = _RX_STASH.get(id(ser), bytearray())
+                if stash:
+                    snap = bytes(stash)
+                    print(f"[fujibus] final stash_len={len(snap)} contains_END={'yes' if (SLIP_END in snap) else 'no'}")
+                    print(f"[fujibus] final stash (prefix/suffix): {_hexdump_prefix_suffix(snap)}")
             return None
 
         if debug:
+            dt = time.monotonic() - t0
+            print(f"[fujibus] response wait: {dt:.3f}s (timeout={timeout:.3f}s)")
             print_packet("Incoming raw data", frame)
 
         decoded = slip_decode(frame)
@@ -349,5 +386,7 @@ def send_command(
 
     # Legacy: open per call (still works, but slower)
     with serial.Serial(port, baud, timeout=0.01) as ser:
+        # Clear any stale stash for this Serial instance.
+        _RX_STASH.pop(id(ser), None)
         # overall deadline is handled by _read_one_slip_frame; keep per-read timeout short
         return _do(ser)
