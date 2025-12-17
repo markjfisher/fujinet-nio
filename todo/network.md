@@ -1,13 +1,100 @@
 # Network TODOs (next iteration)
 
 ## 0) Baseline stability + parity
-- [ ] Verify POSIX (curl) and ESP32 (ESP-IDF) return the same StatusCode for the same situations:
-      - open(): bad URL / unsupported scheme / DNS fail / connect fail / TLS fail / redirect fail
-      - info(): before ready, after ready, after EOF, after close
-      - read(): NotReady vs Ok(0 bytes) vs IOError, and EOF signalling consistency
-      - close(): idempotency and handling of unknown/expired handles
-- [ ] Define a single “contract” table: {operation × condition → StatusCode} and align both backends to it.
-- [ ] Add minimal cross-platform tests for NetworkDevice session semantics (slot allocation, handle generation, timeouts, close behaviour).
+
+### Goal (definition of done)
+- POSIX (curl) and ESP32 (ESP-IDF) return the same `StatusCode` for the same conditions, across:
+  - `Open`, `Info`, `Read`, `Write`, `Close`
+- NetworkDevice session rules are deterministic:
+  - handle generation prevents stale reuse issues
+  - idle-timeout reaping works the same across platforms
+  - `Close` behaviour is clearly defined (including unknown/expired handles)
+
+### Canonical StatusCode Contract Matrix (MUST be kept up-to-date)
+> This table is the source of truth. If a backend disagrees, the backend changes (or the table changes).
+> Keep the contract aligned with current NetworkDevice behaviour unless we intentionally decide otherwise.
+
+#### Open()
+| Condition | Expected StatusCode | Notes |
+|---|---:|---|
+| payload malformed / wrong version / trailing bytes | InvalidRequest | protocol decode failure |
+| URL missing scheme / scheme parse fails | InvalidRequest | e.g. no `://` |
+| scheme unsupported / no backend registered | Unsupported | e.g. tcp not implemented yet |
+| no free session slots (and no eviction) | DeviceBusy | bounded MAX_SESSIONS |
+| network stack unavailable / WiFi down (platform-specific) | NotReady | *only* when truly "try later" |
+| DNS failure | IOError | retryable at host discretion |
+| connect failure / timeout | IOError | |
+| TLS negotiation / cert failure | IOError | |
+| redirect failure (when follow_redirects enabled) | IOError | or Unsupported (only if we intentionally define it that way) |
+| backend internal unexpected failure | InternalError | |
+
+#### Info(handle)
+| Condition | Expected StatusCode | Notes |
+|---|---:|---|
+| payload malformed / wrong version / trailing bytes | InvalidRequest | |
+| handle unknown/expired | InvalidRequest | align to current NetworkDevice behaviour |
+| handle valid but response metadata not available yet | NotReady | host should retry |
+| info available | Ok | flags determine what fields are valid |
+| backend error after open (e.g. connection drop) | IOError | |
+
+#### Read(handle, offset, maxBytes)
+| Condition | Expected StatusCode | Notes |
+|---|---:|---|
+| payload malformed / wrong version / trailing bytes | InvalidRequest | |
+| handle unknown/expired | InvalidRequest | align to current NetworkDevice behaviour |
+| response not ready yet / no bytes currently available | NotReady | async: common, sync: rare |
+| read returns bytes | Ok | dataLen > 0 |
+| transfer complete and no more bytes | Ok | dataLen == 0 AND eof == true |
+| any read failure after open | IOError | |
+
+#### Write(handle, offset, bytes)
+| Condition | Expected StatusCode | Notes |
+|---|---:|---|
+| payload malformed / wrong version / missing bytes / trailing bytes | InvalidRequest | |
+| handle unknown/expired | InvalidRequest | align to current NetworkDevice behaviour |
+| method/body not supported by backend | Unsupported | e.g. POST/PUT not yet implemented |
+| backpressure / buffer full | DeviceBusy | host retries |
+| write accepted | Ok | returns writtenLen |
+| write failure | IOError | |
+
+#### Close(handle)
+| Condition | Expected StatusCode | Notes |
+|---|---:|---|
+| payload malformed / wrong version / trailing bytes | InvalidRequest | |
+| handle unknown/expired | InvalidRequest | (explicitly non-idempotent today) |
+| close ok | Ok | frees slot immediately |
+
+### Cross-platform conformance tests (minimal set)
+- Add tests that validate BOTH:
+  1) NetworkDevice session semantics (platform-agnostic)
+  2) Backend-mapped error/status semantics (POSIX vs ESP32 parity where feasible)
+
+#### (A) Session semantics tests (platform-agnostic)
+- handle generation:
+  - Open → Close → Open in same slot must produce a different handle generation (stale handle rejected)
+- unknown handle behaviour:
+  - Info/Read/Write/Close on unknown handle → InvalidRequest
+- slot allocation:
+  - Open MAX_SESSIONS times succeeds, next Open → DeviceBusy
+- idle timeout:
+  - simulate ticks; session idle reaped; subsequent Info/Read/Close → InvalidRequest
+
+#### (B) Backend parity tests (POSIX/ESP32 where possible)
+- Open with unsupported scheme → Unsupported
+- Open with malformed URL (no scheme) → InvalidRequest
+- Read before ready:
+  - either NotReady (preferred) OR Ok+eof (only if completed immediately); must be consistent per backend rules
+- Info before ready:
+  - NotReady, then Ok once status becomes available
+
+### Touchpoints (expected files)
+- Device semantics: `src/lib/network_device.cpp`
+- Protocol contract reference: `docs/network_device_protocol.md`
+- POSIX backend mapping: `src/platform/posix/http_network_protocol_curl.cpp`
+- ESP32 backend mapping: `src/platform/esp32/http_network_protocol_espidf.cpp`
+- Tests: `tests/test_network_device_protocol.cpp` (or a new `tests/test_network_device_parity.cpp`)
+
+
 
 ## 1) HTTP request body support (POST/PUT) + method surface
 - [ ] Implement POST and PUT end-to-end:
