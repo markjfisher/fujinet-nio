@@ -317,6 +317,44 @@ u16 reserved=0
 
 ---
 
+## HTTP request lifecycle (HTTP/HTTPS schemes)
+
+### Overview
+HTTP requests are created by `Open()`. If the request has a body (POST/PUT and optional others),
+the body is streamed via `Write()` calls. The request is dispatched automatically when the body
+is complete (or immediately for no-body requests). Response data is retrieved with `Read()`.
+
+### Body-required methods
+- For HTTP:
+  - POST and PUT MAY require a body (depending on `bodyLenHint`).
+  - GET/HEAD/DELETE typically have no body (we do not rely on a body for these in v1).
+
+### Dispatch / commit rule (authoritative)
+- If `bodyLenHint == 0`:
+  - The request MUST be dispatched immediately during `Open()`.
+- If `bodyLenHint > 0`:
+  - `Open()` MUST return `needs_body_write=1` in the Open response flags.
+  - The client MUST send body bytes via one or more `Write(handle, offset, bytes)` calls.
+  - The request MUST be dispatched automatically once the device has received exactly `bodyLenHint`
+    bytes total for that handle.
+  - `Read()` / `Info()` before dispatch completion MUST return `NotReady` (unless an error occurs).
+
+### Write() rules for HTTP body streaming
+- Offsets:
+  - Offsets MUST be sequential (0..N) for HTTP request bodies.
+  - If a `Write()` offset is non-sequential (gap or rewind), the device MUST return `InvalidRequest`.
+- Length:
+  - Total bytes written MUST NOT exceed `bodyLenHint`. If it would exceed, the device MUST return `InvalidRequest`.
+- Backpressure:
+  - If the device cannot accept more body bytes right now, `Write()` MAY return `DeviceBusy`.
+
+### Errors during upload / dispatch
+- If the body upload fails or dispatch fails, subsequent `Info/Read` MUST return an appropriate error
+  (typically `IOError`) and the handle remains closeable.
+
+
+---
+
 ## Chunking Responsibility
 
 Chunking is **host-driven**:

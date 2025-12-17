@@ -492,3 +492,88 @@ TEST_CASE("Conformance: capacity eviction (allow_evict=1) => oldest handle becom
     CHECK(info_req(dev, deviceId, h0, 16).status == StatusCode::InvalidRequest);
     CHECK(close_req(dev, deviceId, h0).status == StatusCode::InvalidRequest);
 }
+
+TEST_CASE("HTTP body lifecycle: Info/Read are NotReady until POST body fully written")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    // POST with bodyLenHint > 0 => needs body
+    const std::uint16_t h = open_handle_stub(dev, deviceId, "http://example.com/post", /*method=*/2, /*flags=*/0, /*bodyLenHint=*/4);
+
+    // Before body complete, response must not be ready
+    CHECK(info_req(dev, deviceId, h, 128).status == StatusCode::NotReady);
+    CHECK(read_req(dev, deviceId, h, 0, 128).status == StatusCode::NotReady);
+
+    // Write partial body
+    CHECK(write_req(dev, deviceId, h, 0, "AB").status == StatusCode::Ok);
+
+    CHECK(info_req(dev, deviceId, h, 128).status == StatusCode::NotReady);
+    CHECK(read_req(dev, deviceId, h, 0, 128).status == StatusCode::NotReady);
+
+    // Finish body
+    CHECK(write_req(dev, deviceId, h, 2, "CD").status == StatusCode::Ok);
+
+    // Now response is available (stub should allow Info/Read)
+    CHECK(info_req(dev, deviceId, h, 128).status == StatusCode::Ok);
+    CHECK(read_req(dev, deviceId, h, 0, 128).status == StatusCode::Ok);
+
+    CHECK(close_req(dev, deviceId, h).status == StatusCode::Ok);
+}
+
+TEST_CASE("HTTP body lifecycle: non-sequential Write offset => InvalidRequest")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    const std::uint16_t h = open_handle_stub(dev, deviceId, "http://example.com/post", /*method=*/2, /*flags=*/0, /*bodyLenHint=*/4);
+
+    // First write at offset 0 OK
+    CHECK(write_req(dev, deviceId, h, 0, "AB").status == StatusCode::Ok);
+
+    // Next write must be offset 2; using offset 3 must fail
+    CHECK(write_req(dev, deviceId, h, 3, "C").status == StatusCode::InvalidRequest);
+
+    CHECK(close_req(dev, deviceId, h).status == StatusCode::Ok);
+}
+
+TEST_CASE("HTTP body lifecycle: Write overflow beyond bodyLenHint => InvalidRequest")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    const std::uint16_t h = open_handle_stub(dev, deviceId, "http://example.com/post", /*method=*/2, /*flags=*/0, /*bodyLenHint=*/4);
+
+    // Writing 5 bytes when hint is 4 is invalid
+    CHECK(write_req(dev, deviceId, h, 0, "ABCDE").status == StatusCode::InvalidRequest);
+
+    CHECK(close_req(dev, deviceId, h).status == StatusCode::Ok);
+}
+
+TEST_CASE("HTTP body lifecycle: bodyLenHint>0 on non-POST/PUT => InvalidRequest")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    // GET with bodyLenHint should be rejected (keeps v1 simple + deterministic)
+    std::string p;
+    netproto::write_u8(p, V);
+    netproto::write_u8(p, 1); // GET
+    netproto::write_u8(p, 0); // flags
+    netproto::write_lp_u16_string(p, "http://example.com/get");
+    netproto::write_u16le(p, 0);
+    netproto::write_u32le(p, 4); // bodyLenHint on GET => InvalidRequest
+
+    IORequest req{};
+    req.id = 1234;
+    req.deviceId = deviceId;
+    req.command = 0x01; // Open
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    CHECK(resp.status == StatusCode::InvalidRequest);
+}

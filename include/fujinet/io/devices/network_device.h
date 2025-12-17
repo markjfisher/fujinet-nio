@@ -47,6 +47,12 @@ private:
         // Optional: mark "completed" once response is fully readable
         // (useful when you later do async backends)
         bool completed{false};
+
+        // HTTP request-body tracking (streamed, no large buffering in core)
+        std::uint32_t expectedBodyLen = 0;   // from Open.bodyLenHint (when relevant)
+        std::uint32_t receivedBodyLen = 0;   // total bytes accepted via Write()
+        std::uint32_t nextBodyOffset  = 0;   // required next Write offset (sequential)
+        bool          awaitingBody    = false; // gate Info/Read until body complete
     };
 
     std::array<Session, MAX_SESSIONS> _sessions{};

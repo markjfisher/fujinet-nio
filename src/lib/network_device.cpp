@@ -165,7 +165,14 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             openReq.url.assign(urlView.data(), urlView.size());
             openReq.headers = std::move(headers);
             openReq.bodyLenHint = bodyLenHint;
-        
+
+            const bool methodAllowsBody = (method == 2 /*POST*/ || method == 3 /*PUT*/);
+            // Keep v1 simple + deterministic: only POST/PUT may declare a body.
+            if (bodyLenHint > 0 && !methodAllowsBody) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
             // ---- (C) Reserve slot BEFORE proto->open() ----
             auto reserve_slot = [this]() -> Session* {
                 for (auto& s : _sessions) {
@@ -183,6 +190,10 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                     s.method = 0;
                     s.flags = 0;
                     s.url.clear();
+                    s.expectedBodyLen = 0;
+                    s.receivedBodyLen = 0;
+                    s.nextBodyOffset  = 0;
+                    s.awaitingBody    = false;
                     if (s.proto) {
                         s.proto->close();
                         s.proto.reset();
@@ -230,6 +241,14 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             slot->flags = flags;
             slot->url = openReq.url;
             slot->proto = std::move(proto);
+
+            // Body streaming state is enforced at NetworkDevice layer (cheap bookkeeping).
+            const bool needsBodyWrite = methodAllowsBody && (bodyLenHint > 0);
+            slot->expectedBodyLen = needsBodyWrite ? bodyLenHint : 0;
+            slot->receivedBodyLen = 0;
+            slot->nextBodyOffset  = 0;
+            slot->awaitingBody    = needsBodyWrite;
+
             touch(*slot);
         
             auto session_index = [this](const Session* s) -> std::uint8_t {
@@ -244,8 +263,6 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             out.reserve(1 + 1 + 2 + 2);
         
             std::uint8_t oflags = 0x01; // accepted
-            const bool needsBodyWrite =
-                (method == 2 /*POST*/ || method == 3 /*PUT*/) && (bodyLenHint > 0);
             if (needsBodyWrite) oflags |= 0x02;
         
             write_common_prefix(out, NETPROTO_VERSION, oflags);
@@ -308,6 +325,12 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
             touch(*s);
 
+            // If request body hasn't been fully uploaded, response is not available yet.
+            if (s->awaitingBody) {
+                resp.status = StatusCode::NotReady;
+                return resp;
+            }
+
             NetworkInfo info{};
             const StatusCode st = s->proto->info(maxHeaderBytes, info);
             if (st != StatusCode::Ok) {
@@ -358,6 +381,12 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
             touch(*s);
+
+            // If request body hasn't been fully uploaded, response is not available yet.
+            if (s->awaitingBody) {
+                resp.status = StatusCode::NotReady;
+                return resp;
+            }
 
             std::vector<std::uint8_t> buf;
             buf.resize(maxBytes);
@@ -427,6 +456,23 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
             touch(*s);
 
+            // Enforce sequential streaming semantics for HTTP request bodies.
+            // (Keeps device simple; avoids random-access uploads.)
+            if (s->awaitingBody) {
+                // Must match the next required offset.
+                if (offset != s->nextBodyOffset) {
+                    resp.status = StatusCode::InvalidRequest;
+                    return resp;
+                }
+
+                // Must not exceed expected body length.
+                const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
+                if (end > static_cast<std::uint64_t>(s->expectedBodyLen)) {
+                    resp.status = StatusCode::InvalidRequest;
+                    return resp;
+                }
+            }
+
             std::uint16_t written = 0;
             const StatusCode st = s->proto->write_body(offset,
                                                        dataPtr, dataLen,
@@ -434,6 +480,23 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             if (st != StatusCode::Ok) {
                 resp.status = st;
                 return resp;
+            }
+
+            // Backend must either accept the whole chunk (Ok) or apply backpressure (DeviceBusy).
+            // Partial Ok writes create ambiguous host semantics, so treat as internal contract violation.
+            if (st == StatusCode::Ok && written != dataLen) {
+                resp.status = StatusCode::InternalError;
+                return resp;
+            }
+
+            if (s->awaitingBody) {
+                s->receivedBodyLen += written;
+                s->nextBodyOffset  += written;
+
+                if (s->receivedBodyLen == s->expectedBodyLen) {
+                    // Body complete; request is now considered dispatched.
+                    s->awaitingBody = false;
+                }
             }
 
             std::string out;

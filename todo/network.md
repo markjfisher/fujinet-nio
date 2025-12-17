@@ -120,14 +120,39 @@ Rationale:
 - Tests: `tests/test_network_device_protocol.cpp` (or a new `tests/test_network_device_parity.cpp`)
 
 
+## 1) HTTP verbs + request body lifecycle (POSIX + ESP32 parity)
 
-## 1) HTTP request body support (POST/PUT) + method surface
-- [ ] Implement POST and PUT end-to-end:
-      - open(): accept bodyLenHint, return needs_body_write=true when appropriate
-      - write_body(): accept sequential offset writes and stream to backend
-      - finalize/send: define when request is actually dispatched (on first read/info? explicit “commit”? when bodyLenHint reached?)
-- [ ] Implement DELETE (allow optional body).
-- [ ] Decide and document: “v1 sequential offsets only” for write_body/read_body (no random access) and enforce consistently.
+### Goal (definition of done)
+- HTTP backends support: GET, HEAD, POST, PUT, DELETE.
+- Request body streaming works end-to-end for POST/PUT:
+  - `Open(bodyLenHint>0)` -> `needs_body_write=1`
+  - sequential `Write()` uploads body
+  - auto-dispatch when `bodyLenHint` bytes received
+  - `Info/Read` are `NotReady` until dispatched (or error)
+- POSIX and ESP32 return aligned StatusCode results for the same scenarios.
+
+### Tasks
+- [ ] Update protocol doc: HTTP request lifecycle + dispatch/commit rule (see above).
+- [ ] NetworkDevice: enforce body streaming rules (sequential offsets, no overflow beyond hint).
+- [ ] POSIX (curl):
+  - [ ] extend method support: POST/PUT/DELETE
+  - [ ] implement write_body() for buffering/streaming request body
+  - [ ] ensure dispatch occurs at correct time (Open immediately if no-body, otherwise after body complete)
+- [ ] ESP32 (esp-idf http client):
+  - [ ] extend method support: POST/PUT/DELETE
+  - [ ] implement body upload + dispatch timing to match POSIX
+- [ ] Tests (POSIX):
+  - [ ] unit tests for body rules (non-sequential offset => InvalidRequest; overflow => InvalidRequest)
+  - [ ] unit tests that POST/PUT with bodyLenHint>0 return needs_body_write
+  - [ ] unit tests that Read/Info before dispatch return NotReady
+
+### Touchpoints
+- `src/lib/network_device.cpp`
+- `src/platform/posix/http_network_protocol_curl.cpp`
+- `src/platform/esp32/http_network_protocol_espidf.cpp`
+- `docs/network_device_protocol.md`
+- `tests/test_network_device_protocol.cpp`
+
 
 ## 2) HTTP headers: move from “max bytes” to “requested header keys”
 - [ ] Introduce protocol change (v2) to let the client request specific response headers by name:
