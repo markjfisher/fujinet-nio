@@ -195,25 +195,27 @@ IOResponse NetworkDevice::handle(const IORequest& request)
         
             Session* slot = reserve_slot();
         
-            // ---- (D) Optional eviction: if busy, evict LRU and retry once ----
-            if (!slot) {
+            // ---- (D) Optional eviction (allow_evict flag): if busy, evict LRU and retry once ----
+            const bool allowEvict = (flags & 0x08) != 0;
+
+            if (!slot && allowEvict) {
                 if (auto* victim = pick_lru_victim()) {
-                    // We can be stricter here.
-                    // e.g. only evict if victim->completed or victim idle > some threshold.
-                    // however, entries are pruned after some time anyway
+                    // Potential future tightening:
+                    // only evict completed or sufficiently idle sessions.
                     close_and_free(*victim);
                     slot = reserve_slot();
                 }
             }
-        
+
             if (!slot) {
-                // No free slots even after eviction attempt.
-                // Best-effort close protocol instance (not strictly necessary since unique_ptr).
+                // No free slots.
+                // In strict mode (allow_evict=0) we MUST return DeviceBusy.
+                // In eviction mode we only reach here if eviction was not possible.
                 proto->close();
                 resp.status = StatusCode::DeviceBusy;
                 return resp;
             }
-        
+
             // Actually open the protocol now that we own a slot.
             const StatusCode st = proto->open(openReq);
             if (st != StatusCode::Ok) {

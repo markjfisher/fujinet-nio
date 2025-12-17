@@ -434,93 +434,61 @@ TEST_CASE("Conformance: Open unsupported scheme => Unsupported")
     CHECK(resp.status == StatusCode::Unsupported);
 }
 
-TEST_CASE("Conformance: capacity enforces finite sessions via DeviceBusy OR eviction (old handles become invalid)")
+static constexpr std::uint8_t OPEN_ALLOW_EVICT = 0x08;
+
+TEST_CASE("Conformance: capacity strict (allow_evict=0) => 5th Open returns DeviceBusy")
 {
     auto reg = make_stub_registry_http_only();
     NetworkDevice dev(std::move(reg));
-
     const auto deviceId = to_device_id(WireDeviceId::NetworkService);
 
-    std::vector<std::uint16_t> handles;
-    handles.reserve(64);
+    // Fill the session pool. (Design constraint: 4 sessions.)
+    (void)open_handle_stub(dev, deviceId, "http://example.com/1", 1, /*flags=*/0, 0);
+    (void)open_handle_stub(dev, deviceId, "http://example.com/2", 1, /*flags=*/0, 0);
+    (void)open_handle_stub(dev, deviceId, "http://example.com/3", 1, /*flags=*/0, 0);
+    (void)open_handle_stub(dev, deviceId, "http://example.com/4", 1, /*flags=*/0, 0);
 
-    bool sawDeviceBusy = false;
+    // 5th open in strict mode must fail with DeviceBusy.
+    std::string p;
+    netproto::write_u8(p, V);
+    netproto::write_u8(p, 1); // GET
+    netproto::write_u8(p, 0); // allow_evict=0
+    netproto::write_lp_u16_string(p, "http://example.com/5");
+    netproto::write_u16le(p, 0);
+    netproto::write_u32le(p, 0);
 
-    // Open a bunch of sessions. Implementations may:
-    //  - return DeviceBusy at capacity (no eviction), OR
-    //  - evict LRU internally while continuing to accept opens.
-    for (int i = 0; i < 64; ++i) {
-        std::string p;
-        netproto::write_u8(p, V);
-        netproto::write_u8(p, 1); // GET
-        netproto::write_u8(p, 0); // flags
-        netproto::write_lp_u16_string(p, "http://example.com/capacity/" + std::to_string(i));
-        netproto::write_u16le(p, 0);
-        netproto::write_u32le(p, 0);
+    IORequest req{};
+    req.id = 999;
+    req.deviceId = deviceId;
+    req.command = 0x01; // Open
+    req.payload = to_vec(p);
 
-        IORequest req{};
-        req.id = 800 + i;
-        req.deviceId = deviceId;
-        req.command = 0x01; // Open
-        req.payload = to_vec(p);
+    IOResponse resp = dev.handle(req);
+    CHECK(resp.status == StatusCode::DeviceBusy);
+}
 
-        IOResponse resp = dev.handle(req);
+TEST_CASE("Conformance: capacity eviction (allow_evict=1) => oldest handle becomes invalid")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
 
-        if (resp.status == StatusCode::DeviceBusy) {
-            sawDeviceBusy = true;
-            break;
-        }
+    const std::uint16_t h0 = open_handle_stub(dev, deviceId, "http://example.com/h0", 1, OPEN_ALLOW_EVICT, 0);
+    REQUIRE(h0 != 0);
 
-        REQUIRE(resp.status == StatusCode::Ok);
-
-        netproto::Reader r(resp.payload.data(), resp.payload.size());
-        std::uint8_t ver = 0, flags = 0;
-        std::uint16_t reserved = 0, h = 0;
-
-        REQUIRE(r.read_u8(ver));
-        REQUIRE(r.read_u8(flags));
-        REQUIRE(r.read_u16le(reserved));
-        REQUIRE(r.read_u16le(h));
-
-        handles.push_back(h);
+    // Apply pressure: opens should keep succeeding (evicting as needed)
+    for (int i = 0; i < 32; ++i) {
+        (void)open_handle_stub(
+            dev,
+            deviceId,
+            "http://example.com/p/" + std::to_string(i),
+            1,
+            OPEN_ALLOW_EVICT,
+            0
+        );
     }
 
-    REQUIRE(!handles.empty());
-
-    // If we never saw DeviceBusy, then capacity must be enforced by eviction.
-    // Evidence of eviction: an early handle becomes invalid after enough opens.
-    bool evictionObserved = false;
-    if (!sawDeviceBusy && handles.size() >= 8) {
-        auto oldest = handles.front();
-        StatusCode st = info_req(dev, deviceId, oldest, 16).status;
-        if (st == StatusCode::InvalidRequest) {
-            evictionObserved = true;
-        } else {
-            // If it's still valid, try a couple more older handles (implementation may evict differently).
-            for (std::size_t i = 1; i < std::min<std::size_t>(handles.size(), 4); ++i) {
-                if (info_req(dev, deviceId, handles[i], 16).status == StatusCode::InvalidRequest) {
-                    evictionObserved = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    CHECK((sawDeviceBusy || evictionObserved));
-
-    // Close whatever handles we recorded. Evicted ones may legitimately be InvalidRequest.
-    std::size_t okCloses = 0;
-    for (auto h : handles) {
-        IOResponse cresp = close_req(dev, deviceId, h);
-        if (cresp.status == StatusCode::Ok) {
-            ++okCloses;
-        } else {
-            CHECK(cresp.status == StatusCode::InvalidRequest);
-        }
-    }
-    CHECK(okCloses > 0);
-
-    // Must be able to open again.
-    const std::uint16_t h2 = open_handle_stub(dev, deviceId, "http://example.com/after-close");
-    CHECK(close_req(dev, deviceId, h2).status == StatusCode::Ok);
+    // The oldest handle should have been evicted at some point.
+    CHECK(info_req(dev, deviceId, h0, 16).status == StatusCode::InvalidRequest);
+    CHECK(close_req(dev, deviceId, h0).status == StatusCode::InvalidRequest);
 }

@@ -112,7 +112,7 @@ Create a session handle for a URL. `Open` is allowed to be asynchronous: it may 
 ```
 u8   version
 u8   method              // 1..5
-u8   flags               // bit0=tls, bit1=follow_redirects, bit2=want_headers
+u8   flags               // see below
 u16  urlLen              // LE
 u8[] url                 // length urlLen
 u16  headerCount         // LE
@@ -123,6 +123,18 @@ repeat headerCount times:
   u8[] value             // length valLen
 u32  bodyLenHint         // LE; 0 if unknown
 ```
+
+### Open flags (u8)
+bit0 = tls
+bit1 = follow_redirects
+bit2 = want_headers
+bit3 = allow_evict (NEW; v1.0 compatible)
+
+allow_evict semantics:
+- When allow_evict=0 (default), `Open` MUST return `DeviceBusy` if no free handles are available.
+  The device MUST NOT evict an existing active handle.
+- When allow_evict=1, the device MAY evict the least-recently-used (LRU) active handle to satisfy the Open.
+  Any evicted handle becomes immediately invalid; subsequent Info/Read/Write/Close on it MUST return InvalidRequest.
 
 ### Response
 

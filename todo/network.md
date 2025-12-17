@@ -10,6 +10,26 @@
   - idle-timeout reaping works the same across platforms
   - `Close` behaviour is clearly defined (including unknown/expired handles)
 
+### Session capacity + mapping policy (MUST be explicit)
+
+- NetworkDevice maintains a finite pool of concurrent sessions (currently 4).
+- Mapping from legacy logical network devices (e.g. Atari N1..N8 / "n1:" prefixes) to NetworkDevice handles
+  is owned by the transport personality (e.g. LegacyAtariTransport), not by NetworkDevice itself.
+  - On re-open of the same logical unit (e.g. "n1"), the transport SHOULD best-effort Close the previously
+    mapped handle and then Open the new URL, updating the mapping.
+  - Legacy transport MUST prevent more than 4 concurrent open logical units; attempting to open a 5th
+    MUST fail at the transport/library level (before it reaches NetworkDevice).
+
+- NetworkDevice `Open` capacity behaviour is controlled by an Open flag:
+  - `allow_evict = 0` (default): if the session pool is full, `Open` MUST return `DeviceBusy`.
+  - `allow_evict = 1`: if the session pool is full, `Open` MAY evict an LRU active session to satisfy the Open.
+    - Any evicted handle becomes immediately invalid; subsequent Info/Read/Write/Close on it MUST return `InvalidRequest`.
+
+Rationale:
+- Preserves backwards compatibility for legacy host apps (transport-managed logical devices).
+- Allows tool / direct-handle clients to opt into eviction for convenience if desired.
+
+
 ### Canonical StatusCode Contract Matrix (MUST be kept up-to-date)
 > This table is the source of truth. If a backend disagrees, the backend changes (or the table changes).
 > Keep the contract aligned with current NetworkDevice behaviour unless we intentionally decide otherwise.
@@ -20,7 +40,8 @@
 | payload malformed / wrong version / trailing bytes | InvalidRequest | protocol decode failure |
 | URL missing scheme / scheme parse fails | InvalidRequest | e.g. no `://` |
 | scheme unsupported / no backend registered | Unsupported | e.g. tcp not implemented yet |
-| no free session slots (and no eviction) | DeviceBusy | bounded MAX_SESSIONS |
+| no free session slots AND allow_evict=0 | DeviceBusy | strict capacity |
+| no free session slots AND allow_evict=1 | Ok (after LRU eviction) OR DeviceBusy | DeviceBusy only if no eviction possible |
 | network stack unavailable / WiFi down (platform-specific) | NotReady | *only* when truly "try later" |
 | DNS failure | IOError | retryable at host discretion |
 | connect failure / timeout | IOError | |
@@ -75,7 +96,11 @@
 - unknown handle behaviour:
   - Info/Read/Write/Close on unknown handle → InvalidRequest
 - slot allocation:
-  - Open MAX_SESSIONS times succeeds, next Open → DeviceBusy
+  - when allow_evict=0:
+    - Open MAX_SESSIONS times succeeds, next Open → DeviceBusy
+  - when allow_evict=1:
+    - Open beyond MAX_SESSIONS succeeds by evicting LRU
+    - evicted handles become InvalidRequest for Info/Read/Write/Close
 - idle timeout:
   - simulate ticks; session idle reaped; subsequent Info/Read/Close → InvalidRequest
 
