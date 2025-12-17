@@ -25,8 +25,17 @@ static void ensure_curl_global_init()
 
 static bool method_supported(std::uint8_t method)
 {
-    // v1: GET(1), HEAD(5)
-    return method == 1 || method == 5;
+    // v1: GET(1), POST(2), PUT(3), DELETE(4), HEAD(5)
+    switch (method) {
+        case 1: // GET
+        case 2: // POST
+        case 3: // PUT
+        case 4: // DELETE
+        case 5: // HEAD
+            return true;
+        default:
+            return false;
+    }
 }
 
 std::size_t HttpNetworkProtocolCurl::write_body_cb(
@@ -92,6 +101,29 @@ std::size_t HttpNetworkProtocolCurl::write_header_cb(
     return n;
 }
 
+io::StatusCode HttpNetworkProtocolCurl::perform_now()
+{
+    if (!_curl) return io::StatusCode::InternalError;
+
+    // Clear response buffers for this execution
+    _httpStatus = 0;
+    _headersBlock.clear();
+    _body.clear();
+
+    CURLcode res = curl_easy_perform(_curl);
+
+    long httpCode = 0;
+    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    _httpStatus = static_cast<std::uint16_t>(httpCode < 0 ? 0 : httpCode);
+
+    if (res != CURLE_OK) {
+        return io::StatusCode::IOError;
+    }
+
+    _performed = true;
+    return io::StatusCode::Ok;
+}
+
 io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
 {
     close();
@@ -101,74 +133,138 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     }
 
     ensure_curl_global_init();
-
     _req = req;
 
-    CURL* curl = curl_easy_init();
-    if (!curl) {
+    _curl = curl_easy_init();
+    if (!_curl) {
         return io::StatusCode::InternalError;
     }
 
-    curl_slist* slist = nullptr;
+    // Build request headers
     for (const auto& kv : _req.headers) {
         std::string line;
         line.reserve(kv.first.size() + 2 + kv.second.size());
         line.append(kv.first);
         line.append(": ");
         line.append(kv.second);
-        slist = curl_slist_append(slist, line.c_str());
+        _slist = curl_slist_append(_slist, line.c_str());
     }
-    if (slist) {
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
+    if (_slist) {
+        curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, _slist);
     }
 
-    curl_easy_setopt(curl, CURLOPT_URL, _req.url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &HttpNetworkProtocolCurl::write_body_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
+    // Common options
+    curl_easy_setopt(_curl, CURLOPT_URL, _req.url.c_str());
+    curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, &HttpNetworkProtocolCurl::write_body_cb);
+    curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
 
     // Always collect headers on POSIX so Info() can return them later if requested.
-    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &HttpNetworkProtocolCurl::write_header_cb);
-    curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
+    curl_easy_setopt(_curl, CURLOPT_HEADERFUNCTION, &HttpNetworkProtocolCurl::write_header_cb);
+    curl_easy_setopt(_curl, CURLOPT_HEADERDATA, this);
 
     const bool follow = (_req.flags & 0x02) != 0;
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, follow ? 1L : 0L);
+    curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, follow ? 1L : 0L);
 
-    if (_req.method == 5) { // HEAD
-        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    } else { // GET
-        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    // TLS verification defaults (fine for now)
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
+    // Reset request-body state
+    _requestBody.clear();
+    _expectedRequestBodyLen = _req.bodyLenHint;
+    _performed = false;
+
+    const bool hasBody = (_req.bodyLenHint > 0);
+    const bool isPost = (_req.method == 2);
+    const bool isPut  = (_req.method == 3);
+
+    // Configure method
+    if (_req.method == 5) {
+        // HEAD
+        curl_easy_setopt(_curl, CURLOPT_NOBODY, 1L);
+    } else if (_req.method == 1) {
+        // GET
+        curl_easy_setopt(_curl, CURLOPT_HTTPGET, 1L);
+    } else if (_req.method == 4) {
+        // DELETE (no body for now)
+        curl_easy_setopt(_curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    } else if (isPost) {
+        // POST
+        curl_easy_setopt(_curl, CURLOPT_POST, 1L);
+    } else if (isPut) {
+        // PUT: easiest is CUSTOMREQUEST + POSTFIELDS (sends request body)
+        curl_easy_setopt(_curl, CURLOPT_CUSTOMREQUEST, "PUT");
     }
 
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-
-    CURLcode res = curl_easy_perform(curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    _httpStatus = static_cast<std::uint16_t>(httpCode < 0 ? 0 : httpCode);
-
-    curl_easy_cleanup(curl);
-    if (slist) {
-        curl_slist_free_all(slist);
+    // If method expects/uses a body:
+    // - If bodyLenHint==0, dispatch immediately with an empty body.
+    // - If bodyLenHint>0, we defer until write_body() completes.
+    if (isPost || isPut) {
+        if (!hasBody) {
+            curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, "");
+            curl_easy_setopt(_curl, CURLOPT_POSTFIELDSIZE, 0L);
+            io::StatusCode st = perform_now();
+            if (st != io::StatusCode::Ok) { close(); }
+            return st;
+        }
+        // defer; write_body() will provide POSTFIELDS + size and then perform
+        return io::StatusCode::Ok;
     }
 
-    if (res != CURLE_OK) {
-        close();
-        return io::StatusCode::IOError;
-    }
-
-    return io::StatusCode::Ok;
+    // No-body methods dispatch immediately
+    io::StatusCode st = perform_now();
+    if (st != io::StatusCode::Ok) { close(); }
+    return st;
 }
 
 
-io::StatusCode HttpNetworkProtocolCurl::write_body(std::uint32_t,
-                                                   const std::uint8_t*,
-                                                   std::size_t,
-                                                   std::uint16_t& written)
-{
+io::StatusCode HttpNetworkProtocolCurl::write_body(
+    std::uint32_t offset,
+    const std::uint8_t* data,
+    std::size_t len,
+    std::uint16_t& written
+) {
     written = 0;
-    return io::StatusCode::Unsupported;
+
+    // Only meaningful for POST/PUT requests that were opened with bodyLenHint > 0
+    const bool isPostOrPut = (_req.method == 2 || _req.method == 3);
+    if (!isPostOrPut || _expectedRequestBodyLen == 0) {
+        return io::StatusCode::Unsupported;
+    }
+
+    // NetworkDevice already enforces sequential offsets + overflow,
+    // but keep a defensive check here too.
+    if (offset != _requestBody.size()) {
+        return io::StatusCode::InvalidRequest;
+    }
+    const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(len);
+    if (end > static_cast<std::uint64_t>(_expectedRequestBodyLen)) {
+        return io::StatusCode::InvalidRequest;
+    }
+
+    if (len > 0) {
+        if (!data) return io::StatusCode::InvalidRequest;
+        _requestBody.insert(_requestBody.end(), data, data + len);
+    }
+
+    written = static_cast<std::uint16_t>(len);
+
+    // If body complete, dispatch now.
+    if (_requestBody.size() == _expectedRequestBodyLen) {
+        if (!_curl) return io::StatusCode::InternalError;
+
+        // Provide the final body to libcurl (valid until perform returns)
+        curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, _requestBody.data());
+        curl_easy_setopt(_curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(_requestBody.size()));
+
+        io::StatusCode st = perform_now();
+        if (st != io::StatusCode::Ok) {
+            close();
+        }
+        return st;
+    }
+
+    return io::StatusCode::Ok;
 }
 
 io::StatusCode HttpNetworkProtocolCurl::read_body(std::uint32_t offset,
@@ -177,6 +273,12 @@ io::StatusCode HttpNetworkProtocolCurl::read_body(std::uint32_t offset,
                                                   std::uint16_t& read,
                                                   bool& eof)
 {
+    if (!_performed) {
+        read = 0;
+        eof = false;
+        return io::StatusCode::NotReady;
+    }
+
     read = 0;
     eof = false;
 
@@ -195,6 +297,10 @@ io::StatusCode HttpNetworkProtocolCurl::read_body(std::uint32_t offset,
 
 io::StatusCode HttpNetworkProtocolCurl::info(std::size_t maxHeaderBytes, io::NetworkInfo& out)
 {
+    if (!_performed) {
+        return io::StatusCode::NotReady;
+    }
+    
     out = io::NetworkInfo{};
     out.hasHttpStatus = true;
     out.httpStatus = _httpStatus;
@@ -212,6 +318,19 @@ void HttpNetworkProtocolCurl::close()
     _httpStatus = 0;
     _headersBlock.clear();
     _body.clear();
+
+    _requestBody.clear();
+    _expectedRequestBodyLen = 0;
+    _performed = false;
+
+    if (_curl) {
+        curl_easy_cleanup(_curl);
+        _curl = nullptr;
+    }
+    if (_slist) {
+        curl_slist_free_all(_slist);
+        _slist = nullptr;
+    }
 }
 
 } // namespace fujinet::platform::posix

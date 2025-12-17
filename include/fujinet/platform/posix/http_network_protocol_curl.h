@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <curl/curl.h>
 
 namespace fujinet::platform::posix {
 
@@ -33,11 +34,20 @@ public:
 private:
     static std::size_t write_body_cb(char* ptr, std::size_t size, std::size_t nmemb, void* userdata);
     static std::size_t write_header_cb(char* ptr, std::size_t size, std::size_t nmemb, void* userdata);
+    io::StatusCode perform_now(); // executes the request synchronously, fills _body/_headersBlock/_httpStatus
 
     io::NetworkOpenRequest _req{};
     std::uint16_t _httpStatus{0};
     std::string _headersBlock;
     std::vector<std::uint8_t> _body;
+
+    CURL* _curl = nullptr;
+    curl_slist* _slist = nullptr;
+
+    std::vector<std::uint8_t> _requestBody;
+    std::uint32_t _expectedRequestBodyLen = 0;
+    bool _performed = false;
+
 };
 
 } // namespace fujinet::platform::posix
