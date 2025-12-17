@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import serial
 from pathlib import Path
 
 from .fujibus import send_command
@@ -103,117 +103,124 @@ def cmd_read(args) -> int:
 
 
 def cmd_read_all(args) -> int:
-    # Streaming read in chunks to exercise “split packets”
     out_path = Path(args.out) if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    offset = 0
-    chunks = []
-    total = 0
+    with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
+        offset = 0
+        chunks = []
+        total = 0
 
-    while True:
-        req = fp.build_read_req(args.fs, args.path, offset, args.chunk)
-        pkt = send_command(
-            port=args.port,
-            device=fp.FILE_DEVICE_ID,
-            command=fp.CMD_READ,
-            payload=req,
-            baud=args.baud,
-            timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
-        )
-        if pkt is None:
-            print("No response")
-            return 2
-        if not pkt.params or pkt.params[0] != 0:
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
-            return 1
+        while True:
+            req = fp.build_read_req(args.fs, args.path, offset, args.chunk)
+            pkt = send_command(
+                port=ser,
+                device=fp.FILE_DEVICE_ID,
+                command=fp.CMD_READ,
+                payload=req,
+                baud=args.baud,
+                timeout=args.timeout,
+                read_max=args.read_max,
+                debug=args.debug,
+            )
 
-        rr = fp.parse_read_resp(pkt.payload)
-        if rr.offset != offset:
-            print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
-            return 1
+            if pkt is None:
+                print("No response")
+                return 2
 
-        if out_path:
-            with out_path.open("ab") as f:
-                f.write(rr.data)
-        else:
-            chunks.append(rr.data)
+            if not pkt.params or pkt.params[0] != 0:
+                print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+                return 1
 
-        n = len(rr.data)
-        total += n
-        offset += n
+            rr = fp.parse_read_resp(pkt.payload)
+            if rr.offset != offset:
+                print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
+                return 1
+
+            if out_path:
+                with out_path.open("ab") as f:
+                    f.write(rr.data)
+            else:
+                chunks.append(rr.data)
+
+            n = len(rr.data)
+            total += n
+            offset += n
+
+            if args.verbose:
+                print(f"read chunk: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+
+            if rr.eof or n == 0:
+                break
+
+        if not out_path:
+            import sys
+            sys.stdout.buffer.write(b"".join(chunks))
 
         if args.verbose:
-            print(f"read chunk: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+            print(f"total read: {total} bytes")
 
-        # Stop when device signals eof/truncated with no more data
-        if rr.eof or n == 0:
-            break
-
-    if not out_path:
-        import sys
-
-        sys.stdout.buffer.write(b"".join(chunks))
-    if args.verbose:
-        print(f"total read: {total} bytes")
     return 0
+
 
 
 def cmd_write(args) -> int:
     data = Path(args.inp).read_bytes()
 
-    # Chunked write to exercise “split packets”
-    offset = args.offset
-    idx = 0
-    total_written = 0
+    # Reuse one Serial for the whole transfer (robust for CDC + faster).
+    with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
+        offset = args.offset
+        idx = 0
+        total_written = 0
 
-    while idx < len(data):
-        chunk = data[idx : idx + args.chunk]
-        req = fp.build_write_req(args.fs, args.path, offset, chunk)
+        while idx < len(data):
+            chunk = data[idx : idx + args.chunk]
+            req = fp.build_write_req(args.fs, args.path, offset, chunk)
 
-        pkt = send_command(
-            port=args.port,
-            device=fp.FILE_DEVICE_ID,
-            command=fp.CMD_WRITE,
-            payload=req,
-            baud=args.baud,
-            timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
-        )
-        if pkt is None:
-            print("No response")
-            return 2
-        if not pkt.params or pkt.params[0] != 0:
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
-            return 1
+            pkt = send_command(
+                port=ser,
+                device=fp.FILE_DEVICE_ID,
+                command=fp.CMD_WRITE,
+                payload=req,
+                baud=args.baud,
+                timeout=args.timeout,
+                read_max=args.read_max,
+                debug=args.debug,
+            )
 
-        wr = fp.parse_write_resp(pkt.payload)
-        if wr.offset != offset:
-            print(f"Offset echo mismatch: expected {offset}, got {wr.offset}")
-            return 1
+            if pkt is None:
+                print("No response")
+                return 2
 
-        # Best-effort: device may write fewer bytes than requested
-        wrote = int(wr.written)
-        if wrote < 0:
-            wrote = 0
+            # FujiBus convention: status is param[0] on responses
+            if not pkt.params or pkt.params[0] != 0:
+                print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+                return 1
+
+            wr = fp.parse_write_resp(pkt.payload)
+            if wr.offset != offset:
+                print(f"Offset echo mismatch: expected {offset}, got {wr.offset}")
+                return 1
+
+            wrote = int(wr.written)
+            if wrote < 0:
+                wrote = 0
+
+            if args.verbose:
+                print(f"write chunk: offset={offset} requested={len(chunk)} written={wrote}")
+
+            total_written += wrote
+            offset += wrote
+            idx += wrote
+
+            if wrote == 0:
+                print("write stalled (0 bytes written), stopping")
+                break
 
         if args.verbose:
-            print(f"write chunk: offset={offset} requested={len(chunk)} written={wrote}")
+            print(f"total written: {total_written} bytes")
 
-        total_written += wrote
-        offset += wrote
-        idx += wrote
-
-        if wrote == 0:
-            print("write stalled (0 bytes written), stopping")
-            break
-
-    if args.verbose:
-        print(f"total written: {total_written} bytes")
     return 0
 
 

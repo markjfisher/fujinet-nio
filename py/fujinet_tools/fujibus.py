@@ -23,6 +23,7 @@ HEADER_SIZE = 6  # device(1), command(1), length(2), checksum(1), descr(1)
 FIELD_SIZE_TABLE = [0, 1, 1, 1, 1, 2, 2, 4]
 NUM_FIELDS_TABLE = [0, 1, 2, 3, 4, 1, 2, 1]
 
+_RX_STASH: dict[int, bytearray] = {}
 
 @dataclass
 class FujiPacket:
@@ -237,55 +238,64 @@ def _read_one_slip_frame(
 ) -> Optional[bytes]:
     """
     Incrementally read until we have a full SLIP frame (C0 ... C0) or deadline.
-    Robust against frames split across multiple reads.
+    Robust against frames split across multiple reads AND against extra trailing bytes
+    (kept for the next call).
     """
-    buf = bytearray()
+    key = id(ser)
+    buf = _RX_STASH.get(key)
+    if buf is None:
+        buf = bytearray()
+        _RX_STASH[key] = buf
 
-    # state: have we seen the first END yet?
     in_frame = False
 
-    # Use small per-iteration reads; rely on deadline for overall timeout.
+    # If stash already contains a start delimiter, we are already "in frame".
+    if buf and SLIP_END in buf:
+        # Trim leading garbage before first END
+        start = buf.find(bytes([SLIP_END]))
+        if start > 0:
+            del buf[:start]
+        if len(buf) >= 1 and buf[0] == SLIP_END:
+            in_frame = True
+
     while time.monotonic() < deadline:
-        # Prefer non-blocking-ish behaviour:
-        # - if bytes waiting, drain them
-        # - else read 1 byte with the port's timeout
+        # First, see if we already have a full frame in the stash.
+        if not in_frame:
+            try:
+                start = buf.index(SLIP_END)
+            except ValueError:
+                start = -1
+
+            if start >= 0:
+                if start > 0:
+                    del buf[:start]
+                in_frame = True
+
+        if in_frame:
+            try:
+                end = buf.index(SLIP_END, 1)
+            except ValueError:
+                end = -1
+
+            if end >= 0:
+                frame = bytes(buf[: end + 1])
+                # IMPORTANT: preserve trailing bytes for next call
+                del buf[: end + 1]
+                return frame
+
+        # Need more bytes: read a small chunk (or 1 byte) without blocking forever.
         n_wait = ser.in_waiting
         n = n_wait if n_wait > 0 else 1
         n = min(n, read_chunk)
 
         chunk = ser.read(n)
         if not chunk:
-            # nothing arrived in this serial timeout slice; loop until deadline
             continue
 
         buf.extend(chunk)
 
-        # Find frame boundaries in buffer.
-        # We want first C0 ... next C0.
-        if not in_frame:
-            try:
-                start = buf.index(SLIP_END)
-            except ValueError:
-                # haven't seen start yet, keep buffering
-                continue
-            # discard anything before start
-            if start > 0:
-                del buf[:start]
-            in_frame = True
-
-        # Now we have a start at buf[0]. Look for end.
-        try:
-            end = buf.index(SLIP_END, 1)
-        except ValueError:
-            continue
-
-        frame = bytes(buf[: end + 1])
-        if debug:
-            # include any trailing bytes too (useful for diagnosis)
-            pass
-        return frame
-
     return None
+
 
 
 def send_command(
@@ -331,8 +341,13 @@ def send_command(
         return pkt
 
     if isinstance(port, serial.Serial):
+        stash = _RX_STASH.get(id(port))
+        if stash is not None and len(stash) > read_max:
+            # defensive: if stash ballooned, drop it to regain sync
+            _RX_STASH[id(port)] = bytearray()
         return _do(port)
 
     # Legacy: open per call (still works, but slower)
     with serial.Serial(port, baud, timeout=0.01) as ser:
+        # overall deadline is handled by _read_one_slip_frame; keep per-read timeout short
         return _do(ser)
