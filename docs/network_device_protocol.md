@@ -71,6 +71,8 @@ Command IDs (v1):
 | `Close` | `0x04` | Release a handle |
 | `Info`  | `0x05` | Fetch response metadata (HTTP status, headers, length) |
 
+v1 goal: support streaming reads without buffering entire bodies in RAM.
+
 ---
 
 ## Common Response Prefix
@@ -143,6 +145,12 @@ Notes:
 - `needs_body_write=1` indicates the host must stream body via `Write` (POST/PUT).
 - `accepted=1` means the handle exists; it does not imply the request has completed.
 
+### Headers
+
+- Headers are only collected if the OPEN flag `want_headers` is set.
+- POSIX backends may capture all response headers and return up to max_header_bytes.
+- ESP32 backends should avoid storing full headers unless requested, and should prefer filtering/storing only what the client asked for (future enhancement).
+
 ---
 
 ## Command: Write (0x03)
@@ -213,14 +221,27 @@ u8[] data                // length dataLen
 
 Notes:
 - `eof=1` indicates end-of-response reached.
-- `truncated=1` indicates the device returned fewer than `maxBytes` (often paired with eof, but not required).
+- truncated: set when the device filled the requested max_bytes (i.e. caller buffer limit hit).
+  It does NOT mean "server truncated the response".
 - The host reads until `eof=1` or `dataLen=0`.
+
+#### READ behavior notes (important)
+
+Backends may be synchronous (POSIX curl) or streaming/asynchronous (ESP32).
+
+- If data is not yet available, READ may return `NotReady`.
+- A READ returning `Ok` with `read_len == 0` is only valid when `eof == true` (transfer complete).
+- Hosts should treat `NotReady` as "try again soon", not a fatal error.
 
 ---
 
 ## Command: Info (0x05)
 
 Fetch response metadata (HTTP status, content length, optional headers). This can be called repeatedly; results may become available over time.
+
+- content_length is optional:
+  - If the backend knows it (e.g., Content-Length header), it reports it.
+  - For chunked/streaming responses, it may be 0/absent until completion or unknown entirely.
 
 ### Request
 
@@ -319,6 +340,19 @@ NetworkDevice should keep a fixed-size table of sessions (small number, e.g. 4â€
 - perform network I/O
 - fill response buffers progressively
 - update NotReady vs Ok outcomes for `Read`/`Info`
+
+---
+
+### Handle
+
+`handle` is a 16-bit opaque session identifier. Internally it encodes:
+- a small session slot index (bounded by MAX_SESSIONS), and
+- a generation counter to detect stale handles after a slot is reused.
+
+Implications:
+- Handle values are not sequential, and may look like multiples of 256, etc.
+- Max concurrent sessions is bounded by MAX_SESSIONS; OPEN returns DeviceBusy when full.
+- A handle may become invalid after CLOSE (or timeout reaping), even if the numeric value is later reused with a new generation.
 
 ---
 

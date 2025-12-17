@@ -374,6 +374,13 @@ public:
 
 `serviceOnce()` is called once per core tick.
 
+### Polling / background work
+
+FujinetCore::tick() polls devices each tick. Devices may use poll() for:
+- streaming progress (async backends),
+- connection/session timeout reaping,
+- housekeeping (autosave, etc).
+
 ---
 
 ## **7. FujinetCore (overall engine)**
@@ -491,6 +498,12 @@ A VirtualDevice may receive:
 
 These boundaries ensure that FujiNet-NIO remains portable, maintainable, and scalable as we add more platforms, devices, and protocols.
 
+### Platform services
+
+Some capabilities (e.g. Wi-Fi link bring-up) are platform services rather than IO devices.
+They are initialized by platform bootstrap and/or a service manager, then used by devices
+(e.g. network backends) without coupling device init time to link bring-up time.
+
 ---
 
 # **Build Profiles, Channels & Transports**
@@ -577,6 +590,92 @@ BuildProfile current_build_profile()
 
 **This file is the only place in the codebase that reads `FN_BUILD_*` macros.**
 
+---
+
+## Network Architecture
+
+FujiNet NIO treats networking as a device-facing capability built on top of
+platform-specific transport implementations. The goal is to provide a consistent,
+stream-oriented interface to host systems while allowing each platform to use the
+most appropriate native networking stack.
+
+### NetworkDevice
+
+`NetworkDevice` is a virtual I/O device registered with the core like any other
+device (e.g. FileDevice, ClockDevice). From the host’s perspective, it exposes a
+handle-based API for network operations such as opening URLs, reading response
+data, querying status, and closing connections.
+
+Internally, `NetworkDevice` does not implement networking directly. Instead, it
+acts as a coordinator for one or more protocol implementations.
+
+### Protocol-based design
+
+Networking is implemented via protocol handlers that conform to a common
+interface (e.g. HTTP, HTTPS, TCP etc).
+
+At runtime, `NetworkDevice` is constructed with a **Protocol Registry**:
+a map of protocol names (e.g. `"http"`, `"https"`) to factory functions capable
+of creating protocol instances.
+
+This design allows:
+- Platform-specific implementations (POSIX vs ESP32)
+- Optional protocols (stubbed or omitted if unavailable)
+- Clean separation between device semantics and transport mechanics
+
+### Sessions and handles
+
+Each successful network OPEN operation creates a **session** and returns an
+opaque 16-bit handle to the host.
+
+A session represents a single logical connection or request lifecycle and owns:
+- protocol instance state
+- read cursor and EOF tracking
+- error status
+- any backend resources (sockets, HTTP clients, buffers)
+
+Handles are bounded and reused via generation counters to prevent stale access.
+Multiple sessions may be active concurrently, allowing the host to interleave
+reads across different network connections.
+
+### Streaming model
+
+All network reads are **stream-oriented**.
+
+- Data is not required to be buffered in full.
+- Backends may deliver data incrementally as it becomes available.
+- Reads may return `NotReady` if data has not yet arrived.
+- EOF is signaled explicitly once the transfer is complete.
+
+This model allows large responses (e.g. multi-megabyte HTTP bodies) to be handled
+without excessive memory usage, especially on constrained platforms like ESP32.
+
+### Platform responsibilities
+
+Platforms provide concrete protocol implementations and supporting services:
+
+- POSIX typically uses synchronous libraries (e.g. libcurl) and can often
+  determine content length and headers eagerly.
+- ESP32 uses asynchronous, event-driven networking (ESP-IDF), relying on stream
+  buffers and TCP backpressure rather than full in-memory buffering.
+
+Platform code is also responsible for initializing underlying network links
+(e.g. Wi-Fi), but link bring-up is intentionally decoupled from device creation
+to avoid delaying early device responsiveness.
+
+### Polling and lifecycle
+
+Devices participate in the normal core tick cycle via `IODeviceManager::pollDevices()`.
+For networking, this primarily ensures that the `NetworkDevice` can manage session
+lifecycle (timeouts, leaked handles, cleanup) without requiring extra core threads.
+
+Protocol handlers also expose a `poll()` hook. Some backends may use this to
+advance asynchronous operations or perform lightweight bookkeeping. Other backends
+(e.g. synchronous POSIX implementations, or ESP-IDF HTTP where transfer progress is
+driven by the ESP-IDF task/event system) may implement `poll()` as a no-op.
+
+Today, HTTP on both POSIX and ESP32 does not require protocol polling to make progress;
+the hook exists for future protocols such as TCP streams.
 ---
 
 # **Hardware Capabilities**
