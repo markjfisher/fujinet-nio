@@ -22,11 +22,20 @@ namespace fujinet::platform::esp32 {
 
 static constexpr const char* TAG = "net.http";
 
-static bool method_supported(std::uint8_t method)
-{
-    // v1: GET(1), HEAD(5)
-    return method == 1 || method == 5;
+static bool method_supported(std::uint8_t method) {
+    // v1: GET(1), POST(2), PUT(3), DELETE(4), HEAD(5)
+    switch (method) {
+        case 1: // GET
+        case 2: // POST
+        case 3: // PUT
+        case 4: // DELETE
+        case 5: // HEAD
+            return true;
+        default:
+            return false;
+    }
 }
+
 
 struct HttpNetworkProtocolEspIdfState {
     static constexpr std::size_t header_cap_default = 2048;
@@ -54,6 +63,12 @@ struct HttpNetworkProtocolEspIdfState {
     std::size_t header_cap{header_cap_default};
 
     std::uint8_t method{0};
+
+    // POST/PUT request-body streaming state (no buffering)
+    bool has_request_body{false};
+    std::uint32_t expected_body_len{0};
+    std::uint32_t sent_body_len{0};
+    bool upload_open{false};
 
     bool has_http_status{false};
     std::uint16_t http_status{0};
@@ -84,6 +99,12 @@ struct HttpNetworkProtocolEspIdfState {
         err = ESP_OK;
         read_cursor = 0;
         stop_requested = false;
+
+        has_request_body = false;
+        expected_body_len = 0;
+        sent_body_len = 0;
+        upload_open = false;
+
     }
 
     std::string headers_block;
@@ -254,6 +275,54 @@ static void http_task_entry(void* arg)
     vTaskDelete(nullptr);
 }
 
+static void http_task_entry_after_upload(void* arg)
+{
+    auto* s = static_cast<HttpNetworkProtocolEspIdfState*>(arg);
+    if (!s) {
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    esp_err_t err = ESP_FAIL;
+
+    if (s->client) {
+        // This parses response headers and makes status/length available.
+        (void)esp_http_client_fetch_headers(s->client);
+
+        // Read response body and push into stream buffer (bounded backpressure).
+        while (!s->stop_requested) {
+            std::uint8_t buf[512];
+            const int r = esp_http_client_read(s->client, reinterpret_cast<char*>(buf), sizeof(buf));
+            if (r < 0) {
+                err = ESP_FAIL;
+                break;
+            }
+            if (r == 0) {
+                err = ESP_OK;
+                break;
+            }
+            if (!stream_send_all(*s, buf, static_cast<std::size_t>(r))) {
+                err = ESP_FAIL;
+                break;
+            }
+        }
+
+        // Close the connection now that response is consumed (or on error).
+        (void)esp_http_client_close(s->client);
+    }
+
+    take_mutex(s->meta_mutex);
+    s->err = err;
+    set_status_and_length(*s);
+    s->done = true;
+    give_mutex(s->meta_mutex);
+
+    if (s->done_sem) {
+        (void)xSemaphoreGive(s->done_sem);
+    }
+    vTaskDelete(nullptr);
+}
+
 HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
 {
     _s = new HttpNetworkProtocolEspIdfState();
@@ -318,41 +387,124 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         return fujinet::io::StatusCode::InternalError;
     }
 
-    esp_http_client_set_method(_s->client, (req.method == 5) ? HTTP_METHOD_HEAD : HTTP_METHOD_GET);
-
+    switch (req.method) {
+        case 1: esp_http_client_set_method(_s->client, HTTP_METHOD_GET); break;
+        case 2: esp_http_client_set_method(_s->client, HTTP_METHOD_POST); break;
+        case 3: esp_http_client_set_method(_s->client, HTTP_METHOD_PUT); break;
+        case 4: esp_http_client_set_method(_s->client, HTTP_METHOD_DELETE); break;
+        case 5: esp_http_client_set_method(_s->client, HTTP_METHOD_HEAD); break;
+        default:
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
+            return fujinet::io::StatusCode::Unsupported;
+    }
+    
     for (const auto& kv : req.headers) {
         if (!kv.first.empty()) {
             (void)esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
         }
     }
 
-    // Launch task to do network I/O (perform) so open() returns quickly.
-    _s->task = nullptr;
-    if (_s->done_sem) {
-        (void)xSemaphoreTake(_s->done_sem, 0);
+    const bool is_post_or_put = (req.method == 2 || req.method == 3);
+    _s->has_request_body = is_post_or_put && (req.bodyLenHint > 0);
+    _s->expected_body_len = _s->has_request_body ? req.bodyLenHint : 0;
+    _s->sent_body_len = 0;
+    _s->upload_open = false;
+
+    // For POST/PUT with bodyLenHint>0, open a streaming upload connection and defer the task
+    // until the final body byte is written (write_body()).
+    if (_s->has_request_body) {
+        esp_err_t e = esp_http_client_open(_s->client, static_cast<int>(_s->expected_body_len));
+        if (e != ESP_OK) {
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
+            return fujinet::io::StatusCode::IOError;
+        }
+        _s->upload_open = true;
+        // No task started yet; response will be pulled after upload completes.
+        return fujinet::io::StatusCode::Ok;
     }
-    BaseType_t ok = xTaskCreate(&http_task_entry,
-                               "fn_http",
-                               4096,
-                               _s,
-                               5,
-                               &_s->task);
+
+    // No request body: launch task to perform request asynchronously.
+    _s->task = nullptr;
+    if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
+
+    BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 4096, _s, 5, &_s->task);
     if (ok != pdPASS || !_s->task) {
         esp_http_client_cleanup(_s->client);
         _s->client = nullptr;
         return fujinet::io::StatusCode::InternalError;
     }
-
     return fujinet::io::StatusCode::Ok;
+
 }
 
-fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(std::uint32_t,
-                                                              const std::uint8_t*,
-                                                              std::size_t,
-                                                              std::uint16_t& written)
-{
+fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
+    std::uint32_t offset,
+    const std::uint8_t* data,
+    std::size_t dataLen,
+    std::uint16_t& written
+) {
     written = 0;
-    return fujinet::io::StatusCode::Unsupported;
+
+    if (!_s || !_s->client) {
+        return fujinet::io::StatusCode::InternalError;
+    }
+    if (!_s->has_request_body || !_s->upload_open) {
+        return fujinet::io::StatusCode::Unsupported;
+    }
+
+    // Core enforces sequential offsets/overflow too, but keep backend defensive.
+    if (offset != _s->sent_body_len) {
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
+    const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
+    if (end > static_cast<std::uint64_t>(_s->expected_body_len)) {
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
+    if (dataLen > 0 && !data) {
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
+
+    // Stream write to esp_http_client (may accept partial); we loop to send all or return DeviceBusy/IOError.
+    std::size_t total = 0;
+    while (total < dataLen) {
+        if (_s->stop_requested) {
+            return fujinet::io::StatusCode::IOError;
+        }
+
+        const int w = esp_http_client_write(
+            _s->client,
+            reinterpret_cast<const char*>(data + total),
+            static_cast<int>(dataLen - total)
+        );
+
+        if (w < 0) {
+            return fujinet::io::StatusCode::IOError;
+        }
+        if (w == 0) {
+            // Backpressure (rare); let host retry.
+            written = static_cast<std::uint16_t>(total);
+            return fujinet::io::StatusCode::DeviceBusy;
+        }
+        total += static_cast<std::size_t>(w);
+    }
+
+    _s->sent_body_len += static_cast<std::uint32_t>(total);
+    written = static_cast<std::uint16_t>(total);
+
+    // Body complete: start the "read response" task now.
+    if (_s->sent_body_len == _s->expected_body_len) {
+        _s->task = nullptr;
+        if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
+
+        BaseType_t ok = xTaskCreate(&http_task_entry_after_upload, "fn_http2", 4096, _s, 5, &_s->task);
+        if (ok != pdPASS || !_s->task) {
+            return fujinet::io::StatusCode::InternalError;
+        }
+    }
+
+    return fujinet::io::StatusCode::Ok;
 }
 
 fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offset,

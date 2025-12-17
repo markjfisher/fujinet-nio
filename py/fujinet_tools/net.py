@@ -137,7 +137,7 @@ def cmd_net_open(args) -> int:
         flags=args.flags,
         url=args.url,
         headers=[],
-        body_len_hint=0,
+        body_len_hint=args.body_len_hint,
     )
 
     pkt = _send_retry_not_ready(
@@ -549,6 +549,141 @@ def cmd_net_head(args) -> int:
             except Exception:
                 pass
 
+def cmd_net_send(args) -> int:
+    data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
+    body_len_hint = len(data) if args.body_len_hint < 0 else args.body_len_hint
+
+    open_req = np.build_open_req(
+        method=args.method,
+        flags=args.flags,
+        url=args.url,
+        headers=[],
+        body_len_hint=body_len_hint if (args.method in (2, 3)) else 0,
+    )
+
+    with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
+        # OPEN
+        pkt = send_command(
+            port=ser, device=np.NETWORK_DEVICE_ID, command=np.CMD_OPEN, payload=open_req,
+            timeout=args.timeout, read_max=args.read_max, debug=args.debug,
+        )
+        if pkt is None:
+            print("No response")
+            return 2
+        if not _status_ok(pkt):
+            code = _status_code(pkt)
+            print(f"Device status={code} ({_status_str(code)})")
+            return 1
+
+        orr = np.parse_open_resp(pkt.payload)
+        if not orr.accepted:
+            print("Open not accepted")
+            return 1
+
+        handle = orr.handle
+
+        # Optional body upload (POST/PUT only)
+        if args.method in (2, 3) and body_len_hint > 0:
+            if not orr.needs_body_write:
+                print("Device did not request body write, but body_len_hint > 0 was provided")
+                return 1
+
+            offset = 0
+            while offset < len(data):
+                chunk = data[offset: offset + args.write_chunk]
+                wreq = np.build_write_req(handle, offset, chunk)
+                wpkt = _send_retry_not_ready(
+                    ser, np.NETWORK_DEVICE_ID, np.CMD_WRITE, wreq,
+                    timeout=args.timeout, read_max=args.read_max, debug=args.debug,
+                    retries=200, sleep_s=0.001,
+                )
+                if wpkt is None:
+                    print("No response")
+                    return 2
+                if not _status_ok(wpkt):
+                    code = _status_code(wpkt)
+                    print(f"Device status={code} ({_status_str(code)})")
+                    return 1
+                wr = np.parse_write_resp(wpkt.payload)
+                if wr.written == 0:
+                    print("Write returned 0 bytes written; aborting")
+                    return 1
+                offset += wr.written
+
+        # Optional INFO
+        if args.show_headers:
+            info_req = np.build_info_req(handle, args.max_headers)
+            ipkt = _send_retry_not_ready(
+                ser, np.NETWORK_DEVICE_ID, np.CMD_INFO, info_req,
+                timeout=args.timeout, read_max=args.read_max, debug=args.debug,
+                retries=args.info_retries, sleep_s=args.info_sleep,
+            )
+            if ipkt and _status_ok(ipkt):
+                ir = np.parse_info_resp(ipkt.payload)
+                print(f"http_status={ir.http_status} content_length={ir.content_length}")
+                if ir.header_bytes:
+                    print(ir.header_bytes.decode("utf-8", errors="replace"), end="")
+
+        # Optionally stream response body
+        if args.read_response:
+            out_path = Path(args.out) if args.out else None
+            if out_path:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                if out_path.exists() and not args.force:
+                    print(f"Refusing to overwrite {out_path} (use --force)")
+                    return 1
+                out_path.write_bytes(b"")
+
+            offset = 0
+            total = 0
+            while True:
+                rreq = np.build_read_req(handle, offset, args.chunk)
+                rpkt = _send_retry_not_ready(
+                    ser, np.NETWORK_DEVICE_ID, np.CMD_READ, rreq,
+                    timeout=args.timeout, read_max=args.read_max, debug=args.debug,
+                    retries=500, sleep_s=0.001,
+                )
+                if rpkt is None:
+                    print("No response")
+                    return 2
+                if not _status_ok(rpkt):
+                    code = _status_code(rpkt)
+                    print(f"Device status={code} ({_status_str(code)})")
+                    return 1
+
+                rr = np.parse_read_resp(rpkt.payload)
+                if rr.offset != offset:
+                    print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
+                    return 1
+
+                if out_path:
+                    with out_path.open("ab") as f:
+                        f.write(rr.data)
+                else:
+                    import sys
+                    sys.stdout.buffer.write(rr.data)
+
+                n = len(rr.data)
+                total += n
+                offset += n
+
+                if args.verbose:
+                    print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+
+                if rr.eof or n == 0:
+                    break
+
+            if args.verbose:
+                print(f"total read: {total} bytes")
+
+        # CLOSE (best-effort)
+        close_req = np.build_close_req(handle)
+        send_command(
+            port=ser, device=np.NETWORK_DEVICE_ID, command=np.CMD_CLOSE, payload=close_req,
+            timeout=args.timeout, read_max=args.read_max, debug=args.debug,
+        )
+        return 0
+
 
 def register_subcommands(subparsers) -> None:
     pn = subparsers.add_parser("net", help="Network device commands (binary protocol)")
@@ -557,6 +692,7 @@ def register_subcommands(subparsers) -> None:
     pno = nsub.add_parser("open", help="Open a URL and return a handle")
     pno.add_argument("--method", type=int, default=1, help="1=GET,2=POST,3=PUT,4=DELETE,5=HEAD")
     pno.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects, bit2=want_headers")
+    pno.add_argument("--body-len-hint", type=int, default=0, help="Expected request body length (POST/PUT)")
     pno.add_argument("url")
     pno.set_defaults(fn=cmd_net_open)
 
@@ -601,3 +737,24 @@ def register_subcommands(subparsers) -> None:
     pnh.add_argument("--max-headers", type=int, default=2048)
     pnh.add_argument("url")
     pnh.set_defaults(fn=cmd_net_head)
+
+    pns = nsub.add_parser("send", help="Send a request (GET/POST/PUT/DELETE/HEAD) with optional body + response streaming")
+    pns.add_argument("--method", type=int, required=True, help="1=GET,2=POST,3=PUT,4=DELETE,5=HEAD")
+    pns.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects, bit2=want_headers")
+    pns.add_argument("--show-headers", action="store_true")
+    pns.add_argument("--max-headers", type=int, default=2048)
+    pns.add_argument("--info-retries", type=int, default=50)
+    pns.add_argument("--info-sleep", type=float, default=0.005)
+
+    pns.add_argument("--read-response", action="store_true", help="Read and stream response body after request completes")
+    pns.add_argument("--chunk", type=int, default=512, help="Read chunk size")
+    pns.add_argument("--out", help="Write response body to this file (else stdout)")
+    pns.add_argument("--force", action="store_true", help="Overwrite --out if it exists")
+
+    pns.add_argument("--body-len-hint", type=int, default=-1, help="POST/PUT only: -1=use len(data), else fixed expected length")
+    pns.add_argument("--write-chunk", type=int, default=1024, help="Write chunk size for request body upload")
+    src = pns.add_mutually_exclusive_group(required=False)
+    src.add_argument("--inp", help="Read request body bytes from this file")
+    src.add_argument("--data", help="Send these UTF-8 bytes as request body")
+    pns.add_argument("url")
+    pns.set_defaults(fn=cmd_net_send)
