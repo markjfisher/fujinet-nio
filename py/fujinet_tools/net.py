@@ -571,7 +571,7 @@ def cmd_net_send(args) -> int:
             print("No response")
             return 2
         if not _status_ok(pkt):
-            code = _status_code(pkt)
+            code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
 
@@ -593,15 +593,22 @@ def cmd_net_send(args) -> int:
                 chunk = data[offset: offset + args.write_chunk]
                 wreq = np.build_write_req(handle, offset, chunk)
                 wpkt = _send_retry_not_ready(
-                    ser, np.NETWORK_DEVICE_ID, np.CMD_WRITE, wreq,
-                    timeout=args.timeout, read_max=args.read_max, debug=args.debug,
-                    retries=200, sleep_s=0.001,
+                    port=ser,
+                    device=np.NETWORK_DEVICE_ID,
+                    command=np.CMD_WRITE,
+                    payload=wreq,
+                    baud=args.baud,
+                    timeout=args.timeout,
+                    read_max=args.read_max,
+                    debug=args.debug,
+                    retries=200,
+                    sleep_s=0.001,
                 )
                 if wpkt is None:
                     print("No response")
                     return 2
                 if not _status_ok(wpkt):
-                    code = _status_code(wpkt)
+                    code = _pkt_status_code(wpkt)
                     print(f"Device status={code} ({_status_str(code)})")
                     return 1
                 wr = np.parse_write_resp(wpkt.payload)
@@ -614,10 +621,18 @@ def cmd_net_send(args) -> int:
         if args.show_headers:
             info_req = np.build_info_req(handle, args.max_headers)
             ipkt = _send_retry_not_ready(
-                ser, np.NETWORK_DEVICE_ID, np.CMD_INFO, info_req,
-                timeout=args.timeout, read_max=args.read_max, debug=args.debug,
-                retries=args.info_retries, sleep_s=args.info_sleep,
+                port=ser,
+                device=np.NETWORK_DEVICE_ID,
+                command=np.CMD_INFO,
+                payload=info_req,
+                baud=args.baud,
+                timeout=args.timeout,
+                read_max=args.read_max,
+                debug=args.debug,
+                retries=args.info_retries,
+                sleep_s=args.info_sleep,
             )
+
             if ipkt and _status_ok(ipkt):
                 ir = np.parse_info_resp(ipkt.payload)
                 print(f"http_status={ir.http_status} content_length={ir.content_length}")
@@ -639,15 +654,22 @@ def cmd_net_send(args) -> int:
             while True:
                 rreq = np.build_read_req(handle, offset, args.chunk)
                 rpkt = _send_retry_not_ready(
-                    ser, np.NETWORK_DEVICE_ID, np.CMD_READ, rreq,
-                    timeout=args.timeout, read_max=args.read_max, debug=args.debug,
-                    retries=500, sleep_s=0.001,
+                    port=ser,
+                    device=np.NETWORK_DEVICE_ID,
+                    command=np.CMD_READ,
+                    payload=rreq,
+                    baud=args.baud,
+                    timeout=args.timeout,
+                    read_max=args.read_max,
+                    debug=args.debug,
+                    retries=500,
+                    sleep_s=0.001,
                 )
                 if rpkt is None:
                     print("No response")
                     return 2
                 if not _status_ok(rpkt):
-                    code = _status_code(rpkt)
+                    code = _pkt_status_code(rpkt)
                     print(f"Device status={code} ({_status_str(code)})")
                     return 1
 
@@ -678,9 +700,17 @@ def cmd_net_send(args) -> int:
 
         # CLOSE (best-effort)
         close_req = np.build_close_req(handle)
-        send_command(
-            port=ser, device=np.NETWORK_DEVICE_ID, command=np.CMD_CLOSE, payload=close_req,
-            timeout=args.timeout, read_max=args.read_max, debug=args.debug,
+        _send_retry_not_ready(
+            port=ser,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_CLOSE,
+            payload=close_req,
+            baud=args.baud,
+            timeout=args.timeout,
+            read_max=args.read_max,
+            debug=args.debug,
+            retries=50,
+            sleep_s=0.01,
         )
         return 0
 

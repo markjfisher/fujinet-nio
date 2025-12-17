@@ -160,17 +160,22 @@ static bool stream_send_all(HttpNetworkProtocolEspIdfState& s,
             return false;
         }
 
-        const std::size_t sent = xStreamBufferSend(s.stream,
-                                                   p,
-                                                   remaining,
-                                                   HttpNetworkProtocolEspIdfState::wait_step_ticks);
+        const std::size_t sent = xStreamBufferSend(
+            s.stream,
+            p,
+            remaining,
+            HttpNetworkProtocolEspIdfState::wait_step_ticks
+        );
+        
         if (sent == 0) {
-            // no space yet; wait_step_ticks ensures we can observe stop_requested
+            // No space yet. IMPORTANT: yield/delay to avoid busy-spinning and starving the fujibus/task loop.
+            vTaskDelay(HttpNetworkProtocolEspIdfState::wait_step_ticks);
             continue;
         }
-
+        
         p += sent;
         remaining -= sent;
+        
     }
 
     return true;
@@ -288,6 +293,9 @@ static void http_task_entry_after_upload(void* arg)
     if (s->client) {
         // This parses response headers and makes status/length available.
         (void)esp_http_client_fetch_headers(s->client);
+        take_mutex(s->meta_mutex);
+        set_status_and_length(*s);
+        give_mutex(s->meta_mutex);
 
         // Read response body and push into stream buffer (bounded backpressure).
         while (!s->stop_requested) {
@@ -313,10 +321,10 @@ static void http_task_entry_after_upload(void* arg)
 
     take_mutex(s->meta_mutex);
     s->err = err;
-    set_status_and_length(*s);
+    // Status/length already captured immediately after fetch_headers() while client was open.
     s->done = true;
     give_mutex(s->meta_mutex);
-
+    
     if (s->done_sem) {
         (void)xSemaphoreGive(s->done_sem);
     }
@@ -429,7 +437,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     _s->task = nullptr;
     if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
 
-    BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 4096, _s, 5, &_s->task);
+    BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 4096, _s, 3, &_s->task);
     if (ok != pdPASS || !_s->task) {
         esp_http_client_cleanup(_s->client);
         _s->client = nullptr;
@@ -498,7 +506,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
         _s->task = nullptr;
         if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
 
-        BaseType_t ok = xTaskCreate(&http_task_entry_after_upload, "fn_http2", 4096, _s, 5, &_s->task);
+        BaseType_t ok = xTaskCreate(&http_task_entry_after_upload, "fn_http2", 4096, _s, 3, &_s->task);
         if (ok != pdPASS || !_s->task) {
             return fujinet::io::StatusCode::InternalError;
         }
