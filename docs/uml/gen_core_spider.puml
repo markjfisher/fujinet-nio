@@ -156,13 +156,17 @@ class "io::NetworkDevice::Session" as C_0011301425670680674257
 class C_0011301425670680674257 {
 __
 +active : bool
++awaitingBody : bool
 +completed : bool
 +createdTick : std::uint64_t
++expectedBodyLen : std::uint32_t
 +flags : std::uint8_t
 +generation : std::uint8_t
 +lastActivityTick : std::uint64_t
 +method : std::uint8_t
++nextBodyOffset : std::uint32_t
 +proto : std::unique_ptr<INetworkProtocol>
++receivedBodyLen : std::uint32_t
 +url : std::string
 }
 class "io::ClockDevice" as C_0006193474076654383504
