@@ -3,6 +3,9 @@
 
 #include <cstddef>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 extern "C" {
 #include "sdkconfig.h"   // <-- add this
 }
@@ -97,18 +100,44 @@ void UsbCdcChannel::write(const std::uint8_t* buffer, std::size_t len)
         return;
     }
 
-    size_t queued = tinyusb_cdcacm_write_queue(
-        TINYUSB_CDC_ACM_0,
-        const_cast<std::uint8_t*>(buffer),
-        len
-    );
+    const std::uint8_t* p = buffer;
+    std::size_t remaining = len;
 
-    if (queued == 0) {
-        return;
+    // Keep this bounded so we never deadlock if the host disappears.
+    // (Tune if needed; 250ms is plenty for CDC flush cadence.)
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t max_wait_ticks = pdMS_TO_TICKS(250);
+
+    while (remaining > 0) {
+        // Queue as much as TinyUSB will accept right now.
+        size_t queued = tinyusb_cdcacm_write_queue(
+            TINYUSB_CDC_ACM_0,
+            const_cast<std::uint8_t*>(p),
+            remaining
+        );
+
+        if (queued > 0) {
+            p += queued;
+            remaining -= queued;
+
+            // Flush what we just queued.
+            (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+            continue;
+        }
+
+        // Nothing queued: flush and yield briefly to let USB ISR/task drain.
+        (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+        vTaskDelay(1);
+
+        if ((xTaskGetTickCount() - start) > max_wait_ticks) {
+            // We *intentionally* drop the remainder rather than block forever.
+            // Your higher layer should treat this as "link broken" via timeouts.
+            // If you want, we can also promote this to an error signal later.
+            return;
+        }
     }
-
-    (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
 }
+
 
 } // namespace fujinet::platform::esp32
 
