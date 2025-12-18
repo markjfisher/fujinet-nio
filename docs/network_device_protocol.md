@@ -43,6 +43,17 @@ Current version: `1`
 
 If the device receives an unknown version, it must respond with `StatusCode::InvalidRequest`.
 
+--
+
+## Transport Framing (Non-normative)
+
+This protocol is agnostic to the underlying transport framing (e.g. SLIP, USB CDC, UART buffers).
+
+- Hosts MUST NOT assume that a single Read or Write maps to a single transport frame.
+- Devices MUST present protocol-correct responses independent of transport buffering.
+- Any transport-imposed size limits are handled by host-driven chunking, not by the protocol.
+
+
 ---
 
 ## Status and Transport Convention
@@ -162,6 +173,8 @@ Notes:
 - Headers are only collected if the OPEN flag `want_headers` is set.
 - POSIX backends may capture all response headers and return up to max_header_bytes.
 - ESP32 backends should avoid storing full headers unless requested, and should prefer filtering/storing only what the client asked for (future enhancement).
+- Devices MUST NOT add implicit HTTP headers (e.g. Content-Type) unless explicitly requested
+  by the host via headers in the Open request.
 
 ---
 
@@ -244,6 +257,15 @@ Backends may be synchronous (POSIX curl) or streaming/asynchronous (ESP32).
 - If data is not yet available, READ may return `NotReady`.
 - A READ returning `Ok` with `read_len == 0` is only valid when `eof == true` (transfer complete).
 - Hosts should treat `NotReady` as "try again soon", not a fatal error.
+- Transport-layer framing limits (e.g. USB, SLIP, CDC buffers) MUST NOT affect protocol semantics.
+  Hosts should assume that large responses require multiple Read calls.
+
+
+#### Read size guarantees
+
+- `dataLen` in the response MUST be `<= maxBytes` from the request.
+- The device MUST NOT return more than `maxBytes` of data in a single Read response.
+- If more data is available, the host MUST issue subsequent Read requests with an updated offset.
 
 ---
 
@@ -286,6 +308,13 @@ u8[] headerBytes         // raw "Key: Value\r\n" bytes; may be truncated
 Notes:
 - `headerBytes` is intentionally unstructured to keep parsing simple for 8-bit hosts.
 - Modern tooling can parse it easily.
+
+### Info / Read ordering
+
+- `Info()` and `Read()` are independent.
+- `Info()` MAY return `Ok` before any body data is readable.
+- `Read()` MAY return `NotReady` even after `Info()` succeeds.
+- Hosts MUST treat both commands as independently retryable.
 
 ---
 

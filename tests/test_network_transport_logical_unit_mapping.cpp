@@ -6,106 +6,11 @@
 // It is not the responsibility of the core network to manage these mappings.
 
 #include "doctest.h"
+#include "net_device_test_helpers.h"
 
-#include "fujinet/io/core/io_message.h"
-#include "fujinet/io/devices/net_codec.h"
-#include "fujinet/io/devices/network_device.h"
-#include "fujinet/io/devices/network_protocol_registry.h"
-#include "fujinet/io/devices/network_protocol_stub.h"
-#include "fujinet/io/protocol/wire_device_ids.h"
-
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <vector>
+using namespace fujinet::tests::netdev;
 
 namespace {
-using fujinet::io::IORequest;
-using fujinet::io::IOResponse;
-using fujinet::io::NetworkDevice;
-using fujinet::io::StatusCode;
-
-namespace netproto = fujinet::io::netproto;
-using fujinet::io::protocol::WireDeviceId;
-using fujinet::io::protocol::to_device_id;
-
-static constexpr std::uint8_t V = 1;
-
-static std::vector<std::uint8_t> to_vec(const std::string& s) {
-    return std::vector<std::uint8_t>(s.begin(), s.end());
-}
-
-static fujinet::io::ProtocolRegistry make_stub_registry_http_only()
-{
-    fujinet::io::ProtocolRegistry reg;
-    reg.register_scheme("http", [] { return std::make_unique<fujinet::io::StubNetworkProtocol>(); });
-    return reg;
-}
-
-static IOResponse info_req(NetworkDevice& dev, std::uint16_t deviceId, std::uint16_t handle, std::uint16_t maxHeaderBytes)
-{
-    std::string ip;
-    netproto::write_u8(ip, V);
-    netproto::write_u16le(ip, handle);
-    netproto::write_u16le(ip, maxHeaderBytes);
-
-    IORequest ireq{};
-    ireq.id = 200;
-    ireq.deviceId = deviceId;
-    ireq.command = 0x05; // Info
-    ireq.payload = to_vec(ip);
-
-    return dev.handle(ireq);
-}
-
-static std::uint16_t send_open(NetworkDevice& dev, std::uint16_t deviceId, const std::string& url)
-{
-    std::string p;
-    netproto::write_u8(p, V);
-    netproto::write_u8(p, 1); // GET
-    netproto::write_u8(p, 0); // flags
-    netproto::write_lp_u16_string(p, url);
-    netproto::write_u16le(p, 0);
-    netproto::write_u32le(p, 0);
-
-    IORequest req{};
-    req.id = 1;
-    req.deviceId = deviceId;
-    req.command = 0x01; // Open
-    req.payload = to_vec(p);
-
-    IOResponse resp = dev.handle(req);
-    REQUIRE(resp.status == StatusCode::Ok);
-
-    netproto::Reader r(resp.payload.data(), resp.payload.size());
-    std::uint8_t ver = 0, flags = 0;
-    std::uint16_t reserved = 0, handle = 0;
-    REQUIRE(r.read_u8(ver));
-    REQUIRE(r.read_u8(flags));
-    REQUIRE(r.read_u16le(reserved));
-    REQUIRE(r.read_u16le(handle));
-    REQUIRE(ver == V);
-    REQUIRE((flags & 0x01) != 0);
-    REQUIRE(handle != 0);
-    return handle;
-}
-
-static StatusCode send_close(NetworkDevice& dev, std::uint16_t deviceId, std::uint16_t handle)
-{
-    std::string p;
-    netproto::write_u8(p, V);
-    netproto::write_u16le(p, handle);
-
-    IORequest req{};
-    req.id = 2;
-    req.deviceId = deviceId;
-    req.command = 0x04; // Close
-    req.payload = to_vec(p);
-
-    return dev.handle(req).status;
-}
 
 // Minimal “transport personality”: maps n1..n4 -> active handle.
 struct FakeLegacyTransport {

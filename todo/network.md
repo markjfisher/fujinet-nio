@@ -9,6 +9,7 @@
   - handle generation prevents stale reuse issues
   - idle-timeout reaping works the same across platforms
   - `Close` behaviour is clearly defined (including unknown/expired handles)
+- Current status: functional parity for HTTP request/response flows validated manually (ESP32 + POSIX), but contract matrix + automated tests still need adding before formal sign-off.
 
 ### Session capacity + mapping policy (MUST be explicit)
 
@@ -85,7 +86,7 @@ Rationale:
 | handle unknown/expired | InvalidRequest | (explicitly non-idempotent today) |
 | close ok | Ok | frees slot immediately |
 
-### Cross-platform conformance tests (minimal set)
+### Cross-platform conformance tests (minimal set) (REQUIRED BEFORE SIGN OFF)
 - Add tests that validate BOTH:
   1) NetworkDevice session semantics (platform-agnostic)
   2) Backend-mapped error/status semantics (POSIX vs ESP32 parity where feasible)
@@ -132,19 +133,20 @@ Rationale:
 - POSIX and ESP32 return aligned StatusCode results for the same scenarios.
 
 ### Tasks
-- [ ] Update protocol doc: HTTP request lifecycle + dispatch/commit rule (see above).
-- [ ] NetworkDevice: enforce body streaming rules (sequential offsets, no overflow beyond hint).
-- [ ] POSIX (curl):
-  - [ ] extend method support: POST/PUT/DELETE
-  - [ ] implement write_body() for buffering/streaming request body
-  - [ ] ensure dispatch occurs at correct time (Open immediately if no-body, otherwise after body complete)
-- [ ] ESP32 (esp-idf http client):
-  - [ ] extend method support: POST/PUT/DELETE
-  - [ ] implement body upload + dispatch timing to match POSIX
-- [ ] Tests (POSIX):
-  - [ ] unit tests for body rules (non-sequential offset => InvalidRequest; overflow => InvalidRequest)
-  - [ ] unit tests that POST/PUT with bodyLenHint>0 return needs_body_write
-  - [ ] unit tests that Read/Info before dispatch return NotReady
+- [x] Update protocol doc: HTTP request lifecycle + dispatch/commit rule (see above).
+- [x] NetworkDevice: enforce body streaming rules (sequential offsets, no overflow beyond hint).
+- [x] POSIX (curl):
+  - [x] extend method support: POST/PUT/DELETE
+  - [x] implement write_body() for buffering/streaming request body
+  - [x] ensure dispatch occurs at correct time (Open immediately if no-body, otherwise after body complete)
+- [x] ESP32 (esp-idf http client):
+  - [x] extend method support: POST/PUT/DELETE
+  - [x] implement body upload + dispatch timing to match POSIX
+  - [x] fix USB/CDC write behaviour so larger responses can be read reliably
+- [x] Tests (POSIX):
+  - [x] unit tests for body rules (non-sequential offset => InvalidRequest; overflow => InvalidRequest)
+  - [x] unit tests that POST/PUT with bodyLenHint>0 return needs_body_write
+  - [x] unit tests that Read/Info before dispatch return NotReady
 
 ### Touchpoints
 - `src/lib/network_device.cpp`
