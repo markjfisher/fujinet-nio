@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Optional, Union
 
-from .fujibus import send_command, FujiBusSession, FujiPacket
+from .fujibus import FujiBusSession, FujiPacket
 from . import netproto as np
 
 try:
@@ -19,12 +19,10 @@ except Exception:
 # Status helpers
 # ----------------------------------------------------------------------
 
-def _status_ok(pkt) -> bool:
-    return bool(pkt.params) and pkt.params[0] == 0
+def _status_ok(pkt: Optional[FujiPacket]) -> bool:
+    return bool(pkt and pkt.params and pkt.params[0] == 0)
 
 
-# You said you already have this in your tree; keep it if so.
-# Fallback included so this file is standalone.
 STATUS_TEXT = {
     0: "Ok",
     1: "DeviceNotFound",
@@ -45,51 +43,51 @@ NET_COMMANDS = {
     5: "Info",
 }
 
+
 def _status_str(code: int) -> str:
     return STATUS_TEXT.get(code, f"Unknown({code})")
+
 
 def _cmd_str(code: int) -> str:
     return NET_COMMANDS.get(code, f"Unknown({code})")
 
-def _pkt_status_code(pkt) -> int:
+
+def _pkt_status_code(pkt: Optional[FujiPacket]) -> int:
     if not pkt or not pkt.params:
         return -1
     return int(pkt.params[0])
 
 
 # ----------------------------------------------------------------------
-# Low-level send wrappers
+# Serial + FujiBusSession helpers
 # ----------------------------------------------------------------------
 
 def _open_serial(port: str, baud: int, timeout_s: float):
     if serial is None:
-        raise RuntimeError("pyserial not available, cannot open persistent serial port")
-    # Small per-read timeout; we do our own overall deadline retries.
+        raise RuntimeError("pyserial not available, cannot open serial port")
+    # Small per-read timeout; we enforce overall timeout ourselves.
     return serial.Serial(port=port, baudrate=baud, timeout=timeout_s, write_timeout=timeout_s)
 
 
 def _send_retry_not_ready(
     *,
-    port,
+    bus: FujiBusSession,
     device: int,
     command: int,
     payload: bytes,
-    baud: int,
     timeout: float,
-    read_max: int,
-    debug: bool,
     retries: int = 200,
     sleep_s: float = 0.01,
-):
+) -> Optional[FujiPacket]:
     """
     Send a command and retry on:
       - StatusCode::NotReady (4)
-      - pkt == None (partial/no frame yet; may complete from stash on the next read)
+      - pkt == None (no parseable response yet)
 
-    Uses short per-attempt timeouts but enforces a total wall-clock timeout.
+    Uses short per-attempt timeouts but enforces an overall wall-clock timeout.
     Applies backoff to avoid tight polling loops.
     """
-    deadline = time.monotonic() + max(timeout, 0.0)
+    deadline = time.monotonic() + max(0.0, timeout)
     attempt = 0
 
     backoff = max(0.001, sleep_s)
@@ -98,23 +96,23 @@ def _send_retry_not_ready(
     while True:
         attempt += 1
 
-        # Short per-attempt timeout so retries remain responsive
-        per_try_timeout = min(0.05, max(0.005, timeout))
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining <= 0.0:
+            return None
 
-        pkt = send_command(
-            port=port,
+        # Short per-attempt timeout so we can poll/stash fairly.
+        per_try_timeout = min(0.05, max(0.005, remaining))
+
+        pkt = bus.send_command_expect(
             device=device,
             command=command,
             payload=payload,
-            baud=baud,
+            expect_device=device,
+            expect_command=command,
             timeout=per_try_timeout,
-            read_max=read_max,
-            debug=debug,
             cmd_txt=_cmd_str(command),
         )
 
-        # IMPORTANT: None is not a hard failure anymore.
-        # It can mean: partial SLIP frame buffered; try again until deadline.
         if pkt is None:
             if attempt >= retries or time.monotonic() >= deadline:
                 return None
@@ -123,7 +121,6 @@ def _send_retry_not_ready(
             continue
 
         status = _pkt_status_code(pkt)
-
         if status != 4:  # NotReady
             return pkt
 
@@ -132,32 +129,6 @@ def _send_retry_not_ready(
 
         time.sleep(backoff)
         backoff = min(backoff_max, backoff * 1.5)
-
-
-
-def _send(
-    *,
-    port: Union[str, object],
-    device: int,
-    command: int,
-    payload: bytes,
-    baud: int,
-    timeout: float,
-    read_max: int,
-    debug: bool,
-):
-    return send_command(
-        port=port,
-        device=device,
-        command=command,
-        payload=payload,
-        baud=baud,
-        timeout=timeout,
-        read_max=read_max,
-        debug=debug,
-        cmd_txt=_cmd_str(command),
-    )
-
 
 
 # ----------------------------------------------------------------------
@@ -173,168 +144,166 @@ def cmd_net_open(args) -> int:
         body_len_hint=args.body_len_hint,
     )
 
-    pkt = _send_retry_not_ready(
-        port=args.port,
-        device=np.NETWORK_DEVICE_ID,
-        command=np.CMD_OPEN,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-        retries=50,
-        sleep_s=0.01,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    if not _status_ok(pkt):
-        code = _pkt_status_code(pkt)
-        print(f"Device status={code} ({_status_str(code)})")
-        return 1
+        pkt = _send_retry_not_ready(
+            bus=bus,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_OPEN,
+            payload=req,
+            timeout=args.timeout,
+            retries=50,
+            sleep_s=0.01,
+        )
+        if pkt is None:
+            print("No response")
+            return 2
 
-    orr = np.parse_open_resp(pkt.payload)
-    print(f"accepted={orr.accepted} needs_body_write={orr.needs_body_write} handle={orr.handle}")
-    return 0
+        if not _status_ok(pkt):
+            code = _pkt_status_code(pkt)
+            print(f"Device status={code} ({_status_str(code)})")
+            return 1
+
+        orr = np.parse_open_resp(pkt.payload)
+        print(f"accepted={orr.accepted} needs_body_write={orr.needs_body_write} handle={orr.handle}")
+        return 0
 
 
 def cmd_net_close(args) -> int:
     req = np.build_close_req(args.handle)
 
-    pkt = _send_retry_not_ready(
-        port=args.port,
-        device=np.NETWORK_DEVICE_ID,
-        command=np.CMD_CLOSE,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-        retries=50,
-        sleep_s=0.01,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    if not _status_ok(pkt):
-        code = _pkt_status_code(pkt)
-        print(f"Device status={code} ({_status_str(code)})")
-        return 1
+        pkt = _send_retry_not_ready(
+            bus=bus,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_CLOSE,
+            payload=req,
+            timeout=args.timeout,
+            retries=50,
+            sleep_s=0.01,
+        )
+        if pkt is None:
+            print("No response")
+            return 2
 
-    print("closed")
-    return 0
+        if not _status_ok(pkt):
+            code = _pkt_status_code(pkt)
+            print(f"Device status={code} ({_status_str(code)})")
+            return 1
+
+        print("closed")
+        return 0
 
 
 def cmd_net_info(args) -> int:
     req = np.build_info_req(args.handle, args.max_headers)
 
-    pkt = _send_retry_not_ready(
-        port=args.port,
-        device=np.NETWORK_DEVICE_ID,
-        command=np.CMD_INFO,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-        retries=200,
-        sleep_s=0.01,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    if not _status_ok(pkt):
-        code = _pkt_status_code(pkt)
-        print(f"Device status={code} ({_status_str(code)})")
-        return 1
+        pkt = _send_retry_not_ready(
+            bus=bus,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_INFO,
+            payload=req,
+            timeout=args.timeout,
+            retries=200,
+            sleep_s=0.01,
+        )
+        if pkt is None:
+            print("No response")
+            return 2
 
-    ir = np.parse_info_resp(pkt.payload)
-    print(f"handle={ir.handle} http_status={ir.http_status} content_length={ir.content_length}")
-    if ir.header_bytes:
-        try:
-            print(
-                ir.header_bytes.decode("utf-8", errors="replace"),
-                end="" if ir.header_bytes.endswith(b"\n") else "\n",
-            )
-        except Exception:
-            print(repr(ir.header_bytes))
-    return 0
+        if not _status_ok(pkt):
+            code = _pkt_status_code(pkt)
+            print(f"Device status={code} ({_status_str(code)})")
+            return 1
+
+        ir = np.parse_info_resp(pkt.payload)
+        print(f"handle={ir.handle} http_status={ir.http_status} content_length={ir.content_length}")
+        if ir.header_bytes:
+            try:
+                print(
+                    ir.header_bytes.decode("utf-8", errors="replace"),
+                    end="" if ir.header_bytes.endswith(b"\n") else "\n",
+                )
+            except Exception:
+                print(repr(ir.header_bytes))
+        return 0
 
 
 def cmd_net_write(args) -> int:
     data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
     req = np.build_write_req(args.handle, args.offset, data)
 
-    pkt = _send_retry_not_ready(
-        port=args.port,
-        device=np.NETWORK_DEVICE_ID,
-        command=np.CMD_WRITE,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-        retries=50,
-        sleep_s=0.01,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    if not _status_ok(pkt):
-        code = _pkt_status_code(pkt)
-        print(f"Device status={code} ({_status_str(code)})")
-        return 1
+        pkt = _send_retry_not_ready(
+            bus=bus,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_WRITE,
+            payload=req,
+            timeout=args.timeout,
+            retries=200,
+            sleep_s=0.001,
+        )
+        if pkt is None:
+            print("No response")
+            return 2
 
-    wr = np.parse_write_resp(pkt.payload)
-    print(f"handle={wr.handle} offset={wr.offset} written={wr.written}")
-    return 0
+        if not _status_ok(pkt):
+            code = _pkt_status_code(pkt)
+            print(f"Device status={code} ({_status_str(code)})")
+            return 1
+
+        wr = np.parse_write_resp(pkt.payload)
+        print(f"handle={wr.handle} offset={wr.offset} written={wr.written}")
+        return 0
 
 
 def cmd_net_read(args) -> int:
     req = np.build_read_req(args.handle, args.offset, args.max_bytes)
 
-    pkt = _send_retry_not_ready(
-        port=args.port,
-        device=np.NETWORK_DEVICE_ID,
-        command=np.CMD_READ,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-        retries=500,
-        sleep_s=0.005,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    if not _status_ok(pkt):
-        code = _pkt_status_code(pkt)
-        print(f"Device status={code} ({_status_str(code)})")
-        return 1
+        pkt = _send_retry_not_ready(
+            bus=bus,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_READ,
+            payload=req,
+            timeout=args.timeout,
+            retries=2000,
+            sleep_s=0.005,
+        )
+        if pkt is None:
+            print("No response")
+            return 2
 
-    rr = np.parse_read_resp(pkt.payload)
-    if args.out:
-        Path(args.out).write_bytes(rr.data)
-    else:
-        sys.stdout.buffer.write(rr.data)
+        if not _status_ok(pkt):
+            code = _pkt_status_code(pkt)
+            print(f"Device status={code} ({_status_str(code)})")
+            return 1
 
-    if args.verbose:
-        print(f"\n(offset={rr.offset} len={len(rr.data)} eof={rr.eof} truncated={rr.truncated})")
-    return 0
+        rr = np.parse_read_resp(pkt.payload)
+        if args.out:
+            Path(args.out).write_bytes(rr.data)
+        else:
+            sys.stdout.buffer.write(rr.data)
+
+        if args.verbose:
+            print(f"\n(offset={rr.offset} len={len(rr.data)} eof={rr.eof} truncated={rr.truncated})")
+        return 0
 
 
 def cmd_net_get(args) -> int:
     """
     Convenience wrapper: Open(GET) -> (Info) -> Read until EOF -> Close
-
-    Uses ONE serial connection for the whole sequence to avoid per-command open/close latency.
-    Also retries NotReady aggressively with tiny sleeps.
+    Uses ONE serial connection + ONE FujiBusSession for the whole sequence.
     """
     out_path = Path(args.out) if args.out else None
     if out_path:
@@ -344,14 +313,9 @@ def cmd_net_get(args) -> int:
             return 1
         out_path.write_bytes(b"")
 
-    ser = None
-    port_obj: Union[str, object] = args.port
-    if isinstance(args.port, str) and serial is not None:
-        # Use a short serial timeout; our retry loop handles overall time.
-        ser = _open_serial(args.port, args.baud, timeout_s=min(0.05, max(0.001, args.timeout)))
-        port_obj = ser
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    try:
         # OPEN
         open_req = np.build_open_req(
             method=1,  # GET
@@ -361,14 +325,11 @@ def cmd_net_get(args) -> int:
             body_len_hint=0,
         )
         pkt = _send_retry_not_ready(
-            port=port_obj,
+            bus=bus,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_OPEN,
             payload=open_req,
-            baud=args.baud,
             timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
             retries=50,
             sleep_s=0.01,
         )
@@ -391,21 +352,17 @@ def cmd_net_get(args) -> int:
             for _ in range(max(1, args.info_retries)):
                 info_req = np.build_info_req(handle, args.max_headers)
                 ipkt = _send_retry_not_ready(
-                    port=port_obj,
+                    bus=bus,
                     device=np.NETWORK_DEVICE_ID,
                     command=np.CMD_INFO,
                     payload=info_req,
-                    baud=args.baud,
                     timeout=args.timeout,
-                    read_max=args.read_max,
-                    debug=args.debug,
                     retries=200,
                     sleep_s=args.info_sleep,
                 )
                 if ipkt is None:
                     break
                 if not _status_ok(ipkt):
-                    # Non-ready or other error; let retry loop handle NotReady.
                     code = _pkt_status_code(ipkt)
                     if code != 4:
                         print(f"Device status={code} ({_status_str(code)})")
@@ -425,15 +382,12 @@ def cmd_net_get(args) -> int:
         while True:
             read_req = np.build_read_req(handle, offset, args.chunk)
             rpkt = _send_retry_not_ready(
-                port=port_obj,
+                bus=bus,
                 device=np.NETWORK_DEVICE_ID,
                 command=np.CMD_READ,
                 payload=read_req,
-                baud=args.baud,
                 timeout=args.timeout,
-                read_max=args.read_max,
-                debug=args.debug,
-                retries=1000,
+                retries=5000,
                 sleep_s=0.005,
             )
             if rpkt is None:
@@ -465,20 +419,16 @@ def cmd_net_get(args) -> int:
             if rr.eof:
                 break
             if n == 0:
-                # defensive: if backend ever sends 0 bytes without eof, avoid a tight infinite loop
                 time.sleep(0.005)
 
         # CLOSE best-effort
         close_req = np.build_close_req(handle)
         _send_retry_not_ready(
-            port=port_obj,
+            bus=bus,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_CLOSE,
             payload=close_req,
-            baud=args.baud,
             timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
             retries=50,
             sleep_s=0.01,
         )
@@ -487,23 +437,12 @@ def cmd_net_get(args) -> int:
             print(f"total read: {total} bytes")
         return 0
 
-    finally:
-        if ser is not None:
-            try:
-                ser.close()
-            except Exception:
-                pass
-
 
 def cmd_net_head(args) -> int:
-    # HEAD: Open(HEAD) -> Info -> Close (single serial session)
-    ser = None
-    port_obj: Union[str, object] = args.port
-    if isinstance(args.port, str) and serial is not None:
-        ser = _open_serial(args.port, args.baud, timeout_s=min(0.05, max(0.001, args.timeout)))
-        port_obj = ser
+    # HEAD: Open(HEAD) -> Info -> Close (single bus)
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    try:
         open_req = np.build_open_req(
             method=5,  # HEAD
             flags=args.flags,
@@ -512,14 +451,11 @@ def cmd_net_head(args) -> int:
             body_len_hint=0,
         )
         pkt = _send_retry_not_ready(
-            port=port_obj,
+            bus=bus,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_OPEN,
             payload=open_req,
-            baud=args.baud,
             timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
             retries=50,
             sleep_s=0.01,
         )
@@ -536,14 +472,11 @@ def cmd_net_head(args) -> int:
 
         info_req = np.build_info_req(handle, args.max_headers)
         ipkt = _send_retry_not_ready(
-            port=port_obj,
+            bus=bus,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_INFO,
             payload=info_req,
-            baud=args.baud,
             timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
             retries=300,
             sleep_s=0.01,
         )
@@ -562,52 +495,45 @@ def cmd_net_head(args) -> int:
 
         close_req = np.build_close_req(handle)
         _send_retry_not_ready(
-            port=port_obj,
+            bus=bus,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_CLOSE,
             payload=close_req,
-            baud=args.baud,
             timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
             retries=50,
             sleep_s=0.01,
         )
         return 0
 
-    finally:
-        if ser is not None:
-            try:
-                ser.close()
-            except Exception:
-                pass
 
 def cmd_net_send(args) -> int:
+    """
+    Open -> optional Write body -> optional Info -> optional Read response -> Close
+    Uses ONE serial connection + ONE FujiBusSession for the whole sequence.
+    """
     data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
     body_len_hint = len(data) if args.body_len_hint < 0 else args.body_len_hint
 
-    bus = FujiBusSession(ser, debug=args.debug)
+    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    open_req = np.build_open_req(
-        method=args.method,
-        flags=args.flags,
-        url=args.url,
-        headers=[],
-        body_len_hint=body_len_hint if (args.method in (2, 3)) else 0,
-    )
+        open_req = np.build_open_req(
+            method=args.method,
+            flags=args.flags,
+            url=args.url,
+            headers=[],
+            body_len_hint=body_len_hint if (args.method in (2, 3)) else 0,
+        )
 
-    with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
         # OPEN
-        pkt = send_command_expect(
-            session=sess,
-            port=ser,
+        pkt = _send_retry_not_ready(
+            bus=bus,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_OPEN,
             payload=open_req,
             timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
-            cmd_txt=_cmd_str(np.CMD_OPEN),
+            retries=50,
+            sleep_s=0.01,
         )
         if pkt is None:
             print("No response")
@@ -636,15 +562,12 @@ def cmd_net_send(args) -> int:
                 wreq = np.build_write_req(handle, offset, chunk)
 
                 wpkt = _send_retry_not_ready(
-                    port=ser,
+                    bus=bus,
                     device=np.NETWORK_DEVICE_ID,
                     command=np.CMD_WRITE,
                     payload=wreq,
-                    baud=args.baud,
                     timeout=args.timeout,
-                    read_max=args.read_max,
-                    debug=args.debug,
-                    retries=200,
+                    retries=2000,
                     sleep_s=0.001,
                 )
                 if wpkt is None:
@@ -654,6 +577,7 @@ def cmd_net_send(args) -> int:
                     code = _pkt_status_code(wpkt)
                     print(f"Device status={code} ({_status_str(code)})")
                     return 1
+
                 wr = np.parse_write_resp(wpkt.payload)
                 if wr.written == 0:
                     print("Write returned 0 bytes written; aborting")
@@ -664,18 +588,14 @@ def cmd_net_send(args) -> int:
         if args.show_headers:
             info_req = np.build_info_req(handle, args.max_headers)
             ipkt = _send_retry_not_ready(
-                port=ser,
+                bus=bus,
                 device=np.NETWORK_DEVICE_ID,
                 command=np.CMD_INFO,
                 payload=info_req,
-                baud=args.baud,
                 timeout=args.timeout,
-                read_max=args.read_max,
-                debug=args.debug,
                 retries=args.info_retries,
                 sleep_s=args.info_sleep,
             )
-
             if ipkt and _status_ok(ipkt):
                 ir = np.parse_info_resp(ipkt.payload)
                 print(f"http_status={ir.http_status} content_length={ir.content_length}")
@@ -685,7 +605,6 @@ def cmd_net_send(args) -> int:
         # Optionally stream response body
         if args.read_response:
             out_path = Path(args.out) if args.out else None
-
             if out_path:
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 if out_path.exists() and not args.force:
@@ -700,29 +619,23 @@ def cmd_net_send(args) -> int:
                 rreq = np.build_read_req(handle, offset, args.chunk)
 
                 rpkt = _send_retry_not_ready(
-                    port=ser,
+                    bus=bus,
                     device=np.NETWORK_DEVICE_ID,
                     command=np.CMD_READ,
                     payload=rreq,
-                    baud=args.baud,
                     timeout=args.timeout,
-                    read_max=args.read_max,
-                    debug=args.debug,
-                    retries=5000,
+                    retries=20000,
                     sleep_s=0.005,
                 )
-
                 if rpkt is None:
                     print("No response")
                     return 2
-
                 if not _status_ok(rpkt):
                     code = _pkt_status_code(rpkt)
                     print(f"Device status={code} ({_status_str(code)})")
                     return 1
 
                 rr = np.parse_read_resp(rpkt.payload)
-
                 if rr.offset != offset:
                     print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
                     return 1
@@ -738,35 +651,24 @@ def cmd_net_send(args) -> int:
                 offset += n
 
                 if args.verbose:
-                    print(
-                        f"read: offset={rr.offset} "
-                        f"len={n} eof={rr.eof} truncated={rr.truncated}"
-                    )
+                    print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
 
-                # Only EOF ends the response
                 if rr.eof:
                     break
-
-                # Zero bytes but not EOF → backend still preparing data
                 if n == 0:
                     time.sleep(0.01)
-                    continue
 
             if args.verbose:
                 print(f"total read: {total} bytes")
 
-
         # CLOSE (best-effort)
         close_req = np.build_close_req(handle)
         _send_retry_not_ready(
-            port=ser,
+            bus=bus,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_CLOSE,
             payload=close_req,
-            baud=args.baud,
             timeout=args.timeout,
-            read_max=args.read_max,
-            debug=args.debug,
             retries=50,
             sleep_s=0.01,
         )

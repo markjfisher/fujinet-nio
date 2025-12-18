@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional, Union
@@ -14,176 +15,6 @@ HEADER_SIZE = 6  # device(1), command(1), length(2), checksum(1), descr(1)
 
 FIELD_SIZE_TABLE = [0, 1, 1, 1, 1, 2, 2, 4]
 NUM_FIELDS_TABLE = [0, 1, 2, 3, 4, 1, 2, 1]
-
-# Per-Serial instance RX stash so we don't drop trailing bytes after a frame.
-_RX_STASH: dict[int, bytearray] = {}
-
-
-class FujiBusSession:
-    """
-    Session that:
-      - attaches to a serial port
-      - reads SLIP frames incrementally (handles partial reads)
-      - parses FujiPacket responses
-      - stashes out-of-order packets keyed by (device, command)
-    """
-    def __init__(self):
-        # --- packet stash (your original design) ---
-        self._stash: Dict[Tuple[int, int], list[FujiPacket]] = defaultdict(list)
-
-        # --- serial + rx byte stash for framing ---
-        self._ser: Optional[serial.Serial] = None
-        self._rx: bytearray = bytearray()
-        self._debug: bool = False
-
-    def attach(self, ser: serial.Serial, *, debug: bool = False) -> "FujiBusSession":
-        self._ser = ser
-        self._debug = debug
-        return self
-
-    def stash(self, pkt: FujiPacket) -> None:
-        self._stash[(pkt.device, pkt.command)].append(pkt)
-
-    def pop(self, device: int, command: int) -> Optional[FujiPacket]:
-        q = self._stash.get((device, command))
-        if not q:
-            return None
-        pkt = q.pop(0)
-        if not q:
-            del self._stash[(device, command)]
-        return pkt
-
-    # ----- core IO -----
-
-    def send_command(self, device: int, command: int, payload: bytes, *, cmd_txt: str = "") -> None:
-        if self._ser is None:
-            raise RuntimeError("FujiBusSession is not attached to a serial port")
-
-        pkt = build_fuji_packet(device, command, payload)
-        if self._debug:
-            label = f"Outgoing request{(' ' + cmd_txt) if cmd_txt else ''}"
-            print_packet(label, pkt)
-
-        self._ser.write(pkt)
-        self._ser.flush()
-
-    def send_command_expect(
-        self,
-        device: int,
-        command: int,
-        payload: bytes,
-        *,
-        expect_device: int,
-        expect_command: int,
-        timeout: float,
-        cmd_txt: str = "",
-    ) -> Optional[FujiPacket]:
-        """
-        Send a request and wait for the matching response (expect_device, expect_command).
-        Any other packets received are stashed for later.
-        """
-        # 1) If we already stashed what we need, return it immediately.
-        hit = self.pop(expect_device, expect_command)
-        if hit is not None:
-            return hit
-
-        # 2) Send the request
-        self.send_command(device, command, payload, cmd_txt=cmd_txt)
-
-        # 3) Wait for the expected response, stashing anything else.
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            # maybe it arrived while we were looping
-            hit = self.pop(expect_device, expect_command)
-            if hit is not None:
-                return hit
-
-            pkt = self._read_one_packet(deadline)
-            if pkt is None:
-                continue
-
-            if pkt.device == expect_device and pkt.command == expect_command:
-                return pkt
-
-            # not what we were waiting for
-            self.stash(pkt)
-
-        return None
-
-    def _read_one_packet(self, deadline: float) -> Optional[FujiPacket]:
-        """
-        Read until we get one parseable FujiPacket, or deadline.
-        """
-        frame = self._read_one_slip_frame(deadline)
-        if frame is None:
-            return None
-
-        if self._debug:
-            print_packet("Incoming raw data", frame)
-
-        decoded = slip_decode(frame)
-        pkt = parse_fuji_packet(decoded)
-        if pkt is None:
-            if self._debug:
-                print("[fujibus] Ignoring non-parseable SLIP frame")
-            return None
-
-        if self._debug:
-            print_packet("Decoded response", frame)
-
-        return pkt
-
-    def _read_one_slip_frame(self, deadline: float, read_chunk: int = 256) -> Optional[bytes]:
-        """
-        Incremental SLIP reader using a persistent rx buffer (self._rx).
-        Returns one full frame: C0 ... C0
-        """
-        if self._ser is None:
-            raise RuntimeError("FujiBusSession is not attached to a serial port")
-
-        while time.monotonic() < deadline:
-            # Try to extract a full frame from existing buffer first
-            frame = _extract_frame_from_rx(self._rx)
-            if frame is not None:
-                return frame
-
-            # Read more bytes
-            n_wait = getattr(self._ser, "in_waiting", 0) or 0
-            n = min(max(1, n_wait), read_chunk)
-            chunk = self._ser.read(n)
-            if chunk:
-                self._rx.extend(chunk)
-                continue
-
-            # nothing read this slice; loop until deadline
-        return None
-
-
-def _extract_frame_from_rx(rx: bytearray) -> Optional[bytes]:
-    """
-    If rx contains a full SLIP frame (C0 ... C0), remove it from rx and return it.
-    Otherwise return None.
-    """
-    try:
-        start = rx.index(SLIP_END)
-    except ValueError:
-        # no start; drop junk
-        rx.clear()
-        return None
-
-    # drop leading junk before start
-    if start > 0:
-        del rx[:start]
-
-    try:
-        end = rx.index(SLIP_END, 1)
-    except ValueError:
-        # have start but no end yet
-        return None
-
-    frame = bytes(rx[: end + 1])
-    del rx[: end + 1]
-    return frame
 
 
 @dataclass
@@ -246,18 +77,6 @@ def slip_decode(frame: bytes) -> bytes:
             out.append(b)
         i += 1
     return bytes(out)
-
-
-def extract_first_slip_frame(data: bytes) -> Optional[bytes]:
-    try:
-        start = data.index(SLIP_END)
-    except ValueError:
-        return None
-    try:
-        end = data.index(SLIP_END, start + 1)
-    except ValueError:
-        return None
-    return data[start : end + 1]
 
 
 def parse_fuji_packet(decoded: bytes) -> Optional[FujiPacket]:
@@ -338,24 +157,24 @@ def pretty_ascii(data: bytes) -> str:
     return "".join(chr(b) if 32 <= b < 127 else "." for b in data)
 
 
-def _hexdump_prefix_suffix(data: bytes, prefix: int = 64, suffix: int = 64) -> str:
-    if not data:
-        return "(empty)"
-    if len(data) <= prefix + suffix:
-        return pretty_hex(data)
-    return (
-        pretty_hex(data[:prefix])
-        + " ... "
-        + pretty_hex(data[-suffix:])
-        + f"  (len={len(data)})"
-    )
+def extract_first_slip_frame(data: bytes) -> Optional[bytes]:
+    try:
+        start = data.index(SLIP_END)
+    except ValueError:
+        return None
+    try:
+        end = data.index(SLIP_END, start + 1)
+    except ValueError:
+        return None
+    return data[start : end + 1]
 
 
-def print_packet(label: str, raw: bytes, cmd_txt: str = ""):
+def print_packet(label: str, raw: bytes, cmd_txt: str = "") -> Optional[FujiPacket]:
     print(f"\n=== {label} ===")
     if not raw:
         print(" (no data)")
         return None
+
     print(f"Raw data ({len(raw)} bytes):")
     print(" " + pretty_hex(raw))
 
@@ -405,81 +224,153 @@ def print_packet(label: str, raw: bytes, cmd_txt: str = ""):
     return pkt
 
 
-def _read_one_slip_frame(
-    ser: serial.Serial,
-    deadline: float,
-    read_chunk: int = 256,
-    debug: bool = False,
-) -> Optional[bytes]:
+def _extract_frame_from_rx(rx: bytearray) -> Optional[bytes]:
     """
-    Incrementally read until we have a full SLIP frame (C0 ... C0) or deadline.
-
-    CRITICAL: Do NOT cap total buffered bytes to `read_chunk` or any small `read_max`.
-    Frames may arrive fragmented and may exceed small read sizes; we must keep buffering
-    until we see the closing SLIP_END.
+    If rx contains a full SLIP frame (C0 ... C0), remove it from rx and return it.
+    Otherwise return None.
     """
-    buf = bytearray()
+    try:
+        start = rx.index(SLIP_END)
+    except ValueError:
+        rx.clear()
+        return None
 
-    # If we already have a stash from a previous partial read, use it.
-    stash = getattr(ser, "_fujibus_rx_stash", b"")
-    if stash:
-        buf.extend(stash)
-        setattr(ser, "_fujibus_rx_stash", b"")
+    if start > 0:
+        del rx[:start]
 
-    in_frame = False
-    start_index = 0
+    try:
+        end = rx.index(SLIP_END, 1)
+    except ValueError:
+        return None
 
-    # Safety cap to avoid runaway memory if stream is garbage/no delimiter.
-    # This is *not* a protocol limit; it's just a guardrail.
-    MAX_BUFFER = 256 * 1024  # 256 KiB
+    frame = bytes(rx[: end + 1])
+    del rx[: end + 1]
+    return frame
 
-    while time.monotonic() < deadline:
-        if len(buf) > MAX_BUFFER:
-            # Drop buffer if it's gone insane; stash cleared.
-            if debug:
-                print(f"[fujibus] RX buffer exceeded {MAX_BUFFER} bytes; dropping")
-            buf.clear()
-            in_frame = False
 
-        # Prefer draining what is available; else read 1 byte to make progress.
-        n_wait = ser.in_waiting
-        n = n_wait if n_wait > 0 else 1
-        n = min(n, max(1, read_chunk))
+class FujiBusSession:
+    """
+    Session that:
+      - attaches to a serial port
+      - reads SLIP frames incrementally (handles partial reads)
+      - parses FujiPacket responses
+      - stashes out-of-order packets keyed by (device, command)
+    """
+    def __init__(self):
+        self._stash: Dict[Tuple[int, int], list[FujiPacket]] = defaultdict(list)
+        self._ser: Optional[serial.Serial] = None
+        self._rx: bytearray = bytearray()
+        self._debug: bool = False
 
-        chunk = ser.read(n)
-        if chunk:
-            buf.extend(chunk)
-        else:
-            # nothing arrived in this slice; continue until deadline
-            continue
+    def attach(self, ser: serial.Serial, *, debug: bool = False) -> "FujiBusSession":
+        self._ser = ser
+        self._debug = debug
+        return self
 
-        if not in_frame:
-            try:
-                start_index = buf.index(SLIP_END)
-            except ValueError:
+    def stash(self, pkt: FujiPacket) -> None:
+        self._stash[(pkt.device, pkt.command)].append(pkt)
+
+    def pop(self, device: int, command: int) -> Optional[FujiPacket]:
+        q = self._stash.get((device, command))
+        if not q:
+            return None
+        pkt = q.pop(0)
+        if not q:
+            del self._stash[(device, command)]
+        return pkt
+
+    def send_command(self, device: int, command: int, payload: bytes, *, cmd_txt: str = "") -> None:
+        if self._ser is None:
+            raise RuntimeError("FujiBusSession is not attached to a serial port")
+
+        pkt = build_fuji_packet(device, command, payload)
+        if self._debug:
+            label = f"Outgoing request{(' ' + cmd_txt) if cmd_txt else ''}"
+            print_packet(label, pkt, cmd_txt=cmd_txt)
+
+        self._ser.write(pkt)
+        self._ser.flush()
+
+    def send_command_expect(
+        self,
+        device: int,
+        command: int,
+        payload: bytes,
+        *,
+        expect_device: int,
+        expect_command: int,
+        timeout: float,
+        cmd_txt: str = "",
+    ) -> Optional[FujiPacket]:
+        # return immediately if already stashed
+        hit = self.pop(expect_device, expect_command)
+        if hit is not None:
+            return hit
+
+        self.send_command(device, command, payload, cmd_txt=cmd_txt)
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            hit = self.pop(expect_device, expect_command)
+            if hit is not None:
+                return hit
+
+            pkt = self._read_one_packet(deadline)
+            if pkt is None:
                 continue
-            if start_index > 0:
-                del buf[:start_index]
-            in_frame = True
 
-        # Look for the next END after the starting END at buf[0]
-        try:
-            end_index = buf.index(SLIP_END, 1)
-        except ValueError:
-            continue
+            if pkt.device == expect_device and pkt.command == expect_command:
+                return pkt
 
-        frame = bytes(buf[: end_index + 1])
+            self.stash(pkt)
 
-        # Stash any trailing bytes after the frame for the next call.
-        remainder = bytes(buf[end_index + 1 :])
-        setattr(ser, "_fujibus_rx_stash", remainder)
+        return None
 
-        return frame
+    def _read_one_packet(self, deadline: float) -> Optional[FujiPacket]:
+        frame = self._read_one_slip_frame(deadline)
+        if frame is None:
+            return None
 
-    # Deadline hit: stash everything we have so a subsequent call can complete it.
-    setattr(ser, "_fujibus_rx_stash", bytes(buf))
-    return None
+        if self._debug:
+            print_packet("Incoming raw data", frame)
 
+        decoded = slip_decode(frame)
+        if not decoded:
+            if self._debug:
+                print("[fujibus] Ignoring empty SLIP frame")
+            return None
+
+        pkt = parse_fuji_packet(decoded)
+        if pkt is None:
+            if self._debug:
+                print("[fujibus] Ignoring non-parseable SLIP frame")
+            return None
+
+        if self._debug:
+            print_packet("Decoded response", frame)
+
+        return pkt
+
+    def _read_one_slip_frame(self, deadline: float, read_chunk: int = 256) -> Optional[bytes]:
+        if self._ser is None:
+            raise RuntimeError("FujiBusSession is not attached to a serial port")
+
+        while time.monotonic() < deadline:
+            frame = _extract_frame_from_rx(self._rx)
+            if frame is not None:
+                return frame
+
+            n_wait = getattr(self._ser, "in_waiting", 0) or 0
+            n = min(max(1, n_wait), read_chunk)
+            chunk = self._ser.read(n)
+            if chunk:
+                self._rx.extend(chunk)
+                continue
+
+        return None
+
+
+# --- Convenience wrappers (no duplicate SLIP/parse logic) ---
 
 def send_command(
     port: Union[str, serial.Serial],
@@ -488,75 +379,62 @@ def send_command(
     payload: bytes,
     baud: int = 115200,
     timeout: float = 1.0,
-    read_max: int = 4096,
     debug: bool = False,
     cmd_txt: str = "",
 ) -> Optional[FujiPacket]:
     """
-    If `port` is a string, opens/closes the serial port (legacy behaviour).
-    If `port` is an existing serial.Serial, reuses it (preferred for performance).
-
-    IMPORTANT: the link may emit empty SLIP frames (C0 C0) or malformed frames;
-    we must ignore those and keep reading until we get a parseable FujiPacket
-    or hit deadline.
+    Legacy helper:
+      - if `port` is str: open/close per call
+      - if `port` is serial.Serial: reuse it
+    This function now uses FujiBusSession internally (no duplicate framing logic).
     """
-    packet = build_fuji_packet(device, command, payload)
-
     def _do(ser: serial.Serial) -> Optional[FujiPacket]:
-        if debug:
-            print_packet("Outgoing request", packet, cmd_txt)
-
-        ser.write(packet)
-        ser.flush()
-
-        deadline = time.monotonic() + timeout
-
-        while time.monotonic() < deadline:
-            frame = _read_one_slip_frame(
-                ser,
-                deadline=deadline,
-                read_chunk=min(256, read_max),
-                debug=debug,
-            )
-
-            if frame is None:
-                # no full frame before deadline
-                if debug:
-                    print("No complete SLIP frame before timeout")
-                return None
-
-            if debug:
-                print_packet("Incoming raw data", frame)
-
-            decoded = slip_decode(frame)
-
-            # Ignore empty SLIP frames (e.g. C0 C0)
-            if not decoded:
-                if debug:
-                    print("[fujibus] Ignoring empty SLIP frame")
-                continue
-
-            pkt = parse_fuji_packet(decoded)
-
-            # Ignore malformed frames; keep waiting for a valid FujiPacket
-            if pkt is None:
-                if debug:
-                    print("[fujibus] Ignoring non-parseable SLIP frame")
-                continue
-
-            if debug:
-                print_packet("Decoded response", frame)
-
-            return pkt
-
-        if debug:
-            print("No valid FujiPacket before timeout")
-        return None
+        bus = FujiBusSession().attach(ser, debug=debug)
+        # We expect the response to match the request's device+command.
+        return bus.send_command_expect(
+            device, command, payload,
+            expect_device=device,
+            expect_command=command,
+            timeout=timeout,
+            cmd_txt=cmd_txt,
+        )
 
     if isinstance(port, serial.Serial):
         return _do(port)
 
-    # Legacy: open per call (still works, but slower)
     with serial.Serial(port, baud, timeout=0.01) as ser:
         return _do(ser)
 
+
+def send_command_expect(
+    port: Union[str, serial.Serial],
+    device: int,
+    command: int,
+    payload: bytes,
+    *,
+    expect_device: int,
+    expect_command: int,
+    baud: int = 115200,
+    timeout: float = 1.0,
+    debug: bool = False,
+    cmd_txt: str = "",
+) -> Optional[FujiPacket]:
+    """
+    Convenience wrapper matching the session API, but usable from callers that
+    still pass a port string.
+    """
+    def _do(ser: serial.Serial) -> Optional[FujiPacket]:
+        bus = FujiBusSession().attach(ser, debug=debug)
+        return bus.send_command_expect(
+            device, command, payload,
+            expect_device=expect_device,
+            expect_command=expect_command,
+            timeout=timeout,
+            cmd_txt=cmd_txt,
+        )
+
+    if isinstance(port, serial.Serial):
+        return _do(port)
+
+    with serial.Serial(port, baud, timeout=0.01) as ser:
+        return _do(ser)
