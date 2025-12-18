@@ -1,18 +1,9 @@
-# ✅ Replace file: py/fujinet_tools/fujibus.py
-# Goals:
-# - Keep existing FujiPacket parsing/printing
-# - Add robust SLIP frame receive (incremental reads)
-# - Avoid "single ser.read(read_max)" trap
-# - Allow callers to reuse an already-open Serial instance
-# - Add RX diagnostics on timeouts (so we can see what bytes we actually got)
-
 from __future__ import annotations
-
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Optional, List, Union
-
-import time
+from typing import Dict, List, Tuple, Optional, Union
 import serial
+import time
 
 SLIP_END = 0xC0
 SLIP_ESCAPE = 0xDB
@@ -26,6 +17,173 @@ NUM_FIELDS_TABLE = [0, 1, 2, 3, 4, 1, 2, 1]
 
 # Per-Serial instance RX stash so we don't drop trailing bytes after a frame.
 _RX_STASH: dict[int, bytearray] = {}
+
+
+class FujiBusSession:
+    """
+    Session that:
+      - attaches to a serial port
+      - reads SLIP frames incrementally (handles partial reads)
+      - parses FujiPacket responses
+      - stashes out-of-order packets keyed by (device, command)
+    """
+    def __init__(self):
+        # --- packet stash (your original design) ---
+        self._stash: Dict[Tuple[int, int], list[FujiPacket]] = defaultdict(list)
+
+        # --- serial + rx byte stash for framing ---
+        self._ser: Optional[serial.Serial] = None
+        self._rx: bytearray = bytearray()
+        self._debug: bool = False
+
+    def attach(self, ser: serial.Serial, *, debug: bool = False) -> "FujiBusSession":
+        self._ser = ser
+        self._debug = debug
+        return self
+
+    def stash(self, pkt: FujiPacket) -> None:
+        self._stash[(pkt.device, pkt.command)].append(pkt)
+
+    def pop(self, device: int, command: int) -> Optional[FujiPacket]:
+        q = self._stash.get((device, command))
+        if not q:
+            return None
+        pkt = q.pop(0)
+        if not q:
+            del self._stash[(device, command)]
+        return pkt
+
+    # ----- core IO -----
+
+    def send_command(self, device: int, command: int, payload: bytes, *, cmd_txt: str = "") -> None:
+        if self._ser is None:
+            raise RuntimeError("FujiBusSession is not attached to a serial port")
+
+        pkt = build_fuji_packet(device, command, payload)
+        if self._debug:
+            label = f"Outgoing request{(' ' + cmd_txt) if cmd_txt else ''}"
+            print_packet(label, pkt)
+
+        self._ser.write(pkt)
+        self._ser.flush()
+
+    def send_command_expect(
+        self,
+        device: int,
+        command: int,
+        payload: bytes,
+        *,
+        expect_device: int,
+        expect_command: int,
+        timeout: float,
+        cmd_txt: str = "",
+    ) -> Optional[FujiPacket]:
+        """
+        Send a request and wait for the matching response (expect_device, expect_command).
+        Any other packets received are stashed for later.
+        """
+        # 1) If we already stashed what we need, return it immediately.
+        hit = self.pop(expect_device, expect_command)
+        if hit is not None:
+            return hit
+
+        # 2) Send the request
+        self.send_command(device, command, payload, cmd_txt=cmd_txt)
+
+        # 3) Wait for the expected response, stashing anything else.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            # maybe it arrived while we were looping
+            hit = self.pop(expect_device, expect_command)
+            if hit is not None:
+                return hit
+
+            pkt = self._read_one_packet(deadline)
+            if pkt is None:
+                continue
+
+            if pkt.device == expect_device and pkt.command == expect_command:
+                return pkt
+
+            # not what we were waiting for
+            self.stash(pkt)
+
+        return None
+
+    def _read_one_packet(self, deadline: float) -> Optional[FujiPacket]:
+        """
+        Read until we get one parseable FujiPacket, or deadline.
+        """
+        frame = self._read_one_slip_frame(deadline)
+        if frame is None:
+            return None
+
+        if self._debug:
+            print_packet("Incoming raw data", frame)
+
+        decoded = slip_decode(frame)
+        pkt = parse_fuji_packet(decoded)
+        if pkt is None:
+            if self._debug:
+                print("[fujibus] Ignoring non-parseable SLIP frame")
+            return None
+
+        if self._debug:
+            print_packet("Decoded response", frame)
+
+        return pkt
+
+    def _read_one_slip_frame(self, deadline: float, read_chunk: int = 256) -> Optional[bytes]:
+        """
+        Incremental SLIP reader using a persistent rx buffer (self._rx).
+        Returns one full frame: C0 ... C0
+        """
+        if self._ser is None:
+            raise RuntimeError("FujiBusSession is not attached to a serial port")
+
+        while time.monotonic() < deadline:
+            # Try to extract a full frame from existing buffer first
+            frame = _extract_frame_from_rx(self._rx)
+            if frame is not None:
+                return frame
+
+            # Read more bytes
+            n_wait = getattr(self._ser, "in_waiting", 0) or 0
+            n = min(max(1, n_wait), read_chunk)
+            chunk = self._ser.read(n)
+            if chunk:
+                self._rx.extend(chunk)
+                continue
+
+            # nothing read this slice; loop until deadline
+        return None
+
+
+def _extract_frame_from_rx(rx: bytearray) -> Optional[bytes]:
+    """
+    If rx contains a full SLIP frame (C0 ... C0), remove it from rx and return it.
+    Otherwise return None.
+    """
+    try:
+        start = rx.index(SLIP_END)
+    except ValueError:
+        # no start; drop junk
+        rx.clear()
+        return None
+
+    # drop leading junk before start
+    if start > 0:
+        del rx[:start]
+
+    try:
+        end = rx.index(SLIP_END, 1)
+    except ValueError:
+        # have start but no end yet
+        return None
+
+    frame = bytes(rx[: end + 1])
+    del rx[: end + 1]
+    return frame
 
 
 @dataclass

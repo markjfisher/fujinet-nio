@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Optional, Union
 
-from .fujibus import send_command
+from .fujibus import send_command, FujiBusSession, FujiPacket
 from . import netproto as np
 
 try:
@@ -157,6 +157,7 @@ def _send(
         debug=debug,
         cmd_txt=_cmd_str(command),
     )
+
 
 
 # ----------------------------------------------------------------------
@@ -585,6 +586,8 @@ def cmd_net_send(args) -> int:
     data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
     body_len_hint = len(data) if args.body_len_hint < 0 else args.body_len_hint
 
+    bus = FujiBusSession(ser, debug=args.debug)
+
     open_req = np.build_open_req(
         method=args.method,
         flags=args.flags,
@@ -595,7 +598,8 @@ def cmd_net_send(args) -> int:
 
     with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
         # OPEN
-        pkt = send_command(
+        pkt = send_command_expect(
+            session=sess,
             port=ser,
             device=np.NETWORK_DEVICE_ID,
             command=np.CMD_OPEN,
@@ -630,6 +634,7 @@ def cmd_net_send(args) -> int:
             while offset < len(data):
                 chunk = data[offset: offset + args.write_chunk]
                 wreq = np.build_write_req(handle, offset, chunk)
+
                 wpkt = _send_retry_not_ready(
                     port=ser,
                     device=np.NETWORK_DEVICE_ID,
