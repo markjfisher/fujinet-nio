@@ -37,9 +37,19 @@ STATUS_TEXT = {
     8: "Unsupported",
 }
 
+NET_COMMANDS = {
+    1: "Open",
+    2: "Read",
+    3: "Write",
+    4: "Close",
+    5: "Info",
+}
+
 def _status_str(code: int) -> str:
     return STATUS_TEXT.get(code, f"Unknown({code})")
 
+def _cmd_str(code: int) -> str:
+    return NET_COMMANDS.get(code, f"Unknown({code})")
 
 def _pkt_status_code(pkt) -> int:
     if not pkt or not pkt.params:
@@ -60,7 +70,7 @@ def _open_serial(port: str, baud: int, timeout_s: float):
 
 def _send_retry_not_ready(
     *,
-    port: Union[str, object],
+    port,
     device: int,
     command: int,
     payload: bytes,
@@ -72,36 +82,57 @@ def _send_retry_not_ready(
     sleep_s: float = 0.01,
 ):
     """
-    Send a command; if device returns NotReady (status=4), retry quickly
-    up to (retries * sleep_s) wall time or until timeout expires.
+    Send a command and retry on:
+      - StatusCode::NotReady (4)
+      - pkt == None (partial/no frame yet; may complete from stash on the next read)
+
+    Uses short per-attempt timeouts but enforces a total wall-clock timeout.
+    Applies backoff to avoid tight polling loops.
     """
     deadline = time.monotonic() + max(timeout, 0.0)
-
     attempt = 0
+
+    backoff = max(0.001, sleep_s)
+    backoff_max = 0.05  # 50ms cap
+
     while True:
         attempt += 1
+
+        # Short per-attempt timeout so retries remain responsive
+        per_try_timeout = min(0.05, max(0.005, timeout))
+
         pkt = send_command(
             port=port,
             device=device,
             command=command,
             payload=payload,
             baud=baud,
-            timeout=timeout,
+            timeout=per_try_timeout,
             read_max=read_max,
             debug=debug,
+            cmd_txt=_cmd_str(command),
         )
-        if pkt is None:
-            return None
 
-        st = _pkt_status_code(pkt)
-        if st != 4:
+        # IMPORTANT: None is not a hard failure anymore.
+        # It can mean: partial SLIP frame buffered; try again until deadline.
+        if pkt is None:
+            if attempt >= retries or time.monotonic() >= deadline:
+                return None
+            time.sleep(backoff)
+            backoff = min(backoff_max, backoff * 1.5)
+            continue
+
+        status = _pkt_status_code(pkt)
+
+        if status != 4:  # NotReady
             return pkt
 
-        # NotReady -> retry
         if attempt >= retries or time.monotonic() >= deadline:
             return pkt
 
-        time.sleep(sleep_s)
+        time.sleep(backoff)
+        backoff = min(backoff_max, backoff * 1.5)
+
 
 
 def _send(
@@ -124,6 +155,7 @@ def _send(
         timeout=timeout,
         read_max=read_max,
         debug=debug,
+        cmd_txt=_cmd_str(command),
     )
 
 
@@ -564,8 +596,14 @@ def cmd_net_send(args) -> int:
     with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
         # OPEN
         pkt = send_command(
-            port=ser, device=np.NETWORK_DEVICE_ID, command=np.CMD_OPEN, payload=open_req,
-            timeout=args.timeout, read_max=args.read_max, debug=args.debug,
+            port=ser,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_OPEN,
+            payload=open_req,
+            timeout=args.timeout,
+            read_max=args.read_max,
+            debug=args.debug,
+            cmd_txt=_cmd_str(np.CMD_OPEN),
         )
         if pkt is None:
             print("No response")
@@ -642,6 +680,7 @@ def cmd_net_send(args) -> int:
         # Optionally stream response body
         if args.read_response:
             out_path = Path(args.out) if args.out else None
+
             if out_path:
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 if out_path.exists() and not args.force:
@@ -651,8 +690,10 @@ def cmd_net_send(args) -> int:
 
             offset = 0
             total = 0
+
             while True:
                 rreq = np.build_read_req(handle, offset, args.chunk)
+
                 rpkt = _send_retry_not_ready(
                     port=ser,
                     device=np.NETWORK_DEVICE_ID,
@@ -662,18 +703,21 @@ def cmd_net_send(args) -> int:
                     timeout=args.timeout,
                     read_max=args.read_max,
                     debug=args.debug,
-                    retries=500,
-                    sleep_s=0.001,
+                    retries=5000,
+                    sleep_s=0.005,
                 )
+
                 if rpkt is None:
                     print("No response")
                     return 2
+
                 if not _status_ok(rpkt):
                     code = _pkt_status_code(rpkt)
                     print(f"Device status={code} ({_status_str(code)})")
                     return 1
 
                 rr = np.parse_read_resp(rpkt.payload)
+
                 if rr.offset != offset:
                     print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
                     return 1
@@ -682,7 +726,6 @@ def cmd_net_send(args) -> int:
                     with out_path.open("ab") as f:
                         f.write(rr.data)
                 else:
-                    import sys
                     sys.stdout.buffer.write(rr.data)
 
                 n = len(rr.data)
@@ -690,13 +733,23 @@ def cmd_net_send(args) -> int:
                 offset += n
 
                 if args.verbose:
-                    print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+                    print(
+                        f"read: offset={rr.offset} "
+                        f"len={n} eof={rr.eof} truncated={rr.truncated}"
+                    )
 
-                if rr.eof or n == 0:
+                # Only EOF ends the response
+                if rr.eof:
                     break
+
+                # Zero bytes but not EOF → backend still preparing data
+                if n == 0:
+                    time.sleep(0.01)
+                    continue
 
             if args.verbose:
                 print(f"total read: {total} bytes")
+
 
         # CLOSE (best-effort)
         close_req = np.build_close_req(handle)

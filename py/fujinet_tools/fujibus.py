@@ -193,7 +193,7 @@ def _hexdump_prefix_suffix(data: bytes, prefix: int = 64, suffix: int = 64) -> s
     )
 
 
-def print_packet(label: str, raw: bytes):
+def print_packet(label: str, raw: bytes, cmd_txt: str = ""):
     print(f"\n=== {label} ===")
     if not raw:
         print(" (no data)")
@@ -220,7 +220,7 @@ def print_packet(label: str, raw: bytes):
 
     print("\n Header:")
     print(f" device   = 0x{pkt.device:02X} ({pkt.device})")
-    print(f" command  = 0x{pkt.command:02X} ({pkt.command})")
+    print(f" command  = 0x{pkt.command:02X} ({pkt.command}) ({cmd_txt})")
     print(f" length   = 0x{pkt.length:04X} ({pkt.length})")
     print(
         f" checksum = 0x{pkt.checksum:02X} "
@@ -255,73 +255,71 @@ def _read_one_slip_frame(
 ) -> Optional[bytes]:
     """
     Incrementally read until we have a full SLIP frame (C0 ... C0) or deadline.
-    Robust against frames split across multiple reads AND against extra trailing bytes
-    (kept for the next call).
+
+    CRITICAL: Do NOT cap total buffered bytes to `read_chunk` or any small `read_max`.
+    Frames may arrive fragmented and may exceed small read sizes; we must keep buffering
+    until we see the closing SLIP_END.
     """
-    key = id(ser)
-    buf = _RX_STASH.get(key)
-    if buf is None:
-        buf = bytearray()
-        _RX_STASH[key] = buf
+    buf = bytearray()
+
+    # If we already have a stash from a previous partial read, use it.
+    stash = getattr(ser, "_fujibus_rx_stash", b"")
+    if stash:
+        buf.extend(stash)
+        setattr(ser, "_fujibus_rx_stash", b"")
 
     in_frame = False
-    total_read = 0
-    loops = 0
+    start_index = 0
 
-    # If stash already contains a start delimiter, we are already "in frame".
-    if buf and SLIP_END in buf:
-        # Trim leading garbage before first END
-        start = buf.find(bytes([SLIP_END]))
-        if start > 0:
-            del buf[:start]
-        if len(buf) >= 1 and buf[0] == SLIP_END:
-            in_frame = True
+    # Safety cap to avoid runaway memory if stream is garbage/no delimiter.
+    # This is *not* a protocol limit; it's just a guardrail.
+    MAX_BUFFER = 256 * 1024  # 256 KiB
 
     while time.monotonic() < deadline:
-        # First, see if we already have a full frame in the stash.
-        if not in_frame:
-            try:
-                start = buf.index(SLIP_END)
-            except ValueError:
-                start = -1
+        if len(buf) > MAX_BUFFER:
+            # Drop buffer if it's gone insane; stash cleared.
+            if debug:
+                print(f"[fujibus] RX buffer exceeded {MAX_BUFFER} bytes; dropping")
+            buf.clear()
+            in_frame = False
 
-            if start >= 0:
-                if start > 0:
-                    del buf[:start]
-                in_frame = True
-
-        if in_frame:
-            try:
-                end = buf.index(SLIP_END, 1)
-            except ValueError:
-                end = -1
-
-            if end >= 0:
-                frame = bytes(buf[: end + 1])
-                # IMPORTANT: preserve trailing bytes for next call
-                del buf[: end + 1]
-                return frame
-
-        # Need more bytes: read a small chunk (or 1 byte) without blocking forever.
+        # Prefer draining what is available; else read 1 byte to make progress.
         n_wait = ser.in_waiting
         n = n_wait if n_wait > 0 else 1
-        n = min(n, read_chunk)
+        n = min(n, max(1, read_chunk))
 
         chunk = ser.read(n)
-        if not chunk:
+        if chunk:
+            buf.extend(chunk)
+        else:
+            # nothing arrived in this slice; continue until deadline
             continue
 
-        total_read += len(chunk)
-        loops += 1
-        buf.extend(chunk)
+        if not in_frame:
+            try:
+                start_index = buf.index(SLIP_END)
+            except ValueError:
+                continue
+            if start_index > 0:
+                del buf[:start_index]
+            in_frame = True
 
-    if debug:
-        snapshot = bytes(buf)
-        print(f"[fujibus] RX timeout: total_read={total_read} loops={loops} stash_len={len(snapshot)}")
-        if snapshot:
-            print(f"[fujibus] RX stash (prefix/suffix): {_hexdump_prefix_suffix(snapshot)}")
-            print(f"[fujibus] RX contains SLIP_END? {'yes' if (SLIP_END in snapshot) else 'no'}")
+        # Look for the next END after the starting END at buf[0]
+        try:
+            end_index = buf.index(SLIP_END, 1)
+        except ValueError:
+            continue
 
+        frame = bytes(buf[: end_index + 1])
+
+        # Stash any trailing bytes after the frame for the next call.
+        remainder = bytes(buf[end_index + 1 :])
+        setattr(ser, "_fujibus_rx_stash", remainder)
+
+        return frame
+
+    # Deadline hit: stash everything we have so a subsequent call can complete it.
+    setattr(ser, "_fujibus_rx_stash", bytes(buf))
     return None
 
 
@@ -334,59 +332,73 @@ def send_command(
     timeout: float = 1.0,
     read_max: int = 4096,
     debug: bool = False,
+    cmd_txt: str = "",
 ) -> Optional[FujiPacket]:
     """
     If `port` is a string, opens/closes the serial port (legacy behaviour).
     If `port` is an existing serial.Serial, reuses it (preferred for performance).
+
+    IMPORTANT: the link may emit empty SLIP frames (C0 C0) or malformed frames;
+    we must ignore those and keep reading until we get a parseable FujiPacket
+    or hit deadline.
     """
     packet = build_fuji_packet(device, command, payload)
 
     def _do(ser: serial.Serial) -> Optional[FujiPacket]:
         if debug:
-            print_packet("Outgoing request", packet)
+            print_packet("Outgoing request", packet, cmd_txt)
 
         ser.write(packet)
         ser.flush()
 
-        # Overall deadline. We keep reading until we have a full frame.
-        t0 = time.monotonic()
-        deadline = t0 + timeout
-        frame = _read_one_slip_frame(ser, deadline=deadline, read_chunk=min(256, read_max), debug=debug)
+        deadline = time.monotonic() + timeout
 
-        if frame is None:
+        while time.monotonic() < deadline:
+            frame = _read_one_slip_frame(
+                ser,
+                deadline=deadline,
+                read_chunk=min(256, read_max),
+                debug=debug,
+            )
+
+            if frame is None:
+                # no full frame before deadline
+                if debug:
+                    print("No complete SLIP frame before timeout")
+                return None
+
             if debug:
-                dt = time.monotonic() - t0
-                print(f"[fujibus] response wait: {dt:.3f}s (timeout={timeout:.3f}s)")
-                print("No complete SLIP frame before timeout")
-                stash = _RX_STASH.get(id(ser), bytearray())
-                if stash:
-                    snap = bytes(stash)
-                    print(f"[fujibus] final stash_len={len(snap)} contains_END={'yes' if (SLIP_END in snap) else 'no'}")
-                    print(f"[fujibus] final stash (prefix/suffix): {_hexdump_prefix_suffix(snap)}")
-            return None
+                print_packet("Incoming raw data", frame)
+
+            decoded = slip_decode(frame)
+
+            # Ignore empty SLIP frames (e.g. C0 C0)
+            if not decoded:
+                if debug:
+                    print("[fujibus] Ignoring empty SLIP frame")
+                continue
+
+            pkt = parse_fuji_packet(decoded)
+
+            # Ignore malformed frames; keep waiting for a valid FujiPacket
+            if pkt is None:
+                if debug:
+                    print("[fujibus] Ignoring non-parseable SLIP frame")
+                continue
+
+            if debug:
+                print_packet("Decoded response", frame)
+
+            return pkt
 
         if debug:
-            dt = time.monotonic() - t0
-            print(f"[fujibus] response wait: {dt:.3f}s (timeout={timeout:.3f}s)")
-            print_packet("Incoming raw data", frame)
-
-        decoded = slip_decode(frame)
-        pkt = parse_fuji_packet(decoded)
-        if debug and pkt is not None:
-            print_packet("Decoded response", frame)
-
-        return pkt
+            print("No valid FujiPacket before timeout")
+        return None
 
     if isinstance(port, serial.Serial):
-        stash = _RX_STASH.get(id(port))
-        if stash is not None and len(stash) > read_max:
-            # defensive: if stash ballooned, drop it to regain sync
-            _RX_STASH[id(port)] = bytearray()
         return _do(port)
 
     # Legacy: open per call (still works, but slower)
     with serial.Serial(port, baud, timeout=0.01) as ser:
-        # Clear any stale stash for this Serial instance.
-        _RX_STASH.pop(id(ser), None)
-        # overall deadline is handled by _read_one_slip_frame; keep per-read timeout short
         return _do(ser)
+

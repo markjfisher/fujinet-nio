@@ -9,6 +9,7 @@
 #include "fujinet/core/logging.h"
 
 extern "C" {
+#include "esp_timer.h"
 #include "esp_err.h"
 #include "esp_http_client.h"
 
@@ -20,7 +21,7 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-static constexpr const char* TAG = "net.http";
+static constexpr const char* TAG = "platform";
 
 static bool method_supported(std::uint8_t method) {
     // v1: GET(1), POST(2), PUT(3), DELETE(4), HEAD(5)
@@ -41,6 +42,8 @@ struct HttpNetworkProtocolEspIdfState {
     static constexpr std::size_t header_cap_default = 2048;
     static constexpr std::size_t rb_size = 8192;
     static constexpr TickType_t  wait_step_ticks = pdMS_TO_TICKS(50);
+
+    bool suppress_on_data = false;
 
     // stream buffer (bounded, producer->consumer with backpressure)
     StreamBufferHandle_t stream{nullptr};
@@ -104,6 +107,7 @@ struct HttpNetworkProtocolEspIdfState {
         expected_body_len = 0;
         sent_body_len = 0;
         upload_open = false;
+        suppress_on_data = false;
 
     }
 
@@ -227,8 +231,17 @@ static esp_err_t event_handler(esp_http_client_event_t* evt)
         if (s->method == 5) {
             break;
         }
-
+    
+        // POST/PUT upload path: the after-upload task manually reads the response
+        // using esp_http_client_read(). If we also forward ON_DATA here, the body
+        // can be duplicated.
+        if (s->suppress_on_data) {
+            FN_LOGI(TAG, "event_handler: ON_DATA suppressed (len=%d)", evt->data_len);
+            break;
+        }
+    
         if (evt->data && evt->data_len > 0) {
+            FN_LOGI(TAG, "event_handler: ON_DATA forward len=%d", evt->data_len);
             const auto* p = static_cast<const std::uint8_t*>(evt->data);
             if (!stream_send_all(*s, p, static_cast<std::size_t>(evt->data_len))) {
                 return ESP_FAIL;
@@ -236,6 +249,7 @@ static esp_err_t event_handler(esp_http_client_event_t* evt)
         }
         break;
     }
+    
 
     case HTTP_EVENT_ON_FINISH:
     case HTTP_EVENT_DISCONNECTED: {
@@ -456,43 +470,63 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
     written = 0;
 
     if (!_s || !_s->client) {
+        FN_LOGE(TAG, "write_body: no state/client");
         return fujinet::io::StatusCode::InternalError;
     }
     if (!_s->has_request_body || !_s->upload_open) {
+        FN_LOGW(TAG, "write_body: unsupported (has_body=%d upload_open=%d)",
+                    (int)_s->has_request_body, (int)_s->upload_open);
         return fujinet::io::StatusCode::Unsupported;
     }
 
     // Core enforces sequential offsets/overflow too, but keep backend defensive.
     if (offset != _s->sent_body_len) {
+        FN_LOGW(TAG, "write_body: offset mismatch offset=%u sent=%u",
+            (unsigned)offset, (unsigned)_s->sent_body_len);
         return fujinet::io::StatusCode::InvalidRequest;
     }
     const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
     if (end > static_cast<std::uint64_t>(_s->expected_body_len)) {
+        FN_LOGW(TAG, "write_body: overflow end=%llu expected=%u",
+            (unsigned long long)end, (unsigned)_s->expected_body_len);
         return fujinet::io::StatusCode::InvalidRequest;
     }
     if (dataLen > 0 && !data) {
+        FN_LOGE(TAG, "write_body: null data with dataLen=%u", (unsigned)dataLen);
         return fujinet::io::StatusCode::InvalidRequest;
     }
+
+    const int64_t t_enter = esp_timer_get_time();
+    FN_LOGI(TAG, "write_body: enter off=%u len=%u expected=%u sent=%u",
+                 (unsigned)offset, (unsigned)dataLen,
+                 (unsigned)_s->expected_body_len, (unsigned)_s->sent_body_len);
 
     // Stream write to esp_http_client (may accept partial); we loop to send all or return DeviceBusy/IOError.
     std::size_t total = 0;
     while (total < dataLen) {
         if (_s->stop_requested) {
+            FN_LOGW(TAG, "write_body: stop_requested");
             return fujinet::io::StatusCode::IOError;
         }
 
+        const int64_t t0 = esp_timer_get_time();
         const int w = esp_http_client_write(
             _s->client,
             reinterpret_cast<const char*>(data + total),
             static_cast<int>(dataLen - total)
         );
+        const int64_t t1 = esp_timer_get_time();
+        FN_LOGI(TAG, "write_body: esp_http_client_write req=%u ret=%d dt_ms=%lld",
+            (unsigned)(dataLen - total), w, (long long)((t1 - t0) / 1000));
 
         if (w < 0) {
+            FN_LOGE(TAG, "write_body: write error ret=%d", w);
             return fujinet::io::StatusCode::IOError;
         }
         if (w == 0) {
             // Backpressure (rare); let host retry.
             written = static_cast<std::uint16_t>(total);
+            FN_LOGW(TAG, "write_body: backpressure total=%u", (unsigned)total);
             return fujinet::io::StatusCode::DeviceBusy;
         }
         total += static_cast<std::size_t>(w);
@@ -501,8 +535,18 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
     _s->sent_body_len += static_cast<std::uint32_t>(total);
     written = static_cast<std::uint16_t>(total);
 
+    const int64_t t_exit = esp_timer_get_time();
+    FN_LOGI(TAG, "write_body: exit wrote=%u new_sent=%u dt_ms=%lld",
+                 (unsigned)written, (unsigned)_s->sent_body_len,
+                 (long long)((t_exit - t_enter) / 1000));
+
     // Body complete: start the "read response" task now.
     if (_s->sent_body_len == _s->expected_body_len) {
+        FN_LOGI(TAG, "write_body: body complete, starting response task");
+        // We manually read the response in http_task_entry_after_upload(),
+        // so suppress event_handler's HTTP_EVENT_ON_DATA forwarding to avoid duplicates.
+        _s->suppress_on_data = true;
+
         _s->task = nullptr;
         if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
 
