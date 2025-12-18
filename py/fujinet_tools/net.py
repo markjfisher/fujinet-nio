@@ -66,7 +66,7 @@ def _open_serial(port: str, baud: int, timeout_s: float):
     if serial is None:
         raise RuntimeError("pyserial not available, cannot open serial port")
     # Small per-read timeout; we enforce overall timeout ourselves.
-    return serial.Serial(port=port, baudrate=baud, timeout=timeout_s, write_timeout=timeout_s)
+    return serial.Serial(port=port, baudrate=baud, timeout=timeout_s, write_timeout=max(1.0, timeout_s))
 
 
 def _send_retry_not_ready(
