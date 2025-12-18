@@ -135,6 +135,20 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     ensure_curl_global_init();
     _req = req;
 
+    const bool isPost = (_req.method == 2);
+    const bool isPut  = (_req.method == 3);
+    
+    // Detect whether caller explicitly provided Content-Type (case-insensitive).
+    bool hasContentType = false;
+    for (const auto& kv : _req.headers) {
+        std::string k = kv.first;
+        for (auto& ch : k) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        if (k == "content-type") {
+            hasContentType = true;
+            break;
+        }
+    }
+
     _curl = curl_easy_init();
     if (!_curl) {
         return io::StatusCode::InternalError;
@@ -149,6 +163,14 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
         line.append(kv.second);
         _slist = curl_slist_append(_slist, line.c_str());
     }
+
+    // IMPORTANT:
+    // libcurl will default Content-Type to application/x-www-form-urlencoded when POSTFIELDS is used.
+    // We want "no Content-Type unless explicitly requested by the client", so suppress it.
+    if ((isPost || isPut) && !hasContentType) {
+        _slist = curl_slist_append(_slist, "Content-Type:");
+    }
+
     if (_slist) {
         curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, _slist);
     }
@@ -175,8 +197,6 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     _performed = false;
 
     const bool hasBody = (_req.bodyLenHint > 0);
-    const bool isPost = (_req.method == 2);
-    const bool isPut  = (_req.method == 3);
 
     // Configure method
     if (_req.method == 5) {
