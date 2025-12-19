@@ -26,7 +26,7 @@ py/fujinet_tools/cli.py
 Typical invocation:
 
 ```
-fujinet --port /dev/ttyACM0 net ...
+./scripts/fujinet --port /dev/ttyACM1 net ...
 ```
 
 Adjust `--port`, `--baud`, and `--debug` as required for your setup.
@@ -38,7 +38,7 @@ Adjust `--port`, `--baud`, and `--debug` as required for your setup.
 The repository provides a consolidated helper script:
 
 ```
-scripts/start_test_services.sh
+./scripts/start_test_services.sh
 ```
 
 This script runs Docker containers for both HTTP and TCP testing.
@@ -94,13 +94,13 @@ This script runs Docker containers for both HTTP and TCP testing.
 ### Simple GET
 
 ```
-fujinet --port /dev/ttyACM0 net get http://localhost:8080/get
+./scripts/fujinet --port /dev/ttyACM0 net get http://localhost:8080/get
 ```
 
 ### POST with body
 
 ```
-fujinet --port /dev/ttyACM0 net send \
+./scripts/fujinet --port /dev/ttyACM0 net send \
   --method POST \
   --data "hello world" \
   http://localhost:8080/post
@@ -109,7 +109,7 @@ fujinet --port /dev/ttyACM0 net send \
 ### Inspect headers and status
 
 ```
-fujinet --port /dev/ttyACM0 net head http://localhost:8080/headers
+./scripts/fujinet --port /dev/ttyACM0 net head http://localhost:8080/headers
 ```
 
 These commands exercise:
@@ -128,7 +128,7 @@ dedicated **interactive REPL** is provided.
 ### Start a TCP REPL
 
 ```
-fujinet --port /dev/ttyACM0 net tcp repl \
+./scripts/fujinet --port /dev/ttyACM0 net tcp repl \
   --wait-connected \
   --show-info \
   tcp://<HOST_IP>:7777

@@ -316,6 +316,69 @@ src/platform/<platform>/channel_factory.cpp
 
 ---
 
+## 10. CLI commands for testing (HTTP & TCP)
+
+During development it is often useful to manually interact with a running
+**fujinet-nio** instance from the command line. This allows rapid validation
+of protocol behavior, debugging of edge cases, and experimentation without
+writing new firmware or tests.
+
+The project provides Python-based CLI tooling under:
+
+    py/fujinet_tools/
+
+These tools communicate with the device over the FujiBus transport (USB/CDC,
+PTY, etc.) and exercise the NetworkDevice using the same binary protocol as
+production hosts.
+
+### Supported testing workflows
+
+The CLI tooling supports:
+
+- HTTP/HTTPS testing
+  - GET / POST / PUT / HEAD
+  - Request body streaming
+  - Response chunking
+  - Header and status inspection
+- TCP stream testing
+  - Interactive REPL
+  - Sequential read/write cursor validation
+  - Non-blocking `NotReady` / `DeviceBusy` behavior
+  - TCP pseudo headers via `Info()`
+
+### Local test services (Docker)
+
+For convenience, the repository includes scripts to start local test servers:
+
+    [Start Test Services Script](scripts/start_test_services.sh)
+
+This script can start:
+- an HTTP test server (httpbin)
+- a TCP echo server (via netshoot + socat)
+- or both together
+
+These services provide stable, repeatable endpoints for validating both HTTP
+and TCP protocol implementations.
+
+### Detailed guide
+
+A full, step-by-step guide covering:
+- starting the test services
+- HTTP testing from the CLI
+- TCP testing using the interactive REPL
+- common testing patterns and troubleshooting
+
+is provided in:
+
+    [CLI device testing](docs/cli_device_testing.md)
+
+Developers are encouraged to use these tools regularly when working on:
+- NetworkDevice protocol changes
+- HTTP/TCP backend implementations
+- Transport-layer fixes (USB/CDC, PTY, etc.)
+
+---
+
 # 11. Contributing Workflow
 
 1. Fork repo  
