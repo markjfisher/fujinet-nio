@@ -1,5 +1,98 @@
 @startuml
 title FujinetCore dependency spider (auto-gen from clang-uml)
+class "core::EventStream<EventT>" as C_0005138967228563115798
+class C_0005138967228563115798 {
++publish(const EventT & ev) : void
++subscribe(Callback cb) : Subscription
++unsubscribe(Subscription sub) : void
+__
+-_mx : std::mutex
+-_nextId : std::uint32_t
+-_subs : std::vector<Subscriber>
+}
+class "core::EventStream::Subscription" as C_0001165583155332036678
+class C_0001165583155332036678 {
+__
++id : std::uint32_t
+}
+class "core::EventStream<net::NetworkEvent>" as C_0002040917693353561204
+class C_0002040917693353561204 {
+__
+}
+class "core::EventStream<time::TimeEvent>" as C_0006289034866210007341
+class C_0006289034866210007341 {
+__
+}
+class "core::SystemEvents" as C_0010820187132968979160
+class C_0010820187132968979160 {
++network() noexcept : core::EventStream<net::NetworkEvent> &
++network() const noexcept : const core::EventStream<net::NetworkEvent> &
++time() noexcept : core::EventStream<time::TimeEvent> &
++time() const noexcept : const core::EventStream<time::TimeEvent> &
+__
+-_network : EventStream<net::NetworkEvent>
+-_time : EventStream<time::TimeEvent>
+}
+class "core::FujinetCore" as C_0011474842863539673819
+class C_0011474842863539673819 {
++FujinetCore() : void
+..
++addTransport(io::ITransport * transport) : void
++deviceManager() : io::IODeviceManager &
++deviceManager() const : const io::IODeviceManager &
++events() : SystemEvents &
++events() const : const SystemEvents &
++ioService() : io::IOService &
++ioService() const : const io::IOService &
++routingManager() : io::RoutingManager &
++routingManager() const : const io::RoutingManager &
++storageManager() : fs::StorageManager &
++storageManager() const : const fs::StorageManager &
++tick() : void
++tick_count() const noexcept : std::uint64_t
+__
+-_deviceManager : io::IODeviceManager
+-_events : SystemEvents
+-_ioService : io::IOService
+-_routing : io::RoutingManager
+-_storageManager : fs::StorageManager
+-_tickCount : std::uint64_t
+}
+enum "net::NetworkEventKind" as C_0014656238790804323890
+enum C_0014656238790804323890 {
+LinkUp
+GotIp
+LinkDown
+}
+class "net::NetworkGotIp" as C_0003572434641464952782
+class C_0003572434641464952782 {
+__
++gateway : std::string
++ip4 : std::string
++netmask : std::string
+}
+class "net::NetworkEvent" as C_0011340228097429469319
+class C_0011340228097429469319 {
+__
++gotIp : NetworkGotIp
++kind : NetworkEventKind
+}
+enum "time::TimeEventKind" as C_0003871058920514508987
+enum C_0003871058920514508987 {
+Synchronized
+ManuallySet
+}
+class "time::TimeSynchronized" as C_0009331148645708671483
+class C_0009331148645708671483 {
+__
++source : std::string
+}
+class "time::TimeEvent" as C_0009904927253814442249
+class C_0009904927253814442249 {
+__
++kind : TimeEventKind
++synced : TimeSynchronized
+}
 enum "io::RequestType" as C_0015173710654558847960
 enum C_0015173710654558847960 {
 Command
@@ -320,28 +413,6 @@ __
 -_name : std::string
 -_root : std::string
 }
-class "core::FujinetCore" as C_0011474842863539673819
-class C_0011474842863539673819 {
-+FujinetCore() : void
-..
-+addTransport(io::ITransport * transport) : void
-+deviceManager() : io::IODeviceManager &
-+deviceManager() const : const io::IODeviceManager &
-+ioService() : io::IOService &
-+ioService() const : const io::IOService &
-+routingManager() : io::RoutingManager &
-+routingManager() const : const io::RoutingManager &
-+storageManager() : fs::StorageManager &
-+storageManager() const : const fs::StorageManager &
-+tick() : void
-+tick_count() const noexcept : std::uint64_t
-__
--_deviceManager : io::IODeviceManager
--_ioService : io::IOService
--_routing : io::RoutingManager
--_storageManager : fs::StorageManager
--_tickCount : std::uint64_t
-}
 class "config::GeneralConfig" as C_0016837659718836839167
 class C_0016837659718836839167 {
 __
@@ -422,6 +493,27 @@ __
 -_primary : fs::IFileSystem *
 -_relPath : std::string
 }
+C_0005138967228563115798 ..> C_0001165583155332036678
+C_0001165583155332036678 --+ C_0005138967228563115798
+C_0002040917693353561204 ..> C_0011340228097429469319
+C_0002040917693353561204 ..|> C_0005138967228563115798
+C_0006289034866210007341 ..> C_0009904927253814442249
+C_0006289034866210007341 ..|> C_0005138967228563115798
+C_0010820187132968979160 ..> C_0005138967228563115798
+C_0010820187132968979160 ..> C_0011340228097429469319
+C_0010820187132968979160 ..> C_0009904927253814442249
+C_0010820187132968979160 o-- C_0002040917693353561204 : -_network
+C_0010820187132968979160 o-- C_0006289034866210007341 : -_time
+C_0011474842863539673819 ..> C_0015529497257294770104
+C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
+C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
+C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
+C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
+C_0011474842863539673819 o-- C_0010820187132968979160 : -_events
+C_0011340228097429469319 o-- C_0014656238790804323890 : +kind
+C_0011340228097429469319 o-- C_0003572434641464952782 : +gotIp
+C_0009904927253814442249 o-- C_0003871058920514508987 : +kind
+C_0009904927253814442249 o-- C_0009331148645708671483 : +synced
 C_0002386736627821114488 o-- C_0015173710654558847960 : +type
 C_0002942984525013396621 o-- C_0012496700434923238249 : +status
 C_0007350464861923755413 ..> C_0002386736627821114488
@@ -478,11 +570,6 @@ C_0001007711765235056436 ..> C_0014904826619290153445
 C_0001007711765235056436 ..> C_0007646493544420080876
 C_0001007711765235056436 o-- C_0014883681608496495557 : -_kind
 C_0012397556205933868732 <|-- C_0001007711765235056436
-C_0011474842863539673819 ..> C_0015529497257294770104
-C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
-C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
-C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
-C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
 C_0013064010099190715901 o-- C_0016837659718836839167 : +general
 C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
 C_0013064010099190715901 o-- C_0006762991430694965068 : +hosts
