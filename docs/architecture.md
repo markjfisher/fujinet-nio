@@ -140,6 +140,14 @@ Only a thin platform layer differs.
       Transport encodes IOResponse → Channel.write()
 ```
 
+> Note:
+> This diagram describes **structural dependencies**, not runtime startup order.
+> Some behaviors in fujinet-nio (such as starting network-dependent services)
+> are driven by events rather than by static initialization order.
+>
+> See *Event-Driven Service Lifecycle Architecture* for details.
+
+
 ---
 
 # **Data Flow: Host → Core → Device → Host**
@@ -1012,6 +1020,40 @@ Transport → IORequest → RoutingManager → IODeviceManager → VirtualDevice
 
 - In-process tests using a socket/pipe-backed Channel  
 - Running identical device logic inside an emulator process
+
+---
+
+# Event-Driven Service Lifecycle
+
+Some functionality in fujinet-nio depends on *when* certain conditions become
+true at runtime rather than on static initialization order. Examples include:
+
+- network time synchronization (SNTP)
+- embedded web services
+- future discovery or telemetry services
+
+These concerns are handled using a small, explicit **event-driven lifecycle
+model**, rather than being embedded directly into platform handlers (such as
+Wi-Fi callbacks).
+
+In this model:
+
+- Platform code detects conditions (e.g. “network got an IP address”)
+- Semantic events are published into core-owned event streams
+- Services subscribe to events and manage their own startup and shutdown
+
+This keeps:
+- platform code focused on hardware and OS integration
+- core logic platform-agnostic
+- service startup deterministic and extensible
+
+The full design is documented separately in:
+
+[**Event-Driven Service Lifecycle Architecture**](event_driven_services.md)
+
+That document should be consulted when adding new services that depend on
+network availability, time synchronization, or other cross-cutting conditions.
+
 
 ---
 
