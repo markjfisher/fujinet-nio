@@ -43,7 +43,7 @@ Current version: `1`
 
 If the device receives an unknown version, it must respond with `StatusCode::InvalidRequest`.
 
---
+---
 
 ## Transport Framing (Non-normative)
 
@@ -180,35 +180,55 @@ Notes:
 
 ## Command: Write (0x03)
 
-Stream request body bytes into an open handle (for POST/PUT). Chunking is host-driven.
+Stream request body bytes into an open handle (for POST/PUT) **or** stream bytes into a non-HTTP protocol (e.g. TCP).
+Chunking is host-driven.
 
 ### Request
-
 ```
-u8   version
-u16  handle              // LE
-u32  offset              // LE
-u16  dataLen             // LE
-u8[] data                // length dataLen
+u8 version
+u16 handle        // LE
+u32 offset        // LE
+u16 dataLen       // LE
+u8[] data         // length dataLen
 ```
 
 ### Response
-
 ```
-u8   version
-u8   flags               // reserved; 0 for now
-u16  reserved            // = 0
-u16  handle              // LE
-u32  offsetEcho          // LE
-u16  writtenLen          // LE
+u8 version
+u8 flags          // reserved; 0 for now
+u16 reserved      // = 0
+u16 handle        // LE
+u32 offsetEcho    // LE
+u16 writtenLen    // LE
 ```
 
 ### Status codes
-
 - `Ok`
 - `InvalidRequest` (bad handle, missing bytes, etc.)
 - `IOError` (write failed)
 - `DeviceBusy` (backpressure / buffer full; host should retry)
+
+### Offset semantics (important)
+
+The meaning of `offset` depends on the protocol bound to the handle:
+
+- **HTTP request bodies (http/https)**:
+  - Offsets MUST be sequential (0..N) and MUST NOT exceed `bodyLenHint`.
+  - See `## HTTP request lifecycle (HTTP/HTTPS schemes)` for the authoritative commit rule.
+
+- **Stream protocols (tcp)**:
+  - Offsets represent a **monotonic write cursor** (bytes accepted so far).
+  - The device/backend MUST require strictly sequential offsets:
+    - If `offset` is a rewind or gap, return `InvalidRequest`.
+  - Partial writes are allowed; `writtenLen` may be less than `dataLen`.
+  - If the stream is not yet connected, the backend may return `NotReady`.
+
+### TCP half-close (optional)
+
+For TCP handles, a zero-length write MAY be used as a send-finish signal:
+
+- `Write(handle, offset=write_cursor, dataLen=0)` MAY cause the backend to call `shutdown(SHUT_WR)`
+  (if enabled by backend configuration such as `halfclose=1` in the URL).
 
 ---
 
@@ -217,28 +237,25 @@ u16  writtenLen          // LE
 Read response body bytes at an explicit offset. Chunking is host-driven.
 
 ### Request
-
 ```
-u8   version
-u16  handle              // LE
-u32  offset              // LE
-u16  maxBytes            // LE; requested bytes to read
+u8 version
+u16 handle     // LE
+u32 offset     // LE
+u16 maxBytes   // LE; requested bytes to read
 ```
 
 ### Response
-
 ```
-u8   version
-u8   flags               // bit0=eof, bit1=truncated
-u16  reserved            // = 0
-u16  handle              // LE
-u32  offsetEcho          // LE
-u16  dataLen             // LE; actual bytes returned
-u8[] data                // length dataLen
+u8 version
+u8 flags       // bit0=eof, bit1=truncated
+u16 reserved   // = 0
+u16 handle     // LE
+u32 offsetEcho // LE
+u16 dataLen    // LE; actual bytes returned
+u8[] data      // length dataLen
 ```
 
 ### Status codes
-
 - `Ok` (possibly `dataLen=0`)
 - `NotReady` (response not ready yet; host should retry later)
 - `InvalidRequest` (bad handle or malformed payload)
@@ -246,23 +263,34 @@ u8[] data                // length dataLen
 
 Notes:
 - `eof=1` indicates end-of-response reached.
-- truncated: set when the device filled the requested max_bytes (i.e. caller buffer limit hit).
+- `truncated`: set when the device filled the requested max_bytes (i.e. caller buffer limit hit).
   It does NOT mean "server truncated the response".
 - The host reads until `eof=1` or `dataLen=0`.
 
+### Offset semantics (important)
+
+The meaning of `offset` depends on the protocol bound to the handle:
+
+- **HTTP response bodies (http/https)**:
+  - Offset represents the byte position within the response body stream as returned to the host.
+  - The host MUST request subsequent chunks using increasing offsets.
+
+- **Stream protocols (tcp)**:
+  - Offset represents a **monotonic read cursor** (bytes delivered so far).
+  - The device/backend MUST require strictly sequential offsets:
+    - If `offset` is a rewind or gap, return `InvalidRequest`.
+
 #### READ behavior notes (important)
 
-Backends may be synchronous (POSIX curl) or streaming/asynchronous (ESP32).
+Backends may be synchronous (POSIX curl) or streaming/asynchronous (ESP32, TCP).
 
 - If data is not yet available, READ may return `NotReady`.
-- A READ returning `Ok` with `read_len == 0` is only valid when `eof == true` (transfer complete).
+- A READ returning `Ok` with `read_len == 0` is only valid when `eof == true` (transfer complete / peer closed).
 - Hosts should treat `NotReady` as "try again soon", not a fatal error.
 - Transport-layer framing limits (e.g. USB, SLIP, CDC buffers) MUST NOT affect protocol semantics.
   Hosts should assume that large responses require multiple Read calls.
 
-
 #### Read size guarantees
-
 - `dataLen` in the response MUST be `<= maxBytes` from the request.
 - The device MUST NOT return more than `maxBytes` of data in a single Read response.
 - If more data is available, the host MUST issue subsequent Read requests with an updated offset.
@@ -271,35 +299,33 @@ Backends may be synchronous (POSIX curl) or streaming/asynchronous (ESP32).
 
 ## Command: Info (0x05)
 
-Fetch response metadata (HTTP status, content length, optional headers). This can be called repeatedly; results may become available over time.
+Fetch response metadata (HTTP status, content length, optional headers) **or** protocol-defined metadata for non-HTTP schemes.
+This can be called repeatedly; results may become available over time.
 
 - content_length is optional:
   - If the backend knows it (e.g., Content-Length header), it reports it.
   - For chunked/streaming responses, it may be 0/absent until completion or unknown entirely.
 
 ### Request
-
 ```
-u8   version
-u16  handle              // LE
-u16  maxHeaderBytes      // LE; max bytes of headers to return (0 allowed)
+u8 version
+u16 handle          // LE
+u16 maxHeaderBytes  // LE; max bytes of headers to return (0 allowed)
 ```
 
 ### Response
-
 ```
-u8   version
-u8   flags               // bit0=headersIncluded, bit1=hasContentLength, bit2=hasHttpStatus
-u16  reserved            // = 0
-u16  handle              // LE
-u16  httpStatus          // LE; valid only if hasHttpStatus
-u64  contentLength       // LE; valid only if hasContentLength
-u16  headerBytesLen      // LE; number of header bytes returned
-u8[] headerBytes         // raw "Key: Value\r\n" bytes; may be truncated
+u8 version
+u8 flags            // bit0=headersIncluded, bit1=hasContentLength, bit2=hasHttpStatus
+u16 reserved        // = 0
+u16 handle          // LE
+u16 httpStatus      // LE; valid only if hasHttpStatus
+u64 contentLength   // LE; valid only if hasContentLength
+u16 headerBytesLen  // LE; number of header bytes returned
+u8[] headerBytes    // raw "Key: Value\r\n" bytes; may be truncated
 ```
 
 ### Status codes
-
 - `Ok`
 - `NotReady` (metadata not available yet)
 - `InvalidRequest`
@@ -309,8 +335,22 @@ Notes:
 - `headerBytes` is intentionally unstructured to keep parsing simple for 8-bit hosts.
 - Modern tooling can parse it easily.
 
-### Info / Read ordering
+### Protocol-specific interpretation
 
+The Info wire format is stable, but interpretation is scheme-specific:
+
+- **HTTP/HTTPS**:
+  - `hasHttpStatus=1` when HTTP status is known, and `httpStatus` carries the HTTP status code.
+  - `hasContentLength=1` when the response length is known.
+  - `headerBytes` contains HTTP response headers ("Key: Value\r\n").
+
+- **TCP (tcp://)**:
+  - `hasHttpStatus=0` and `hasContentLength=0`.
+  - `headerBytes` (if requested) contains **pseudo headers** that expose TCP state and counters
+    without changing the v1 wire format.
+  - See `docs/network_device_tcp.md` for the pseudo header keys and semantics.
+
+### Info / Read ordering
 - `Info()` and `Read()` are independent.
 - `Info()` MAY return `Ok` before any body data is readable.
 - `Read()` MAY return `NotReady` even after `Info()` succeeds.
@@ -349,38 +389,61 @@ u16 reserved=0
 ## HTTP request lifecycle (HTTP/HTTPS schemes)
 
 ### Overview
-HTTP requests are created by `Open()`. If the request has a body (POST/PUT and optional others),
-the body is streamed via `Write()` calls. The request is dispatched automatically when the body
-is complete (or immediately for no-body requests). Response data is retrieved with `Read()`.
+
+HTTP requests are created by `Open()`.
+
+If the request has a body (POST/PUT and optional others), the body is streamed via `Write()` calls.
+The request is dispatched automatically when the body is complete (or immediately for no-body requests).
+
+Response data is retrieved with `Read()`.
 
 ### Body-required methods
-- For HTTP:
-  - POST and PUT MAY require a body (depending on `bodyLenHint`).
-  - GET/HEAD/DELETE typically have no body (we do not rely on a body for these in v1).
+
+For HTTP:
+- POST and PUT MAY require a body (depending on `bodyLenHint`).
+- GET/HEAD/DELETE typically have no body (we do not rely on a body for these in v1).
 
 ### Dispatch / commit rule (authoritative)
+
 - If `bodyLenHint == 0`:
   - The request MUST be dispatched immediately during `Open()`.
+
 - If `bodyLenHint > 0`:
   - `Open()` MUST return `needs_body_write=1` in the Open response flags.
   - The client MUST send body bytes via one or more `Write(handle, offset, bytes)` calls.
-  - The request MUST be dispatched automatically once the device has received exactly `bodyLenHint`
-    bytes total for that handle.
+  - The request MUST be dispatched automatically once the device has received exactly `bodyLenHint` bytes total for that handle.
   - `Read()` / `Info()` before dispatch completion MUST return `NotReady` (unless an error occurs).
 
 ### Write() rules for HTTP body streaming
+
 - Offsets:
   - Offsets MUST be sequential (0..N) for HTTP request bodies.
   - If a `Write()` offset is non-sequential (gap or rewind), the device MUST return `InvalidRequest`.
+
 - Length:
-  - Total bytes written MUST NOT exceed `bodyLenHint`. If it would exceed, the device MUST return `InvalidRequest`.
+  - Total bytes written MUST NOT exceed `bodyLenHint`.
+    If it would exceed, the device MUST return `InvalidRequest`.
+
 - Backpressure:
   - If the device cannot accept more body bytes right now, `Write()` MAY return `DeviceBusy`.
 
 ### Errors during upload / dispatch
-- If the body upload fails or dispatch fails, subsequent `Info/Read` MUST return an appropriate error
-  (typically `IOError`) and the handle remains closeable.
 
+If the body upload fails or dispatch fails, subsequent `Info/Read` MUST return an appropriate error
+(typically `IOError`) and the handle remains closeable.
+
+### Contrast: TCP stream lifecycle (tcp scheme)
+
+TCP uses the same v1 commands (Open/Write/Read/Info/Close) but differs from HTTP:
+
+- There is no HTTP method or request/response concept.
+- `Write()` maps to streaming `send()` and is not gated by `needs_body_write`.
+- `Read()` maps to streaming `recv()`.
+- Offsets are still required by the v1 protocol, but for TCP they are interpreted as
+  **monotonic stream cursors** (sequential offsets only).
+- `Info()` uses `headerBytes` for **pseudo headers** that expose TCP state (connected, bytes available, last error, etc.).
+
+See `docs/network_device_tcp.md` for the full TCP mapping and pseudo header keys.
 
 ---
 
@@ -435,12 +498,14 @@ Implications:
 
 ---
 
-## Future Extensions (Non-breaking)
+## Protocol-specific extensions
 
-The version byte and reserved fields allow future expansion:
+The NetworkDevice protocol is designed to support multiple network
+protocols using the same command set and wire formats.
 
-- authentication helpers
-- stable header enumeration via cookies/handles
-- websocket or raw socket support
-- negotiated maximum payload sizes per transport
-- streaming compression flags
+Protocol-specific behavior is documented separately:
+
+- **TCP stream sockets**: see `docs/network_device_tcp.md`
+
+These documents describe how each protocol maps its semantics onto the
+core Open / Read / Write / Info / Close commands.
