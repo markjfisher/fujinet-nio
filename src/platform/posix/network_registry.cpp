@@ -1,6 +1,7 @@
 #include "fujinet/platform/network_registry.h"
-
 #include "fujinet/io/devices/network_protocol_stub.h"
+
+#include "fujinet/platform/posix/tcp_network_protocol_posix.h"
 
 #if FN_WITH_CURL == 1
 #include "fujinet/platform/posix/http_network_protocol_curl.h"
@@ -12,8 +13,10 @@ io::ProtocolRegistry make_default_network_registry()
 {
     io::ProtocolRegistry r;
 
-    // Always provide tcp (stub for now).
-    r.register_scheme("tcp", [] { return std::make_unique<io::StubNetworkProtocol>(); });
+    // TCP stream sockets (POSIX)
+    r.register_scheme("tcp", [] {
+        return std::make_unique<posix::TcpNetworkProtocolPosix>();
+    });
 
 #if FN_WITH_CURL == 1
     r.register_scheme("http", [] { return std::make_unique<posix::HttpNetworkProtocolCurl>(); });
@@ -27,5 +30,3 @@ io::ProtocolRegistry make_default_network_registry()
 }
 
 } // namespace fujinet::platform
-
-

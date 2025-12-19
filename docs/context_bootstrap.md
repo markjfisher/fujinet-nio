@@ -1,226 +1,58 @@
-# FUJINET-NIO PROJECT CONTEXT BOOTSTRAP
+# BOOTSTRAP SECTIONS
 
----
 
-## OVERVIEW
+## NETWORK
 
-We are building **fujinet-nio**, a modern cross-platform rewrite of FujiNet’s I/O subsystem.  
-Targets:
-- POSIX (Linux/macOS)
-- ESP32-S3 (ESP-IDF + TinyUSB)
-- Future embedded platforms
-- WebAssembly
 
-Goals:
-- Clean layered architecture
-- No `#ifdef` spaghetti
-- Unified FujiBus+SLIP wire protocol
-- Modern C++ memory-safe patterns
-- Composable transports and channels
-- Strong testing foundation
+I’m working on fujinet-nio.
+We’ve signed off HTTP verbs + body lifecycle; next is TODO item 4: TCP backend (stream sockets).
 
----
+Repo refs:
+- TODO: https://raw.githubusercontent.com/markjfisher/fujinet-nio/refs/heads/master/todo/network.md
+- NetworkDevice binary protocol spec (v1): https://raw.githubusercontent.com/markjfisher/fujinet-nio/refs/heads/master/docs/network_device_protocol.md
+- (Possibly relevant overview): https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/protocol_reference.md
+- Architecture overview of fujinet-nio: https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/architecture.md
 
-## ARCHITECTURE LAYERS
+Please design the TCP scheme/backend semantics that fit the existing v1 NetworkDevice protocol (Open/Read/Write/Info/Close), for both POSIX and ESP32.
 
-### 1. Channels (lowest layer)
-Namespace: `fujinet::io`
+Concretely:
+1) URL form(s): tcp://host:port (and any query options like connect timeout, nodelay, etc).
+2) How Open/Write/Read map to socket connect/send/recv, including:
+   - sequential offset rules (still required?) for stream sockets
+   - what “Read(handle, offset, maxBytes)” means when a TCP stream has no natural offsets
+3) What Info() should return for TCP in v1 (given current Info payload format is HTTP-ish):
+   - do we extend flags/fields, or define TCP-only meaning for http_status/content_length/headers?
+   - how do we expose “connected/alive”, “bytes available”, and “last error” without breaking v1?
+4) StatusCode mapping matrix for TCP (InvalidRequest/NotReady/DeviceBusy/IOError/etc) that matches the TODO contract style.
+5) A minimal implementation plan:
+   - POSIX sockets backend structure + timeouts/nonblocking strategy
+   - ESP32 lwIP sockets backend structure + RX buffering/backpressure
+   - tests we should add (platform-agnostic session tests vs backend parity)
+Please answer with a crisp set of rules + recommended implementation approach.
 
-Interface:
-```
-class Channel {
-public:
-    virtual bool available() = 0;
-    virtual std::size_t read(uint8_t*, std::size_t) = 0;
-    virtual void write(const uint8_t*, std::size_t) = 0;
-    virtual ~Channel() = default;
-};
-```
 
-Implementations:
-- `PtyChannel` (POSIX PTY)
-- `UsbCdcChannel` (ESP32-S3 TinyUSB CDC)
-- Additional hardware channels later
+Project: fujinet-nio NetworkDevice
 
-Responsibility: **raw byte I/O, no framing**.
+Context:
+- HTTP protocol is complete and tested
+- Open / Read / Write / Info / Close are stable
+- POSIX and ESP32 implementations aligned
 
----
+Docs:
+- Protocol specs:
+  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/protocol_reference.md
+  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/network_device_protocol.md
+- Network TODO:
+  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/todo/network.md
+- Architecture:
+  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/architecture.md
 
-### 2. Transports
-Interface: `fujinet::io::ITransport`
+Goal:
+Design TCP protocol support that fits the existing NetworkDevice model.
 
-Current implementation:  
-`FujiBusTransport`
+Please focus on:
+- protocol design first (no code yet)
+- compatibility with v1
+- test strategy
 
-Responsibilities:
-- Accumulate bytes from Channel
-- Extract **SLIP** frame  
-- Parse **FujiBus packet header, descriptors, parameters**
-- Produce `IORequest`
-- Send `IOResponse` (SLIP + FujiBus encoding)
 
-Transport → Core → Device → Transport loop works.
-
----
-
-### 3. FujiBus Protocol
-We removed legacy enums and standardized naming:
-
-```
-enum class WireDeviceId : uint8_t { ... };
-enum class FujiCommandId : uint8_t { ... };
-enum class SlipByte : uint8_t { End=0xC0, Escape=0xDB, EscEnd=0xDC, EscEsc=0xDD };
-constexpr uint8_t to_byte(SlipByte b);
-```
-
-FujiBus header is 6 bytes:
-- device
-- command
-- length
-- checksum
-- descriptor
-
-Python script (via `scripts/fujinet`) can:
-- Build SLIP+FujiBus packet
-- Send it
-- Read response
-- Decode & pretty-print header/params/payload
-
----
-
-### 4. IORequest / IOResponse (unified core protocol)
-
-```
-struct IORequest {
-    RequestID id;
-    DeviceID deviceId;
-    RequestType type;
-    uint8_t command;
-    std::vector<uint8_t> payload;
-};
-
-struct IOResponse {
-    RequestID id;
-    DeviceID deviceId;
-    StatusCode status;
-    uint16_t command;      // echo of request.command
-    std::vector<uint8_t> payload;
-};
-```
-
----
-
-### 5. IODeviceManager
-
-Responsibilities:
-- Register/unregister devices
-- Route IORequests based on DeviceID
-- Call `VirtualDevice::handle()`
-- `pollDevices()` for background tasks
-
-```
-unordered_map<DeviceID, unique_ptr<VirtualDevice>> _devices;
-```
-
----
-
-### 6. IOService
-
-Responsibilities:
-- Holds **non-owned** transports
-- On each tick:
-  - poll transports
-  - retrieve IORequests
-  - route via IODeviceManager
-  - send IOResponses back
-
-```
-void addTransport(ITransport*);
-void serviceOnce();
-```
-
----
-
-### 7. FujinetCore
-
-```
-class FujinetCore {
-    IODeviceManager _deviceManager;
-    RoutingManager  _routing;
-    IOService       _ioService;
-    uint64_t        _tickCount;
-};
-```
-
-tick():
-- ioService.serviceOnce()
-- deviceManager.pollDevices()
-- tickCount++
-
----
-
-### 8. FujiCommandId
-
-This holds the commands that the host may send. The same code may mean different things to different devices
-
-```
-enum class FujiCommandId : std::uint8_t {
-    Reset             = 0xFF,  // to FujiNet control device
-    SpecialQuery      = 0xFF,  // to Network device
-    GetSsid           = 0xFE,
-    // ...
-};
-```
-
----
-
-### 9. WireDeviceId
-
-This is how the device manager will know what device a request needs to be routed to:
-
-```
-enum class WireDeviceId : std::uint8_t {
-    FujiNet      = 0x70,
-    DiskFirst    = 0x31,
-    DiskLast     = 0x3F,
-    PrinterFirst = 0x40,
-    PrinterLast  = 0x43,
-    Voice        = 0x43,
-    Clock        = 0x45,
-    NetworkFirst = 0x71,
-    NetworkLast  = 0x78,
-    Midi         = 0x99,
-    Dbc          = 0xFF,
-};
-```
-There will be more devices and ids added later
----
-
-## CURRENT STATUS
-
-### Working:
-- USB CDC TinyUSB channel on ESP32-S3
-- POSIX PTY channel
-- SLIP decode/encode
-- FujiBusPacket (C++ + Python)
-- End-to-end I/O flow from host → device → host
-- Python tool can send/receive Fuji packets
-
-### In progress:
-- Creating real **FujiDevice** implementation
-- Mapping Fuji commands → device logic
-- Strengthening protocol parsing
-- Expanding developer documentation & UML diagrams
-
----
-
-## NEXT STEPS (WHERE WE LEFT OFF)
-
-1. Implement the first real Fuji virtual device
-2. Expand test suite
-3. Continue improving architecture diagrams
-
----
-
-# END OF CONTEXT BOOTSTRAP
-Paste everything above into a new session.

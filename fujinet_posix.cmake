@@ -96,6 +96,7 @@ target_sources(fujinet-nio
         src/platform/posix/http_network_protocol_curl.cpp
         src/platform/posix/logging.cpp
         src/platform/posix/network_registry.cpp
+        src/platform/posix/tcp_network_protocol_posix.cpp
         src/platform/posix/time.cpp
 # __TARGET_SOURCES_END__
         third_party/cjson/cJSON.c
