@@ -1,104 +1,117 @@
 from __future__ import annotations
-import serial
 from pathlib import Path
 
-from .fujibus import send_command
+from .fujibus import FujiBusSession
 from . import fileproto as fp
+from .common import open_serial, status_ok
 
+
+# ----------------------------------------------------------------------
+# Commands
+# ----------------------------------------------------------------------
 
 def cmd_list(args) -> int:
     req = fp.build_list_req(args.fs, args.path, args.start, args.max)
-    pkt = send_command(
-        port=args.port,
-        device=fp.FILE_DEVICE_ID,
-        command=fp.CMD_LIST,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
 
-    # FujiBus convention: status is param[0] on responses
-    if not pkt.params or pkt.params[0] != 0:
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
-        return 1
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    lr = fp.parse_list_resp(pkt.payload)
+        pkt = bus.send_command_expect(
+            device=fp.FILE_DEVICE_ID,
+            command=fp.CMD_LIST,
+            payload=req,
+            expect_device=fp.FILE_DEVICE_ID,
+            expect_command=fp.CMD_LIST,
+            timeout=args.timeout,
+            cmd_txt="LIST",
+        )
+        if pkt is None:
+            print("No response")
+            return 2
 
-    print(f"{args.fs}:{args.path} (more={lr.more}, count={len(lr.entries)})")
-    for e in lr.entries:
-        kind = "DIR " if e.is_dir else "FILE"
-        print(f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}")
+        # FujiBus convention: status is param[0] on responses
+        if not status_ok(pkt):
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            return 1
+
+        lr = fp.parse_list_resp(pkt.payload)
+
+        print(f"{args.fs}:{args.path} (more={lr.more}, count={len(lr.entries)})")
+        for e in lr.entries:
+            kind = "DIR " if e.is_dir else "FILE"
+            print(f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}")
 
     return 0
 
 
 def cmd_stat(args) -> int:
     req = fp.build_stat_req(args.fs, args.path)
-    pkt = send_command(
-        port=args.port,
-        device=fp.FILE_DEVICE_ID,
-        command=fp.CMD_STAT,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
 
-    # FujiBus convention: status is param[0] on responses
-    if not pkt.params or pkt.params[0] != 0:
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
-        return 1
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    st = fp.parse_stat_resp(pkt.payload)
-    print(f"{args.fs}:{args.path}")
-    print(f"  exists: {st.exists}")
-    print(f"  dir:    {st.is_dir}")
-    print(f"  size:   {st.size_bytes}")
-    print(f"  mtime:  {fp.fmt_utc(st.mtime_unix)}")
+        pkt = bus.send_command_expect(
+            device=fp.FILE_DEVICE_ID,
+            command=fp.CMD_STAT,
+            payload=req,
+            expect_device=fp.FILE_DEVICE_ID,
+            expect_command=fp.CMD_STAT,
+            timeout=args.timeout,
+            cmd_txt="STAT",
+        )
+        if pkt is None:
+            print("No response")
+            return 2
+
+        # FujiBus convention: status is param[0] on responses
+        if not status_ok(pkt):
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            return 1
+
+        st = fp.parse_stat_resp(pkt.payload)
+        print(f"{args.fs}:{args.path}")
+        print(f"  exists: {st.exists}")
+        print(f"  dir:    {st.is_dir}")
+        print(f"  size:   {st.size_bytes}")
+        print(f"  mtime:  {fp.fmt_utc(st.mtime_unix)}")
     return 0
 
 
 def cmd_read(args) -> int:
     # One-shot read (single request)
     req = fp.build_read_req(args.fs, args.path, args.offset, args.max_bytes)
-    pkt = send_command(
-        port=args.port,
-        device=fp.FILE_DEVICE_ID,
-        command=fp.CMD_READ,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
-    if not pkt.params or pkt.params[0] != 0:
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
-        return 1
 
-    rr = fp.parse_read_resp(pkt.payload)
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    if args.out:
-        Path(args.out).write_bytes(rr.data)
-    else:
-        # default: write to stdout as raw bytes
-        import sys
+        pkt = bus.send_command_expect(
+            device=fp.FILE_DEVICE_ID,
+            command=fp.CMD_READ,
+            payload=req,
+            expect_device=fp.FILE_DEVICE_ID,
+            expect_command=fp.CMD_READ,
+            timeout=args.timeout,
+            cmd_txt="READ",
+        )
+        if pkt is None:
+            print("No response")
+            return 2
+        if not status_ok(pkt):
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            return 1
 
-        sys.stdout.buffer.write(rr.data)
+        rr = fp.parse_read_resp(pkt.payload)
 
-    if args.verbose:
-        print(f"\n(offset={rr.offset}, len={len(rr.data)}, eof={rr.eof}, truncated={rr.truncated})")
+        if args.out:
+            Path(args.out).write_bytes(rr.data)
+        else:
+            # default: write to stdout as raw bytes
+            import sys
+
+            sys.stdout.buffer.write(rr.data)
+
+        if args.verbose:
+            print(f"\n(offset={rr.offset}, len={len(rr.data)}, eof={rr.eof}, truncated={rr.truncated})")
     return 0
 
 
@@ -107,29 +120,29 @@ def cmd_read_all(args) -> int:
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
         offset = 0
         chunks = []
         total = 0
 
         while True:
             req = fp.build_read_req(args.fs, args.path, offset, args.chunk)
-            pkt = send_command(
-                port=ser,
+            pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
                 command=fp.CMD_READ,
                 payload=req,
-                baud=args.baud,
+                expect_device=fp.FILE_DEVICE_ID,
+                expect_command=fp.CMD_READ,
                 timeout=args.timeout,
-                read_max=args.read_max,
-                debug=args.debug,
+                cmd_txt="READ",
             )
 
             if pkt is None:
                 print("No response")
                 return 2
 
-            if not pkt.params or pkt.params[0] != 0:
+            if not status_ok(pkt):
                 print(f"Device status={pkt.params[0] if pkt.params else '??'}")
                 return 1
 
@@ -169,7 +182,8 @@ def cmd_write(args) -> int:
     data = Path(args.inp).read_bytes()
 
     # Reuse one Serial for the whole transfer (robust for CDC + faster).
-    with serial.Serial(args.port, args.baud, timeout=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
         offset = args.offset
         idx = 0
         total_written = 0
@@ -178,15 +192,14 @@ def cmd_write(args) -> int:
             chunk = data[idx : idx + args.chunk]
             req = fp.build_write_req(args.fs, args.path, offset, chunk)
 
-            pkt = send_command(
-                port=ser,
+            pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
                 command=fp.CMD_WRITE,
                 payload=req,
-                baud=args.baud,
+                expect_device=fp.FILE_DEVICE_ID,
+                expect_command=fp.CMD_WRITE,
                 timeout=args.timeout,
-                read_max=args.read_max,
-                debug=args.debug,
+                cmd_txt="WRITE",
             )
 
             if pkt is None:
@@ -194,7 +207,7 @@ def cmd_write(args) -> int:
                 return 2
 
             # FujiBus convention: status is param[0] on responses
-            if not pkt.params or pkt.params[0] != 0:
+            if not status_ok(pkt):
                 print(f"Device status={pkt.params[0] if pkt.params else '??'}")
                 return 1
 

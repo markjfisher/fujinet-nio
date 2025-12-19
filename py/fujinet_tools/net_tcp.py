@@ -10,6 +10,7 @@ from typing import Optional, Tuple
 
 from .fujibus import FujiBusSession
 from . import netproto as np
+from .common import status_ok
 
 # Reuse status text mapping from net.py style (keep local so this file is standalone)
 STATUS_TEXT = {
@@ -31,9 +32,6 @@ def _pkt_status_code(pkt) -> int:
     if not pkt or not pkt.params:
         return -1
     return int(pkt.params[0])
-
-def _status_ok(pkt) -> bool:
-    return bool(pkt and pkt.params) and int(pkt.params[0]) == 0
 
 def _send_retry(
     *,
@@ -179,7 +177,7 @@ def tcp_open(
     )
     if pkt is None:
         raise RuntimeError("No response to Open")
-    if not _status_ok(pkt):
+    if not status_ok(pkt):
         code = _pkt_status_code(pkt)
         raise RuntimeError(f"Open failed: status={code} ({_status_str(code)})")
 
@@ -209,7 +207,7 @@ def tcp_open(
         if ipkt is None:
             time.sleep(info_poll_s)
             continue
-        if not _status_ok(ipkt):
+        if not status_ok(ipkt):
             code = _pkt_status_code(ipkt)
             # NotReady just means "try again"; any other error is fatal
             if code != 4:
@@ -256,7 +254,7 @@ def tcp_send(
         )
         if wpkt is None:
             raise RuntimeError("No response to Write")
-        if not _status_ok(wpkt):
+        if not status_ok(wpkt):
             code = _pkt_status_code(wpkt)
             raise RuntimeError(f"Write failed: status={code} ({_status_str(code)})")
 
@@ -292,7 +290,7 @@ def tcp_halfclose(
     )
     if wpkt is None:
         raise RuntimeError("No response to halfclose Write")
-    if not _status_ok(wpkt):
+    if not status_ok(wpkt):
         code = _pkt_status_code(wpkt)
         raise RuntimeError(f"Halfclose failed: status={code} ({_status_str(code)})")
 
@@ -321,7 +319,7 @@ def tcp_recv_some(
     )
     if rpkt is None:
         raise RuntimeError("No response to Read")
-    if not _status_ok(rpkt):
+    if not status_ok(rpkt):
         code = _pkt_status_code(rpkt)
         # Treat NotReady as "no data" rather than an exception for interactive use
         if code == 4:
@@ -357,7 +355,7 @@ def tcp_info_print(
     if pkt is None:
         print("No response")
         return
-    if not _status_ok(pkt):
+    if not status_ok(pkt):
         code = _pkt_status_code(pkt)
         print(f"Device status={code} ({_status_str(code)})")
         return
@@ -383,7 +381,7 @@ def tcp_close(*, bus: FujiBusSession, handle: int, timeout: float) -> None:
     )
     if pkt is None:
         raise RuntimeError("No response to Close")
-    if not _status_ok(pkt):
+    if not status_ok(pkt):
         code = _pkt_status_code(pkt)
         raise RuntimeError(f"Close failed: status={code} ({_status_str(code)})")
 

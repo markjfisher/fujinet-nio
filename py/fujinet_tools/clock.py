@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import datetime
 
-from .fujibus import send_command
+from .fujibus import FujiBusSession
 from . import fileproto as fp
+from .common import open_serial, status_ok
 
 # -----------------------
 # clock commands
@@ -44,31 +45,34 @@ def _parse_clock_time_resp(payload: bytes) -> int:
 
 def cmd_clock_get(args) -> int:
     req = _build_clock_get_req()
-    pkt = send_command(
-        port=args.port,
-        device=CLOCK_DEVICE_ID,
-        command=CLOCK_CMD_GET,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
-    if not pkt.params or pkt.params[0] != 0:
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
-        return 1
 
-    try:
-        ts = _parse_clock_time_resp(pkt.payload)
-    except Exception as e:
-        print(f"Bad clock response: {e}")
-        return 1
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    print(f"device unix: {ts}")
-    print(f"device utc : {fp.fmt_utc(ts):>20}")
+        pkt = bus.send_command_expect(
+            device=CLOCK_DEVICE_ID,
+            command=CLOCK_CMD_GET,
+            payload=req,
+            expect_device=CLOCK_DEVICE_ID,
+            expect_command=CLOCK_CMD_GET,
+            timeout=args.timeout,
+            cmd_txt="CLOCK_GET",
+        )
+        if pkt is None:
+            print("No response")
+            return 2
+        if not status_ok(pkt):
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            return 1
+
+        try:
+            ts = _parse_clock_time_resp(pkt.payload)
+        except Exception as e:
+            print(f"Bad clock response: {e}")
+            return 1
+
+        print(f"device unix: {ts}")
+        print(f"device utc : {fp.fmt_utc(ts):>20}")
     return 0
 
 
@@ -80,32 +84,35 @@ def cmd_clock_set(args) -> int:
         ts = int(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())
 
     req = _build_clock_set_req(ts)
-    pkt = send_command(
-        port=args.port,
-        device=CLOCK_DEVICE_ID,
-        command=CLOCK_CMD_SET,
-        payload=req,
-        baud=args.baud,
-        timeout=args.timeout,
-        read_max=args.read_max,
-        debug=args.debug,
-    )
-    if pkt is None:
-        print("No response")
-        return 2
-    if not pkt.params or pkt.params[0] != 0:
-        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
-        return 1
 
-    try:
-        echoed = _parse_clock_time_resp(pkt.payload)
-    except Exception as e:
-        print(f"Bad clock response: {e}")
-        return 1
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
 
-    print(f"set unix : {ts}")
-    print(f"echo unix: {echoed}")
-    print(f"utc      : {fp.fmt_utc(echoed):>20}")
+        pkt = bus.send_command_expect(
+            device=CLOCK_DEVICE_ID,
+            command=CLOCK_CMD_SET,
+            payload=req,
+            expect_device=CLOCK_DEVICE_ID,
+            expect_command=CLOCK_CMD_SET,
+            timeout=args.timeout,
+            cmd_txt="CLOCK_SET",
+        )
+        if pkt is None:
+            print("No response")
+            return 2
+        if not status_ok(pkt):
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            return 1
+
+        try:
+            echoed = _parse_clock_time_resp(pkt.payload)
+        except Exception as e:
+            print(f"Bad clock response: {e}")
+            return 1
+
+        print(f"set unix : {ts}")
+        print(f"echo unix: {echoed}")
+        print(f"utc      : {fp.fmt_utc(echoed):>20}")
     return 0
 
 

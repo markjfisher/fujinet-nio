@@ -9,19 +9,12 @@ from typing import Optional, Union
 from .fujibus import FujiBusSession, FujiPacket
 from . import netproto as np
 from . import net_tcp
-
-try:
-    import serial  # type: ignore
-except Exception:
-    serial = None  # pyright: ignore
+from .common import open_serial, status_ok
 
 
 # ----------------------------------------------------------------------
 # Status helpers
 # ----------------------------------------------------------------------
-
-def _status_ok(pkt: Optional[FujiPacket]) -> bool:
-    return bool(pkt and pkt.params and pkt.params[0] == 0)
 
 
 STATUS_TEXT = {
@@ -62,13 +55,6 @@ def _pkt_status_code(pkt: Optional[FujiPacket]) -> int:
 # ----------------------------------------------------------------------
 # Serial + FujiBusSession helpers
 # ----------------------------------------------------------------------
-
-def _open_serial(port: str, baud: int, timeout_s: float):
-    if serial is None:
-        raise RuntimeError("pyserial not available, cannot open serial port")
-    # Small per-read timeout; we enforce overall timeout ourselves.
-    return serial.Serial(port=port, baudrate=baud, timeout=timeout_s, write_timeout=max(1.0, timeout_s))
-
 
 def _send_retry_not_ready(
     *,
@@ -145,7 +131,7 @@ def cmd_net_open(args) -> int:
         body_len_hint=args.body_len_hint,
     )
 
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         pkt = _send_retry_not_ready(
@@ -161,7 +147,7 @@ def cmd_net_open(args) -> int:
             print("No response")
             return 2
 
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -174,7 +160,7 @@ def cmd_net_open(args) -> int:
 def cmd_net_close(args) -> int:
     req = np.build_close_req(args.handle)
 
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         pkt = _send_retry_not_ready(
@@ -190,7 +176,7 @@ def cmd_net_close(args) -> int:
             print("No response")
             return 2
 
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -202,7 +188,7 @@ def cmd_net_close(args) -> int:
 def cmd_net_info(args) -> int:
     req = np.build_info_req(args.handle, args.max_headers)
 
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         pkt = _send_retry_not_ready(
@@ -218,7 +204,7 @@ def cmd_net_info(args) -> int:
             print("No response")
             return 2
 
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -240,7 +226,7 @@ def cmd_net_write(args) -> int:
     data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
     req = np.build_write_req(args.handle, args.offset, data)
 
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         pkt = _send_retry_not_ready(
@@ -256,7 +242,7 @@ def cmd_net_write(args) -> int:
             print("No response")
             return 2
 
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -269,7 +255,7 @@ def cmd_net_write(args) -> int:
 def cmd_net_read(args) -> int:
     req = np.build_read_req(args.handle, args.offset, args.max_bytes)
 
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         pkt = _send_retry_not_ready(
@@ -285,7 +271,7 @@ def cmd_net_read(args) -> int:
             print("No response")
             return 2
 
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -314,7 +300,7 @@ def cmd_net_get(args) -> int:
             return 1
         out_path.write_bytes(b"")
 
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         # OPEN
@@ -337,7 +323,7 @@ def cmd_net_get(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -363,7 +349,7 @@ def cmd_net_get(args) -> int:
                 )
                 if ipkt is None:
                     break
-                if not _status_ok(ipkt):
+                if not status_ok(ipkt):
                     code = _pkt_status_code(ipkt)
                     if code != 4:
                         print(f"Device status={code} ({_status_str(code)})")
@@ -394,7 +380,7 @@ def cmd_net_get(args) -> int:
             if rpkt is None:
                 print("No response")
                 return 2
-            if not _status_ok(rpkt):
+            if not status_ok(rpkt):
                 code = _pkt_status_code(rpkt)
                 print(f"Device status={code} ({_status_str(code)})")
                 return 1
@@ -441,7 +427,7 @@ def cmd_net_get(args) -> int:
 
 def cmd_net_head(args) -> int:
     # HEAD: Open(HEAD) -> Info -> Close (single bus)
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         open_req = np.build_open_req(
@@ -463,7 +449,7 @@ def cmd_net_head(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -484,7 +470,7 @@ def cmd_net_head(args) -> int:
         if ipkt is None:
             print("No response")
             return 2
-        if not _status_ok(ipkt):
+        if not status_ok(ipkt):
             code = _pkt_status_code(ipkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -515,7 +501,7 @@ def cmd_net_send(args) -> int:
     data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
     body_len_hint = len(data) if args.body_len_hint < 0 else args.body_len_hint
 
-    with _open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         open_req = np.build_open_req(
@@ -539,7 +525,7 @@ def cmd_net_send(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-        if not _status_ok(pkt):
+        if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
             return 1
@@ -574,7 +560,7 @@ def cmd_net_send(args) -> int:
                 if wpkt is None:
                     print("No response")
                     return 2
-                if not _status_ok(wpkt):
+                if not status_ok(wpkt):
                     code = _pkt_status_code(wpkt)
                     print(f"Device status={code} ({_status_str(code)})")
                     return 1
@@ -597,7 +583,7 @@ def cmd_net_send(args) -> int:
                 retries=args.info_retries,
                 sleep_s=args.info_sleep,
             )
-            if ipkt and _status_ok(ipkt):
+            if ipkt and status_ok(ipkt):
                 ir = np.parse_info_resp(ipkt.payload)
                 print(f"http_status={ir.http_status} content_length={ir.content_length}")
                 if ir.header_bytes:
@@ -631,7 +617,7 @@ def cmd_net_send(args) -> int:
                 if rpkt is None:
                     print("No response")
                     return 2
-                if not _status_ok(rpkt):
+                if not status_ok(rpkt):
                     code = _pkt_status_code(rpkt)
                     print(f"Device status={code} ({_status_str(code)})")
                     return 1
