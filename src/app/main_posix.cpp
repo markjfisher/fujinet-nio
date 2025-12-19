@@ -13,6 +13,7 @@
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/channel.h"
+#include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
@@ -28,6 +29,23 @@ using namespace fujinet;
 using namespace fujinet::io::protocol;
 
 static const char* TAG = "nio";
+
+// Helper: run a std::function once after a delay (no templates; keeps loop clean).
+struct DeferredOnce {
+    std::chrono::steady_clock::time_point start;
+    std::chrono::milliseconds delay;
+    bool done{false};
+
+    void poll(const std::function<void()>& fn)
+    {
+        if (done) return;
+        if (std::chrono::steady_clock::now() - start >= delay) {
+            fn();
+            done = true;
+        }
+    }
+};
+
 
 int main()
 {
@@ -74,16 +92,28 @@ int main()
         }
     };
 
-    {
-        auto dev = platform::create_fuji_device(core, profile, hooks);
+    // Keep a non-owning pointer so we can call start() after the unique_ptr is moved.
+    // DeviceManager owns the FujiDevice for the remainder of the process lifetime.
+    auto fuji = platform::create_fuji_device(core, profile, hooks);
+    io::DeviceID fujiDeviceId = to_device_id(WireDeviceId::FujiNet);
 
-        io::DeviceID fujiDeviceId = to_device_id(WireDeviceId::FujiNet);
+    if (!fuji) {
+        FN_LOGE(TAG, "create_fuji_device returned null");
+        return 1;
+    }
 
-        bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(dev));
-        if (!ok) {
-            FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %d", static_cast<unsigned>(fujiDeviceId));
-            return 1;
-        }
+    // We need the concrete FujiDevice to call start(). The factory returns VirtualDevice.
+    auto* fujiConcrete = dynamic_cast<fujinet::io::FujiDevice*>(fuji.get());
+    if (!fujiConcrete) {
+        FN_LOGE(TAG, "Fuji device factory did not return an io::FujiDevice (cannot call start())");
+        return 1;
+    }
+
+    // DeviceManager owns the FujiDevice for the remainder of the process lifetime.
+    bool ok = core.deviceManager().registerDevice(fujiDeviceId, std::move(fuji));
+    if (!ok) {
+        FN_LOGE(TAG, "Failed to register FujiDevice on DeviceID %d", static_cast<unsigned>(fujiDeviceId));
+        return 1;
     }
 
     // Register Core Devices
@@ -92,18 +122,25 @@ int main()
     fujinet::core::register_network_device(core);
 
     // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).
+    // and set up transports based on profile.
     auto channel = platform::create_channel_for_profile(profile);
     if (!channel) {
         FN_LOGE(TAG, "Failed to create Channel for profile");
         return 1;
     }
-
-    // Set up transports based on profile (FujiBus/PTY/etc.).
     core::setup_transports(core, *channel, profile);
 
     // Run core loop until the process is terminated (Ctrl+C, kill, etc.).
+    DeferredOnce startFuji{std::chrono::steady_clock::now(), std::chrono::milliseconds(50), false};
     while (true) {
         core.tick();
+
+        // Defer config loading off the initial startup path (mirrors ESP32 behavior).
+        startFuji.poll([&] {
+            FN_LOGI(TAG, "[FujiDevice] start() (deferred)");
+            fujiConcrete->start();
+        });
+
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
