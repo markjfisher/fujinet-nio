@@ -1,0 +1,7 @@
+group: Network / TCP
+steps:
+  - name: "TCP: sendrecv echo"
+    argv: ["{CLI}", "net", "tcp", "sendrecv", "--data", "ping", "--halfclose", "--idle-timeout", "0.5", "{TCP}"]
+    expect:
+      - "ping"
+    timeout_s: 10

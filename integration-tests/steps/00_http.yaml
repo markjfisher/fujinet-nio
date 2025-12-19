@@ -1,0 +1,21 @@
+group: Network / HTTP
+steps:
+  - name: "HTTP: GET /get"
+    argv: ["{CLI}", "net", "get", "{HTTP}/get"]
+    expect:
+      - "url"
+      - "/get"
+    timeout_s: 10
+
+  - name: "HTTP: HEAD /headers"
+    argv: ["{CLI}", "net", "head", "{HTTP}/headers"]
+    expect:
+      - "http_status"
+      - "200|OK|Ok|status"
+    timeout_s: 10
+
+  - name: "HTTP: POST /post (body)"
+    argv: ["{CLI}", "net", "send", "--method", "2", "--read-response", "--data", "hello", "{HTTP}/post"]
+    expect:
+      - '"data": "hello"'
+    timeout_s: 10

@@ -1,0 +1,7 @@
+group: Filesystem
+steps:
+  - name: "FS: list (root)"
+    argv: ["{CLI}", "list", "{FS}", "/"]
+    expect:
+      - ":/|host|flash|sd|config"
+    timeout_s: 8

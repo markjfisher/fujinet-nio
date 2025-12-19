@@ -9,6 +9,7 @@ description = "FujiNet-NIO host utilities (FujiBus + FileDevice client)"
 requires-python = ">=3.10"
 dependencies = [
   "pyserial>=3.5",
+  "PyYAML>=6.0.3",
 ]
 
 [tool.setuptools]
