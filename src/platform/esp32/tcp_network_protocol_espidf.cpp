@@ -9,15 +9,15 @@
 #include <limits>
 #include <string_view>
 
+#include <fcntl.h>        // F_GETFL, F_SETFL, O_NONBLOCK
+#include <netinet/tcp.h>  // TCP_NODELAY (sockopt level IPPROTO_TCP)
+
 extern "C" {
-#include "lwip/errno.h"
-#include "lwip/fcntl.h"
-#include "lwip/netdb.h"
-#include "lwip/sockets.h"
-#include "lwip/inet.h"
-#include "esp_timer.h"
-#include "netinet/tcp.h"
+#include "lwip/netdb.h"    // lwip_getaddrinfo, lwip_freeaddrinfo, addrinfo
+#include "lwip/sockets.h"  // lwip_socket/connect/send/recv/select/close/setsockopt/getsockopt/shutdown/fcntl
+#include "esp_timer.h"     // esp_timer_get_time
 }
+
 
 namespace fujinet::platform::esp32 {
 

@@ -16,9 +16,11 @@ extern "C" {
 #include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
+#include "fujinet/net/network_link_monitor.h"
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/esp32/fs_factory.h"
 #include "fujinet/platform/esp32/fs_init.h"
+#include "fujinet/platform/esp32/sntp_service.h"
 #include "fujinet/platform/esp32/wifi_link.h"
 #include "fujinet/platform/fuji_config_store_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
@@ -33,40 +35,60 @@ using namespace fujinet;
 using namespace fujinet::io::protocol;
 
 namespace {
-    struct Esp32Services {
-        fujinet::io::FujiDevice* fuji{nullptr};
-        std::unique_ptr<fujinet::platform::esp32::Esp32WifiLink> wifi;
-        bool phase1_started{false};
-    
-        void start_phase1()
-        {
-            if (phase1_started || !fuji) return;
-            phase1_started = true;
-    
-            // Load config now (not on phase 0 path)
-            fuji->start();
-    
-            const auto& cfg = fuji->config();
-    
-            if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
-                wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
-                wifi->init();
-                wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
-            }
+struct Esp32Services {
+    fujinet::io::FujiDevice* fuji{nullptr};
+
+    fujinet::core::SystemEvents* events{nullptr};
+
+    std::unique_ptr<fujinet::platform::esp32::Esp32WifiLink> wifi;
+    std::unique_ptr<fujinet::net::NetworkLinkMonitor> wifiMon;
+
+    // Starts SNTP when NetworkEvent::GotIp occurs.
+    std::unique_ptr<fujinet::platform::esp32::SntpService> sntp;
+
+    bool phase1_started{false};
+
+    void init_phase0(fujinet::core::FujinetCore& core)
+    {
+        events = &core.events();
+        // Construct services that subscribe to events (even if Wi-Fi may be disabled).
+        sntp = std::make_unique<fujinet::platform::esp32::SntpService>(*events);
+    }
+
+    void start_phase1()
+    {
+        if (phase1_started || !fuji || !events) return;
+        phase1_started = true;
+
+        // Load config now (not on phase 0 path)
+        fuji->start();
+        const auto& cfg = fuji->config();
+
+        if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
+            wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
+            wifi->init();
+            wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
+
+            // Monitor publishes NetworkEvent transitions based on wifi state/ip.
+            wifiMon = std::make_unique<fujinet::net::NetworkLinkMonitor>(*events, *wifi);
         }
+    }
+
+    void poll()
+    {
+        if (wifi) wifi->poll();
+        if (wifiMon) wifiMon->poll();
+    }
+};
+} // namespace
     
-        void poll()
-        {
-            if (wifi) wifi->poll();
-        }
-    };
-    
-} // namespace    
 
 extern "C" void fujinet_core_task(void* arg)
 {
     core::FujinetCore core;
     Esp32Services services;
+
+    services.init_phase0(core);
     
     if (auto flashFs = platform::esp32::create_flash_filesystem()) {
         core.storageManager().registerFileSystem(std::move(flashFs));
@@ -117,7 +139,7 @@ extern "C" void fujinet_core_task(void* arg)
     fujinet::core::register_clock_device(core);
     fujinet::core::register_network_device(core);
 
-    const std::uint64_t phase1_at = core.tick_count() + 50;
+    const std::uint64_t phase1_at = core.tick_count() + 20;
     
     FN_ELOG("[%u ms] starting main loop", (unsigned)(esp_timer_get_time()/1000));
 
@@ -155,11 +177,13 @@ extern "C" void app_main(void)
     esp_log_level_set("config",      ESP_LOG_INFO);
     esp_log_level_set("clock",       ESP_LOG_INFO);
     esp_log_level_set("core",        ESP_LOG_INFO);
+    esp_log_level_set("events",      ESP_LOG_INFO);
     esp_log_level_set("fs",          ESP_LOG_INFO);
     esp_log_level_set("io",          ESP_LOG_INFO);
     esp_log_level_set("nio",         ESP_LOG_INFO);
-    esp_log_level_set("platform",    ESP_LOG_INFO);
     esp_log_level_set("nio-wifi",    ESP_LOG_INFO);
+    esp_log_level_set("platform",    ESP_LOG_INFO);
+    esp_log_level_set("service",     ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init",   ESP_LOG_ERROR);

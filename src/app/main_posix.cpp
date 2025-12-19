@@ -36,7 +36,15 @@ int main()
 
     core::FujinetCore core;
 
-    // 2. Determine build profile.
+    // POSIX: assume network is available; publish a synthetic GotIp for services.
+    {
+        fujinet::net::NetworkEvent ev;
+        ev.kind = fujinet::net::NetworkEventKind::GotIp;
+        ev.gotIp.ip4 = "127.0.0.1";
+        core.events().network().publish(ev);
+    }
+
+    // Determine build profile.
     auto profile = build::current_build_profile();
     auto profile_name = profile.name;
     FN_LOGI(TAG, "Build profile: %.*s", static_cast<int>(profile_name.size()), profile.name.data());
@@ -79,22 +87,21 @@ int main()
     }
 
     // Register Core Devices
-    // TODO: use config to decide if we want to start these or not
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
     fujinet::core::register_network_device(core);
 
-    // Create a Channel appropriate for this profile (PTY, RS232, etc.).
+    // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).
     auto channel = platform::create_channel_for_profile(profile);
     if (!channel) {
         FN_LOGE(TAG, "Failed to create Channel for profile");
         return 1;
     }
 
-    // 4. Set up transports based on profile (RS232/PTY/etc.).
+    // Set up transports based on profile (FujiBus/PTY/etc.).
     core::setup_transports(core, *channel, profile);
 
-    // 5. Run core loop until the process is terminated (Ctrl+C, kill, etc.).
+    // Run core loop until the process is terminated (Ctrl+C, kill, etc.).
     while (true) {
         core.tick();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));

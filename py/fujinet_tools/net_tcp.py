@@ -44,12 +44,20 @@ def _send_retry(
     timeout: float,
     retries: int,
     sleep_s: float,
-) :
+    cmd_txt: str = "",
+):
     """
-    Send a command and retry on:
-    - NotReady (4)
-    - DeviceBusy (3)
-    - pkt == None (partial/no complete SLIP frame yet)
+    Send a FujiBus command and wait for the matching response packet.
+
+    Retries on:
+      - NotReady (4)
+      - DeviceBusy (3)
+      - None (no response packet within per-attempt timeout)
+
+    Uses FujiBusSession.send_command_expect(), which:
+      - sends the request
+      - reads SLIP frames until it sees (expect_device, expect_command)
+      - stashes other packets
     """
     deadline = time.monotonic() + max(timeout, 0.0)
     backoff = max(0.001, sleep_s)
@@ -58,8 +66,24 @@ def _send_retry(
     attempt = 0
     while True:
         attempt += 1
-        # FujiBusSession handles framing; we keep a short overall loop.
-        pkt = bus.send(device=device, command=command, payload=payload, timeout=min(0.05, timeout))
+
+        now = time.monotonic()
+        remaining = deadline - now
+        if remaining <= 0:
+            return None
+
+        # keep each attempt short so we can handle NotReady/DeviceBusy with backoff
+        per_attempt_timeout = min(0.05, remaining)
+
+        pkt = bus.send_command_expect(
+            device=device,
+            command=command,
+            payload=payload,
+            expect_device=device,
+            expect_command=command,
+            timeout=per_attempt_timeout,
+            cmd_txt=cmd_txt,
+        )
 
         if pkt is None:
             if attempt >= retries or time.monotonic() >= deadline:
@@ -151,6 +175,7 @@ def tcp_open(
         timeout=timeout,
         retries=100,
         sleep_s=0.01,
+        cmd_txt="OPEN",
     )
     if pkt is None:
         raise RuntimeError("No response to Open")
@@ -179,6 +204,7 @@ def tcp_open(
             timeout=timeout,
             retries=50,
             sleep_s=0.01,
+            cmd_txt="INFO",
         )
         if ipkt is None:
             time.sleep(info_poll_s)
@@ -226,6 +252,7 @@ def tcp_send(
             timeout=timeout,
             retries=5000,
             sleep_s=0.001,
+            cmd_txt="WRITE",
         )
         if wpkt is None:
             raise RuntimeError("No response to Write")
@@ -261,6 +288,7 @@ def tcp_halfclose(
         timeout=timeout,
         retries=200,
         sleep_s=0.01,
+        cmd_txt="WRITE",
     )
     if wpkt is None:
         raise RuntimeError("No response to halfclose Write")
@@ -289,6 +317,7 @@ def tcp_recv_some(
         timeout=timeout,
         retries=200,
         sleep_s=0.005,
+        cmd_txt="READ",
     )
     if rpkt is None:
         raise RuntimeError("No response to Read")
@@ -323,6 +352,7 @@ def tcp_info_print(
         timeout=timeout,
         retries=200,
         sleep_s=0.01,
+        cmd_txt="INFO",
     )
     if pkt is None:
         print("No response")
@@ -349,6 +379,7 @@ def tcp_close(*, bus: FujiBusSession, handle: int, timeout: float) -> None:
         timeout=timeout,
         retries=100,
         sleep_s=0.01,
+        cmd_txt="CLOSE",
     )
     if pkt is None:
         raise RuntimeError("No response to Close")

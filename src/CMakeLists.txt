@@ -37,6 +37,7 @@ idf_component_register(
         platform/esp32/logging.cpp
         platform/esp32/network_registry.cpp
         platform/esp32/pinmap.cpp
+        platform/esp32/sntp_service.cpp
         platform/esp32/tcp_network_protocol_espidf.cpp
         platform/esp32/time.cpp
         platform/esp32/usb_cdc_channel.cpp
