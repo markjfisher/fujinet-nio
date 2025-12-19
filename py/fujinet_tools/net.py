@@ -1,13 +1,14 @@
 # py/fujinet_tools/net.py
 from __future__ import annotations
-
 import sys
 import time
+
 from pathlib import Path
 from typing import Optional, Union
 
 from .fujibus import FujiBusSession, FujiPacket
 from . import netproto as np
+from . import net_tcp
 
 try:
     import serial  # type: ignore
@@ -748,3 +749,5 @@ def register_subcommands(subparsers) -> None:
     src.add_argument("--data", help="Send these UTF-8 bytes as request body")
     pns.add_argument("url")
     pns.set_defaults(fn=cmd_net_send)
+
+    net_tcp.register_tcp_subcommands(nsub)

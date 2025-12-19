@@ -42,146 +42,7 @@ This can be generated as follows:
 
 ```
 ❯ tree -a -I '.pio|build|.git|managed_components|docs|third_party|.git*|*.lock|.vscode|sdkconfig.*'
-.
-├── boards
-│   └── esp32-s3-wroom-1-n16r8.json
-├── build.sh
-├── clang-uml.yml
-├── CMakeLists.txt
-├── CMakePresets.json
-├── fujinet_posix.cmake
-├── include
-│   └── fujinet
-│       ├── config
-│       │   ├── fuji_config.h
-│       │   └── fuji_config_yaml_store_fs.h
-│       ├── core
-│       │   ├── bootstrap.h
-│       │   ├── core.h
-│       │   ├── file_device_init.h
-│       │   └── logging.h
-│       ├── fs
-│       │   ├── filesystem.h
-│       │   ├── fs_stdio.h
-│       │   └── storage_manager.h
-│       ├── io
-│       │   ├── core
-│       │   │   ├── channel.h
-│       │   │   ├── io_device_manager.h
-│       │   │   ├── io_message.h
-│       │   │   ├── request_handler.h
-│       │   │   └── routing_manager.h
-│       │   ├── devices
-│       │   │   ├── file_codec.h
-│       │   │   ├── file_commands.h
-│       │   │   ├── file_device.h
-│       │   │   ├── fuji_commands.h
-│       │   │   ├── fuji_device.h
-│       │   │   └── virtual_device.h
-│       │   ├── protocol
-│       │   │   ├── fuji_bus_packet.h
-│       │   │   └── wire_device_ids.h
-│       │   └── transport
-│       │       ├── fujibus_transport.h
-│       │       ├── io_service.h
-│       │       └── transport.h
-│       └── platform
-│           ├── channel_factory.h
-│           ├── esp32
-│           │   ├── fs_factory.h
-│           │   ├── fs_init.h
-│           │   ├── pinmap.h
-│           │   └── usb_cdc_channel.h
-│           ├── fuji_config_store_factory.h
-│           ├── fuji_device_factory.h
-│           └── posix
-│               └── fs_factory.h
-├── LICENSE
-├── pio-build
-│   ├── ini
-│   │   ├── platformio.common.ini
-│   │   ├── platformio.zip-options.ini
-│   │   └── platforms
-│   │       ├── platformio-cdc-fujibus-s3-wroom-1-n16r8.ini
-│   │       ├── platformio-sio-legacy-s3-wroom-1-n16r8.ini
-│   │       └── README.md
-│   ├── partitions
-│   │   └── partitions_16MB.csv
-│   ├── scripts
-│   │   ├── create-platformio-ini.py
-│   │   └── create-sdkconfig.py
-│   └── sdkconfig
-│       ├── platform_sdkconfig_map.txt
-│       ├── sdkconfig-common.defaults
-│       ├── sdkconfig-fs-littlefs.defaults
-│       ├── sdkconfig-optimizations-to-review.defaults
-│       ├── sdkconfig-spiram-oct80.defaults
-│       └── sdkconfig-tinyusb.defaults
-├── platformio.ini
-├── platformio.local.ini
-├── py
-│   └── fujinet_tools
-│       ├── cli.py
-│       ├── fileproto.py
-│       ├── fujibus.py
-│       └── __init__.py
-├── pyproject.toml
-├── README.md
-├── scripts
-│   ├── build_pio.sh
-│   ├── build_posix.sh
-│   ├── fujinet
-│   ├── gen_uml.sh
-│   └── update_cmake_sources.py
-├── src
-│   ├── app
-│   │   ├── main_esp32.cpp
-│   │   └── main_posix.cpp
-│   ├── CMakeLists.txt
-│   ├── idf_component.yml
-│   ├── lib
-│   │   ├── bootstrap.cpp
-│   │   ├── build_profile.cpp
-│   │   ├── file_device.cpp
-│   │   ├── file_device_init.cpp
-│   │   ├── fs_stdio.cpp
-│   │   ├── fuji_bus_packet.cpp
-│   │   ├── fujibus_transport.cpp
-│   │   ├── fuji_config_yaml_store.cpp
-│   │   ├── fuji_device.cpp
-│   │   ├── fujinet_core.cpp
-│   │   ├── fujinet_init.cpp
-│   │   ├── io_device_manager.cpp
-│   │   ├── io_service.cpp
-│   │   ├── routing_manager.cpp
-│   │   └── storage_manager.cpp
-│   └── platform
-│       ├── esp32
-│       │   ├── channel_factory.cpp
-│       │   ├── fs_factory.cpp
-│       │   ├── fs_init.cpp
-│       │   ├── fuji_config_store_factory.cpp
-│       │   ├── fuji_device_factory.cpp
-│       │   ├── hardware_caps.cpp
-│       │   ├── logging.cpp
-│       │   ├── pinmap.cpp
-│       │   └── usb_cdc_channel.cpp
-│       └── posix
-│           ├── channel_factory.cpp
-│           ├── fs_factory.cpp
-│           ├── fuji_config_store_factory.cpp
-│           ├── fuji_device_factory.cpp
-│           ├── hardware_caps.cpp
-│           └── logging.cpp
-└── tests
-    ├── CMakeLists.txt
-    ├── doctest.h
-    ├── run_main.cpp
-    ├── test_embed_core.cpp
-    ├── test_fujipacket.cpp
-    └── test_smoke.cpp
 ```
-
 
 
 ---
@@ -293,10 +154,11 @@ python3
 
 Build:
 ```
-mkdir build
-cd build
-cmake ..
-make -j
+# find valid posix targets
+./build.sh -p foo -S
+
+# use one of them to build (-c will clean the build dir first)
+./build.sh -cp fujibus-pty-debug
 ```
 
 Run:
@@ -325,50 +187,26 @@ Install dependencies:
 
 Build:
 ```
-pio run -e esp32s3-espidf
+./build.sh -cb
 ```
 
 Flash:
 ```
-pio run -e esp32s3-espidf -t upload
+./build.sh -u
 ```
 
 Monitor:
 ```
-pio device monitor
+./build.sh -m
 ```
 
 On ESP32-S3, communication is handled through **TinyUSB CDC-ACM**:
-- CDC0 = debug logging  
-- CDC1 = FujiBus data channel  
+- CDC0 = debug logging          e.g. /dev/ttyACM0
+- CDC1 = FujiBus data channel        /dev/ttyACM1
 
 ---
 
-# 5. Running End-to-End Tests
-
-Use the provided Python script:
-
-```
-scripts/fujinet TODO \
-    --port /dev/ttyACM1 \
-    --device 1 \
-    --command 1 \
-    --payload "hello world" \
-    --read
-```
-
-Expected output:
-
-```
-Sending:
-C0 01 01 ... C0
-Received:
-C0 01 00 ... C0
-```
-
----
-
-# 6. Adding a New Virtual Device
+# 5. Adding a New Virtual Device
 
 1. Create a header in `/include/fujinet/io/devices/<device>.h`
 2. Implement the class in `/src/lib/devices/<device>.cpp`
@@ -401,7 +239,7 @@ That’s all: transport → core → device routing is automatic.
 
 ---
 
-# 7. Adding a New Transport
+# 6. Adding a New Transport
 
 1. Implement the `ITransport` interface:
 
@@ -426,7 +264,7 @@ Use cases:
 
 ---
 
-# 8. Adding a New Channel
+# 7. Adding a New Channel
 
 Channels represent **byte pipes**, not protocols.
 
@@ -450,7 +288,7 @@ src/platform/<platform>/channel_factory.cpp
 
 ---
 
-# 9. Coding Standards
+# 8. Coding Standards
 
 - **C++20**  
 - `std::unique_ptr` for ownership  
@@ -463,7 +301,7 @@ src/platform/<platform>/channel_factory.cpp
 
 ---
 
-# 10. Debugging Tips
+# 9. Debugging Tips
 
 ### ESP32-S3
 - Use CDC0 for logs  
