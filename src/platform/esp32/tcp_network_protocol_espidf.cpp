@@ -17,7 +17,7 @@ TcpNetworkProtocolEspIdf::~TcpNetworkProtocolEspIdf() = default;
 
 fujinet::io::StatusCode TcpNetworkProtocolEspIdf::open(const fujinet::io::NetworkOpenRequest& req)
 {
-    return _common.open(req, lwip_getaddrinfo, lwip_freeaddrinfo);
+    return _common.open(req);
 }
 
 fujinet::io::StatusCode TcpNetworkProtocolEspIdf::write_body(std::uint32_t offset,

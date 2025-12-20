@@ -16,7 +16,7 @@ TcpNetworkProtocolPosix::~TcpNetworkProtocolPosix() = default;
 
 fujinet::io::StatusCode TcpNetworkProtocolPosix::open(const fujinet::io::NetworkOpenRequest& req)
 {
-    return _common.open(req, ::getaddrinfo, ::freeaddrinfo);
+    return _common.open(req);
 }
 
 fujinet::io::StatusCode TcpNetworkProtocolPosix::write_body(std::uint32_t offset,

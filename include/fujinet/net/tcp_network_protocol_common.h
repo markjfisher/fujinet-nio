@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-// Forward declarations
-struct addrinfo;
 
 namespace fujinet::net {
 
@@ -44,11 +42,7 @@ public:
                               Options& outOpt);
 
     // Main protocol interface
-    fujinet::io::StatusCode open(const fujinet::io::NetworkOpenRequest& req,
-                                  int (*resolve_addr)(const char* host, const char* port,
-                                                      const struct addrinfo* hints,
-                                                      struct addrinfo** res),
-                                  void (*free_addr)(struct addrinfo* res));
+    fujinet::io::StatusCode open(const fujinet::io::NetworkOpenRequest& req);
 
     fujinet::io::StatusCode write_body(std::uint32_t offset,
                                        const std::uint8_t* data,
@@ -81,9 +75,9 @@ private:
     std::size_t rx_available() const noexcept;
     std::string build_info_headers() const;
 
-    // Centralized peer-gone handling
-    void handle_recv_error(int errno_val);
-    void handle_send_error(int errno_val);
+    // Centralized I/O error handling
+    enum class IoDir { Recv, Send };
+    void handle_io_error(IoDir dir, int errno_val);
 
     ITcpSocketOps& _socket_ops;
     int _fd = -1;
