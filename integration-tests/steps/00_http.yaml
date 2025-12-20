@@ -19,3 +19,48 @@ steps:
     expect:
       - '"data": "hello"'
     timeout_s: 10
+
+  - name: "HTTP: POST /post (large body >512 bytes)"
+    # 700 'A' characters to force multi-chunk write on the device side.
+    argv:
+      - "{CLI}"
+      - "net"
+      - "send"
+      - "--method"
+      - "2"
+      - "--read-response"
+      - "--data"
+      - "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+      - "{HTTP}/post"
+    expect:
+      # httpbin echoes the body in JSON as "data": "<...>"
+      - '"data": "A+B"'
+    timeout_s: 15
+
+  - name: "HTTP: POST /post (UTF-8 body)"
+    argv:
+      - "{CLI}"
+      - "net"
+      - "send"
+      - "--method"
+      - "2"
+      - "--read-response"
+      - "--data"
+      - '"héllö – こXんにちは世界 🌍 — café naïve"'
+      - "{HTTP}/post"
+    expect:
+      - '"data": "\"h\u00e9ll\u00f6 \u2013 \u3053X\u3093\u306b\u3061\u306f\u4e16\u754c \ud83c\udf0d \u2014 caf\u00e9 na\u00efve\""'
+    timeout_s: 15
+
+  - name: "HTTP: POST /post (empty body)"
+    argv: ["{CLI}", "net", "send", "--method", "2", "--read-response", "--data", "", "{HTTP}/post"]
+    expect:
+      - '"data": ""'
+    timeout_s: 10
+
+  - name: "HTTP: GET /get (query with UTF-8 percent-encoding)"
+    argv: ["{CLI}", "net", "get", "{HTTP}/get?plain=1&utf8=h%C3%A9ll%C3%B6%20%E3%81%93%E3%82%93%E3%81%AB%E3%81%A1%E3%81%AF"]
+    expect:
+      - '"args"'
+      - 'utf8'
+    timeout_s: 10

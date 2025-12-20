@@ -5,3 +5,54 @@ steps:
     expect:
       - "ping"
     timeout_s: 10
+
+  - name: "TCP: sendrecv UTF-8 echo"
+    argv:
+      - "{CLI}"
+      - "net"
+      - "tcp"
+      - "sendrecv"
+      - "--data"
+      - '"héllö – こんにちは世界 🌍"'
+      - "--halfclose"
+      - "--idle-timeout"
+      - "5"
+      - "{TCP}"
+    expect:
+      # TCP echo should be raw UTF-8; accept either raw or at least a distinctive substring.
+      - 'héllö – こんにちは世界 🌍'
+    timeout_s: 15
+
+  - name: "TCP: sendrecv large payload (>512 bytes)"
+    # 700 'B' characters to stress write chunking and RX buffering.
+    argv:
+      - "{CLI}"
+      - "net"
+      - "tcp"
+      - "sendrecv"
+      - "--data"
+      - 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBC'
+      - "--halfclose"
+      - "--idle-timeout"
+      - "5"
+      - "{TCP}"
+    expect:
+      - "B{692}C"
+    timeout_s: 15
+
+  - name: "TCP: URL options parsing (nodelay/keepalive/rx_buf)"
+    # This mainly asserts URL parsing accepts query options and that we still echo.
+    argv:
+      - "{CLI}"
+      - "net"
+      - "tcp"
+      - "sendrecv"
+      - "--data"
+      - "opts"
+      - "--halfclose"
+      - "--idle-timeout"
+      - "5"
+      - "{TCP}?nodelay=1&keepalive=1&rx_buf=4096"
+    expect:
+      - "opts"
+    timeout_s: 15
