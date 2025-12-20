@@ -3,7 +3,6 @@
 #include "fujinet/core/logging.h"
 
 #include <algorithm>
-#include <cerrno>
 #include <cstring>
 #include <limits>
 #include <string_view>
@@ -11,18 +10,6 @@
 namespace fujinet::net {
 
 static constexpr const char* TAG = "tcp";
-
-// Standard errno values (platform-agnostic constants)
-// These match POSIX/ESP-IDF standard values
-static constexpr int ERR_EINPROGRESS = 115;
-static constexpr int ERR_EWOULDBLOCK = 11;
-static constexpr int ERR_EAGAIN = 11;
-static constexpr int ERR_ECONNRESET = 104;
-static constexpr int ERR_ENOTCONN = 107;
-static constexpr int ERR_EPIPE = 32;
-static constexpr int ERR_ETIMEDOUT = 110;
-static constexpr int ERR_ECONNREFUSED = 111;
-static constexpr int ERR_EHOSTUNREACH = 113;
 
 static bool starts_with(std::string_view s, std::string_view p)
 {
@@ -169,34 +156,19 @@ void TcpNetworkProtocolCommon::apply_socket_options()
 {
     if (_fd < 0) return;
 
-    // Socket option constants are platform-specific and handled by ops implementation
-    // We use standard numeric values that match common platforms
-    constexpr int SOL_SOCKET = 1;
-    constexpr int IPPROTO_TCP = 6;
-    constexpr int SO_KEEPALIVE = 9;
-    constexpr int TCP_NODELAY = 1;
-
-    if (_opt.nodelay) {
-        int v = 1;
-        (void)_socket_ops.setsockopt(_fd, IPPROTO_TCP, TCP_NODELAY, &v, sizeof(v));
-    }
-    if (_opt.keepalive) {
-        int v = 1;
-        (void)_socket_ops.setsockopt(_fd, SOL_SOCKET, SO_KEEPALIVE, &v, sizeof(v));
-    }
-
+    _socket_ops.apply_stream_socket_options(_fd, _opt.nodelay, _opt.keepalive);
     (void)_socket_ops.set_nonblocking(_fd);
 }
 
 void TcpNetworkProtocolCommon::handle_io_error(IoDir dir, int errno_val)
 {
     // EAGAIN/EWOULDBLOCK: no data/progress yet, not an error
-    if (errno_val == ERR_EWOULDBLOCK || errno_val == ERR_EAGAIN) {
+    if (_socket_ops.is_would_block(errno_val)) {
         return;
     }
 
     // Peer closed/reset connection - treat as EOF
-    if (errno_val == ERR_ECONNRESET || errno_val == ERR_ENOTCONN || errno_val == ERR_EPIPE) {
+    if (_socket_ops.is_peer_gone(errno_val)) {
         // Only log once per transition to PeerClosed
         if (_state != State::PeerClosed) {
             FN_LOGW(TAG, "TCP peer closed/reset connection (%s, errno=%d); treating as EOF",
@@ -220,7 +192,7 @@ void TcpNetworkProtocolCommon::step_connect()
     if (!_socket_ops.poll_connect_complete(_fd)) {
         // Still connecting or error
         const int err = _socket_ops.last_errno();
-        if (err != 0 && err != ERR_EINPROGRESS && err != ERR_EWOULDBLOCK && err != ERR_EAGAIN) {
+        if (err != 0 && !(_socket_ops.is_in_progress(err) || _socket_ops.is_would_block(err))) {
             set_error_from_errno(err);
             return;
         }
@@ -230,7 +202,7 @@ void TcpNetworkProtocolCommon::step_connect()
         if (_opt.connect_timeout_ms > 0 &&
             _connect_start_ms > 0 &&
             (now - _connect_start_ms) > static_cast<std::uint64_t>(_opt.connect_timeout_ms)) {
-            set_error_from_errno(ERR_ETIMEDOUT);
+            set_error_from_errno(_socket_ops.err_timed_out());
             return;
         }
         return; // still connecting
@@ -283,11 +255,9 @@ void TcpNetworkProtocolCommon::pump_recv()
         free_contig = std::min(free_contig, free_total);
         if (free_contig == 0) break;
 
-        // Pass flags=0, let platform ops handle nonblocking behavior
         const SSize n = _socket_ops.recv(_fd,
                                          reinterpret_cast<void*>(&_rx[write_pos]),
-                                         free_contig,
-                                         0);
+                                         free_contig);
         if (n > 0) {
             _rx_tail = (_rx_tail + static_cast<std::size_t>(n)) % _rx.size();
             if (_rx_tail == _rx_head) _rx_full = true;
@@ -356,29 +326,14 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::open(const fujinet::io::Networ
     _rx.assign(_opt.rx_buf, 0);
 
     // Use ops interface for address resolution
-    // We need to create a platform-compatible hints structure
-    // Since we can't include addrinfo in common code, we use an opaque buffer
-    // that the platform ops will cast to struct addrinfo
-    struct {
-        int ai_flags;
-        int ai_family;
-        int ai_socktype;
-        int ai_protocol;
-        std::uint32_t ai_addrlen;
-        void* ai_canonname;
-        void* ai_addr;
-        void* ai_next;
-    } hints_storage {};
-    hints_storage.ai_family = 0; // AF_UNSPEC
-    hints_storage.ai_socktype = 1; // SOCK_STREAM
-    hints_storage.ai_protocol = 6; // IPPROTO_TCP
+    const void* hints = _socket_ops.tcp_stream_addrinfo_hints();
 
     AddrInfo* res = nullptr;
     const std::string portStr = std::to_string(_port);
-    const int gai = _socket_ops.getaddrinfo(_host.c_str(), portStr.c_str(), &hints_storage, &res);
+    const int gai = _socket_ops.getaddrinfo(_host.c_str(), portStr.c_str(), hints, &res);
     if (gai != 0 || !res) {
         // map DNS failure -> IOError
-        set_error_from_errno(ERR_EHOSTUNREACH);
+        set_error_from_errno(_socket_ops.err_host_unreach());
         if (res) _socket_ops.freeaddrinfo(res);
         return fujinet::io::StatusCode::IOError;
     }
@@ -408,7 +363,7 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::open(const fujinet::io::Networ
             break;
         }
         const int connect_err = _socket_ops.last_errno();
-        if (cr < 0 && (connect_err == ERR_EINPROGRESS || connect_err == ERR_EWOULDBLOCK || connect_err == ERR_EAGAIN)) {
+        if (cr < 0 && (_socket_ops.is_in_progress(connect_err) || _socket_ops.is_would_block(connect_err))) {
             _state = State::Connecting;
             lastErr = 0;
             break;
@@ -422,7 +377,7 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::open(const fujinet::io::Networ
     _socket_ops.freeaddrinfo(res);
 
     if (_fd < 0) {
-        set_error_from_errno(lastErr != 0 ? lastErr : ERR_ECONNREFUSED);
+        set_error_from_errno(lastErr != 0 ? lastErr : _socket_ops.err_conn_refused());
         return fujinet::io::StatusCode::IOError;
     }
 
@@ -459,8 +414,7 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::write_body(std::uint32_t offse
     }
     if (_fd < 0) return fujinet::io::StatusCode::IOError;
 
-    // Pass flags=0, let platform ops handle nonblocking and platform-specific flags
-    const SSize n = _socket_ops.send(_fd, data, len, 0);
+    const SSize n = _socket_ops.send(_fd, data, len);
     if (n > 0) {
         const std::size_t nn = static_cast<std::size_t>(n);
         _write_cursor += static_cast<std::uint32_t>(nn);
@@ -473,7 +427,7 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::write_body(std::uint32_t offse
     }
 
     const int err = _socket_ops.last_errno();
-    if (err == ERR_EWOULDBLOCK || err == ERR_EAGAIN) {
+    if (_socket_ops.is_would_block(err)) {
         return fujinet::io::StatusCode::DeviceBusy;
     }
 

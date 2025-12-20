@@ -16,6 +16,22 @@ namespace fujinet::net {
 
 class PosixTcpSocketOps final : public ITcpSocketOps {
 public:
+    const void* tcp_stream_addrinfo_hints() const noexcept override
+    {
+        // Provide stable, platform-native addrinfo hints for a TCP stream socket.
+        // (Common code must not assume AF_*/SOCK_*/IPPROTO_* numeric values.)
+        static struct addrinfo hints {};
+        static bool inited = false;
+        if (!inited) {
+            hints = {};
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_STREAM;
+            hints.ai_protocol = IPPROTO_TCP;
+            inited = true;
+        }
+        return &hints;
+    }
+
     int socket(int domain, int type, int protocol) override
     {
         return ::socket(domain, type, protocol);
@@ -53,18 +69,20 @@ public:
         return pr > 0; // true if ready, false if still connecting
     }
 
-    SSize send(int fd, const void* buf, std::size_t len, int flags) override
-    {
-        // Apply platform-specific flags for nonblocking behavior
-        int platform_flags = MSG_DONTWAIT | MSG_NOSIGNAL;
-        return ::send(fd, buf, len, platform_flags);
-    }
-
-    SSize recv(int fd, void* buf, std::size_t len, int flags) override
+    SSize send(int fd, const void* buf, std::size_t len) override
     {
         // Apply platform-specific flags for nonblocking behavior
         int platform_flags = MSG_DONTWAIT;
-        return ::recv(fd, buf, len, platform_flags);
+#ifdef MSG_NOSIGNAL
+        platform_flags |= MSG_NOSIGNAL;
+#endif
+        return ::send(fd, buf, len, platform_flags);
+    }
+
+    SSize recv(int fd, void* buf, std::size_t len) override
+    {
+        // Apply platform-specific flags for nonblocking behavior
+        return ::recv(fd, buf, len, MSG_DONTWAIT);
     }
 
     int shutdown_write(int fd) override
@@ -87,7 +105,20 @@ public:
         return ::setsockopt(fd, level, optname, optval, static_cast<socklen_t>(optlen));
     }
 
-    int getaddrinfo(const char* host, const char* port, void* hints, AddrInfo** out) override
+    void apply_stream_socket_options(int fd, bool nodelay, bool keepalive) override
+    {
+        if (fd < 0) return;
+        if (nodelay) {
+            int v = 1;
+            (void)::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &v, static_cast<socklen_t>(sizeof(v)));
+        }
+        if (keepalive) {
+            int v = 1;
+            (void)::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &v, static_cast<socklen_t>(sizeof(v)));
+        }
+    }
+
+    int getaddrinfo(const char* host, const char* port, const void* hints, AddrInfo** out) override
     {
         struct addrinfo* res = nullptr;
         const int gai = ::getaddrinfo(host, port, static_cast<const struct addrinfo*>(hints), &res);
@@ -158,6 +189,36 @@ public:
     const char* err_string(int errno_val) override
     {
         return std::strerror(errno_val);
+    }
+
+    bool is_would_block(int errno_val) const noexcept override
+    {
+        return errno_val == EAGAIN || errno_val == EWOULDBLOCK;
+    }
+
+    bool is_in_progress(int errno_val) const noexcept override
+    {
+        return errno_val == EINPROGRESS;
+    }
+
+    bool is_peer_gone(int errno_val) const noexcept override
+    {
+        return errno_val == ECONNRESET || errno_val == ENOTCONN || errno_val == EPIPE;
+    }
+
+    int err_timed_out() const noexcept override
+    {
+        return ETIMEDOUT;
+    }
+
+    int err_conn_refused() const noexcept override
+    {
+        return ECONNREFUSED;
+    }
+
+    int err_host_unreach() const noexcept override
+    {
+        return EHOSTUNREACH;
     }
 };
 
