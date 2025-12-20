@@ -243,11 +243,10 @@ class C_0018080614400737831579 {
 -apply_socket_options() : void
 -build_info_headers() const : std::string
 +close() : void
--handle_recv_error(int errno_val) : void
--handle_send_error(int errno_val) : void
+-handle_io_error(IoDir dir, int errno_val) : void
 +info(std::size_t maxHeaderBytes, io::NetworkInfo & out) : io::StatusCode
 +last_errno() const noexcept : int
-+open(const io::NetworkOpenRequest & req, int (*)(const char *,const char *,const struct addrinfo *,struct addrinfo **) resolve_addr, void (*)(struct addrinfo *) free_addr) : io::StatusCode
++open(const io::NetworkOpenRequest & req) : io::StatusCode
 {static} +parse_tcp_url(const std::string & url, std::string & outHost, std::uint16_t & outPort, Options & outOpt) : bool
 +peer_closed() const noexcept : bool
 +poll() : void
