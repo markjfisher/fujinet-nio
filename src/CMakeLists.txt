@@ -27,6 +27,7 @@ idf_component_register(
         lib/network_protocol_stub.cpp
         lib/routing_manager.cpp
         lib/storage_manager.cpp
+        lib/tcp_network_protocol_common.cpp
         platform/esp32/channel_factory.cpp
         platform/esp32/fs_factory.cpp
         platform/esp32/fs_init.cpp
@@ -39,6 +40,7 @@ idf_component_register(
         platform/esp32/pinmap.cpp
         platform/esp32/sntp_service.cpp
         platform/esp32/tcp_network_protocol_espidf.cpp
+        platform/esp32/tcp_socket_ops_espidf.cpp
         platform/esp32/time.cpp
         platform/esp32/usb_cdc_channel.cpp
         platform/esp32/wifi_link.cpp

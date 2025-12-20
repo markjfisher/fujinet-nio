@@ -1,10 +1,10 @@
 #pragma once
 
 #include "fujinet/io/devices/network_protocol.h"
+#include "fujinet/net/tcp_network_protocol_common.h"
 
 #include <cstdint>
-#include <string>
-#include <vector>
+#include <cstddef>
 
 namespace fujinet::platform::esp32 {
 
@@ -31,55 +31,7 @@ public:
     void close() override;
 
 private:
-    struct Options {
-        int connect_timeout_ms = 5000;
-        bool nodelay = true;
-        bool keepalive = false;
-        std::size_t rx_buf = 8192;
-        bool halfclose = true;
-    };
-
-    enum class State {
-        Idle,
-        Connecting,
-        Connected,
-        PeerClosed,
-        Error
-    };
-
-    static bool parse_tcp_url(const std::string& url,
-                              std::string& outHost,
-                              std::uint16_t& outPort,
-                              Options& outOpt);
-
-    void reset_state();
-    void set_error(int e);
-    void apply_socket_options();
-    void step_connect();
-    void pump_recv();
-    std::size_t rx_available() const noexcept;
-    std::string build_info_headers() const;
-
-private:
-    int _fd = -1;
-
-    State _state = State::Idle;
-    bool _peer_closed = false;
-
-    std::string _host;
-    std::uint16_t _port = 0;
-    Options _opt{};
-
-    std::uint32_t _read_cursor = 0;
-    std::uint32_t _write_cursor = 0;
-
-    std::vector<std::uint8_t> _rx;
-    std::size_t _rx_head = 0;
-    std::size_t _rx_tail = 0;
-    bool _rx_full = false;
-
-    std::uint32_t _connect_start_ms = 0;
-    int _last_errno = 0;
+    fujinet::net::TcpNetworkProtocolCommon _common;
 };
 
 } // namespace fujinet::platform::esp32

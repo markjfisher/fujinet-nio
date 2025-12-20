@@ -88,6 +88,7 @@ target_sources(fujinet-nio
         src/lib/network_protocol_stub.cpp
         src/lib/routing_manager.cpp
         src/lib/storage_manager.cpp
+        src/lib/tcp_network_protocol_common.cpp
         src/platform/posix/channel_factory.cpp
         src/platform/posix/fs_factory.cpp
         src/platform/posix/fuji_config_store_factory.cpp
@@ -97,6 +98,7 @@ target_sources(fujinet-nio
         src/platform/posix/logging.cpp
         src/platform/posix/network_registry.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
+        src/platform/posix/tcp_socket_ops_posix.cpp
         src/platform/posix/time.cpp
 # __TARGET_SOURCES_END__
         third_party/cjson/cJSON.c
