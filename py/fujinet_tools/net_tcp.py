@@ -660,7 +660,18 @@ def cmd_net_tcp_sendrecv(args) -> int:
         idle_deadline = time.monotonic() + max(args.idle_timeout, 0.0)
         total = 0
         while True:
-            chunk, eof = tcp_recv_some(bus=bus, sess=sess, timeout=args.timeout, max_bytes=args.read_chunk)
+            try:
+                chunk, eof = tcp_recv_some(bus=bus, sess=sess, timeout=args.timeout, max_bytes=args.read_chunk)
+            except RuntimeError as e:
+                # If we've already received some bytes, and the peer disappears abruptly (RST/close),
+                # the device may report IOError. For "sendrecv" this should behave like EOF.
+                msg = str(e)
+                if ("status=5" in msg or "IOError" in msg) and total > 0:
+                    eof = True
+                    chunk = b""
+                else:
+                    raise
+
             if chunk:
                 total += len(chunk)
                 idle_deadline = time.monotonic() + max(args.idle_timeout, 0.0)
