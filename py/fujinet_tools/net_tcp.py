@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 
 from .fujibus import FujiBusSession
 from . import netproto as np
-from .common import status_ok
+from .common import status_ok, open_serial
 
 # Reuse status text mapping from net.py style (keep local so this file is standalone)
 STATUS_TEXT = {
@@ -421,11 +421,9 @@ def cmd_net_tcp_repl(args) -> int:
       close
       quit / exit
     """
-    import serial  # type: ignore
-
     url = args.url
 
-    with serial.Serial(port=args.port, baudrate=args.baud, timeout=0.01, write_timeout=0.01) as ser:
+    with open_serial(port=args.port, baud=args.baud, timeout_s=args.timeout) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         sess = None
@@ -599,7 +597,7 @@ def cmd_net_tcp_repl(args) -> int:
     return 0
 
 def cmd_net_tcp_connect(args) -> int:
-    with serial.Serial(port=args.port, baudrate=args.baud, timeout=0.01, write_timeout=0.01) as ser:
+    with open_serial(port=args.port, baud=args.baud, timeout_s=args.timeout) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
         url = args.url
         if args.host and args.port:
@@ -635,7 +633,7 @@ def cmd_net_tcp_sendrecv(args) -> int:
             return 1
         out_path.write_bytes(b"")
 
-    with serial.Serial(port=args.port, baudrate=args.baud, timeout=0.01, write_timeout=0.01) as ser:
+    with open_serial(port=args.port, baud=args.baud, timeout_s=args.timeout) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
         sess = tcp_open(
             bus=bus,
