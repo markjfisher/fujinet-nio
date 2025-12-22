@@ -12,6 +12,24 @@ Design goals:
 
 This protocol sits **above** any HTTP/TLS implementation and **above** any socket stack. It is purely a device protocol.
 
+This document describes the v1 NetworkDevice binary protocol and its command
+semantics (Open / Read / Write / Info / Close).
+
+The protocol is transport-agnostic: multiple network schemes may be implemented
+over it. At present, two schemes exist:
+
+- HTTP/HTTPS (request–response semantics)
+- TCP (stream socket semantics)
+
+HTTP behavior is documented inline below.
+TCP stream behavior is documented separately in:
+
+  docs/network_device_tcp.md
+
+Unless explicitly stated otherwise, command semantics described here apply to
+both HTTP and TCP. Where semantics differ (e.g. offsets, EOF behavior, Info()),
+the TCP document is authoritative.
+
 ---
 
 ## Terminology
@@ -230,6 +248,28 @@ For TCP handles, a zero-length write MAY be used as a send-finish signal:
 - `Write(handle, offset=write_cursor, dataLen=0)` MAY cause the backend to call `shutdown(SHUT_WR)`
   (if enabled by backend configuration such as `halfclose=1` in the URL).
 
+### Offset semantics (scheme-dependent)
+
+As with Read, the meaning of `offset` depends on the scheme:
+
+- For HTTP/HTTPS:
+  - Writes append to the outgoing request body.
+  - Offset is typically ignored or must be zero.
+
+- For TCP:
+  - `offset` is a sequential stream cursor.
+  - Writes MUST be strictly sequential.
+  - A Write request whose `offset` does not match the current stream write
+    cursor MUST fail with StatusCode::InvalidRequest.
+
+### Zero-length write (TCP half-close)
+
+For the TCP scheme, a Write request with `length == 0` MAY be used to signal
+end-of-stream (half-close), if enabled by the URL options. This maps to a
+shutdown of the socket write side (e.g. `shutdown(SHUT_WR)`).
+
+See docs/network_device_tcp.md for details.
+
 ---
 
 ## Command: Read (0x02)
@@ -279,6 +319,23 @@ The meaning of `offset` depends on the protocol bound to the handle:
   - Offset represents a **monotonic read cursor** (bytes delivered so far).
   - The device/backend MUST require strictly sequential offsets:
     - If `offset` is a rewind or gap, return `InvalidRequest`.
+
+### Offset semantics (scheme-dependent)
+
+The meaning of the `offset` field depends on the active network scheme:
+
+- For HTTP/HTTPS:
+  - `offset` refers to a byte offset within the response body.
+  - Random-access reads MAY be supported by the backend (e.g. via range
+    requests), but are not guaranteed.
+
+- For TCP:
+  - `offset` is a sequential stream cursor.
+  - Reads MUST be strictly sequential.
+  - A Read request whose `offset` does not match the current stream read
+    cursor MUST fail with StatusCode::InvalidRequest.
+
+See docs/network_device_tcp.md for full TCP stream semantics.
 
 #### READ behavior notes (important)
 
@@ -355,6 +412,32 @@ The Info wire format is stable, but interpretation is scheme-specific:
 - `Info()` MAY return `Ok` before any body data is readable.
 - `Read()` MAY return `NotReady` even after `Info()` succeeds.
 - Hosts MUST treat both commands as independently retryable.
+
+### TCP scheme behavior
+
+For the TCP scheme:
+
+- HTTP-specific fields (httpStatus, contentLength) are not meaningful and are
+  reported as absent.
+- Connection state and stream status are exposed via pseudo-headers in the
+  headers block.
+
+Implementations MAY include the following headers:
+
+- X-FujiNet-Scheme: tcp
+- X-FujiNet-Remote: host:port
+- X-FujiNet-Connecting: 0|1
+- X-FujiNet-Connected: 0|1
+- X-FujiNet-PeerClosed: 0|1
+- X-FujiNet-RxAvailable: <bytes currently buffered>
+- X-FujiNet-ReadCursor: <current stream read offset>
+- X-FujiNet-WriteCursor: <current stream write offset>
+- X-FujiNet-LastError: <platform errno value or 0>
+
+These headers allow TCP connection state to be queried without breaking v1
+compatibility.
+
+See docs/network_device_tcp.md for authoritative TCP definitions.
 
 ---
 

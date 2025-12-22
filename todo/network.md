@@ -181,17 +181,17 @@ Rationale:
 - [ ] Tune timeouts and remove host-side “timeout-driven polling” where possible (use retry-on-NotReady with a short sleep/backoff).
 
 ## 4) TCP protocol backend (stream sockets)
-- [ ] Define scheme and URL form for TCP:
+- [x] Define scheme and URL form for TCP:
       - e.g. tcp://host:port (and possibly tls://host:port later)
-- [ ] Implement TCP backend on POSIX:
+- [x] Implement TCP backend on POSIX:
       - non-blocking socket or blocking with sane timeouts
       - read_body streams bytes; write_body sends bytes
       - info() provides connected/errored and bytes-available if you can support it
-- [ ] Implement TCP backend on ESP32:
+- [x] Implement TCP backend on ESP32:
       - lwIP sockets
       - ring/stream buffer for RX, with backpressure
       - write_body sends immediately (or buffered) with sequential offsets
-- [ ] Decide how to support “bytes waiting”:
+- [x] Decide how to support “bytes waiting”:
       - expose via info() (v1) or a dedicated “status” command in v2
       - define meaning precisely for both HTTP and TCP:
           - bytes waiting right now in RX buffer

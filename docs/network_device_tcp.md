@@ -1,5 +1,14 @@
 # NetworkDevice TCP Protocol Semantics (v1)
 
+This document defines the TCP (stream socket) semantics for the v1
+NetworkDevice protocol.
+
+It supplements the generic protocol definition in:
+
+  docs/network_device_protocol.md
+
+Where the two documents overlap, this document is authoritative for TCP.
+
 This document defines how TCP stream sockets are implemented on top of the
 existing NetworkDevice v1 binary protocol.
 
