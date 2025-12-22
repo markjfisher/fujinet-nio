@@ -402,7 +402,8 @@ def send_command(
     if isinstance(port, serial.Serial):
         return _do(port)
 
-    with serial.Serial(port, baud, timeout=0.01) as ser:
+    # Use consistent timeout settings (avoid circular import with common.open_serial)
+    with serial.Serial(port=port, baudrate=baud, timeout=timeout, write_timeout=max(1.0, timeout)) as ser:
         return _do(ser)
 
 
@@ -436,5 +437,6 @@ def send_command_expect(
     if isinstance(port, serial.Serial):
         return _do(port)
 
-    with serial.Serial(port, baud, timeout=0.01) as ser:
+    # Use consistent timeout settings (avoid circular import with common.open_serial)
+    with serial.Serial(port=port, baudrate=baud, timeout=timeout, write_timeout=max(1.0, timeout)) as ser:
         return _do(ser)
