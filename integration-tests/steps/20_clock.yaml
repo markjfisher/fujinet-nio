@@ -3,5 +3,5 @@ steps:
   - name: "Clock: get"
     argv: ["{CLI}", "clock", "get"]
     expect:
-      - '\d{4}|\d{2}:\d{2}|\d+'
+      - 'device utc : \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z'
     timeout_s: 5
