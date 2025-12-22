@@ -225,24 +225,31 @@ def _inject_out_flag(argv: List[str], out_path: str) -> List[str]:
     if len(argv) < 2 or argv[0] != "./scripts/fujinet":
         return argv
 
-    # Check subcommand
+    # Check subcommand and determine if it needs --force
     subcmd_idx = None
+    needs_force = False
     for i, arg in enumerate(argv):
         if arg in ("read", "read-all"):
             subcmd_idx = i
+            needs_force = False  # file commands don't need --force
             break
         elif i > 0 and argv[i-1] in ("net",) and arg in ("get", "send"):
             subcmd_idx = i
+            needs_force = True  # net get/send need --force to overwrite
             break
         elif i > 1 and argv[i-2] == "net" and argv[i-1] == "tcp" and arg == "sendrecv":
             subcmd_idx = i
+            needs_force = True  # net tcp sendrecv needs --force to overwrite
             break
 
     if subcmd_idx is None:
         return argv
 
-    # Insert --out after the subcommand
-    new_argv = argv[:subcmd_idx+1] + ["--out", out_path] + argv[subcmd_idx+1:]
+    # Insert --out (and --force if needed) after the subcommand
+    injection = ["--out", out_path]
+    if needs_force and "--force" not in argv:
+        injection.append("--force")
+    new_argv = argv[:subcmd_idx+1] + injection + argv[subcmd_idx+1:]
     return new_argv
 
 
