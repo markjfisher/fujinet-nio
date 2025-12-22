@@ -8,10 +8,6 @@ steps:
 
   - name: "FS: write UTF-8 content to ASCII filename"
     argv: ["{CLI}", "write", "{FS}", "/utf8_content.txt", "integration-tests/data/fs_utf8.txt"]
-    expect:
-      # write prints nothing reliable today; just ensure it didn't error by expecting nothing.
-      # (runner should treat empty expect as "exit code == 0". If it requires expect, remove this key.)
-      - ""
     timeout_s: 15
 
   - name: "FS: read-all UTF-8 content back"
@@ -25,14 +21,20 @@ steps:
   - name: "FS: write large file (>512 bytes) in chunks"
     argv: ["{CLI}", "write", "--chunk", "256", "{FS}", "/large_1k.bin", "integration-tests/data/fs_large_1k.bin"]
     expect:
+      # this is generating the file on the target, no expectation here
       - ""
     timeout_s: 20
 
   - name: "FS: read-all large file back (sanity substring)"
     argv: ["{CLI}", "read-all", "{FS}", "/large_1k.bin"]
-    expect:
-      # The fixture starts with a recognizable ASCII prefix before binary-ish tail.
-      - "FUJINET-NIO-LARGE-FILE"
+    capture:
+      mode: "file"
+    expect_file:
+      path: "{CAPTURED_OUT}"
+      contains_text:
+        - "FUJINET-NIO-LARGE-FILE"
+      size_exact: 1047
+      sha256: "2e0e69f4a65e592c62ab244667711eb5dd81310cdde5929c7162ad2b9329da7c"
     timeout_s: 20
 
   - name: "FS: UTF-8 filename (write)"

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -21,6 +24,24 @@ except ImportError as e:
 
 
 @dataclass
+class CaptureConfig:
+    mode: str = "text"  # "text" | "bytes" | "file"
+    encoding: str = "utf-8"
+    errors: str = "replace"
+    out: Optional[str] = None  # explicit path, or None to use tempfile
+
+
+@dataclass
+class ExpectFileConfig:
+    path: str  # "{CAPTURED_OUT}" or explicit path
+    contains_text: List[str] = field(default_factory=list)
+    contains_bytes_hex: List[str] = field(default_factory=list)
+    sha256: Optional[str] = None
+    size_min: Optional[int] = None
+    size_exact: Optional[int] = None
+
+
+@dataclass
 class Step:
     group: str
     name: str
@@ -29,6 +50,10 @@ class Step:
     expect: List[str]
     forbid: List[str]
     timeout_s: float
+    capture: CaptureConfig = field(default_factory=CaptureConfig)
+    expect_file: Optional[ExpectFileConfig] = None
+    expect_cmd: List[List[str]] = field(default_factory=list)
+    expect_exit: int = 0
 
 
 def _default_endpoints(ip: str) -> tuple[str, str]:
@@ -71,6 +96,48 @@ def _expand_argv(argv_tpl: List[Any], vars: Dict[str, str], cli_parts: List[str]
     return out
 
 
+def _parse_capture_config(capture_dict: Optional[Dict[str, Any]]) -> CaptureConfig:
+    """Parse capture configuration from YAML."""
+    if capture_dict is None:
+        return CaptureConfig()  # defaults
+
+    if not isinstance(capture_dict, dict):
+        raise ValueError("'capture' must be a mapping (dict)")
+
+    mode = capture_dict.get("mode", "text")
+    if mode not in ("text", "bytes", "file"):
+        raise ValueError(f"capture.mode must be 'text', 'bytes', or 'file', got {mode!r}")
+
+    return CaptureConfig(
+        mode=mode,
+        encoding=capture_dict.get("encoding", "utf-8"),
+        errors=capture_dict.get("errors", "replace"),
+        out=capture_dict.get("out"),
+    )
+
+
+def _parse_expect_file_config(expect_file_dict: Optional[Dict[str, Any]]) -> Optional[ExpectFileConfig]:
+    """Parse expect_file configuration from YAML."""
+    if expect_file_dict is None:
+        return None
+
+    if not isinstance(expect_file_dict, dict):
+        raise ValueError("'expect_file' must be a mapping (dict)")
+
+    path = expect_file_dict.get("path")
+    if not isinstance(path, str):
+        raise ValueError("expect_file.path must be a string")
+
+    return ExpectFileConfig(
+        path=path,
+        contains_text=expect_file_dict.get("contains_text", []),
+        contains_bytes_hex=expect_file_dict.get("contains_bytes_hex", []),
+        sha256=expect_file_dict.get("sha256"),
+        size_min=expect_file_dict.get("size_min"),
+        size_exact=expect_file_dict.get("size_exact"),
+    )
+
+
 def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[str]) -> List[Step]:
     doc = _load_yaml_file(path)
 
@@ -92,6 +159,7 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
         expect = s.get("expect", [])
         forbid = s.get("forbid", [])
         timeout_s = float(s.get("timeout_s", 8.0))
+        expect_exit = int(s.get("expect_exit", 0))
 
         if not isinstance(name, str) or not name.strip():
             raise ValueError(f"{path}: step {i} missing/invalid 'name'")
@@ -104,6 +172,25 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
 
         argv = _expand_argv(argv_tpl, vars=vars, cli_parts=cli_parts)
 
+        # Parse capture config
+        capture = _parse_capture_config(s.get("capture"))
+
+        # Parse expect_file config
+        expect_file = _parse_expect_file_config(s.get("expect_file"))
+
+        # Parse expect_cmd
+        expect_cmd_raw = s.get("expect_cmd", [])
+        if not isinstance(expect_cmd_raw, list):
+            raise ValueError(f"{path}: step {i} 'expect_cmd' must be a list")
+        expect_cmd: List[List[str]] = []
+        for j, cmd_item in enumerate(expect_cmd_raw):
+            if not isinstance(cmd_item, dict):
+                raise ValueError(f"{path}: step {i} expect_cmd[{j}] must be a mapping (dict)")
+            cmd_argv = cmd_item.get("argv")
+            if not isinstance(cmd_argv, list):
+                raise ValueError(f"{path}: step {i} expect_cmd[{j}].argv must be a list")
+            expect_cmd.append([str(x) for x in cmd_argv])
+
         out.append(
             Step(
                 group=group,
@@ -113,56 +200,280 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
                 expect=[str(p) for p in expect],
                 forbid=[str(p) for p in forbid],
                 timeout_s=timeout_s,
+                capture=capture,
+                expect_file=expect_file,
+                expect_cmd=expect_cmd,
+                expect_exit=expect_exit,
             )
         )
 
     return out
 
 
-def run_step(step: Step, *, show_output_on_success: bool) -> bool:
+def _has_out_flag(argv: List[str]) -> bool:
+    """Check if argv already contains --out flag."""
+    return "--out" in argv
+
+
+def _inject_out_flag(argv: List[str], out_path: str) -> List[str]:
+    """Inject --out flag into argv if not present and command supports it."""
+    if _has_out_flag(argv):
+        return argv
+
+    # Commands that support --out: read, read-all, net get, net send, net tcp sendrecv
+    # Check if it's a fujinet command that supports --out
+    if len(argv) < 2 or argv[0] != "./scripts/fujinet":
+        return argv
+
+    # Check subcommand
+    subcmd_idx = None
+    for i, arg in enumerate(argv):
+        if arg in ("read", "read-all"):
+            subcmd_idx = i
+            break
+        elif i > 0 and argv[i-1] in ("net",) and arg in ("get", "send"):
+            subcmd_idx = i
+            break
+        elif i > 1 and argv[i-2] == "net" and argv[i-1] == "tcp" and arg == "sendrecv":
+            subcmd_idx = i
+            break
+
+    if subcmd_idx is None:
+        return argv
+
+    # Insert --out after the subcommand
+    new_argv = argv[:subcmd_idx+1] + ["--out", out_path] + argv[subcmd_idx+1:]
+    return new_argv
+
+
+def _validate_expect_file(
+    file_path: Path, config: ExpectFileConfig, captured_out_path: Optional[str]
+) -> Tuple[bool, str]:
+    """Validate file expectations. Returns (ok, error_msg)."""
+    # Expand {CAPTURED_OUT} placeholder
+    if config.path == "{CAPTURED_OUT}":
+        if captured_out_path is None:
+            return False, "expect_file.path is {CAPTURED_OUT} but no file was captured"
+        actual_path = Path(captured_out_path)
+    else:
+        actual_path = Path(config.path)
+
+    if not actual_path.exists():
+        return False, f"expect_file.path does not exist: {actual_path}"
+
+    file_bytes = actual_path.read_bytes()
+    file_size = len(file_bytes)
+
+    # Size checks
+    if config.size_exact is not None:
+        if file_size != config.size_exact:
+            return False, f"expect_file.size_exact: expected {config.size_exact}, got {file_size}"
+
+    if config.size_min is not None:
+        if file_size < config.size_min:
+            return False, f"expect_file.size_min: expected >= {config.size_min}, got {file_size}"
+
+    # SHA256 check
+    if config.sha256:
+        computed = hashlib.sha256(file_bytes).hexdigest()
+        if computed.lower() != config.sha256.lower():
+            return False, f"expect_file.sha256: expected {config.sha256}, got {computed}"
+
+    # Text content checks
+    if config.contains_text:
+        file_text = file_bytes.decode("utf-8", errors="replace")
+        for pattern in config.contains_text:
+            if not re.search(pattern, file_text, re.MULTILINE):
+                return False, f"expect_file.contains_text: pattern not found: {pattern!r}"
+
+    # Binary content checks
+    if config.contains_bytes_hex:
+        for hex_str in config.contains_bytes_hex:
+            try:
+                search_bytes = bytes.fromhex(hex_str)
+                if search_bytes not in file_bytes:
+                    return False, f"expect_file.contains_bytes_hex: bytes not found: {hex_str}"
+            except ValueError as e:
+                return False, f"expect_file.contains_bytes_hex: invalid hex string {hex_str!r}: {e}"
+
+    return True, ""
+
+
+def run_step(
+    step: Step, *, show_output_on_success: bool, keep_temp: bool = False, repo_root: Path
+) -> bool:
     print(f"  -> {step.name}")
     print(f"     $ {' '.join(step.argv)}")
 
+    # Determine if we need file capture
+    needs_file_capture = step.capture.mode == "file" or step.expect_file is not None
+    captured_out_path: Optional[str] = None
+    temp_file: Optional[Path] = None
+
+    # Handle file capture mode
+    if needs_file_capture:
+        if step.capture.out:
+            captured_out_path = step.capture.out
+        else:
+            # Create temp file
+            temp_fd, temp_path_str = tempfile.mkstemp(prefix="fujinet-test-", suffix=".bin")
+            os.close(temp_fd)  # We'll open it via Path
+            temp_file = Path(temp_path_str)
+            captured_out_path = str(temp_file)
+
+        # Inject --out if needed and possible
+        if not _has_out_flag(step.argv):
+            step_argv = _inject_out_flag(step.argv, captured_out_path)
+            if step_argv == step.argv:
+                # Command doesn't support --out, redirect stdout instead
+                step_argv = step.argv
+                # We'll handle stdout redirection in subprocess.run
+        else:
+            step_argv = step.argv
+            # If --out is already present, extract it
+            out_idx = step_argv.index("--out")
+            if out_idx + 1 < len(step_argv):
+                captured_out_path = step_argv[out_idx + 1]
+    else:
+        step_argv = step.argv
+
+    # Run the command
+    stdout_dest = subprocess.PIPE
+    stderr_dest = subprocess.STDOUT
+    stdout_file_handle = None
+
+    # If file mode and --out injection failed, redirect stdout to file
+    if needs_file_capture and not _has_out_flag(step_argv) and captured_out_path:
+        stdout_file_handle = open(captured_out_path, "wb")
+        stdout_dest = stdout_file_handle
+        stderr_dest = subprocess.PIPE  # Keep stderr separate for error messages
+
     try:
         cp = subprocess.run(
-            step.argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            step_argv,
+            stdout=stdout_dest,
+            stderr=stderr_dest,
             timeout=step.timeout_s,
-            text=True,
+            text=False,  # Always capture as bytes first
         )
     except subprocess.TimeoutExpired:
         print("     TIMEOUT")
+        if temp_file and not keep_temp:
+            try:
+                temp_file.unlink()
+            except Exception:
+                pass
         return False
+    finally:
+        if stdout_file_handle:
+            stdout_file_handle.close()
 
-    out = cp.stdout or ""
+    # Decode output based on capture mode
+    stdout_bytes = cp.stdout if isinstance(cp.stdout, bytes) else b""
+    stderr_bytes = cp.stderr if isinstance(cp.stderr, bytes) else b""
+
+    if step.capture.mode == "text":
+        stdout_text = stdout_bytes.decode(step.capture.encoding, errors=step.capture.errors)
+        stderr_text = stderr_bytes.decode(step.capture.encoding, errors=step.capture.errors)
+        combined_text = stdout_text + stderr_text
+    elif step.capture.mode == "bytes":
+        # For bytes mode, create a hex dump representation for text matching
+        combined_text = stdout_bytes.hex() + stderr_bytes.hex()
+    else:  # file mode
+        # Output went to file, decode stderr only for error messages
+        combined_text = stderr_bytes.decode(step.capture.encoding, errors=step.capture.errors)
+
     ok = True
+    failure_msg = ""
 
-    if cp.returncode != 0:
+    # Check exit code
+    if cp.returncode != step.expect_exit:
         ok = False
-        print(out.rstrip())
-        print(f"     FAIL: exit code {cp.returncode}")
+        failure_msg = f"exit code {cp.returncode} (expected {step.expect_exit})"
 
-    if ok:
+    # Text expectations (always check if provided, even in file mode we check stderr)
+    if ok and step.expect:
         for pat in step.expect:
-            if not re.search(pat, out, re.MULTILINE):
+            if not re.search(pat, combined_text, re.MULTILINE):
                 ok = False
-                print(out.rstrip())
-                print(f"     FAIL: missing expected pattern: {pat!r}")
+                failure_msg = f"missing expected pattern: {pat!r}"
                 break
 
-    if ok:
+    # Forbid patterns
+    if ok and step.forbid:
         for pat in step.forbid:
-            if re.search(pat, out, re.MULTILINE):
+            if re.search(pat, combined_text, re.MULTILINE):
                 ok = False
-                print(out.rstrip())
-                print(f"     FAIL: matched forbidden pattern: {pat!r}")
+                failure_msg = f"matched forbidden pattern: {pat!r}"
                 break
 
-    if ok:
-        if show_output_on_success:
-            print(out.rstrip())
+    # File expectations
+    if ok and step.expect_file:
+        file_ok, file_error = _validate_expect_file(
+            Path(step.expect_file.path), step.expect_file, captured_out_path
+        )
+        if not file_ok:
+            ok = False
+            failure_msg = file_error
+
+    # Follow-on commands
+    if ok and step.expect_cmd:
+        for cmd_argv in step.expect_cmd:
+            # Expand {CAPTURED_OUT} placeholder
+            expanded_argv = []
+            for arg in cmd_argv:
+                if captured_out_path:
+                    arg = arg.replace("{CAPTURED_OUT}", captured_out_path)
+                arg = arg.replace("{TEST_STEP_NAME}", step.name)
+                expanded_argv.append(arg)
+
+            env = os.environ.copy()
+            if captured_out_path:
+                env["TEST_CAPTURED_OUT"] = captured_out_path
+            env["TEST_STEP_NAME"] = step.name
+
+            try:
+                cmd_cp = subprocess.run(
+                    expanded_argv,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=30.0,
+                    text=True,
+                    cwd=repo_root,
+                    env=env,
+                )
+                if cmd_cp.returncode != 0:
+                    ok = False
+                    failure_msg = f"expect_cmd failed (exit {cmd_cp.returncode}): {' '.join(expanded_argv)}"
+                    if cmd_cp.stdout:
+                        failure_msg += f"\n{cmd_cp.stdout}"
+                    break
+            except Exception as e:
+                ok = False
+                failure_msg = f"expect_cmd exception: {e}"
+                break
+
+    # Report results
+    if not ok:
+        print(f"     FAIL: {failure_msg}")
+        if step.capture.mode != "file":
+            print(combined_text.rstrip())
+        if captured_out_path:
+            cap_path = Path(captured_out_path)
+            if cap_path.exists():
+                print(f"     Captured file: {captured_out_path} ({cap_path.stat().st_size} bytes)")
+        if temp_file and keep_temp:
+            print(f"     Temp file preserved: {temp_file}")
+    else:
+        if show_output_on_success and step.capture.mode != "file":
+            print(combined_text.rstrip())
         print("     OK")
+        # Clean up temp file on success
+        if temp_file and not keep_temp:
+            try:
+                temp_file.unlink()
+            except Exception:
+                pass
 
     return ok
 
@@ -193,6 +504,7 @@ def main() -> int:
     ap.add_argument("--only-step", action="append", default=[], help="Run only step names matching substring (repeatable)")
 
     ap.add_argument("--show-output", action="store_true", help="Show full output even on success")
+    ap.add_argument("--keep-temp", action="store_true", help="Keep temporary files even on success (for debugging)")
 
     args = ap.parse_args()
 
@@ -269,13 +581,19 @@ def main() -> int:
 
     ok_all = True
     current_group = None
+    repo_root = Path(__file__).parent.parent  # integration-tests/.. = repo root
 
     for step in all_steps:
         if step.group != current_group:
             current_group = step.group
             print(f"\n=== {current_group} ===")
 
-        ok = run_step(step, show_output_on_success=args.show_output)
+        ok = run_step(
+            step,
+            show_output_on_success=args.show_output,
+            keep_temp=args.keep_temp,
+            repo_root=repo_root,
+        )
         ok_all = ok_all and ok
 
     if not ok_all:
