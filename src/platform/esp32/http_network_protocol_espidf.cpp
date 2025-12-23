@@ -37,28 +37,6 @@ static bool method_supported(std::uint8_t method) {
     }
 }
 
-static std::string to_lower_ascii(std::string_view s)
-{
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-    }
-    return out;
-}
-
-static bool header_requested(const HttpNetworkProtocolEspIdfState& s, const char* key)
-{
-    if (!key) return false;
-    if (s.response_header_names_lower.empty()) return false;
-
-    const std::string k = to_lower_ascii(key);
-    for (const auto& want : s.response_header_names_lower) {
-        if (want == k) return true;
-    }
-    return false;
-}
-
 struct HttpNetworkProtocolEspIdfState {
     static constexpr std::size_t rb_size = 8192;
     static constexpr TickType_t wait_step_ticks = pdMS_TO_TICKS(50);
@@ -133,6 +111,27 @@ struct HttpNetworkProtocolEspIdfState {
     std::string headers_block;
 };
 
+static std::string to_lower_ascii(std::string_view s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return out;
+}
+
+static bool header_requested(const HttpNetworkProtocolEspIdfState& s, const char* key)
+{
+    if (!key) return false;
+    if (s.response_header_names_lower.empty()) return false;
+
+    const std::string k = to_lower_ascii(key);
+    for (const auto& want : s.response_header_names_lower) {
+        if (want == k) return true;
+    }
+    return false;
+}
 
 static void take_mutex(SemaphoreHandle_t m)
 {

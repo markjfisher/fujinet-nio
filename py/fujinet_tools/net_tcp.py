@@ -71,7 +71,7 @@ def _send_retry(
             return None
 
         # keep each attempt short so we can handle NotReady/DeviceBusy with backoff
-        per_attempt_timeout = min(0.05, remaining)
+        per_attempt_timeout = min(0.10, remaining)
 
         pkt = bus.send_command_expect(
             device=device,
@@ -302,8 +302,11 @@ def tcp_recv_some(
     max_bytes: int,
 ) -> Tuple[bytes, bool]:
     """
-    Receive up to max_bytes. Returns (data, eof).
-    If no data is currently available, returns (b"", False) after NotReady.
+    Receive up to max_bytes.
+
+    Robust behaviour:
+    - If device reports NotReady (4), treat as "no data yet" and return (b"", False).
+    - (Caller should sleep/backoff on empty reads to avoid hot-looping.)
     """
     rreq = np.build_read_req(sess.handle, sess.read_offset, max_bytes)
     rpkt = _send_retry(
@@ -318,10 +321,10 @@ def tcp_recv_some(
     )
     if rpkt is None:
         raise RuntimeError("No response to Read")
+
     if not status_ok(rpkt):
         code = _pkt_status_code(rpkt)
-        # Treat NotReady as "no data" rather than an exception for interactive use
-        if code == 4:
+        if code == 4:  # NotReady
             return (b"", False)
         raise RuntimeError(f"Read failed: status={code} ({_status_str(code)})")
 
@@ -621,6 +624,7 @@ def cmd_net_tcp_connect(args) -> int:
 
 def cmd_net_tcp_sendrecv(args) -> int:
     data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
+
     out_path = Path(args.out) if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -631,6 +635,8 @@ def cmd_net_tcp_sendrecv(args) -> int:
 
     with open_serial(port=args.port, baud=args.baud, timeout_s=args.timeout) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
+
+        # Open TCP stream and wait for connect
         sess = tcp_open(
             bus=bus,
             url=args.url,
@@ -640,34 +646,43 @@ def cmd_net_tcp_sendrecv(args) -> int:
         )
 
         if args.show_info:
-            tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
+            # max_headers arg is legacy; tcp_info_print ignores it after your earlier update
+            tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
 
-        # send
+        # Send payload
         if data:
             tcp_send(bus=bus, sess=sess, data=data, timeout=args.timeout, chunk=args.write_chunk)
 
+        # Halfclose TX if requested
         if args.halfclose:
             tcp_halfclose(bus=bus, sess=sess, timeout=args.timeout)
 
-        # receive loop (until eof, or until no data for --idle-timeout)
-        idle_deadline = time.monotonic() + max(args.idle_timeout, 0.0)
+        # Receive loop:
+        # - write any received bytes
+        # - reset idle timer on progress
+        # - sleep briefly on empty reads (prevents hot-loop flakiness)
+        idle_window = max(float(args.idle_timeout), 0.25) if float(args.idle_timeout) > 0 else 0.0
+        idle_deadline = time.monotonic() + idle_window if idle_window > 0 else float("inf")
+
         total = 0
         while True:
             try:
                 chunk, eof = tcp_recv_some(bus=bus, sess=sess, timeout=args.timeout, max_bytes=args.read_chunk)
             except RuntimeError as e:
                 # If we've already received some bytes, and the peer disappears abruptly (RST/close),
-                # the device may report IOError. For "sendrecv" this should behave like EOF.
+                # the device may report IOError. Treat that as EOF once we've got data.
                 msg = str(e)
                 if ("status=5" in msg or "IOError" in msg) and total > 0:
-                    eof = True
                     chunk = b""
+                    eof = True
                 else:
                     raise
 
             if chunk:
                 total += len(chunk)
-                idle_deadline = time.monotonic() + max(args.idle_timeout, 0.0)
+                if idle_window > 0:
+                    idle_deadline = time.monotonic() + idle_window
+
                 if out_path:
                     with out_path.open("ab") as f:
                         f.write(chunk)
@@ -675,18 +690,26 @@ def cmd_net_tcp_sendrecv(args) -> int:
                     sys.stdout.buffer.write(chunk)
                     sys.stdout.buffer.flush()
 
+                if eof:
+                    break
+                continue
+
+            # No data this iteration.
             if eof:
                 break
 
-            if args.idle_timeout > 0 and time.monotonic() > idle_deadline:
+            if idle_window > 0 and time.monotonic() > idle_deadline:
                 break
+
+            # IMPORTANT: avoid busy looping; give the system/serial/device time.
+            time.sleep(0.02)
 
         if args.verbose:
             print(f"\nread_total={total} bytes read_offset={sess.read_offset} write_offset={sess.write_offset}")
 
         tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
+        return 0
 
-    return 0
 
 
 def register_tcp_subcommands(nsub) -> None:
