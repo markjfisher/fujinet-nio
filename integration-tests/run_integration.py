@@ -52,6 +52,7 @@ class Step:
     timeout_s: float
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     expect_file: Optional[ExpectFileConfig] = None
+    setup_cmd: List[List[str]] = field(default_factory=list)
     expect_cmd: List[List[str]] = field(default_factory=list)
     expect_exit: int = 0
 
@@ -191,6 +192,20 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
                 raise ValueError(f"{path}: step {i} expect_cmd[{j}].argv must be a list")
             expect_cmd.append([str(x) for x in cmd_argv])
 
+        # Parse setup_cmd
+        setup_cmd_raw = s.get("setup_cmd", [])
+        if not isinstance(setup_cmd_raw, list):
+            raise ValueError(f"{path}: step {i} 'setup_cmd' must be a list")
+        setup_cmd: List[List[str]] = []
+        for j, cmd_item in enumerate(setup_cmd_raw):
+            if not isinstance(cmd_item, dict):
+                raise ValueError(f"{path}: step {i} setup_cmd[{j}] must be a mapping (dict)")
+            cmd_argv = cmd_item.get("argv")
+            if not isinstance(cmd_argv, list):
+                raise ValueError(f"{path}: step {i} setup_cmd[{j}].argv must be a list")
+            setup_cmd.append([str(x) for x in cmd_argv])
+
+
         out.append(
             Step(
                 group=group,
@@ -202,6 +217,7 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
                 timeout_s=timeout_s,
                 capture=capture,
                 expect_file=expect_file,
+                setup_cmd=setup_cmd,
                 expect_cmd=expect_cmd,
                 expect_exit=expect_exit,
             )
@@ -312,6 +328,9 @@ def run_step(
     print(f"  -> {step.name}")
     print(f"     $ {' '.join(step.argv)}")
 
+    step_tmp = tempfile.TemporaryDirectory(prefix="fujinet-step-")
+    step_tmp_path = step_tmp.name
+
     # Determine if we need file capture
     needs_file_capture = step.capture.mode == "file" or step.expect_file is not None
     captured_out_path: Optional[str] = None
@@ -344,6 +363,41 @@ def run_step(
     else:
         step_argv = step.argv
 
+    # Run setup_cmd (if any)
+    if step.setup_cmd:
+        env = os.environ.copy()
+        env["STEP_TMP"] = step_tmp_path
+
+        for cmd_argv in step.setup_cmd:
+            expanded = []
+            for a in cmd_argv:
+                a = a.replace("{STEP_TMP}", step_tmp_path)
+                expanded.append(a)
+
+            try:
+                scp = subprocess.run(
+                    expanded,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=30.0,
+                    text=True,
+                    cwd=repo_root,
+                    env=env,
+                )
+            except subprocess.TimeoutExpired:
+                print(" FAIL: setup_cmd TIMEOUT")
+                if not keep_temp:
+                    step_tmp.cleanup()
+                return False
+
+            if scp.returncode != 0:
+                print(f" FAIL: setup_cmd failed (exit {scp.returncode}): {' '.join(expanded)}")
+                if scp.stdout:
+                    print(scp.stdout.rstrip())
+                if not keep_temp:
+                    step_tmp.cleanup()
+                return False
+
     # Run the command
     stdout_dest = subprocess.PIPE
     stderr_dest = subprocess.STDOUT
@@ -356,6 +410,7 @@ def run_step(
         stderr_dest = subprocess.PIPE  # Keep stderr separate for error messages
 
     try:
+        step_argv = [a.replace("{STEP_TMP}", step_tmp_path) for a in step_argv]
         cp = subprocess.run(
             step_argv,
             stdout=stdout_dest,
@@ -429,6 +484,7 @@ def run_step(
             # Expand {CAPTURED_OUT} placeholder
             expanded_argv = []
             for arg in cmd_argv:
+                arg = arg.replace("{STEP_TMP}", step_tmp_path)
                 if captured_out_path:
                     arg = arg.replace("{CAPTURED_OUT}", captured_out_path)
                 arg = arg.replace("{TEST_STEP_NAME}", step.name)
@@ -481,6 +537,8 @@ def run_step(
                 temp_file.unlink()
             except Exception:
                 pass
+        if not keep_temp:
+            step_tmp.cleanup()
 
     return ok
 

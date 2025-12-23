@@ -1,0 +1,46 @@
+group: Network / HTTP
+steps:
+  - name: "HTTP: GET /headers with long request headers from file"
+    setup_cmd:
+      - argv:
+          - "python3"
+          - "-c"
+          - |
+            import os, pathlib
+            p = pathlib.Path(os.environ["STEP_TMP"]) / "req_headers.txt"
+            long_a = "A" * 2048
+            long_b = "B" * 2048
+            p.write_text(
+              "X-Long-A=" + long_a + "\n" +
+              "X-Long-B: " + long_b + "\n" +
+              "X-Wanted=ok\n",
+              encoding="utf-8"
+            )
+            print(str(p))
+    argv:
+      - "{CLI}"
+      - "net"
+      - "get"
+      - "--set-header-from-file"
+      - "{STEP_TMP}/req_headers.txt"
+      - "{HTTP}/headers"
+    expect:
+      - '"X-Long-A": "A{2048}"'
+      - '"X-Long-B": "B{2048}"'
+      - '"X-Wanted": "ok"'
+    timeout_s: 15
+
+  - name: "HTTP: GET /headers with repeated --set-header"
+    argv:
+      - "{CLI}"
+      - "net"
+      - "get"
+      - "--set-header"
+      - "X-Wanted=ok"
+      - "--set-header"
+      - "X-Short: hi"
+      - "{HTTP}/headers"
+    expect:
+      - '"X-Wanted": "ok"'
+      - '"X-Short": "hi"'
+    timeout_s: 10

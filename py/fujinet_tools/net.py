@@ -36,6 +36,60 @@ NET_COMMANDS = {
     5: "Info",
 }
 
+def _parse_header_kv(s: str) -> tuple[str, str]:
+    """
+    Accept either:
+      - "Key=Value"
+      - "Key: Value"
+    """
+    if ":" in s and (s.find(":") < s.find("=") or "=" not in s):
+        k, v = s.split(":", 1)
+        return k.strip(), v.lstrip()
+    if "=" in s:
+        k, v = s.split("=", 1)
+        return k.strip(), v
+    raise ValueError(f"Invalid header format (expected Key=Value or Key: Value): {s!r}")
+
+
+def _load_headers_from_file(path: str) -> list[tuple[str, str]]:
+    """
+    File format: one header per line.
+    Blank lines and lines starting with # are ignored.
+    Each line is "Key=Value" or "Key: Value".
+    """
+    out: list[tuple[str, str]] = []
+    p = Path(path)
+    for raw in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        k, v = _parse_header_kv(line)
+        if k:
+            out.append((k, v))
+    return out
+
+
+def _collect_request_headers(args) -> list[tuple[str, str]]:
+    """
+    Merge headers from:
+      - --set-header (repeatable)
+      - --set-header-from-file (repeatable)
+    Order is preserved: file headers first, then explicit CLI headers.
+    """
+    headers: list[tuple[str, str]] = []
+
+    file_list = getattr(args, "set_header_from_file", None) or []
+    for fp in file_list:
+        headers.extend(_load_headers_from_file(fp))
+
+    kv_list = getattr(args, "set_header", None) or []
+    for kv in kv_list:
+        k, v = _parse_header_kv(kv)
+        if k:
+            headers.append((k, v))
+
+    return headers
+
 
 def _status_str(code: int) -> str:
     return STATUS_TEXT.get(code, f"Unknown({code})")
@@ -122,7 +176,7 @@ def cmd_net_open(args) -> int:
         method=args.method,
         flags=args.flags,
         url=args.url,
-        headers=[],
+        headers=_collect_request_headers(args),
         body_len_hint=args.body_len_hint,
         response_headers=getattr(args, "resp_header", None) or [],
     )
@@ -300,7 +354,7 @@ def cmd_net_get(args) -> int:
             method=1,  # GET
             flags=args.flags,
             url=args.url,
-            headers=[],
+            headers=_collect_request_headers(args),
             body_len_hint=0,
             response_headers=resp_headers,
         )
@@ -427,7 +481,7 @@ def cmd_net_head(args) -> int:
             method=5,  # HEAD
             flags=args.flags,
             url=args.url,
-            headers=[],
+            headers=_collect_request_headers(args),
             body_len_hint=0,
             response_headers=getattr(args, "resp_header", None) or [],
         )
@@ -506,7 +560,7 @@ def cmd_net_send(args) -> int:
             method=args.method,
             flags=args.flags,
             url=args.url,
-            headers=[],
+            headers=_collect_request_headers(args),
             body_len_hint=body_len_hint if (args.method in (2, 3)) else 0,
             response_headers=resp_headers,
         )
@@ -667,6 +721,10 @@ def register_subcommands(subparsers) -> None:
     pno.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects")
     pno.add_argument("--body-len-hint", type=int, default=0, help="Expected request body length (POST/PUT)")
     pno.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
+    pno.add_argument("--set-header", action="append", default=[],
+                help="Request header to send (repeatable). Format: Key=Value or Key: Value")
+    pno.add_argument("--set-header-from-file", action="append", default=[],
+                help="Read request headers from file (repeatable). One per line: Key=Value or Key: Value")
     pno.add_argument("url")
     pno.set_defaults(fn=cmd_net_open)
 
@@ -702,12 +760,20 @@ def register_subcommands(subparsers) -> None:
     png.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
     png.add_argument("--info-retries", type=int, default=10)
     png.add_argument("--info-sleep", type=float, default=0.1)
+    png.add_argument("--set-header", action="append", default=[],
+                help="Request header to send (repeatable). Format: Key=Value or Key: Value")
+    png.add_argument("--set-header-from-file", action="append", default=[],
+                help="Read request headers from file (repeatable). One per line: Key=Value or Key: Value")
     png.add_argument("url")
     png.set_defaults(fn=cmd_net_get)
 
     pnh = nsub.add_parser("head", help="HEAD a URL and print metadata/headers")
     pnh.add_argument("--flags", type=int, default=0)
     pnh.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
+    pnh.add_argument("--set-header", action="append", default=[],
+                help="Request header to send (repeatable). Format: Key=Value or Key: Value")
+    pnh.add_argument("--set-header-from-file", action="append", default=[],
+                help="Read request headers from file (repeatable). One per line: Key=Value or Key: Value")
     pnh.add_argument("url")
     pnh.set_defaults(fn=cmd_net_head)
 
@@ -727,6 +793,10 @@ def register_subcommands(subparsers) -> None:
     src = pns.add_mutually_exclusive_group(required=False)
     src.add_argument("--inp", help="Read request body bytes from this file")
     src.add_argument("--data", help="Send these UTF-8 bytes as request body")
+    pns.add_argument("--set-header", action="append", default=[],
+                help="Request header to send (repeatable). Format: Key=Value or Key: Value")
+    pns.add_argument("--set-header-from-file", action="append", default=[],
+                help="Read request headers from file (repeatable). One per line: Key=Value or Key: Value")
     pns.add_argument("url")
     pns.set_defaults(fn=cmd_net_send)
 

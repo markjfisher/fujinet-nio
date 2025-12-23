@@ -106,6 +106,132 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
     }
 }
 
+TEST_CASE("NetworkDevice v1: response headers are only returned when requested (allowlist)") {
+    using namespace fujinet::tests::netdev;
+
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(reg);
+    const std::uint16_t deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    // 1) No allowlist: headers must be absent.
+    {
+        const std::uint16_t h = open_handle_stub(
+            dev, deviceId, "http://example.com/hello",
+            /*method=*/1, /*flags=*/0, /*bodyLenHint=*/0,
+            {} // no response headers requested
+        );
+
+        IOResponse iresp = info_req(dev, deviceId, h);
+        REQUIRE(iresp.status == StatusCode::Ok);
+
+        netproto::Reader r(iresp.payload.data(), iresp.payload.size());
+
+        std::uint8_t ver = 0, flags = 0;
+        std::uint16_t reserved = 0, handle = 0;
+        std::uint16_t httpStatus = 0;
+        std::uint64_t contentLen = 0;
+        std::uint16_t hdrLen = 0;
+
+        REQUIRE(r.read_u8(ver));
+        REQUIRE(r.read_u8(flags));
+        REQUIRE(r.read_u16le(reserved));
+        REQUIRE(r.read_u16le(handle));
+        REQUIRE(r.read_u16le(httpStatus));
+        REQUIRE(r.read_u64le(contentLen));
+        REQUIRE(r.read_u16le(hdrLen));
+
+        CHECK(ver == V);
+        CHECK(handle == h);
+        CHECK(hdrLen == 0);
+        CHECK((flags & 0x01) == 0); // headersIncluded must be false
+
+        close_req(dev, deviceId, h);
+    }
+
+    // 2) Allowlist: only requested headers should be returned.
+    {
+        const std::uint16_t h = open_handle_stub(
+            dev, deviceId, "http://example.com/hello",
+            /*method=*/1, /*flags=*/0, /*bodyLenHint=*/0,
+            { "Server" } // request only Server
+        );
+
+        IOResponse iresp = info_req(dev, deviceId, h);
+        REQUIRE(iresp.status == StatusCode::Ok);
+
+        netproto::Reader r(iresp.payload.data(), iresp.payload.size());
+
+        std::uint8_t ver = 0, flags = 0;
+        std::uint16_t reserved = 0, handle = 0;
+        std::uint16_t httpStatus = 0;
+        std::uint64_t contentLen = 0;
+        std::uint16_t hdrLen = 0;
+
+        REQUIRE(r.read_u8(ver));
+        REQUIRE(r.read_u8(flags));
+        REQUIRE(r.read_u16le(reserved));
+        REQUIRE(r.read_u16le(handle));
+        REQUIRE(r.read_u16le(httpStatus));
+        REQUIRE(r.read_u64le(contentLen));
+        REQUIRE(r.read_u16le(hdrLen));
+
+        REQUIRE(ver == V);
+        REQUIRE(handle == h);
+        REQUIRE((flags & 0x01) != 0); // headersIncluded must be true
+        REQUIRE(hdrLen > 0);
+
+        std::vector<std::uint8_t> hdr;
+        hdr.resize(hdrLen);
+        REQUIRE(r.read_bytes(hdr.data(), hdrLen));
+
+        std::string hdrs(reinterpret_cast<const char*>(hdr.data()), hdr.size());
+        CHECK(hdrs.find("Server:") != std::string::npos);
+
+        CHECK(hdrs.find("Content-Type:") == std::string::npos); // must not be included
+
+        close_req(dev, deviceId, h);
+    }
+
+    // 3) Case-insensitive match (client asks "server" lower-case)
+    {
+        const std::uint16_t h = open_handle_stub(
+            dev, deviceId, "http://example.com/hello",
+            /*method=*/1, /*flags=*/0, /*bodyLenHint=*/0,
+            { "server" }
+        );
+
+        IOResponse iresp = info_req(dev, deviceId, h);
+        REQUIRE(iresp.status == StatusCode::Ok);
+
+        netproto::Reader r(iresp.payload.data(), iresp.payload.size());
+
+        std::uint8_t ver = 0, flags = 0;
+        std::uint16_t reserved = 0, handle = 0;
+        std::uint16_t httpStatus = 0;
+        std::uint64_t contentLen = 0;
+        std::uint16_t hdrLen = 0;
+
+        REQUIRE(r.read_u8(ver));
+        REQUIRE(r.read_u8(flags));
+        REQUIRE(r.read_u16le(reserved));
+        REQUIRE(r.read_u16le(handle));
+        REQUIRE(r.read_u16le(httpStatus));
+        REQUIRE(r.read_u64le(contentLen));
+        REQUIRE(r.read_u16le(hdrLen));
+
+        REQUIRE((flags & 0x01) != 0);
+        REQUIRE(hdrLen > 0);
+
+        std::string hdrs;
+        hdrs.resize(hdrLen);
+        REQUIRE(r.read_bytes(hdrs.data(), hdrLen));
+
+        CHECK(hdrs.find("Server:") != std::string::npos);
+
+        close_req(dev, deviceId, h);
+    }
+}
+
 TEST_CASE("NetworkDevice v1: Write (POST) returns writtenLen via stub backend")
 {
     auto reg = make_stub_registry_http_only();
