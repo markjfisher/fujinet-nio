@@ -37,11 +37,31 @@ static bool method_supported(std::uint8_t method) {
     }
 }
 
+static std::string to_lower_ascii(std::string_view s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return out;
+}
+
+static bool header_requested(const HttpNetworkProtocolEspIdfState& s, const char* key)
+{
+    if (!key) return false;
+    if (s.response_header_names_lower.empty()) return false;
+
+    const std::string k = to_lower_ascii(key);
+    for (const auto& want : s.response_header_names_lower) {
+        if (want == k) return true;
+    }
+    return false;
+}
 
 struct HttpNetworkProtocolEspIdfState {
-    static constexpr std::size_t header_cap_default = 2048;
     static constexpr std::size_t rb_size = 8192;
-    static constexpr TickType_t  wait_step_ticks = pdMS_TO_TICKS(50);
+    static constexpr TickType_t wait_step_ticks = pdMS_TO_TICKS(50);
 
     bool suppress_on_data = false;
 
@@ -57,14 +77,14 @@ struct HttpNetworkProtocolEspIdfState {
     // esp_http_client + task
     esp_http_client_handle_t client{nullptr};
     TaskHandle_t task{nullptr};
+
     SemaphoreHandle_t done_sem{nullptr};
     StaticSemaphore_t done_sem_storage{};
 
-    // request & state
-    bool want_headers{false};
-    bool header_cap_reached{false};
-    std::size_t header_cap{header_cap_default};
+    // NEW: response header allowlist (lowercase). If empty => store nothing.
+    std::vector<std::string> response_header_names_lower;
 
+    // request & state
     std::uint8_t method{0};
 
     // POST/PUT request-body streaming state (no buffering)
@@ -83,23 +103,22 @@ struct HttpNetworkProtocolEspIdfState {
     esp_err_t err{ESP_OK};
 
     std::uint32_t read_cursor{0};
-
     volatile bool stop_requested{false};
 
-    void reset_session_state()
-    {
-        want_headers = false;
-        header_cap_reached = false;
-        header_cap = header_cap_default;
+    void reset_session_state() {
+        response_header_names_lower.clear();
+
         method = 0;
 
         has_http_status = false;
         http_status = 0;
+
         has_content_length = false;
         content_length = 0;
 
         done = false;
         err = ESP_OK;
+
         read_cursor = 0;
         stop_requested = false;
 
@@ -107,12 +126,13 @@ struct HttpNetworkProtocolEspIdfState {
         expected_body_len = 0;
         sent_body_len = 0;
         upload_open = false;
-        suppress_on_data = false;
 
+        suppress_on_data = false;
     }
 
     std::string headers_block;
 };
+
 
 static void take_mutex(SemaphoreHandle_t m)
 {
@@ -202,27 +222,18 @@ static esp_err_t event_handler(esp_http_client_event_t* evt)
 
     switch (evt->event_id) {
     case HTTP_EVENT_ON_HEADER: {
-        take_mutex(s->meta_mutex);
-        set_status_and_length(*s);
-
-        if (s->want_headers && !s->header_cap_reached && evt->header_key && evt->header_value) {
-            // Append "Key: Value\r\n" with a total cap. If cap would be exceeded,
-            // stop collecting further headers (but do not fail the request).
+        // Store ONLY requested headers. If none requested, store nothing.
+        if (evt->header_key && evt->header_value && header_requested(*s, evt->header_key)) {
             const std::size_t klen = std::strlen(evt->header_key);
             const std::size_t vlen = std::strlen(evt->header_value);
-            const std::size_t needed = klen + 2 + vlen + 2;
-
-            if (s->headers_block.size() + needed <= s->header_cap) {
-                s->headers_block.append(evt->header_key, klen);
-                s->headers_block.append(": ", 2);
-                s->headers_block.append(evt->header_value, vlen);
-                s->headers_block.append("\r\n");
-            } else {
-                s->header_cap_reached = true;
-            }
+    
+            take_mutex(s->meta_mutex);
+            s->headers_block.append(evt->header_key, klen);
+            s->headers_block.append(": ", 2);
+            s->headers_block.append(evt->header_value, vlen);
+            s->headers_block.append("\r\n");
+            give_mutex(s->meta_mutex);
         }
-
-        give_mutex(s->meta_mutex);
         break;
     }
 
@@ -354,7 +365,7 @@ HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
                                            1,
                                            _s->stream_buf,
                                            &_s->stream_storage);
-    _s->headers_block.reserve(HttpNetworkProtocolEspIdfState::header_cap_default);
+    _s->headers_block.reserve(256);
 }
 
 HttpNetworkProtocolEspIdf::~HttpNetworkProtocolEspIdf()
@@ -378,7 +389,8 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
     _s->reset_session_state();
     _s->method = req.method;
-    _s->want_headers = (req.flags & 0x04) != 0;
+    _s->response_header_names_lower = req.responseHeaderNamesLower;
+
 
     // reset buffers
     if (_s->stream) {
@@ -387,7 +399,6 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
     take_mutex(_s->meta_mutex);
     _s->headers_block.clear();
-    _s->header_cap_reached = false;
     _s->has_http_status = false;
     _s->has_content_length = false;
     _s->done = false;
@@ -663,16 +674,14 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
     return fujinet::io::StatusCode::NotReady;
 }
 
-fujinet::io::StatusCode HttpNetworkProtocolEspIdf::info(std::size_t maxHeaderBytes, fujinet::io::NetworkInfo& out)
+fujinet::io::StatusCode HttpNetworkProtocolEspIdf::info(fujinet::io::NetworkInfo& out)
 {
     out = fujinet::io::NetworkInfo{};
-
     if (!_s) {
         return fujinet::io::StatusCode::InvalidRequest;
     }
 
     take_mutex(_s->meta_mutex);
-
     const bool has_status = _s->has_http_status;
     const std::uint16_t http_status = _s->http_status;
     const bool has_len = _s->has_content_length;
@@ -680,11 +689,8 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::info(std::size_t maxHeaderByt
     const bool done = _s->done;
     const esp_err_t err = _s->err;
 
-    std::string hdr;
-    if (_s->want_headers && !_s->headers_block.empty() && maxHeaderBytes > 0) {
-        const std::size_t n = std::min<std::size_t>(_s->headers_block.size(), maxHeaderBytes);
-        hdr.assign(_s->headers_block.data(), n);
-    }
+    // NEW: already filtered while receiving; return whole block (may be empty).
+    std::string hdr = _s->headers_block;
 
     give_mutex(_s->meta_mutex);
 
@@ -698,11 +704,14 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::info(std::size_t maxHeaderByt
 
     out.hasHttpStatus = true;
     out.httpStatus = http_status;
+
     out.hasContentLength = has_len;
     out.contentLength = has_len ? len : 0;
+
     out.headersBlock = std::move(hdr);
     return fujinet::io::StatusCode::Ok;
 }
+
 
 void HttpNetworkProtocolEspIdf::poll()
 {

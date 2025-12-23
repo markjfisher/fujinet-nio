@@ -161,7 +161,6 @@ def tcp_open(
     timeout: float,
     wait_connected: bool,
     info_poll_s: float,
-    info_max_headers: int = 512,
 ) -> TcpStreamSession:
     # method is ignored by TCP backend; use GET (1) for consistency
     open_req = np.build_open_req(method=1, flags=0, url=url, headers=[], body_len_hint=0)
@@ -193,7 +192,7 @@ def tcp_open(
     # poll Info until connected=1 or timeout
     deadline = time.monotonic() + max(timeout, 0.0)
     while time.monotonic() < deadline:
-        info_req = np.build_info_req(sess.handle, info_max_headers)
+        info_req = np.build_info_req(sess.handle)
         ipkt = _send_retry(
             bus=bus,
             device=np.NETWORK_DEVICE_ID,
@@ -341,7 +340,7 @@ def tcp_info_print(
     timeout: float,
     max_headers: int,
 ) -> None:
-    req = np.build_info_req(handle, max_headers)
+    req = np.build_info_req(handle)
     pkt = _send_retry(
         bus=bus,
         device=np.NETWORK_DEVICE_ID,
@@ -434,7 +433,6 @@ def cmd_net_tcp_repl(args) -> int:
                 timeout=args.timeout,
                 wait_connected=args.wait_connected,
                 info_poll_s=args.info_poll,
-                info_max_headers=args.max_headers,
             )
             if args.show_info:
                 tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
@@ -489,7 +487,6 @@ def cmd_net_tcp_repl(args) -> int:
                         timeout=args.timeout,
                         wait_connected=args.wait_connected,
                         info_poll_s=args.info_poll,
-                        info_max_headers=args.max_headers,
                     )
                     print(f"[tcp] opened handle={sess.handle}")
                     if args.show_info:
@@ -617,7 +614,6 @@ def cmd_net_tcp_connect(args) -> int:
             timeout=args.timeout,
             wait_connected=args.wait_connected,
             info_poll_s=args.info_poll,
-            info_max_headers=args.max_headers,
         )
         print(f"handle={sess.handle} connected={'yes' if args.wait_connected else 'maybe'}")
     return 0
@@ -641,7 +637,6 @@ def cmd_net_tcp_sendrecv(args) -> int:
             timeout=args.timeout,
             wait_connected=True,
             info_poll_s=args.info_poll,
-            info_max_headers=args.max_headers,
         )
 
         if args.show_info:
@@ -712,7 +707,6 @@ def register_tcp_subcommands(nsub) -> None:
     pc.add_argument("--halfclose", type=int, choices=[0, 1], default=None)
     pc.add_argument("--wait-connected", action="store_true", help="Poll Info until connected=1")
     pc.add_argument("--info-poll", type=float, default=0.01, help="Sleep between Info polls")
-    pc.add_argument("--max-headers", type=int, default=512)
     pc.set_defaults(fn=cmd_net_tcp_connect)
 
     ps = tsub.add_parser("sendrecv", help="Connect, send bytes, then read response stream")
@@ -726,7 +720,6 @@ def register_tcp_subcommands(nsub) -> None:
     ps.add_argument("--idle-timeout", type=float, default=0.25, help="Stop reading if idle for this many seconds (0=never)")
     ps.add_argument("--show-info", action="store_true", help="Print Info() pseudo headers after connect")
     ps.add_argument("--info-poll", type=float, default=0.01)
-    ps.add_argument("--max-headers", type=int, default=1024)
     ps.add_argument("--out", help="Write received bytes to this file (else stdout)")
     ps.add_argument("--force", action="store_true", help="Overwrite --out if it exists")
     ps.set_defaults(fn=cmd_net_tcp_sendrecv)
@@ -736,7 +729,6 @@ def register_tcp_subcommands(nsub) -> None:
     pr.add_argument("--wait-connected", action="store_true", help="Poll Info until connected=1 when opening")
     pr.add_argument("--show-info", action="store_true", help="Print Info() pseudo headers after opening")
     pr.add_argument("--info-poll", type=float, default=0.01)
-    pr.add_argument("--max-headers", type=int, default=1024)
     pr.add_argument("--write-chunk", type=int, default=1024)
     pr.add_argument("--read-chunk", type=int, default=512)
     pr.add_argument("--idle-timeout", type=float, default=0.25)

@@ -55,8 +55,7 @@ public:
                                       std::uint16_t& read,
                                       bool& eof);
 
-    fujinet::io::StatusCode info(std::size_t maxHeaderBytes,
-                                 fujinet::io::NetworkInfo& out);
+    fujinet::io::StatusCode info(fujinet::io::NetworkInfo& out);
 
     void poll();
     void close();

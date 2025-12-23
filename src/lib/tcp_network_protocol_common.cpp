@@ -508,8 +508,7 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::read_body(std::uint32_t offset
     return fujinet::io::StatusCode::Ok;
 }
 
-fujinet::io::StatusCode TcpNetworkProtocolCommon::info(std::size_t maxHeaderBytes,
-                                                       fujinet::io::NetworkInfo& out)
+fujinet::io::StatusCode TcpNetworkProtocolCommon::info(fujinet::io::NetworkInfo& out)
 {
     // v1-compatible: no http status, no content-length for tcp
     out = fujinet::io::NetworkInfo{};
@@ -519,17 +518,11 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::info(std::size_t maxHeaderByte
     out.contentLength = 0;
 
     if (_state == State::Error) {
-        // allow caller to still read headers to get last error, but match TODO contract:
-        // use IOError for backend error after open.
-        // (If you prefer Ok-with-error-headers, flip this.)
         return fujinet::io::StatusCode::IOError;
     }
 
-    if (maxHeaderBytes > 0) {
-        const std::string hdr = build_info_headers();
-        out.headersBlock.assign(hdr.data(), std::min<std::size_t>(hdr.size(), maxHeaderBytes));
-    }
-
+    // Keep TCP pseudo-headers behaviour unchanged
+    out.headersBlock = build_info_headers();
     return fujinet::io::StatusCode::Ok;
 }
 

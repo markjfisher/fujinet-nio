@@ -251,7 +251,7 @@ TEST_CASE("TCP: Open + Write + Read echoes bytes (sequential offsets)")
 
     // Allow connect to complete
     REQUIRE(spin_poll_until(dev, [&] {
-        auto ir = info_req(dev, deviceId, handle, /*maxHeaderBytes=*/256);
+        auto ir = info_req(dev, deviceId, handle);
         if (ir.status != StatusCode::Ok) return false;
         InfoParsed ip;
         if (!parse_info_response(ir, ip)) return false;
@@ -337,7 +337,7 @@ TEST_CASE("TCP: Info exposes pseudo-headers without breaking v1 flags")
     // poll a bit, then ask for info headers
     dev.poll();
 
-    IOResponse ir = info_req(dev, deviceId, handle, /*maxHeaderBytes=*/512);
+    IOResponse ir = info_req(dev, deviceId, handle);
     REQUIRE(ir.status == StatusCode::Ok);
 
     InfoParsed ip;
@@ -371,7 +371,7 @@ TEST_CASE("TCP: Write enforces sequential offset (mismatch => InvalidRequest)")
 
     // Wait until the async connect is complete; otherwise NetworkDevice will return NotReady on Write.
     REQUIRE(spin_poll_until(dev, [&] {
-        auto ir = info_req(dev, deviceId, handle, /*maxHeaderBytes=*/256);
+        auto ir = info_req(dev, deviceId, handle);
         if (ir.status != StatusCode::Ok) return false;
 
         InfoParsed ip;

@@ -71,35 +71,53 @@ std::size_t HttpNetworkProtocolCurl::write_body_cb(
 }
 
 std::size_t HttpNetworkProtocolCurl::write_header_cb(
-    char *ptr,
-    std::size_t size,
-    std::size_t nmemb,
-    void *userdata)
+    char *ptr, std::size_t size, std::size_t nmemb, void *userdata)
 {
-    auto *self = static_cast<HttpNetworkProtocolCurl *>(userdata);
-    if (!self)
-        return 0;
+    auto *self = static_cast<HttpNetworkProtocolCurl*>(userdata);
+    if (!self) return 0;
 
-    if (size != 0 && nmemb > (std::numeric_limits<std::size_t>::max() / size))
-    {
+    if (size != 0 && nmemb > (std::numeric_limits<std::size_t>::max() / size)) {
         return 0; // abort transfer
     }
-
     const std::size_t n = size * nmemb;
-    if (n == 0)
-        return 0;
-    if (!ptr)
-        return 0;
+    if (n == 0) return 0;
+    if (!ptr) return 0;
 
-    // libcurl passes header lines including trailing \r\n.
-    // Keep only "Key: Value\r\n" lines (skip status lines and blanks).
-    const std::string_view line(ptr, n);
-    if (line.find(':') != std::string_view::npos)
-    {
-        self->_headersBlock.append(line.data(), line.size());
+    // NEW: store ONLY requested headers. If none requested, store nothing.
+    if (self->_req.responseHeaderNamesLower.empty()) {
+        return n;
     }
+
+    const std::string_view line(ptr, n);
+
+    // Keep only "Key: Value\r\n" lines (skip status lines and blanks).
+    const auto colon = line.find(':');
+    if (colon == std::string_view::npos) {
+        return n;
+    }
+
+    std::string_view key = line.substr(0, colon);
+    while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) {
+        key.remove_suffix(1);
+    }
+
+    // Case-insensitive match against allowlist (stored lowercase).
+    std::string keyLower;
+    keyLower.reserve(key.size());
+    for (char c : key) {
+        keyLower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+
+    for (const auto& want : self->_req.responseHeaderNamesLower) {
+        if (want == keyLower) {
+            self->_headersBlock.append(line.data(), line.size());
+            break;
+        }
+    }
+
     return n;
 }
+
 
 io::StatusCode HttpNetworkProtocolCurl::perform_now()
 {
@@ -315,22 +333,25 @@ io::StatusCode HttpNetworkProtocolCurl::read_body(std::uint32_t offset,
     return io::StatusCode::Ok;
 }
 
-io::StatusCode HttpNetworkProtocolCurl::info(std::size_t maxHeaderBytes, io::NetworkInfo& out)
+io::StatusCode HttpNetworkProtocolCurl::info(io::NetworkInfo& out)
 {
     if (!_performed) {
         return io::StatusCode::NotReady;
     }
-    
+
     out = io::NetworkInfo{};
     out.hasHttpStatus = true;
     out.httpStatus = _httpStatus;
+
     out.hasContentLength = true;
     out.contentLength = static_cast<std::uint64_t>(_body.size());
 
-    const std::size_t n = std::min<std::size_t>(_headersBlock.size(), maxHeaderBytes);
-    out.headersBlock.assign(_headersBlock.data(), n);
+    // headers already filtered.
+    out.headersBlock = _headersBlock;
+
     return io::StatusCode::Ok;
 }
+
 
 void HttpNetworkProtocolCurl::close()
 {

@@ -37,10 +37,9 @@ fujinet::io::StatusCode TcpNetworkProtocolEspIdf::read_body(std::uint32_t offset
     return _common.read_body(offset, out, outLen, read, eof);
 }
 
-fujinet::io::StatusCode TcpNetworkProtocolEspIdf::info(std::size_t maxHeaderBytes,
-                                                         fujinet::io::NetworkInfo& out)
+fujinet::io::StatusCode TcpNetworkProtocolEspIdf::info(fujinet::io::NetworkInfo& out)
 {
-    return _common.info(maxHeaderBytes, out);
+    return _common.info(out);
 }
 
 void TcpNetworkProtocolEspIdf::poll()

@@ -140,23 +140,31 @@ Create a session handle for a URL. `Open` is allowed to be asynchronous: it may 
 
 ```
 u8   version
-u8   method              // 1..5
-u8   flags               // see below
-u16  urlLen              // LE
-u8[] url                 // length urlLen
-u16  headerCount         // LE
+u8   method            // 1..5
+u8   flags             // see below
+u16  urlLen            // LE
+u8[] url               // length urlLen
+
+u16  headerCount       // LE
+
 repeat headerCount times:
-  u16 keyLen             // LE
-  u8[] key               // length keyLen
-  u16 valLen             // LE
-  u8[] value             // length valLen
-u32  bodyLenHint         // LE; 0 if unknown
+  u16  keyLen          // LE
+  u8[] key             // length keyLen
+  u16  valLen          // LE
+  u8[] value           // length valLen
+
+u32  bodyLenHint       // LE; 0 if unknown
+
+u16  respHeaderCount   // LE; number of response header names to capture
+
+repeat respHeaderCount times:
+  u16  nameLen         // LE
+  u8[] name            // length nameLen (header name, ASCII; case-insensitive)
 ```
 
 ### Open flags (u8)
 bit0 = tls
 bit1 = follow_redirects
-bit2 = want_headers
 bit3 = allow_evict (NEW; v1.0 compatible)
 
 allow_evict semantics:
@@ -186,13 +194,13 @@ Notes:
 - `needs_body_write=1` indicates the host must stream body via `Write` (POST/PUT).
 - `accepted=1` means the handle exists; it does not imply the request has completed.
 
-### Headers
+### Response header capture (v1)
 
-- Headers are only collected if the OPEN flag `want_headers` is set.
-- POSIX backends may capture all response headers and return up to max_header_bytes.
-- ESP32 backends should avoid storing full headers unless requested, and should prefer filtering/storing only what the client asked for (future enhancement).
-- Devices MUST NOT add implicit HTTP headers (e.g. Content-Type) unless explicitly requested
-  by the host via headers in the Open request.
+- The client provides a list of response header **names** in `respHeaderCount`.
+- The device/backend stores **only** those headers (case-insensitive match).
+- If `respHeaderCount == 0`, the device stores **no** response headers.
+- Devices MUST NOT add implicit HTTP headers (e.g. Content-Type) unless explicitly requested by the host via headers in the Open request.
+
 
 ---
 
@@ -367,7 +375,6 @@ This can be called repeatedly; results may become available over time.
 ```
 u8 version
 u16 handle          // LE
-u16 maxHeaderBytes  // LE; max bytes of headers to return (0 allowed)
 ```
 
 ### Response
@@ -379,7 +386,7 @@ u16 handle          // LE
 u16 httpStatus      // LE; valid only if hasHttpStatus
 u64 contentLength   // LE; valid only if hasContentLength
 u16 headerBytesLen  // LE; number of header bytes returned
-u8[] headerBytes    // raw "Key: Value\r\n" bytes; may be truncated
+u8[] headerBytes    // raw "Key: Value\r\n" bytes (only requested headers)
 ```
 
 ### Status codes

@@ -89,13 +89,13 @@ TEST_CASE("Transport mapping: re-opening n1 replaces mapping (new handle becomes
 
     // Old handle should no longer be a valid session
     // (If it was evicted by close-on-reopen or by LRU, InvalidRequest is correct.)
-    CHECK(info_req(dev, deviceId, h1, 16).status == StatusCode::InvalidRequest);
+    CHECK(info_req(dev, deviceId, h1).status == StatusCode::InvalidRequest);
 
     // Closing unit closes the *current* handle (h2)
     CHECK(t.close_unit(1) == StatusCode::Ok);
 
     // And now h2 should be invalid too
-    CHECK(info_req(dev, deviceId, h2, 16).status == StatusCode::InvalidRequest);
+    CHECK(info_req(dev, deviceId, h2).status == StatusCode::InvalidRequest);
 }
 
 

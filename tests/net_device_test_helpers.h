@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include "doctest.h"
@@ -25,16 +24,19 @@ using fujinet::io::NetworkDevice;
 using fujinet::io::StatusCode;
 
 namespace netproto = fujinet::io::netproto;
+
 using fujinet::io::protocol::WireDeviceId;
 using fujinet::io::protocol::to_device_id;
 
 static constexpr std::uint8_t V = 1;
 
-inline std::vector<std::uint8_t> to_vec(const std::string& s) {
+inline std::vector<std::uint8_t> to_vec(const std::string& s)
+{
     return std::vector<std::uint8_t>(s.begin(), s.end());
 }
 
-inline fujinet::io::ProtocolRegistry make_stub_registry_http_only() {
+inline fujinet::io::ProtocolRegistry make_stub_registry_http_only()
+{
     fujinet::io::ProtocolRegistry reg;
     reg.register_scheme("http", [] { return std::make_unique<fujinet::io::StubNetworkProtocol>(); });
     return reg;
@@ -44,17 +46,25 @@ inline std::uint16_t open_handle_stub(
     NetworkDevice& dev,
     std::uint16_t deviceId,
     const std::string& url,
-    std::uint8_t method = 1,   // GET
+    std::uint8_t method = 1, // GET
     std::uint8_t flags = 0,
-    std::uint32_t bodyLenHint = 0
+    std::uint32_t bodyLenHint = 0,
+    std::initializer_list<std::string_view> responseHeaders = {}
 ) {
     std::string p;
-    netproto::write_u8(p, V);           // version
-    netproto::write_u8(p, method);      // method
-    netproto::write_u8(p, flags);       // flags
+    netproto::write_u8(p, V);       // version
+    netproto::write_u8(p, method);  // method
+    netproto::write_u8(p, flags);   // flags
     netproto::write_lp_u16_string(p, url);
-    netproto::write_u16le(p, 0);        // headerCount
+
+    netproto::write_u16le(p, 0); // headerCount (request headers)
     netproto::write_u32le(p, bodyLenHint);
+
+    // NEW: response header allowlist (store nothing if empty)
+    netproto::write_u16le(p, static_cast<std::uint16_t>(responseHeaders.size()));
+    for (auto h : responseHeaders) {
+        netproto::write_lp_u16_string(p, h);
+    }
 
     IORequest req{};
     req.id = 100;
@@ -68,6 +78,7 @@ inline std::uint16_t open_handle_stub(
     netproto::Reader r(resp.payload.data(), resp.payload.size());
     std::uint8_t ver = 0, oflags = 0;
     std::uint16_t reserved = 0, handle = 0;
+
     REQUIRE(r.read_u8(ver));
     REQUIRE(r.read_u8(oflags));
     REQUIRE(r.read_u16le(reserved));
@@ -83,13 +94,11 @@ inline std::uint16_t open_handle_stub(
 inline IOResponse info_req(
     NetworkDevice& dev,
     std::uint16_t deviceId,
-    std::uint16_t handle,
-    std::uint16_t maxHeaderBytes
+    std::uint16_t handle
 ) {
     std::string ip;
     netproto::write_u8(ip, V);
     netproto::write_u16le(ip, handle);
-    netproto::write_u16le(ip, maxHeaderBytes);
 
     IORequest ireq{};
     ireq.id = 200;
@@ -170,8 +179,11 @@ static std::uint16_t send_open(NetworkDevice& dev, std::uint16_t deviceId, const
     netproto::write_u8(p, 1); // GET
     netproto::write_u8(p, 0); // flags
     netproto::write_lp_u16_string(p, url);
+    netproto::write_u16le(p, 0); // headerCount
+    netproto::write_u32le(p, 0); // bodyLenHint
+
+    // NEW: response header allowlist = empty (store none)
     netproto::write_u16le(p, 0);
-    netproto::write_u32le(p, 0);
 
     IORequest req{};
     req.id = 1;
@@ -185,13 +197,16 @@ static std::uint16_t send_open(NetworkDevice& dev, std::uint16_t deviceId, const
     netproto::Reader r(resp.payload.data(), resp.payload.size());
     std::uint8_t ver = 0, flags = 0;
     std::uint16_t reserved = 0, handle = 0;
+
     REQUIRE(r.read_u8(ver));
     REQUIRE(r.read_u8(flags));
     REQUIRE(r.read_u16le(reserved));
     REQUIRE(r.read_u16le(handle));
+
     REQUIRE(ver == V);
     REQUIRE((flags & 0x01) != 0);
     REQUIRE(handle != 0);
+
     return handle;
 }
 

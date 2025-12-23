@@ -1,8 +1,6 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -13,11 +11,22 @@
 namespace fujinet::io {
 
 struct NetworkOpenRequest {
-    std::uint8_t method{0};          // 1=GET,2=POST,3=PUT,4=DELETE,5=HEAD
-    std::uint8_t flags{0};           // bit0=tls, bit1=follow_redirects, bit2=want_headers
-    std::string  url;
+    std::uint8_t method{0}; // 1=GET,2=POST,3=PUT,4=DELETE,5=HEAD
+
+    // bit0=tls, bit1=follow_redirects
+    std::uint8_t flags{0};
+
+    std::string url;
+
+    // Request headers (sent to server)
     std::vector<std::pair<std::string, std::string>> headers;
+
+    // Request body hint (POST/PUT)
     std::uint32_t bodyLenHint{0};
+
+    // Response header allowlist (lowercase ASCII header names).
+    // If empty: store no response headers.
+    std::vector<std::string> responseHeaderNamesLower;
 };
 
 struct NetworkInfo {
@@ -51,12 +60,10 @@ public:
                                  bool& eof) = 0;
 
     // Fetch response metadata (may become available over time).
-    virtual StatusCode info(std::size_t maxHeaderBytes, NetworkInfo& out) = 0;
+    virtual StatusCode info(NetworkInfo& out) = 0;
 
     virtual void poll() = 0;
     virtual void close() = 0;
 };
 
 } // namespace fujinet::io
-
-

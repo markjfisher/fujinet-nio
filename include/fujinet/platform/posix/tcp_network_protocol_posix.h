@@ -28,8 +28,7 @@ public:
                                       std::size_t outLen,
                                       std::uint16_t& read,
                                       bool& eof) override;
-    fujinet::io::StatusCode info(std::size_t maxHeaderBytes,
-                                 fujinet::io::NetworkInfo& out) override;
+    fujinet::io::StatusCode info(fujinet::io::NetworkInfo& out) override;
     void poll() override;
     void close() override;
 

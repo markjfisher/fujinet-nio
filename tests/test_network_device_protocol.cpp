@@ -13,44 +13,21 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
     const auto deviceId = to_device_id(WireDeviceId::NetworkService);
 
     // ---- Open ----
-    std::uint16_t handle = 0;
-    {
-        std::string p;
-        netproto::write_u8(p, V); // version
-        netproto::write_u8(p, 1); // method=GET
-        netproto::write_u8(p, 0); // flags
-        netproto::write_lp_u16_string(p, "http://example.com/hello");
-        netproto::write_u16le(p, 0); // headerCount
-        netproto::write_u32le(p, 0); // bodyLenHint
+    // Request only the "Server" response header; otherwise headers are not stored.
+    std::uint16_t handle = open_handle_stub(
+        dev,
+        deviceId,
+        "http://example.com/hello",
+        /*method=*/1,
+        /*flags=*/0,
+        /*bodyLenHint=*/0,
+        { "Server" }
+    );
 
-        IORequest req{};
-        req.id = 1;
-        req.deviceId = deviceId;
-        req.command = 0x01; // Open
-        req.payload = to_vec(p);
-
-        IOResponse resp = dev.handle(req);
-        CHECK(resp.status == StatusCode::Ok);
-
-        REQUIRE(resp.payload.size() >= 1 + 1 + 2 + 2);
-        netproto::Reader r(resp.payload.data(), resp.payload.size());
-
-        std::uint8_t ver = 0, flags = 0;
-        std::uint16_t reserved = 0;
-
-        REQUIRE(r.read_u8(ver));
-        REQUIRE(r.read_u8(flags));
-        REQUIRE(r.read_u16le(reserved));
-        REQUIRE(r.read_u16le(handle));
-
-        CHECK(ver == V);
-        CHECK((flags & 0x01) != 0); // accepted
-        CHECK(handle != 0);
-    }
 
     // ---- Info ----
     {
-        IOResponse iresp = info_req(dev, deviceId, handle, 1024);
+        IOResponse iresp = info_req(dev, deviceId, handle);
         CHECK(iresp.status == StatusCode::Ok);
 
         netproto::Reader ir(iresp.payload.data(), iresp.payload.size());
@@ -124,7 +101,7 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
 
     // ---- Info after close should be InvalidRequest ----
     {
-        IOResponse iresp = info_req(dev, deviceId, handle, 16);
+        IOResponse iresp = info_req(dev, deviceId, handle);
         CHECK(iresp.status == StatusCode::InvalidRequest);
     }
 }
@@ -146,6 +123,7 @@ TEST_CASE("NetworkDevice v1: Write (POST) returns writtenLen via stub backend")
         netproto::write_lp_u16_string(p, "http://example.com/post");
         netproto::write_u16le(p, 0); // headerCount
         netproto::write_u32le(p, 4); // bodyLenHint
+        netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
 
         IORequest req{};
         req.id = 10;
@@ -215,7 +193,7 @@ TEST_CASE("Conformance: unknown handle => InvalidRequest (Info/Read/Write/Close)
     const auto deviceId = to_device_id(WireDeviceId::NetworkService);
     const std::uint16_t badHandle = 0x1234;
 
-    CHECK(info_req(dev, deviceId, badHandle, 16).status == StatusCode::InvalidRequest);
+    CHECK(info_req(dev, deviceId, badHandle).status == StatusCode::InvalidRequest);
     CHECK(read_req(dev, deviceId, badHandle, 0, 16).status == StatusCode::InvalidRequest);
     CHECK(write_req(dev, deviceId, badHandle, 0, "AB").status == StatusCode::InvalidRequest);
     CHECK(close_req(dev, deviceId, badHandle).status == StatusCode::InvalidRequest);
@@ -232,7 +210,7 @@ TEST_CASE("Conformance: handle is invalid after Close, and handle generation cha
     REQUIRE(close_req(dev, deviceId, h1).status == StatusCode::Ok);
 
     // Old handle must now be rejected
-    CHECK(info_req(dev, deviceId, h1, 16).status == StatusCode::InvalidRequest);
+    CHECK(info_req(dev, deviceId, h1).status == StatusCode::InvalidRequest);
 
     // Next open should not produce the same handle token (generation should change)
     const std::uint16_t h2 = open_handle_stub(dev, deviceId, "http://example.com/b");
@@ -255,6 +233,7 @@ TEST_CASE("Conformance: Open malformed URL => InvalidRequest")
     netproto::write_lp_u16_string(p, "example.com/no-scheme"); // malformed: missing scheme
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 0);
+    netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
 
     IORequest req{};
     req.id = 600;
@@ -280,6 +259,7 @@ TEST_CASE("Conformance: Open unsupported scheme => Unsupported")
     netproto::write_lp_u16_string(p, "tcp://example.com:80/");
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 0);
+    netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
 
     IORequest req{};
     req.id = 700;
@@ -313,6 +293,7 @@ TEST_CASE("Conformance: capacity strict (allow_evict=0) => 5th Open returns Devi
     netproto::write_lp_u16_string(p, "http://example.com/5");
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 0);
+    netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
 
     IORequest req{};
     req.id = 999;
@@ -346,7 +327,7 @@ TEST_CASE("Conformance: capacity eviction (allow_evict=1) => oldest handle becom
     }
 
     // The oldest handle should have been evicted at some point.
-    CHECK(info_req(dev, deviceId, h0, 16).status == StatusCode::InvalidRequest);
+    CHECK(info_req(dev, deviceId, h0).status == StatusCode::InvalidRequest);
     CHECK(close_req(dev, deviceId, h0).status == StatusCode::InvalidRequest);
 }
 
@@ -360,20 +341,20 @@ TEST_CASE("HTTP body lifecycle: Info/Read are NotReady until POST body fully wri
     const std::uint16_t h = open_handle_stub(dev, deviceId, "http://example.com/post", /*method=*/2, /*flags=*/0, /*bodyLenHint=*/4);
 
     // Before body complete, response must not be ready
-    CHECK(info_req(dev, deviceId, h, 128).status == StatusCode::NotReady);
+    CHECK(info_req(dev, deviceId, h).status == StatusCode::NotReady);
     CHECK(read_req(dev, deviceId, h, 0, 128).status == StatusCode::NotReady);
 
     // Write partial body
     CHECK(write_req(dev, deviceId, h, 0, "AB").status == StatusCode::Ok);
 
-    CHECK(info_req(dev, deviceId, h, 128).status == StatusCode::NotReady);
+    CHECK(info_req(dev, deviceId, h).status == StatusCode::NotReady);
     CHECK(read_req(dev, deviceId, h, 0, 128).status == StatusCode::NotReady);
 
     // Finish body
     CHECK(write_req(dev, deviceId, h, 2, "CD").status == StatusCode::Ok);
 
     // Now response is available (stub should allow Info/Read)
-    CHECK(info_req(dev, deviceId, h, 128).status == StatusCode::Ok);
+    CHECK(info_req(dev, deviceId, h).status == StatusCode::Ok);
     CHECK(read_req(dev, deviceId, h, 0, 128).status == StatusCode::Ok);
 
     CHECK(close_req(dev, deviceId, h).status == StatusCode::Ok);
@@ -424,6 +405,7 @@ TEST_CASE("HTTP body lifecycle: bodyLenHint>0 on non-POST/PUT => InvalidRequest"
     netproto::write_lp_u16_string(p, "http://example.com/get");
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 4); // bodyLenHint on GET => InvalidRequest
+    netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
 
     IORequest req{};
     req.id = 1234;

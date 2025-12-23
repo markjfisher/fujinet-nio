@@ -1,10 +1,10 @@
 # py/fujinet_tools/net.py
 from __future__ import annotations
+
 import sys
 import time
-
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 from .fujibus import FujiBusSession, FujiPacket
 from . import netproto as np
@@ -15,7 +15,6 @@ from .common import open_serial, status_ok
 # ----------------------------------------------------------------------
 # Status helpers
 # ----------------------------------------------------------------------
-
 
 STATUS_TEXT = {
     0: "Ok",
@@ -76,20 +75,16 @@ def _send_retry_not_ready(
     """
     deadline = time.monotonic() + max(0.0, timeout)
     attempt = 0
-
     backoff = max(0.001, sleep_s)
     backoff_max = 0.05  # 50ms cap
 
     while True:
         attempt += 1
-
         remaining = max(0.0, deadline - time.monotonic())
         if remaining <= 0.0:
             return None
 
-        # Short per-attempt timeout so we can poll/stash fairly.
         per_try_timeout = min(0.05, max(0.005, remaining))
-
         pkt = bus.send_command_expect(
             device=device,
             command=command,
@@ -129,11 +124,11 @@ def cmd_net_open(args) -> int:
         url=args.url,
         headers=[],
         body_len_hint=args.body_len_hint,
+        response_headers=getattr(args, "resp_header", None) or [],
     )
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
-
         pkt = _send_retry_not_ready(
             bus=bus,
             device=np.NETWORK_DEVICE_ID,
@@ -146,7 +141,6 @@ def cmd_net_open(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-
         if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
@@ -162,7 +156,6 @@ def cmd_net_close(args) -> int:
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
-
         pkt = _send_retry_not_ready(
             bus=bus,
             device=np.NETWORK_DEVICE_ID,
@@ -175,7 +168,6 @@ def cmd_net_close(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-
         if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
@@ -186,11 +178,11 @@ def cmd_net_close(args) -> int:
 
 
 def cmd_net_info(args) -> int:
-    req = np.build_info_req(args.handle, args.max_headers)
+    # NOTE: response headers (if any) must have been requested in Open().
+    req = np.build_info_req(args.handle)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
-
         pkt = _send_retry_not_ready(
             bus=bus,
             device=np.NETWORK_DEVICE_ID,
@@ -203,7 +195,6 @@ def cmd_net_info(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-
         if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
@@ -228,7 +219,6 @@ def cmd_net_write(args) -> int:
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
-
         pkt = _send_retry_not_ready(
             bus=bus,
             device=np.NETWORK_DEVICE_ID,
@@ -241,7 +231,6 @@ def cmd_net_write(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-
         if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
@@ -257,7 +246,6 @@ def cmd_net_read(args) -> int:
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
-
         pkt = _send_retry_not_ready(
             bus=bus,
             device=np.NETWORK_DEVICE_ID,
@@ -270,7 +258,6 @@ def cmd_net_read(args) -> int:
         if pkt is None:
             print("No response")
             return 2
-
         if not status_ok(pkt):
             code = _pkt_status_code(pkt)
             print(f"Device status={code} ({_status_str(code)})")
@@ -281,7 +268,6 @@ def cmd_net_read(args) -> int:
             Path(args.out).write_bytes(rr.data)
         else:
             sys.stdout.buffer.write(rr.data)
-
         if args.verbose:
             print(f"\n(offset={rr.offset} len={len(rr.data)} eof={rr.eof} truncated={rr.truncated})")
         return 0
@@ -289,7 +275,8 @@ def cmd_net_read(args) -> int:
 
 def cmd_net_get(args) -> int:
     """
-    Convenience wrapper: Open(GET) -> (Info) -> Read until EOF -> Close
+    Convenience wrapper:
+      Open(GET) -> (optional Info) -> Read until EOF -> Close
     Uses ONE serial connection + ONE FujiBusSession for the whole sequence.
     """
     out_path = Path(args.out) if args.out else None
@@ -299,6 +286,11 @@ def cmd_net_get(args) -> int:
             print(f"Refusing to overwrite {out_path} (use --force)")
             return 1
         out_path.write_bytes(b"")
+
+    # If the user wants to show headers, request a default allowlist unless overridden.
+    resp_headers = getattr(args, "resp_header", None) or []
+    if args.show_headers and not resp_headers:
+        resp_headers = ["Server", "Content-Type", "Content-Length", "Location", "ETag", "Last-Modified"]
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
@@ -310,6 +302,7 @@ def cmd_net_get(args) -> int:
             url=args.url,
             headers=[],
             body_len_hint=0,
+            response_headers=resp_headers,
         )
         pkt = _send_retry_not_ready(
             bus=bus,
@@ -337,7 +330,7 @@ def cmd_net_get(args) -> int:
         # INFO (optional)
         if args.show_headers:
             for _ in range(max(1, args.info_retries)):
-                info_req = np.build_info_req(handle, args.max_headers)
+                info_req = np.build_info_req(handle)
                 ipkt = _send_retry_not_ready(
                     bus=bus,
                     device=np.NETWORK_DEVICE_ID,
@@ -436,6 +429,7 @@ def cmd_net_head(args) -> int:
             url=args.url,
             headers=[],
             body_len_hint=0,
+            response_headers=getattr(args, "resp_header", None) or [],
         )
         pkt = _send_retry_not_ready(
             bus=bus,
@@ -457,7 +451,7 @@ def cmd_net_head(args) -> int:
         orr = np.parse_open_resp(pkt.payload)
         handle = orr.handle
 
-        info_req = np.build_info_req(handle, args.max_headers)
+        info_req = np.build_info_req(handle)
         ipkt = _send_retry_not_ready(
             bus=bus,
             device=np.NETWORK_DEVICE_ID,
@@ -501,6 +495,10 @@ def cmd_net_send(args) -> int:
     data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
     body_len_hint = len(data) if args.body_len_hint < 0 else args.body_len_hint
 
+    resp_headers = getattr(args, "resp_header", None) or []
+    if args.show_headers and not resp_headers:
+        resp_headers = ["Server", "Content-Type", "Content-Length", "Location", "ETag", "Last-Modified"]
+
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
@@ -510,6 +508,7 @@ def cmd_net_send(args) -> int:
             url=args.url,
             headers=[],
             body_len_hint=body_len_hint if (args.method in (2, 3)) else 0,
+            response_headers=resp_headers,
         )
 
         # OPEN
@@ -545,9 +544,8 @@ def cmd_net_send(args) -> int:
 
             offset = 0
             while offset < len(data):
-                chunk = data[offset: offset + args.write_chunk]
+                chunk = data[offset : offset + args.write_chunk]
                 wreq = np.build_write_req(handle, offset, chunk)
-
                 wpkt = _send_retry_not_ready(
                     bus=bus,
                     device=np.NETWORK_DEVICE_ID,
@@ -573,7 +571,7 @@ def cmd_net_send(args) -> int:
 
         # Optional INFO
         if args.show_headers:
-            info_req = np.build_info_req(handle, args.max_headers)
+            info_req = np.build_info_req(handle)
             ipkt = _send_retry_not_ready(
                 bus=bus,
                 device=np.NETWORK_DEVICE_ID,
@@ -601,10 +599,8 @@ def cmd_net_send(args) -> int:
 
             offset = 0
             total = 0
-
             while True:
                 rreq = np.build_read_req(handle, offset, args.chunk)
-
                 rpkt = _send_retry_not_ready(
                     bus=bus,
                     device=np.NETWORK_DEVICE_ID,
@@ -668,13 +664,13 @@ def register_subcommands(subparsers) -> None:
 
     pno = nsub.add_parser("open", help="Open a URL and return a handle")
     pno.add_argument("--method", type=int, default=1, help="1=GET,2=POST,3=PUT,4=DELETE,5=HEAD")
-    pno.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects, bit2=want_headers")
+    pno.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects")
     pno.add_argument("--body-len-hint", type=int, default=0, help="Expected request body length (POST/PUT)")
+    pno.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
     pno.add_argument("url")
     pno.set_defaults(fn=cmd_net_open)
 
     pni = nsub.add_parser("info", help="Fetch response metadata and headers")
-    pni.add_argument("--max-headers", type=int, default=1024)
     pni.add_argument("handle", type=int)
     pni.set_defaults(fn=cmd_net_info)
 
@@ -703,7 +699,7 @@ def register_subcommands(subparsers) -> None:
     png.add_argument("--out", help="Write to this file (else stdout)")
     png.add_argument("--force", action="store_true", help="Overwrite --out if it exists")
     png.add_argument("--show-headers", action="store_true")
-    png.add_argument("--max-headers", type=int, default=1024)
+    png.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
     png.add_argument("--info-retries", type=int, default=10)
     png.add_argument("--info-sleep", type=float, default=0.1)
     png.add_argument("url")
@@ -711,23 +707,21 @@ def register_subcommands(subparsers) -> None:
 
     pnh = nsub.add_parser("head", help="HEAD a URL and print metadata/headers")
     pnh.add_argument("--flags", type=int, default=0)
-    pnh.add_argument("--max-headers", type=int, default=2048)
+    pnh.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
     pnh.add_argument("url")
     pnh.set_defaults(fn=cmd_net_head)
 
     pns = nsub.add_parser("send", help="Send a request (GET/POST/PUT/DELETE/HEAD) with optional body + response streaming")
     pns.add_argument("--method", type=int, required=True, help="1=GET,2=POST,3=PUT,4=DELETE,5=HEAD")
-    pns.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects, bit2=want_headers")
+    pns.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects")
     pns.add_argument("--show-headers", action="store_true")
-    pns.add_argument("--max-headers", type=int, default=2048)
+    pns.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
     pns.add_argument("--info-retries", type=int, default=50)
     pns.add_argument("--info-sleep", type=float, default=0.005)
-
     pns.add_argument("--read-response", action="store_true", help="Read and stream response body after request completes")
     pns.add_argument("--chunk", type=int, default=512, help="Read chunk size")
     pns.add_argument("--out", help="Write response body to this file (else stdout)")
     pns.add_argument("--force", action="store_true", help="Overwrite --out if it exists")
-
     pns.add_argument("--body-len-hint", type=int, default=-1, help="POST/PUT only: -1=use len(data), else fixed expected length")
     pns.add_argument("--write-chunk", type=int, default=1024, help="Write chunk size for request body upload")
     src = pns.add_mutually_exclusive_group(required=False)

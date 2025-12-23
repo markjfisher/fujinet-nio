@@ -24,7 +24,7 @@ public:
                          std::uint16_t& read,
                          bool& eof) override;
 
-    StatusCode info(std::size_t maxHeaderBytes, NetworkInfo& out) override;
+    StatusCode info(NetworkInfo& out) override;
 
     void poll() override {}
     void close() override;

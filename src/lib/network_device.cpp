@@ -139,13 +139,41 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 }
                 headers.emplace_back(std::string(k), std::string(v));
             }
-        
+
             std::uint32_t bodyLenHint = 0;
-            if (!r.read_u32le(bodyLenHint) || r.remaining() != 0) {
+            if (!r.read_u32le(bodyLenHint)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
-        
+            
+            // NEW: response header allowlist (u16 count, then count * lp_u16 string)
+            std::uint16_t respHeaderCount = 0;
+            if (!r.read_u16le(respHeaderCount)) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+            
+            std::vector<std::string> respHeaderNamesLower;
+            respHeaderNamesLower.reserve(respHeaderCount);
+            
+            for (std::uint16_t i = 0; i < respHeaderCount; ++i) {
+                std::string_view name;
+                if (!r.read_lp_u16_string(name)) {
+                    resp.status = StatusCode::InvalidRequest;
+                    return resp;
+                }
+                if (name.empty()) {
+                    resp.status = StatusCode::InvalidRequest;
+                    return resp;
+                }
+                respHeaderNamesLower.emplace_back(to_lower_ascii(name));
+            }
+            
+            if (r.remaining() != 0) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+                    
             // Determine URL scheme -> protocol backend
             std::string schemeLower;
             if (!extract_scheme_lower(urlView, schemeLower)) {
@@ -165,7 +193,8 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             openReq.url.assign(urlView.data(), urlView.size());
             openReq.headers = std::move(headers);
             openReq.bodyLenHint = bodyLenHint;
-
+            openReq.responseHeaderNamesLower = std::move(respHeaderNamesLower);
+            
             const bool methodAllowsBody = (method == 2 /*POST*/ || method == 3 /*PUT*/);
             // Keep v1 simple + deterministic: only POST/PUT may declare a body.
             if (bodyLenHint > 0 && !methodAllowsBody) {
@@ -312,8 +341,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
 
             std::uint16_t handle = 0;
-            std::uint16_t maxHeaderBytes = 0;
-            if (!r.read_u16le(handle) || !r.read_u16le(maxHeaderBytes) || r.remaining() != 0) {
+            if (!r.read_u16le(handle) || r.remaining() != 0) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
@@ -332,7 +360,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
 
             NetworkInfo info{};
-            const StatusCode st = s->proto->info(maxHeaderBytes, info);
+            const StatusCode st = s->proto->info(info);
             if (st != StatusCode::Ok) {
                 resp.status = st;
                 return resp;

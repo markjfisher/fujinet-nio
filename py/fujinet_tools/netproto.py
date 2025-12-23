@@ -42,9 +42,23 @@ def build_open_req(
     url: str,
     headers: Optional[List[Tuple[str, str]]] = None,
     body_len_hint: int = 0,
+    response_headers: Optional[List[str]] = None,
 ) -> bytes:
+    """
+    v1 (updated):
+      u8  version
+      u8  method
+      u8  flags
+      lp_u16 url
+      u16 headerCount; repeated (lp_u16 key, lp_u16 value)
+      u32 bodyLenHint
+      u16 respHeaderCount; repeated lp_u16 name   <-- NEW (required)
+    """
     if headers is None:
         headers = []
+    if response_headers is None:
+        response_headers = []
+
     url_b = url.encode("utf-8")
     if len(url_b) > 0xFFFF:
         raise ValueError("url too long")
@@ -54,20 +68,32 @@ def build_open_req(
         raise ValueError("flags must fit u8")
     if not (0 <= body_len_hint <= 0xFFFFFFFF):
         raise ValueError("body_len_hint must fit u32")
+    if len(response_headers) > 0xFFFF:
+        raise ValueError("too many response headers")
 
     out = bytearray()
     out.append(NETPROTO_VERSION)
     out.append(method & 0xFF)
     out.append(flags & 0xFF)
+
     out += u16le(len(url_b))
     out += url_b
+
     out += u16le(len(headers))
     for k, v in headers:
         kb = k.encode("utf-8")
         vb = v.encode("utf-8")
         out += u16le(min(len(kb), 0xFFFF)) + kb[:0xFFFF]
         out += u16le(min(len(vb), 0xFFFF)) + vb[:0xFFFF]
+
     out += u32le(body_len_hint)
+
+    # NEW: response header allowlist (store nothing if empty)
+    out += u16le(len(response_headers))
+    for name in response_headers:
+        nb = name.encode("utf-8")
+        out += u16le(min(len(nb), 0xFFFF)) + nb[:0xFFFF]
+
     return bytes(out)
 
 
@@ -77,12 +103,15 @@ def build_close_req(handle: int) -> bytes:
     return bytes([NETPROTO_VERSION]) + u16le(handle)
 
 
-def build_info_req(handle: int, max_header_bytes: int) -> bytes:
+def build_info_req(handle: int) -> bytes:
+    """
+    v1 (updated):
+      u8 version
+      u16 handle
+    """
     if not (0 <= handle <= 0xFFFF):
         raise ValueError("handle must fit u16")
-    if not (0 <= max_header_bytes <= 0xFFFF):
-        raise ValueError("max_header_bytes must fit u16")
-    return bytes([NETPROTO_VERSION]) + u16le(handle) + u16le(max_header_bytes)
+    return bytes([NETPROTO_VERSION]) + u16le(handle)
 
 
 def build_read_req(handle: int, offset: int, max_bytes: int) -> bytes:
@@ -137,12 +166,14 @@ def parse_info_resp(payload: bytes) -> InfoResp:
     hdr_len, off = read_u16le(payload, off)
     if off + hdr_len > len(payload):
         raise ValueError("header bytes out of bounds")
-    hdr = payload[off:off + hdr_len]
+    hdr = payload[off : off + hdr_len]
     off += hdr_len
     if off != len(payload):
         raise ValueError("trailing bytes in info response")
+
     has_len = bool(flags & 0x02)
     has_status = bool(flags & 0x04)
+
     return InfoResp(
         headers_included=bool(flags & 0x01),
         has_content_length=has_len,
@@ -201,7 +232,7 @@ def parse_read_resp(payload: bytes) -> ReadResp:
     data_len, off = read_u16le(payload, off)
     if off + data_len > len(payload):
         raise ValueError("read data out of bounds")
-    data = payload[off:off + data_len]
+    data = payload[off : off + data_len]
     off += data_len
     if off != len(payload):
         raise ValueError("trailing bytes in read response")
@@ -212,5 +243,3 @@ def parse_read_resp(payload: bytes) -> ReadResp:
         offset=offset,
         data=data,
     )
-
-

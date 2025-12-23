@@ -16,8 +16,20 @@ StatusCode StubNetworkProtocol::open(const NetworkOpenRequest& req)
     _openReq = req;
 
     _httpStatus = 200;
-    _headersBlock = "Content-Type: text/plain\r\nServer: fujinet-nio-stub\r\n";
 
+    // NEW: only return response headers if explicitly requested.
+    // Keys in req.responseHeaderNamesLower are already lowercase.
+    _headersBlock.clear();
+    if (!req.responseHeaderNamesLower.empty()) {
+        for (const auto& k : req.responseHeaderNamesLower) {
+            if (k == "content-type") {
+                _headersBlock += "Content-Type: text/plain\r\n";
+            } else if (k == "server") {
+                _headersBlock += "Server: fujinet-nio-stub\r\n";
+            }
+        }
+    }
+    
     const std::string bodyStr = std::string("stub response for: ") + _openReq.url + "\n";
     _body.assign(bodyStr.begin(), bodyStr.end());
     _contentLength = static_cast<std::uint64_t>(_body.size());
@@ -85,7 +97,7 @@ StatusCode StubNetworkProtocol::read_body(std::uint32_t offset,
     return StatusCode::Ok;
 }
 
-StatusCode StubNetworkProtocol::info(std::size_t maxHeaderBytes, NetworkInfo& out)
+StatusCode StubNetworkProtocol::info(NetworkInfo& out)
 {
     out = NetworkInfo{};
     out.hasHttpStatus = true;
@@ -93,8 +105,9 @@ StatusCode StubNetworkProtocol::info(std::size_t maxHeaderBytes, NetworkInfo& ou
     out.hasContentLength = true;
     out.contentLength = _contentLength;
 
-    const std::size_t n = std::min<std::size_t>(_headersBlock.size(), maxHeaderBytes);
-    out.headersBlock.assign(_headersBlock.data(), n);
+    // No truncation; in this refactor the stub just returns what it has.
+    out.headersBlock = _headersBlock;
+
     return StatusCode::Ok;
 }
 
