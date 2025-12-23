@@ -45,7 +45,7 @@ abstract C_0010613333864250568344 {
 +~INetworkProtocol() constexpr = default : void
 ..
 {abstract} +close() = 0 : void
-{abstract} +info(std::size_t maxHeaderBytes, NetworkInfo & out) = 0 : StatusCode
+{abstract} +info(NetworkInfo & out) = 0 : StatusCode
 {abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
 {abstract} +poll() = 0 : void
 {abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
@@ -191,7 +191,7 @@ __
 class "io::StubNetworkProtocol" as C_0011683483391837494806
 class C_0011683483391837494806 {
 +close() : void
-+info(std::size_t maxHeaderBytes, NetworkInfo & out) : StatusCode
++info(NetworkInfo & out) : StatusCode
 +open(const NetworkOpenRequest & req) : StatusCode
 +poll() : void
 +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) : StatusCode
@@ -244,7 +244,7 @@ class C_0018080614400737831579 {
 -build_info_headers() const : std::string
 +close() : void
 -handle_io_error(IoDir dir, int errno_val) : void
-+info(std::size_t maxHeaderBytes, io::NetworkInfo & out) : io::StatusCode
++info(io::NetworkInfo & out) : io::StatusCode
 +last_errno() const noexcept : int
 +open(const io::NetworkOpenRequest & req) : io::StatusCode
 {static} +parse_tcp_url(const std::string & url, std::string & outHost, std::uint16_t & outPort, Options & outOpt) : bool

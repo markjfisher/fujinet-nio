@@ -47,6 +47,7 @@ __
 +flags : std::uint8_t
 +headers : std::vector<std::pair<std::string,std::string>>
 +method : std::uint8_t
++responseHeaderNamesLower : std::vector<std::string>
 +url : std::string
 }
 class "io::NetworkInfo" as C_0007100525671922339382
@@ -63,7 +64,7 @@ abstract C_0010613333864250568344 {
 +~INetworkProtocol() constexpr = default : void
 ..
 {abstract} +close() = 0 : void
-{abstract} +info(std::size_t maxHeaderBytes, NetworkInfo & out) = 0 : StatusCode
+{abstract} +info(NetworkInfo & out) = 0 : StatusCode
 {abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
 {abstract} +poll() = 0 : void
 {abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
@@ -240,7 +241,7 @@ __
 class "io::StubNetworkProtocol" as C_0011683483391837494806
 class C_0011683483391837494806 {
 +close() : void
-+info(std::size_t maxHeaderBytes, NetworkInfo & out) : StatusCode
++info(NetworkInfo & out) : StatusCode
 +open(const NetworkOpenRequest & req) : StatusCode
 +poll() : void
 +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) : StatusCode
