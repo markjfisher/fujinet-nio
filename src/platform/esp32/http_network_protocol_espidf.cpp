@@ -386,6 +386,31 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         return fujinet::io::StatusCode::Unsupported;
     }
 
+    auto fail = [&](fujinet::io::StatusCode sc) -> fujinet::io::StatusCode {
+        // Stop any in-flight activity (should be none during open(), but keep it safe).
+        _s->stop_requested = true;
+
+        if (_s->client) {
+            (void)esp_http_client_close(_s->client);
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
+        }
+
+        _s->task = nullptr;
+
+        if (_s->stream) {
+            (void)xStreamBufferReset(_s->stream);
+        }
+
+        take_mutex(_s->meta_mutex);
+        _s->headers_block.clear();
+        _s->reset_session_state();
+        give_mutex(_s->meta_mutex);
+
+        return sc;
+    };
+
+
     _s->reset_session_state();
     _s->method = req.method;
     _s->response_header_names_lower = req.responseHeaderNamesLower;
@@ -424,7 +449,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
     _s->client = esp_http_client_init(&cfg);
     if (!_s->client) {
-        return fujinet::io::StatusCode::InternalError;
+        return fail(fujinet::io::StatusCode::InternalError);
     }
 
     switch (req.method) {
@@ -434,24 +459,18 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         case 4: esp_http_client_set_method(_s->client, HTTP_METHOD_DELETE); break;
         case 5: esp_http_client_set_method(_s->client, HTTP_METHOD_HEAD); break;
         default:
-            esp_http_client_cleanup(_s->client);
-            _s->client = nullptr;
-            return fujinet::io::StatusCode::Unsupported;
+            return fail(fujinet::io::StatusCode::Unsupported);
     }
     
     for (const auto& kv : req.headers) {
         if (!kv.first.empty()) {
-            esp_err_t err = esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
+            const esp_err_t err = esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
             if (err != ESP_OK) {
-                // cleanup + clear busy so future requests work
-                esp_http_client_cleanup(_s->client);
-                _s->client = nullptr;
-                _s->busy = false; // adjust to your actual flag
-                return StatusCode::InvalidRequest; // or IOError if you prefer
+                FN_LOGE(TAG, "open: esp_http_client_set_header failed err=%d key=%s", (int)err, kv.first.c_str());
+                return fail(fujinet::io::StatusCode::InvalidRequest);
             }
         }
-    }
-    
+    }    
 
     const bool is_post_or_put = (req.method == 2 || req.method == 3);
     _s->has_request_body = is_post_or_put && (req.bodyLenHint > 0);
@@ -462,11 +481,10 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     // For POST/PUT with bodyLenHint>0, open a streaming upload connection and defer the task
     // until the final body byte is written (write_body()).
     if (_s->has_request_body) {
-        esp_err_t e = esp_http_client_open(_s->client, static_cast<int>(_s->expected_body_len));
+        const esp_err_t e = esp_http_client_open(_s->client, static_cast<int>(_s->expected_body_len));
         if (e != ESP_OK) {
-            esp_http_client_cleanup(_s->client);
-            _s->client = nullptr;
-            return fujinet::io::StatusCode::IOError;
+            FN_LOGE(TAG, "open: esp_http_client_open failed err=%d", (int)e);
+            return fail(fujinet::io::StatusCode::IOError);
         }
         _s->upload_open = true;
         // No task started yet; response will be pulled after upload completes.
@@ -479,9 +497,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
     BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 4096, _s, 3, &_s->task);
     if (ok != pdPASS || !_s->task) {
-        esp_http_client_cleanup(_s->client);
-        _s->client = nullptr;
-        return fujinet::io::StatusCode::InternalError;
+        return fail(fujinet::io::StatusCode::InternalError);
     }
     return fujinet::io::StatusCode::Ok;
 

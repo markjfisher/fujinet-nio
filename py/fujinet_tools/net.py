@@ -190,7 +190,7 @@ def cmd_net_open(args) -> int:
             payload=req,
             timeout=args.timeout,
             retries=50,
-            sleep_s=0.01,
+            sleep_s=0.02,
         )
         if pkt is None:
             print("No response")
@@ -217,7 +217,7 @@ def cmd_net_close(args) -> int:
             payload=req,
             timeout=args.timeout,
             retries=50,
-            sleep_s=0.01,
+            sleep_s=0.02,
         )
         if pkt is None:
             print("No response")
@@ -244,7 +244,7 @@ def cmd_net_info(args) -> int:
             payload=req,
             timeout=args.timeout,
             retries=200,
-            sleep_s=0.01,
+            sleep_s=0.02,
         )
         if pkt is None:
             print("No response")
@@ -365,7 +365,7 @@ def cmd_net_get(args) -> int:
             payload=open_req,
             timeout=args.timeout,
             retries=50,
-            sleep_s=0.01,
+            sleep_s=0.02,
         )
         if pkt is None:
             print("No response")
@@ -410,71 +410,74 @@ def cmd_net_get(args) -> int:
                     print(ir.header_bytes.decode("utf-8", errors="replace"), end="")
                 break
 
-        # READ loop (robust against NotReady / short stalls)
-        offset = 0
-        total = 0
-        idle_deadline = time.monotonic() + max(0.25, float(getattr(args, "idle_timeout", 0.0) or 0.0)) if hasattr(args, "idle_timeout") else float("inf")
+        try:
+            # READ loop (robust against NotReady / short stalls)
+            offset = 0
+            total = 0
+            idle_deadline = time.monotonic() + max(0.25, float(getattr(args, "idle_timeout", 0.0) or 0.0)) if hasattr(args, "idle_timeout") else float("inf")
 
-        while True:
-            read_req = np.build_read_req(handle, offset, args.chunk)
-            rpkt = _send_retry_not_ready(
-                bus=bus,
-                device=np.NETWORK_DEVICE_ID,
-                command=np.CMD_READ,
-                payload=read_req,
-                timeout=args.timeout,
-                retries=5000,
-                sleep_s=0.005,
-            )
-            if rpkt is None:
-                print("No response")
-                return 2
-            if not status_ok(rpkt):
-                code = _pkt_status_code(rpkt)
-                print(f"Device status={code} ({_status_str(code)})")
-                return 1
+            while True:
+                read_req = np.build_read_req(handle, offset, args.chunk)
+                rpkt = _send_retry_not_ready(
+                    bus=bus,
+                    device=np.NETWORK_DEVICE_ID,
+                    command=np.CMD_READ,
+                    payload=read_req,
+                    timeout=args.timeout,
+                    retries=5000,
+                    sleep_s=0.005,
+                )
+                if rpkt is None:
+                    print("No response")
+                    return 2
+                if not status_ok(rpkt):
+                    code = _pkt_status_code(rpkt)
+                    print(f"Device status={code} ({_status_str(code)})")
+                    return 1
 
-            rr = np.parse_read_resp(rpkt.payload)
-            if rr.offset != offset:
-                print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
-                return 1
+                rr = np.parse_read_resp(rpkt.payload)
+                if rr.offset != offset:
+                    print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
+                    return 1
 
-            n = len(rr.data)
-            if n:
-                idle_deadline = time.monotonic() + 0.25  # progress resets idle
-                if out_path:
-                    with out_path.open("ab") as f:
-                        f.write(rr.data)
-                else:
-                    sys.stdout.buffer.write(rr.data)
-                    sys.stdout.buffer.flush()
+                n = len(rr.data)
+                if n:
+                    idle_deadline = time.monotonic() + 0.25  # progress resets idle
+                    if out_path:
+                        with out_path.open("ab") as f:
+                            f.write(rr.data)
+                    else:
+                        sys.stdout.buffer.write(rr.data)
+                        sys.stdout.buffer.flush()
 
-                total += n
-                offset += n
+                    total += n
+                    offset += n
 
-            if args.verbose:
-                print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+                if args.verbose:
+                    print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
 
-            if rr.eof:
-                break
-
-            if n == 0:
-                if time.monotonic() > idle_deadline:
+                if rr.eof:
                     break
-                time.sleep(0.02)
 
-
-        # CLOSE best-effort
-        close_req = np.build_close_req(handle)
-        _send_retry_not_ready(
-            bus=bus,
-            device=np.NETWORK_DEVICE_ID,
-            command=np.CMD_CLOSE,
-            payload=close_req,
-            timeout=args.timeout,
-            retries=50,
-            sleep_s=0.01,
-        )
+                if n == 0:
+                    if time.monotonic() > idle_deadline:
+                        break
+                    time.sleep(0.02)
+        finally:
+            # CLOSE best-effort
+            try:
+                close_req = np.build_close_req(handle)
+                _send_retry_not_ready(
+                    bus=bus,
+                    device=np.NETWORK_DEVICE_ID,
+                    command=np.CMD_CLOSE,
+                    payload=close_req,
+                    timeout=args.timeout,
+                    retries=50,
+                    sleep_s=0.02,
+                )
+            except Exception:
+                pass
 
         if args.verbose:
             print(f"total read: {total} bytes")
@@ -501,7 +504,7 @@ def cmd_net_head(args) -> int:
             payload=open_req,
             timeout=args.timeout,
             retries=50,
-            sleep_s=0.01,
+            sleep_s=0.02,
         )
         if pkt is None:
             print("No response")
@@ -514,39 +517,45 @@ def cmd_net_head(args) -> int:
         orr = np.parse_open_resp(pkt.payload)
         handle = orr.handle
 
-        info_req = np.build_info_req(handle)
-        ipkt = _send_retry_not_ready(
-            bus=bus,
-            device=np.NETWORK_DEVICE_ID,
-            command=np.CMD_INFO,
-            payload=info_req,
-            timeout=args.timeout,
-            retries=300,
-            sleep_s=0.01,
-        )
-        if ipkt is None:
-            print("No response")
-            return 2
-        if not status_ok(ipkt):
-            code = _pkt_status_code(ipkt)
-            print(f"Device status={code} ({_status_str(code)})")
-            return 1
+        try:
+            info_req = np.build_info_req(handle)
+            ipkt = _send_retry_not_ready(
+                bus=bus,
+                device=np.NETWORK_DEVICE_ID,
+                command=np.CMD_INFO,
+                payload=info_req,
+                timeout=args.timeout,
+                retries=300,
+                sleep_s=0.02,
+            )
+            if ipkt is None:
+                print("No response")
+                return 2
+            if not status_ok(ipkt):
+                code = _pkt_status_code(ipkt)
+                print(f"Device status={code} ({_status_str(code)})")
+                return 1
 
-        ir = np.parse_info_resp(ipkt.payload)
-        print(f"http_status={ir.http_status} content_length={ir.content_length}")
-        if ir.header_bytes:
-            print(ir.header_bytes.decode("utf-8", errors="replace"), end="")
+            ir = np.parse_info_resp(ipkt.payload)
+            print(f"http_status={ir.http_status} content_length={ir.content_length}")
+            if ir.header_bytes:
+                print(ir.header_bytes.decode("utf-8", errors="replace"), end="")
+        finally:
+            # CLOSE best-effort
+            try:
+                close_req = np.build_close_req(handle)
+                _send_retry_not_ready(
+                    bus=bus,
+                    device=np.NETWORK_DEVICE_ID,
+                    command=np.CMD_CLOSE,
+                    payload=close_req,
+                    timeout=args.timeout,
+                    retries=50,
+                    sleep_s=0.02,
+                )
+            except Exception:
+                pass
 
-        close_req = np.build_close_req(handle)
-        _send_retry_not_ready(
-            bus=bus,
-            device=np.NETWORK_DEVICE_ID,
-            command=np.CMD_CLOSE,
-            payload=close_req,
-            timeout=args.timeout,
-            retries=50,
-            sleep_s=0.01,
-        )
         return 0
 
 
@@ -582,7 +591,7 @@ def cmd_net_send(args) -> int:
             payload=open_req,
             timeout=args.timeout,
             retries=50,
-            sleep_s=0.01,
+            sleep_s=0.02,
         )
         if pkt is None:
             print("No response")
@@ -599,125 +608,130 @@ def cmd_net_send(args) -> int:
 
         handle = orr.handle
 
-        # Optional body upload (POST/PUT only)
-        if args.method in (2, 3) and body_len_hint > 0:
-            if not orr.needs_body_write:
-                print("Device did not request body write, but body_len_hint > 0 was provided")
-                return 1
+        try:
+            # Optional body upload (POST/PUT only)
+            if args.method in (2, 3) and body_len_hint > 0:
+                if not orr.needs_body_write:
+                    print("Device did not request body write, but body_len_hint > 0 was provided")
+                    return 1
 
-            offset = 0
-            while offset < len(data):
-                chunk = data[offset : offset + args.write_chunk]
-                wreq = np.build_write_req(handle, offset, chunk)
-                wpkt = _send_retry_not_ready(
+                offset = 0
+                while offset < len(data):
+                    chunk = data[offset : offset + args.write_chunk]
+                    wreq = np.build_write_req(handle, offset, chunk)
+                    wpkt = _send_retry_not_ready(
+                        bus=bus,
+                        device=np.NETWORK_DEVICE_ID,
+                        command=np.CMD_WRITE,
+                        payload=wreq,
+                        timeout=args.timeout,
+                        retries=2000,
+                        sleep_s=0.001,
+                    )
+                    if wpkt is None:
+                        print("No response")
+                        return 2
+                    if not status_ok(wpkt):
+                        code = _pkt_status_code(wpkt)
+                        print(f"Device status={code} ({_status_str(code)})")
+                        return 1
+
+                    wr = np.parse_write_resp(wpkt.payload)
+                    if wr.written == 0:
+                        print("Write returned 0 bytes written; aborting")
+                        return 1
+                    offset += wr.written
+
+            # Optional INFO
+            if args.show_headers:
+                info_req = np.build_info_req(handle)
+                ipkt = _send_retry_not_ready(
                     bus=bus,
                     device=np.NETWORK_DEVICE_ID,
-                    command=np.CMD_WRITE,
-                    payload=wreq,
+                    command=np.CMD_INFO,
+                    payload=info_req,
                     timeout=args.timeout,
-                    retries=2000,
-                    sleep_s=0.001,
+                    retries=args.info_retries,
+                    sleep_s=args.info_sleep,
                 )
-                if wpkt is None:
-                    print("No response")
-                    return 2
-                if not status_ok(wpkt):
-                    code = _pkt_status_code(wpkt)
-                    print(f"Device status={code} ({_status_str(code)})")
-                    return 1
+                if ipkt and status_ok(ipkt):
+                    ir = np.parse_info_resp(ipkt.payload)
+                    print(f"http_status={ir.http_status} content_length={ir.content_length}")
+                    if ir.header_bytes:
+                        print(ir.header_bytes.decode("utf-8", errors="replace"), end="")
 
-                wr = np.parse_write_resp(wpkt.payload)
-                if wr.written == 0:
-                    print("Write returned 0 bytes written; aborting")
-                    return 1
-                offset += wr.written
-
-        # Optional INFO
-        if args.show_headers:
-            info_req = np.build_info_req(handle)
-            ipkt = _send_retry_not_ready(
-                bus=bus,
-                device=np.NETWORK_DEVICE_ID,
-                command=np.CMD_INFO,
-                payload=info_req,
-                timeout=args.timeout,
-                retries=args.info_retries,
-                sleep_s=args.info_sleep,
-            )
-            if ipkt and status_ok(ipkt):
-                ir = np.parse_info_resp(ipkt.payload)
-                print(f"http_status={ir.http_status} content_length={ir.content_length}")
-                if ir.header_bytes:
-                    print(ir.header_bytes.decode("utf-8", errors="replace"), end="")
-
-        # Optionally stream response body
-        if args.read_response:
-            out_path = Path(args.out) if args.out else None
-            if out_path:
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                if out_path.exists() and not args.force:
-                    print(f"Refusing to overwrite {out_path} (use --force)")
-                    return 1
-                out_path.write_bytes(b"")
-
-            offset = 0
-            total = 0
-            while True:
-                rreq = np.build_read_req(handle, offset, args.chunk)
-                rpkt = _send_retry_not_ready(
-                    bus=bus,
-                    device=np.NETWORK_DEVICE_ID,
-                    command=np.CMD_READ,
-                    payload=rreq,
-                    timeout=args.timeout,
-                    retries=20000,
-                    sleep_s=0.005,
-                )
-                if rpkt is None:
-                    print("No response")
-                    return 2
-                if not status_ok(rpkt):
-                    code = _pkt_status_code(rpkt)
-                    print(f"Device status={code} ({_status_str(code)})")
-                    return 1
-
-                rr = np.parse_read_resp(rpkt.payload)
-                if rr.offset != offset:
-                    print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
-                    return 1
-
+            # Optionally stream response body
+            if args.read_response:
+                out_path = Path(args.out) if args.out else None
                 if out_path:
-                    with out_path.open("ab") as f:
-                        f.write(rr.data)
-                else:
-                    sys.stdout.buffer.write(rr.data)
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    if out_path.exists() and not args.force:
+                        print(f"Refusing to overwrite {out_path} (use --force)")
+                        return 1
+                    out_path.write_bytes(b"")
 
-                n = len(rr.data)
-                total += n
-                offset += n
+                offset = 0
+                total = 0
+                while True:
+                    rreq = np.build_read_req(handle, offset, args.chunk)
+                    rpkt = _send_retry_not_ready(
+                        bus=bus,
+                        device=np.NETWORK_DEVICE_ID,
+                        command=np.CMD_READ,
+                        payload=rreq,
+                        timeout=args.timeout,
+                        retries=20000,
+                        sleep_s=0.005,
+                    )
+                    if rpkt is None:
+                        print("No response")
+                        return 2
+                    if not status_ok(rpkt):
+                        code = _pkt_status_code(rpkt)
+                        print(f"Device status={code} ({_status_str(code)})")
+                        return 1
+
+                    rr = np.parse_read_resp(rpkt.payload)
+                    if rr.offset != offset:
+                        print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
+                        return 1
+
+                    if out_path:
+                        with out_path.open("ab") as f:
+                            f.write(rr.data)
+                    else:
+                        sys.stdout.buffer.write(rr.data)
+
+                    n = len(rr.data)
+                    total += n
+                    offset += n
+
+                    if args.verbose:
+                        print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+
+                    if rr.eof:
+                        break
+                    if n == 0:
+                        time.sleep(0.01)
 
                 if args.verbose:
-                    print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+                    print(f"total read: {total} bytes")
+        finally:
+            # CLOSE best-effort
+            try:
+                close_req = np.build_close_req(handle)
+                _send_retry_not_ready(
+                    bus=bus,
+                    device=np.NETWORK_DEVICE_ID,
+                    command=np.CMD_CLOSE,
+                    payload=close_req,
+                    timeout=args.timeout,
+                    retries=50,
+                    sleep_s=0.02,
+                )
+            except Exception:
+                pass
 
-                if rr.eof:
-                    break
-                if n == 0:
-                    time.sleep(0.01)
-
-            if args.verbose:
-                print(f"total read: {total} bytes")
-
-        # CLOSE (best-effort)
-        close_req = np.build_close_req(handle)
-        _send_retry_not_ready(
-            bus=bus,
-            device=np.NETWORK_DEVICE_ID,
-            command=np.CMD_CLOSE,
-            payload=close_req,
-            timeout=args.timeout,
-            retries=50,
-            sleep_s=0.01,
-        )
         return 0
 
 
