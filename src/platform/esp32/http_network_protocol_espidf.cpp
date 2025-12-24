@@ -301,6 +301,7 @@ static void http_task_entry(void* arg)
         (void)xSemaphoreGive(s->done_sem);
     }
 
+    s->task = nullptr;
     vTaskDelete(nullptr);
 }
 
@@ -352,6 +353,7 @@ static void http_task_entry_after_upload(void* arg)
     if (s->done_sem) {
         (void)xSemaphoreGive(s->done_sem);
     }
+    s->task = nullptr;
     vTaskDelete(nullptr);
 }
 
@@ -673,14 +675,15 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
                 constexpr TickType_t kDoneWait = pdMS_TO_TICKS(5);
                 if (xSemaphoreTake(_s->done_sem, kDoneWait) == pdTRUE)
                 {
-                    // Put it back so close() still works unchanged.
-                    (void)xSemaphoreGive(_s->done_sem);
-
+                    // Signal consumed; don't give it back. We just wanted to reduce
+                    // latency to EOF. The cleanup path will no longer rely on done_sem
+                    // being available after this point.
                     take_mutex(_s->meta_mutex);
                     done = _s->done;
                     err = _s->err;
                     give_mutex(_s->meta_mutex);
                 }
+
             }
 
             if (done)
@@ -754,36 +757,38 @@ void HttpNetworkProtocolEspIdf::poll()
 {
     if (!_s) return;
 
-    // If there is a task, check if it has completed. When complete, we can safely
-    // cleanup the esp_http_client handle and reset session state.
-    if (_s->task && _s->done_sem) {
-        // Non-blocking check
-        if (xSemaphoreTake(_s->done_sem, 0) == pdTRUE) {
-            // Put it back so read_body() "tiny wait" logic remains harmless,
-            // and close() can also observe completion if called later.
+    if (!_s->task) return;
+
+    // If task has signaled done, try to reap.
+    if (_s->done_sem && xSemaphoreTake(_s->done_sem, 0) == pdTRUE) {
+        // Ensure the task is actually gone before destroying resources it might touch.
+        const eTaskState st = eTaskGetState(_s->task);
+        if (st != eDeleted) {
+            // Task not fully deleted yet. Put the token back and try next poll.
             (void)xSemaphoreGive(_s->done_sem);
-
-            // Now it is safe to cleanup (the task has finished and signaled).
-            if (_s->client) {
-                esp_http_client_cleanup(_s->client);
-                _s->client = nullptr;
-            }
-
-            _s->task = nullptr;
-
-            if (_s->stream) {
-                (void)xStreamBufferReset(_s->stream);
-            }
-
-            take_mutex(_s->meta_mutex);
-            _s->headers_block.clear();
-            _s->reset_session_state();
-            give_mutex(_s->meta_mutex);
-
-            FN_LOGD(TAG, "poll: cleaned up completed HTTP task");
+            return;
         }
+
+        if (_s->client) {
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
+        }
+
+        _s->task = nullptr;
+
+        if (_s->stream) {
+            (void)xStreamBufferReset(_s->stream);
+        }
+
+        take_mutex(_s->meta_mutex);
+        _s->headers_block.clear();
+        _s->reset_session_state();
+        give_mutex(_s->meta_mutex);
+
+        FN_LOGD(TAG, "poll: cleaned up completed HTTP task");
     }
 }
+
 
 void HttpNetworkProtocolEspIdf::close()
 {
@@ -791,15 +796,12 @@ void HttpNetworkProtocolEspIdf::close()
 
     _s->stop_requested = true;
 
-    // Best-effort: request the client to close the underlying connection.
-    // IMPORTANT: we must NOT call esp_http_client_cleanup() while a task may still
-    // be inside esp_http_client_perform(), or we risk UAF crashes.
     if (_s->client) {
         (void)esp_http_client_close(_s->client);
     }
 
-    // If there is no task, we can cleanup immediately.
     if (!_s->task) {
+        // No task: safe to cleanup immediately.
         if (_s->client) {
             esp_http_client_cleanup(_s->client);
             _s->client = nullptr;
@@ -818,42 +820,10 @@ void HttpNetworkProtocolEspIdf::close()
         return;
     }
 
-    // There IS a task. Wait a *short* time for completion; if not finished, defer
-    // cleanup to poll() to avoid freeing client while perform() is running.
-    bool finished = false;
-    if (_s->done_sem) {
-        if (xSemaphoreTake(_s->done_sem, pdMS_TO_TICKS(50)) == pdTRUE) {
-            // Put it back so other code paths can observe completion.
-            (void)xSemaphoreGive(_s->done_sem);
-            finished = true;
-        }
-    }
-
-    if (!finished) {
-        // Defer cleanup to poll(). Keep client/task pointers intact.
-        FN_LOGW(TAG, "close: task still running, deferring cleanup to poll()");
-        return;
-    }
-
-    // Finished: safe to cleanup now (same logic as poll()).
-    if (_s->client) {
-        esp_http_client_cleanup(_s->client);
-        _s->client = nullptr;
-    }
-
-    _s->task = nullptr;
-
-    if (_s->stream) {
-        (void)xStreamBufferReset(_s->stream);
-    }
-
-    take_mutex(_s->meta_mutex);
-    _s->headers_block.clear();
-    _s->reset_session_state();
-    give_mutex(_s->meta_mutex);
-
-    FN_LOGI(TAG, "HttpNetworkProtocolEspIdf::close: cleaned up (task finished)");
+    // There is a task: do not cleanup/reset here. Defer to poll().
+    FN_LOGW(TAG, "close: task still running, deferring cleanup to poll()");
 }
+
 
 
 
