@@ -382,6 +382,12 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         return fujinet::io::StatusCode::InternalError;
     }
 
+    // If close() deferred cleanup, we may still be busy. Don't reuse the state.
+    if (_s->task || _s->client) {
+        // Previous request still in-flight; caller should retry later.
+        return fujinet::io::StatusCode::DeviceBusy;
+    }
+
     if (!method_supported(req.method)) {
         return fujinet::io::StatusCode::Unsupported;
     }
@@ -746,28 +752,90 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::info(fujinet::io::NetworkInfo
 
 void HttpNetworkProtocolEspIdf::poll()
 {
-    // Keep lightweight; esp_http_client runs in the dedicated task.
+    if (!_s) return;
+
+    // If there is a task, check if it has completed. When complete, we can safely
+    // cleanup the esp_http_client handle and reset session state.
+    if (_s->task && _s->done_sem) {
+        // Non-blocking check
+        if (xSemaphoreTake(_s->done_sem, 0) == pdTRUE) {
+            // Put it back so read_body() "tiny wait" logic remains harmless,
+            // and close() can also observe completion if called later.
+            (void)xSemaphoreGive(_s->done_sem);
+
+            // Now it is safe to cleanup (the task has finished and signaled).
+            if (_s->client) {
+                esp_http_client_cleanup(_s->client);
+                _s->client = nullptr;
+            }
+
+            _s->task = nullptr;
+
+            if (_s->stream) {
+                (void)xStreamBufferReset(_s->stream);
+            }
+
+            take_mutex(_s->meta_mutex);
+            _s->headers_block.clear();
+            _s->reset_session_state();
+            give_mutex(_s->meta_mutex);
+
+            FN_LOGD(TAG, "poll: cleaned up completed HTTP task");
+        }
+    }
 }
 
 void HttpNetworkProtocolEspIdf::close()
 {
-    if (!_s) {
-        return;
-    }
+    if (!_s) return;
 
     _s->stop_requested = true;
 
-    // Best-effort: close the client to break esp_http_client_perform()
+    // Best-effort: request the client to close the underlying connection.
+    // IMPORTANT: we must NOT call esp_http_client_cleanup() while a task may still
+    // be inside esp_http_client_perform(), or we risk UAF crashes.
     if (_s->client) {
         (void)esp_http_client_close(_s->client);
     }
 
-    // Wait briefly for task to finish (if any). We use a notify on the task handle itself.
-    if (_s->task && _s->done_sem) {
-        // Wait up to ~1s total.
-        (void)xSemaphoreTake(_s->done_sem, pdMS_TO_TICKS(1000));
+    // If there is no task, we can cleanup immediately.
+    if (!_s->task) {
+        if (_s->client) {
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
+        }
+
+        if (_s->stream) {
+            (void)xStreamBufferReset(_s->stream);
+        }
+
+        take_mutex(_s->meta_mutex);
+        _s->headers_block.clear();
+        _s->reset_session_state();
+        give_mutex(_s->meta_mutex);
+
+        FN_LOGD(TAG, "close: cleaned up (no task)");
+        return;
     }
 
+    // There IS a task. Wait a *short* time for completion; if not finished, defer
+    // cleanup to poll() to avoid freeing client while perform() is running.
+    bool finished = false;
+    if (_s->done_sem) {
+        if (xSemaphoreTake(_s->done_sem, pdMS_TO_TICKS(50)) == pdTRUE) {
+            // Put it back so other code paths can observe completion.
+            (void)xSemaphoreGive(_s->done_sem);
+            finished = true;
+        }
+    }
+
+    if (!finished) {
+        // Defer cleanup to poll(). Keep client/task pointers intact.
+        FN_LOGW(TAG, "close: task still running, deferring cleanup to poll()");
+        return;
+    }
+
+    // Finished: safe to cleanup now (same logic as poll()).
     if (_s->client) {
         esp_http_client_cleanup(_s->client);
         _s->client = nullptr;
@@ -784,8 +852,10 @@ void HttpNetworkProtocolEspIdf::close()
     _s->reset_session_state();
     give_mutex(_s->meta_mutex);
 
-    FN_LOGD(TAG, "close done");
+    FN_LOGI(TAG, "HttpNetworkProtocolEspIdf::close: cleaned up (task finished)");
 }
+
+
 
 } // namespace fujinet::platform::esp32
 
