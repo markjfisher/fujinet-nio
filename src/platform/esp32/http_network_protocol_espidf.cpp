@@ -82,6 +82,9 @@ struct HttpNetworkProtocolEspIdfState {
 
     std::uint32_t read_cursor{0};
     volatile bool stop_requested{false};
+    volatile bool cancel_requested{false};
+    volatile bool cleanup_pending{false};
+
 
     void reset_session_state() {
         response_header_names_lower.clear();
@@ -286,8 +289,14 @@ static void http_task_entry(void* arg)
     }
 
     esp_err_t err = ESP_FAIL;
+
     if (s->client) {
         err = esp_http_client_perform(s->client);
+    }
+
+    // If cancellation was requested, make best effort to close the transport from within task context.
+    if (s->cancel_requested && s->client) {
+        (void)esp_http_client_close(s->client);
     }
 
     take_mutex(s->meta_mutex);
@@ -296,13 +305,20 @@ static void http_task_entry(void* arg)
     s->done = true;
     give_mutex(s->meta_mutex);
 
-    // Notify close() that we're done.
+    // Cleanup client here (task owns it)
+    if (s->client) {
+        esp_http_client_cleanup(s->client);
+        s->client = nullptr;
+    }
+
+    s->task = nullptr;
+
     if (s->done_sem) {
         (void)xSemaphoreGive(s->done_sem);
     }
 
-    s->task = nullptr;
     vTaskDelete(nullptr);
+
 }
 
 static void http_task_entry_after_upload(void* arg)
@@ -316,8 +332,9 @@ static void http_task_entry_after_upload(void* arg)
     esp_err_t err = ESP_FAIL;
 
     if (s->client) {
-        // This parses response headers and makes status/length available.
+        // Parse response headers and make status/length available.
         (void)esp_http_client_fetch_headers(s->client);
+
         take_mutex(s->meta_mutex);
         set_status_and_length(*s);
         give_mutex(s->meta_mutex);
@@ -325,7 +342,12 @@ static void http_task_entry_after_upload(void* arg)
         // Read response body and push into stream buffer (bounded backpressure).
         while (!s->stop_requested) {
             std::uint8_t buf[512];
-            const int r = esp_http_client_read(s->client, reinterpret_cast<char*>(buf), sizeof(buf));
+            const int r = esp_http_client_read(
+                s->client,
+                reinterpret_cast<char*>(buf),
+                sizeof(buf)
+            );
+
             if (r < 0) {
                 err = ESP_FAIL;
                 break;
@@ -340,22 +362,37 @@ static void http_task_entry_after_upload(void* arg)
             }
         }
 
-        // Close the connection now that response is consumed (or on error).
-        (void)esp_http_client_close(s->client);
+        // If cancellation was requested, do a best-effort close from within task context.
+        if (s->cancel_requested) {
+            (void)esp_http_client_close(s->client);
+        } else {
+            // Normal completion: close connection after consuming response.
+            (void)esp_http_client_close(s->client);
+        }
     }
 
+    // Publish completion status.
     take_mutex(s->meta_mutex);
     s->err = err;
-    // Status/length already captured immediately after fetch_headers() while client was open.
     s->done = true;
     give_mutex(s->meta_mutex);
-    
+
+    // IMPORTANT: task owns cleanup of the esp_http_client handle.
+    if (s->client) {
+        esp_http_client_cleanup(s->client);
+        s->client = nullptr;
+    }
+
+    // Mark task as finished before signaling.
+    s->task = nullptr;
+
     if (s->done_sem) {
         (void)xSemaphoreGive(s->done_sem);
     }
-    s->task = nullptr;
+
     vTaskDelete(nullptr);
 }
+
 
 HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
 {
@@ -755,38 +792,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::info(fujinet::io::NetworkInfo
 
 void HttpNetworkProtocolEspIdf::poll()
 {
-    if (!_s) return;
-
-    if (!_s->task) return;
-
-    // If task has signaled done, try to reap.
-    if (_s->done_sem && xSemaphoreTake(_s->done_sem, 0) == pdTRUE) {
-        // Ensure the task is actually gone before destroying resources it might touch.
-        const eTaskState st = eTaskGetState(_s->task);
-        if (st != eDeleted) {
-            // Task not fully deleted yet. Put the token back and try next poll.
-            (void)xSemaphoreGive(_s->done_sem);
-            return;
-        }
-
-        if (_s->client) {
-            esp_http_client_cleanup(_s->client);
-            _s->client = nullptr;
-        }
-
-        _s->task = nullptr;
-
-        if (_s->stream) {
-            (void)xStreamBufferReset(_s->stream);
-        }
-
-        take_mutex(_s->meta_mutex);
-        _s->headers_block.clear();
-        _s->reset_session_state();
-        give_mutex(_s->meta_mutex);
-
-        FN_LOGD(TAG, "poll: cleaned up completed HTTP task");
-    }
+    // no-op, task owns cleanup
 }
 
 
@@ -794,14 +800,14 @@ void HttpNetworkProtocolEspIdf::close()
 {
     if (!_s) return;
 
+    // Only signal cancellation. Do NOT call esp_http_client_close/cleanup here.
+    // The task owns the client and will cleanup safely.
     _s->stop_requested = true;
+    _s->cancel_requested = true;
 
-    if (_s->client) {
-        (void)esp_http_client_close(_s->client);
-    }
-
+    // If no task ever started (e.g. upload_open path, or task creation failed),
+    // we can cleanup directly because no one else can be inside esp_http_client.
     if (!_s->task) {
-        // No task: safe to cleanup immediately.
         if (_s->client) {
             esp_http_client_cleanup(_s->client);
             _s->client = nullptr;
@@ -816,13 +822,13 @@ void HttpNetworkProtocolEspIdf::close()
         _s->reset_session_state();
         give_mutex(_s->meta_mutex);
 
-        FN_LOGD(TAG, "close: cleaned up (no task)");
+        FN_LOGI(TAG, "close: cleaned up (no task)");
         return;
     }
 
-    // There is a task: do not cleanup/reset here. Defer to poll().
-    FN_LOGW(TAG, "close: task still running, deferring cleanup to poll()");
+    FN_LOGW(TAG, "close: cancel requested; waiting for task to cleanup");
 }
+
 
 
 
