@@ -1,0 +1,23 @@
+group: Debug
+
+steps:
+  - name: "DEBUG: setup_cmd writes STEP_TMP to /tmp/debug.txt"
+    setup_cmd:
+      - argv:
+          - "bash"
+          - "-lc"
+          - |
+            echo "STEP_TMP env is: '$STEP_TMP'" > /tmp/debug.txt
+            echo "STEP_TMP token is: '{STEP_TMP}'" >> /tmp/debug.txt
+            echo "file $STEP_TMP: $(file $STEP_TMP)" >> /tmp/debug.txt
+            echo "pwd is: '$(pwd)'" >> /tmp/debug.txt
+    argv:
+      - "bash"
+      - "-lc"
+      - |
+        echo "STEP_TMP env is: '$STEP_TMP'" > /tmp/debug2.txt
+        echo "STEP_TMP token is: '{STEP_TMP}'" >> /tmp/debug2.txt
+        echo "file $STEP_TMP: $(file {STEP_TMP})" >> /tmp/debug2.txt
+        echo "pwd is: '$(pwd)'" >> /tmp/debug2.txt
+    expect_exit: 0
+    timeout_s: 10

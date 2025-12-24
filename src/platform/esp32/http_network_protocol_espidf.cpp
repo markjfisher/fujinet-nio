@@ -408,7 +408,15 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     cfg.url = req.url.c_str();
     cfg.event_handler = &event_handler;
     cfg.user_data = _s;
+
+    // RX buffer (response parsing / body chunks)
     cfg.buffer_size = 1024;
+
+    // TX buffer (request headers). ESP-IDF will log:
+    // "HTTP_HEADER: Buffer length is small to fit all the headers"
+    // if this is too small.
+    cfg.buffer_size_tx = 2048;
+
     cfg.timeout_ms = 15000;
 
     const bool follow = (req.flags & 0x02) != 0;
@@ -433,9 +441,17 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     
     for (const auto& kv : req.headers) {
         if (!kv.first.empty()) {
-            (void)esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
+            esp_err_t err = esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
+            if (err != ESP_OK) {
+                // cleanup + clear busy so future requests work
+                esp_http_client_cleanup(_s->client);
+                _s->client = nullptr;
+                _s->busy = false; // adjust to your actual flag
+                return StatusCode::InvalidRequest; // or IOError if you prefer
+            }
         }
     }
+    
 
     const bool is_post_or_put = (req.method == 2 || req.method == 3);
     _s->has_request_body = is_post_or_put && (req.bodyLenHint > 0);

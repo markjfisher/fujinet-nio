@@ -38,9 +38,27 @@ steps:
       - "--set-header"
       - "X-Wanted=ok"
       - "--set-header"
-      - "X-Short: hi"
+      - "X-Short:hi"
       - "{HTTP}/headers"
     expect:
       - '"X-Wanted": "ok"'
       - '"X-Short": "hi"'
     timeout_s: 10
+
+  - name: "HTTP: response allowlist returns X-Wanted even with huge X-Big"
+    argv:
+      - "bash"
+      - "-lc"
+      - |
+        python3 - <<'PY' > "{STEP_TMP}/url.txt"
+        import os
+        big = "Z" * 1900
+        print("{HTTP}/response-headers?X-Big=" + big + "&X-Wanted=ok")
+        PY
+        URL="$(cat "{STEP_TMP}/url.txt")"
+        ./scripts/fujinet -p "{PORT}" net head --resp-header X-Wanted "$URL"
+    expect:
+      - "X-Wanted: ok"
+    forbid:
+      - "X-Big:"
+    timeout_s: 20

@@ -410,9 +410,11 @@ def cmd_net_get(args) -> int:
                     print(ir.header_bytes.decode("utf-8", errors="replace"), end="")
                 break
 
-        # READ loop
+        # READ loop (robust against NotReady / short stalls)
         offset = 0
         total = 0
+        idle_deadline = time.monotonic() + max(0.25, float(getattr(args, "idle_timeout", 0.0) or 0.0)) if hasattr(args, "idle_timeout") else float("inf")
+
         while True:
             read_req = np.build_read_req(handle, offset, args.chunk)
             rpkt = _send_retry_not_ready(
@@ -437,23 +439,30 @@ def cmd_net_get(args) -> int:
                 print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
                 return 1
 
-            if out_path:
-                with out_path.open("ab") as f:
-                    f.write(rr.data)
-            else:
-                sys.stdout.buffer.write(rr.data)
-
             n = len(rr.data)
-            total += n
-            offset += n
+            if n:
+                idle_deadline = time.monotonic() + 0.25  # progress resets idle
+                if out_path:
+                    with out_path.open("ab") as f:
+                        f.write(rr.data)
+                else:
+                    sys.stdout.buffer.write(rr.data)
+                    sys.stdout.buffer.flush()
+
+                total += n
+                offset += n
 
             if args.verbose:
                 print(f"read: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
 
             if rr.eof:
                 break
+
             if n == 0:
-                time.sleep(0.005)
+                if time.monotonic() > idle_deadline:
+                    break
+                time.sleep(0.02)
+
 
         # CLOSE best-effort
         close_req = np.build_close_req(handle)
