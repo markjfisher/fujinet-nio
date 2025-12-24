@@ -180,13 +180,11 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         REQUIRE((flags & 0x01) != 0); // headersIncluded must be true
         REQUIRE(hdrLen > 0);
 
-        std::vector<std::uint8_t> hdr;
-        hdr.resize(hdrLen);
-        REQUIRE(r.read_bytes(hdr.data(), hdrLen));
+        const std::uint8_t* hdrPtr = nullptr;
+        REQUIRE(r.read_bytes(hdrPtr, hdrLen));
+        std::string hdrs(reinterpret_cast<const char*>(hdrPtr), hdrLen);
 
-        std::string hdrs(reinterpret_cast<const char*>(hdr.data()), hdr.size());
         CHECK(hdrs.find("Server:") != std::string::npos);
-
         CHECK(hdrs.find("Content-Type:") == std::string::npos); // must not be included
 
         close_req(dev, deviceId, h);
@@ -222,10 +220,10 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         REQUIRE((flags & 0x01) != 0);
         REQUIRE(hdrLen > 0);
 
-        std::string hdrs;
-        hdrs.resize(hdrLen);
-        REQUIRE(r.read_bytes(hdrs.data(), hdrLen));
-
+        const std::uint8_t* hdrPtr = nullptr;
+        REQUIRE(r.read_bytes(hdrPtr, hdrLen));
+        std::string hdrs(reinterpret_cast<const char*>(hdrPtr), hdrLen);
+        
         CHECK(hdrs.find("Server:") != std::string::npos);
 
         close_req(dev, deviceId, h);

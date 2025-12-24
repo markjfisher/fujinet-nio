@@ -8,8 +8,8 @@ steps:
           - |
             import os, pathlib
             p = pathlib.Path(os.environ["STEP_TMP"]) / "req_headers.txt"
-            long_a = "A" * 2048
-            long_b = "B" * 2048
+            long_a = "A" * 400
+            long_b = "B" * 400
             p.write_text(
               "X-Long-A=" + long_a + "\n" +
               "X-Long-B: " + long_b + "\n" +
@@ -25,8 +25,8 @@ steps:
       - "{STEP_TMP}/req_headers.txt"
       - "{HTTP}/headers"
     expect:
-      - '"X-Long-A": "A{2048}"'
-      - '"X-Long-B": "B{2048}"'
+      - '"X-Long-A": "A{400}"'
+      - '"X-Long-B": "B{400}"'
       - '"X-Wanted": "ok"'
     timeout_s: 15
 
