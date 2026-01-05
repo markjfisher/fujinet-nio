@@ -288,25 +288,38 @@ static void http_task_entry(void* arg)
         return;
     }
 
+    esp_http_client_handle_t client = nullptr;
+
+    // Snapshot client pointer under mutex.
+    take_mutex(s->meta_mutex);
+    client = s->client;
+    give_mutex(s->meta_mutex);
+
     esp_err_t err = ESP_FAIL;
-    if (s->client) {
-        err = esp_http_client_perform(s->client);
+    if (client) {
+        err = esp_http_client_perform(client);
     }
 
+    // Update result metadata under mutex (but don't call set_status_and_length if client is gone).
     take_mutex(s->meta_mutex);
     s->err = err;
     set_status_and_length(*s);
     s->done = true;
     give_mutex(s->meta_mutex);
 
-    // TASK-OWNED CLEANUP (critical)
-    if (s->client) {
-        (void)esp_http_client_close(s->client);
-        esp_http_client_cleanup(s->client);
-        s->client = nullptr;
+    // TASK-OWNED CLEANUP (critical): do this once and publish nullptrs under mutex.
+    if (client) {
+        (void)esp_http_client_close(client);
+        esp_http_client_cleanup(client);
     }
 
+    take_mutex(s->meta_mutex);
+    // Only clear if still pointing to the same handle (defensive).
+    if (s->client == client) {
+        s->client = nullptr;
+    }
     s->task = nullptr;
+    give_mutex(s->meta_mutex);
 
     if (s->done_sem) {
         (void)xSemaphoreGive(s->done_sem);
@@ -314,6 +327,7 @@ static void http_task_entry(void* arg)
 
     vTaskDelete(nullptr);
 }
+
 
 
 static void http_task_entry_after_upload(void* arg)
@@ -324,11 +338,17 @@ static void http_task_entry_after_upload(void* arg)
         return;
     }
 
+    esp_http_client_handle_t client = nullptr;
+
+    take_mutex(s->meta_mutex);
+    client = s->client;
+    give_mutex(s->meta_mutex);
+
     esp_err_t err = ESP_FAIL;
 
-    if (s->client) {
+    if (client) {
         // Parse headers and make status/length available.
-        (void)esp_http_client_fetch_headers(s->client);
+        (void)esp_http_client_fetch_headers(client);
 
         take_mutex(s->meta_mutex);
         set_status_and_length(*s);
@@ -337,20 +357,11 @@ static void http_task_entry_after_upload(void* arg)
         // Read response body and push into stream buffer.
         while (!s->stop_requested) {
             std::uint8_t buf[512];
-            const int r = esp_http_client_read(
-                s->client,
-                reinterpret_cast<char*>(buf),
-                sizeof(buf)
-            );
+            const int r = esp_http_client_read(client, reinterpret_cast<char*>(buf), sizeof(buf));
 
-            if (r < 0) {
-                err = ESP_FAIL;
-                break;
-            }
-            if (r == 0) {
-                err = ESP_OK;
-                break;
-            }
+            if (r < 0) { err = ESP_FAIL; break; }
+            if (r == 0) { err = ESP_OK;   break; }
+
             if (!stream_send_all(*s, buf, static_cast<std::size_t>(r))) {
                 err = ESP_FAIL;
                 break;
@@ -363,14 +374,17 @@ static void http_task_entry_after_upload(void* arg)
     s->done = true;
     give_mutex(s->meta_mutex);
 
-    // TASK-OWNED CLEANUP (critical)
-    if (s->client) {
-        (void)esp_http_client_close(s->client);
-        esp_http_client_cleanup(s->client);
-        s->client = nullptr;
+    if (client) {
+        (void)esp_http_client_close(client);
+        esp_http_client_cleanup(client);
     }
 
+    take_mutex(s->meta_mutex);
+    if (s->client == client) {
+        s->client = nullptr;
+    }
     s->task = nullptr;
+    give_mutex(s->meta_mutex);
 
     if (s->done_sem) {
         (void)xSemaphoreGive(s->done_sem);
@@ -378,6 +392,7 @@ static void http_task_entry_after_upload(void* arg)
 
     vTaskDelete(nullptr);
 }
+
 
 
 HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
@@ -408,7 +423,11 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     // If a previous request is still alive, do not reuse state.
     // IMPORTANT: we must not call close() here because close() is "request stop"
     // while a task owns client lifetime.
-    if (_s->task || _s->client) {
+    take_mutex(_s->meta_mutex);
+    const bool busy = (_s->task != nullptr) || (_s->client != nullptr);
+    give_mutex(_s->meta_mutex);
+
+    if (busy) {
         return fujinet::io::StatusCode::DeviceBusy;
     }
 
@@ -802,21 +821,36 @@ void HttpNetworkProtocolEspIdf::close()
 {
     if (!_s) return;
 
-    // Always request stop.
     _s->stop_requested = true;
 
-    // If a task is running, DO NOT close/cleanup/reset here.
-    // The task will perform cleanup and clear s->client/s->task.
-    if (_s->task) {
-        FN_LOGW(TAG, "close: task still running; stop requested (task will cleanup)");
+    esp_http_client_handle_t client = nullptr;
+    TaskHandle_t task = nullptr;
+
+    take_mutex(_s->meta_mutex);
+    client = _s->client;
+    task = _s->task;
+    give_mutex(_s->meta_mutex);
+
+    // If task is running, request abort of perform()/read by closing the client socket.
+    // DO NOT cleanup here (task owns cleanup).
+    if (task) {
+        if (client) {
+            (void)esp_http_client_close(client);
+        }
+        FN_LOGW(TAG, "close: task running; stop requested and client closed (task will cleanup)");
         return;
     }
 
     // No task => safe to clean up synchronously.
-    if (_s->client) {
-        (void)esp_http_client_close(_s->client);
-        esp_http_client_cleanup(_s->client);
-        _s->client = nullptr;
+    if (client) {
+        (void)esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+
+        take_mutex(_s->meta_mutex);
+        if (_s->client == client) {
+            _s->client = nullptr;
+        }
+        give_mutex(_s->meta_mutex);
     }
 
     if (_s->stream) {
@@ -831,6 +865,7 @@ void HttpNetworkProtocolEspIdf::close()
     _s->content_length = 0;
     _s->done = true;
     _s->err = ESP_OK;
+    _s->task = nullptr;
     give_mutex(_s->meta_mutex);
 
     FN_LOGD(TAG, "close: cleaned up (no task)");
