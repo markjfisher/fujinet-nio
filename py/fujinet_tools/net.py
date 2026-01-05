@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from .fujibus import FujiBusSession, FujiPacket
 from . import netproto as np
@@ -109,6 +109,8 @@ def _pkt_status_code(pkt: Optional[FujiPacket]) -> int:
 # Serial + FujiBusSession helpers
 # ----------------------------------------------------------------------
 
+from typing import Callable, Optional
+
 def _send_retry_not_ready(
     *,
     bus: FujiBusSession,
@@ -118,6 +120,7 @@ def _send_retry_not_ready(
     timeout: float,
     retries: int = 200,
     sleep_s: float = 0.01,
+    accept: Optional[Callable[[FujiPacket], bool]] = None,
 ) -> Optional[FujiPacket]:
     """
     Send a command and retry on:
@@ -126,6 +129,12 @@ def _send_retry_not_ready(
 
     Uses short per-attempt timeouts but enforces an overall wall-clock timeout.
     Applies backoff to avoid tight polling loops.
+
+    accept:
+      Optional predicate used to choose among multiple packets that share the same
+      (device, command). If provided, the bus layer will ignore (stash) packets
+      that don't satisfy accept, and keep reading until a matching one arrives
+      or timeout expires.
     """
     deadline = time.monotonic() + max(0.0, timeout)
     attempt = 0
@@ -147,6 +156,7 @@ def _send_retry_not_ready(
             expect_command=command,
             timeout=per_try_timeout,
             cmd_txt=_cmd_str(command),
+            accept=accept,  # NEW
         )
 
         if pkt is None:
@@ -165,7 +175,6 @@ def _send_retry_not_ready(
 
         time.sleep(backoff)
         backoff = min(backoff_max, backoff * 1.5)
-
 
 # ----------------------------------------------------------------------
 # Commands
@@ -299,6 +308,12 @@ def cmd_net_read(args) -> int:
     req = np.build_read_req(args.handle, args.offset, args.max_bytes)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        def _accept_read_for_offset(want_off: int):
+            def _accept(pkt):
+                rr = np.parse_read_resp(pkt.payload)
+                return rr.offset == want_off
+            return _accept
+
         bus = FujiBusSession().attach(ser, debug=args.debug)
         pkt = _send_retry_not_ready(
             bus=bus,
@@ -308,6 +323,7 @@ def cmd_net_read(args) -> int:
             timeout=args.timeout,
             retries=2000,
             sleep_s=0.005,
+            accept=_accept_read_for_offset(args.offset),
         )
         if pkt is None:
             print("No response")
@@ -347,6 +363,12 @@ def cmd_net_get(args) -> int:
         resp_headers = ["Server", "Content-Type", "Content-Length", "Location", "ETag", "Last-Modified"]
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        def _accept_read_for_offset(want_off: int):
+            def _accept(pkt):
+                rr = np.parse_read_resp(pkt.payload)
+                return rr.offset == want_off
+            return _accept
+
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         # OPEN
@@ -426,6 +448,7 @@ def cmd_net_get(args) -> int:
                     timeout=args.timeout,
                     retries=5000,
                     sleep_s=0.005,
+                    accept=_accept_read_for_offset(offset),
                 )
                 if rpkt is None:
                     print("No response")

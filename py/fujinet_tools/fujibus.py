@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Callable, Dict, List, Tuple, Optional, Union
 import serial
 import time
 
@@ -270,14 +270,6 @@ class FujiBusSession:
     def stash(self, pkt: FujiPacket) -> None:
         self._stash[(pkt.device, pkt.command)].append(pkt)
 
-    def pop(self, device: int, command: int) -> Optional[FujiPacket]:
-        q = self._stash.get((device, command))
-        if not q:
-            return None
-        pkt = q.pop(0)
-        if not q:
-            del self._stash[(device, command)]
-        return pkt
 
     def send_command(self, device: int, command: int, payload: bytes, *, cmd_txt: str = "") -> None:
         if self._ser is None:
@@ -291,6 +283,39 @@ class FujiBusSession:
         self._ser.write(pkt)
         self._ser.flush()
 
+    def pop_matching(
+        self,
+        device: int,
+        command: int,
+        accept: Optional[Callable[[FujiPacket], bool]] = None,
+    ) -> Optional[FujiPacket]:
+        q = self._stash.get((device, command))
+        if not q:
+            return None
+
+        if accept is None:
+            pkt = q.pop(0)
+            if not q:
+                del self._stash[(device, command)]
+            return pkt
+
+        # Find first acceptable packet in the queue
+        for i, pkt in enumerate(q):
+            ok = False
+            try:
+                ok = accept(pkt)
+            except Exception:
+                # If caller's accept function blows up, treat as not-a-match
+                ok = False
+
+            if ok:
+                q.pop(i)
+                if not q:
+                    del self._stash[(device, command)]
+                return pkt
+
+        return None
+
     def send_command_expect(
         self,
         device: int,
@@ -301,9 +326,10 @@ class FujiBusSession:
         expect_command: int,
         timeout: float,
         cmd_txt: str = "",
+        accept: Optional[Callable[[FujiPacket], bool]] = None,
     ) -> Optional[FujiPacket]:
         # return immediately if already stashed
-        hit = self.pop(expect_device, expect_command)
+        hit = self.pop_matching(expect_device, expect_command, accept=accept)
         if hit is not None:
             return hit
 
@@ -311,7 +337,7 @@ class FujiBusSession:
 
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            hit = self.pop(expect_device, expect_command)
+            hit = self.pop_matching(expect_device, expect_command, accept=accept)
             if hit is not None:
                 return hit
 
@@ -320,7 +346,19 @@ class FujiBusSession:
                 continue
 
             if pkt.device == expect_device and pkt.command == expect_command:
-                return pkt
+                if accept is None:
+                    return pkt
+
+                try:
+                    if accept(pkt):
+                        return pkt
+                except Exception:
+                    # If accept throws, don’t hide the packet; return it so caller sees the failure
+                    return pkt
+
+                # Not acceptable for this wait — stash and keep going
+                self.stash(pkt)
+                continue
 
             self.stash(pkt)
 
