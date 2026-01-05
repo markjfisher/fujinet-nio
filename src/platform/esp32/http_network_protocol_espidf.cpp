@@ -289,14 +289,8 @@ static void http_task_entry(void* arg)
     }
 
     esp_err_t err = ESP_FAIL;
-
     if (s->client) {
         err = esp_http_client_perform(s->client);
-    }
-
-    // If cancellation was requested, make best effort to close the transport from within task context.
-    if (s->cancel_requested && s->client) {
-        (void)esp_http_client_close(s->client);
     }
 
     take_mutex(s->meta_mutex);
@@ -305,8 +299,9 @@ static void http_task_entry(void* arg)
     s->done = true;
     give_mutex(s->meta_mutex);
 
-    // Cleanup client here (task owns it)
+    // TASK-OWNED CLEANUP (critical)
     if (s->client) {
+        (void)esp_http_client_close(s->client);
         esp_http_client_cleanup(s->client);
         s->client = nullptr;
     }
@@ -318,8 +313,8 @@ static void http_task_entry(void* arg)
     }
 
     vTaskDelete(nullptr);
-
 }
+
 
 static void http_task_entry_after_upload(void* arg)
 {
@@ -332,14 +327,14 @@ static void http_task_entry_after_upload(void* arg)
     esp_err_t err = ESP_FAIL;
 
     if (s->client) {
-        // Parse response headers and make status/length available.
+        // Parse headers and make status/length available.
         (void)esp_http_client_fetch_headers(s->client);
 
         take_mutex(s->meta_mutex);
         set_status_and_length(*s);
         give_mutex(s->meta_mutex);
 
-        // Read response body and push into stream buffer (bounded backpressure).
+        // Read response body and push into stream buffer.
         while (!s->stop_requested) {
             std::uint8_t buf[512];
             const int r = esp_http_client_read(
@@ -361,29 +356,20 @@ static void http_task_entry_after_upload(void* arg)
                 break;
             }
         }
-
-        // If cancellation was requested, do a best-effort close from within task context.
-        if (s->cancel_requested) {
-            (void)esp_http_client_close(s->client);
-        } else {
-            // Normal completion: close connection after consuming response.
-            (void)esp_http_client_close(s->client);
-        }
     }
 
-    // Publish completion status.
     take_mutex(s->meta_mutex);
     s->err = err;
     s->done = true;
     give_mutex(s->meta_mutex);
 
-    // IMPORTANT: task owns cleanup of the esp_http_client handle.
+    // TASK-OWNED CLEANUP (critical)
     if (s->client) {
+        (void)esp_http_client_close(s->client);
         esp_http_client_cleanup(s->client);
         s->client = nullptr;
     }
 
-    // Mark task as finished before signaling.
     s->task = nullptr;
 
     if (s->done_sem) {
@@ -415,15 +401,14 @@ HttpNetworkProtocolEspIdf::~HttpNetworkProtocolEspIdf()
 
 fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::NetworkOpenRequest& req)
 {
-    close();
-
     if (!_s) {
         return fujinet::io::StatusCode::InternalError;
     }
 
-    // If close() deferred cleanup, we may still be busy. Don't reuse the state.
+    // If a previous request is still alive, do not reuse state.
+    // IMPORTANT: we must not call close() here because close() is "request stop"
+    // while a task owns client lifetime.
     if (_s->task || _s->client) {
-        // Previous request still in-flight; caller should retry later.
         return fujinet::io::StatusCode::DeviceBusy;
     }
 
@@ -431,16 +416,13 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         return fujinet::io::StatusCode::Unsupported;
     }
 
+    // Local failure helper: reset buffers + session-visible metadata.
+    // NOTE: This does NOT destroy esp_http_client (callers do that explicitly),
+    // and it does NOT assume a task exists (it must not).
     auto fail = [&](fujinet::io::StatusCode sc) -> fujinet::io::StatusCode {
-        // Stop any in-flight activity (should be none during open(), but keep it safe).
-        _s->stop_requested = true;
+        _s->stop_requested = true; // prevent any future streaming
 
-        if (_s->client) {
-            (void)esp_http_client_close(_s->client);
-            esp_http_client_cleanup(_s->client);
-            _s->client = nullptr;
-        }
-
+        // No task should exist in open() failure paths (task only created at end).
         _s->task = nullptr;
 
         if (_s->stream) {
@@ -449,23 +431,28 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
         take_mutex(_s->meta_mutex);
         _s->headers_block.clear();
-        _s->reset_session_state();
+        _s->has_http_status = false;
+        _s->http_status = 0;
+        _s->has_content_length = false;
+        _s->content_length = 0;
+        _s->done = true;
+        _s->err = ESP_FAIL;
         give_mutex(_s->meta_mutex);
 
         return sc;
     };
 
-
+    // Fresh session state (exactly once).
     _s->reset_session_state();
     _s->method = req.method;
     _s->response_header_names_lower = req.responseHeaderNamesLower;
 
-
-    // reset buffers
+    // Reset stream buffer for this session.
     if (_s->stream) {
         (void)xStreamBufferReset(_s->stream);
     }
 
+    // Reset metadata for this session.
     take_mutex(_s->meta_mutex);
     _s->headers_block.clear();
     _s->has_http_status = false;
@@ -482,9 +469,8 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     // RX buffer (response parsing / body chunks)
     cfg.buffer_size = 1024;
 
-    // TX buffer (request headers). ESP-IDF will log:
-    // "HTTP_HEADER: Buffer length is small to fit all the headers"
-    // if this is too small.
+    // TX buffer (request headers). ESP-IDF logs "HTTP_HEADER: Buffer length is small..."
+    // if this is too small for request headers.
     cfg.buffer_size_tx = 2048;
 
     cfg.timeout_ms = 15000;
@@ -497,6 +483,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         return fail(fujinet::io::StatusCode::InternalError);
     }
 
+    // Set method
     switch (req.method) {
         case 1: esp_http_client_set_method(_s->client, HTTP_METHOD_GET); break;
         case 2: esp_http_client_set_method(_s->client, HTTP_METHOD_POST); break;
@@ -504,48 +491,63 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         case 4: esp_http_client_set_method(_s->client, HTTP_METHOD_DELETE); break;
         case 5: esp_http_client_set_method(_s->client, HTTP_METHOD_HEAD); break;
         default:
+            // Should not happen due to method_supported(), but keep defensive.
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
             return fail(fujinet::io::StatusCode::Unsupported);
     }
-    
-    for (const auto& kv : req.headers) {
-        if (!kv.first.empty()) {
-            const esp_err_t err = esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
-            if (err != ESP_OK) {
-                FN_LOGE(TAG, "open: esp_http_client_set_header failed err=%d key=%s", (int)err, kv.first.c_str());
-                return fail(fujinet::io::StatusCode::InvalidRequest);
-            }
-        }
-    }    
 
+    // Apply request headers
+    for (const auto& kv : req.headers) {
+        if (kv.first.empty()) {
+            continue;
+        }
+
+        const esp_err_t err = esp_http_client_set_header(_s->client, kv.first.c_str(), kv.second.c_str());
+        if (err != ESP_OK) {
+            FN_LOGE(TAG, "open: esp_http_client_set_header failed err=%d key=%s", (int)err, kv.first.c_str());
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
+            return fail(fujinet::io::StatusCode::InvalidRequest);
+        }
+    }
+
+    // Upload/body streaming setup (POST/PUT only)
     const bool is_post_or_put = (req.method == 2 || req.method == 3);
     _s->has_request_body = is_post_or_put && (req.bodyLenHint > 0);
     _s->expected_body_len = _s->has_request_body ? req.bodyLenHint : 0;
     _s->sent_body_len = 0;
     _s->upload_open = false;
 
-    // For POST/PUT with bodyLenHint>0, open a streaming upload connection and defer the task
-    // until the final body byte is written (write_body()).
     if (_s->has_request_body) {
         const esp_err_t e = esp_http_client_open(_s->client, static_cast<int>(_s->expected_body_len));
         if (e != ESP_OK) {
             FN_LOGE(TAG, "open: esp_http_client_open failed err=%d", (int)e);
+            esp_http_client_cleanup(_s->client);
+            _s->client = nullptr;
             return fail(fujinet::io::StatusCode::IOError);
         }
+
         _s->upload_open = true;
-        // No task started yet; response will be pulled after upload completes.
+        // No task started yet. Response will be pulled after upload completes.
         return fujinet::io::StatusCode::Ok;
     }
 
     // No request body: launch task to perform request asynchronously.
     _s->task = nullptr;
-    if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
+    if (_s->done_sem) {
+        (void)xSemaphoreTake(_s->done_sem, 0); // drain
+    }
 
     BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 4096, _s, 3, &_s->task);
     if (ok != pdPASS || !_s->task) {
+        // No task exists => safe to cleanup here.
+        esp_http_client_cleanup(_s->client);
+        _s->client = nullptr;
         return fail(fujinet::io::StatusCode::InternalError);
     }
-    return fujinet::io::StatusCode::Ok;
 
+    return fujinet::io::StatusCode::Ok;
 }
 
 fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
@@ -800,37 +802,39 @@ void HttpNetworkProtocolEspIdf::close()
 {
     if (!_s) return;
 
-    // Only signal cancellation. Do NOT call esp_http_client_close/cleanup here.
-    // The task owns the client and will cleanup safely.
+    // Always request stop.
     _s->stop_requested = true;
-    _s->cancel_requested = true;
 
-    // If no task ever started (e.g. upload_open path, or task creation failed),
-    // we can cleanup directly because no one else can be inside esp_http_client.
-    if (!_s->task) {
-        if (_s->client) {
-            esp_http_client_cleanup(_s->client);
-            _s->client = nullptr;
-        }
-
-        if (_s->stream) {
-            (void)xStreamBufferReset(_s->stream);
-        }
-
-        take_mutex(_s->meta_mutex);
-        _s->headers_block.clear();
-        _s->reset_session_state();
-        give_mutex(_s->meta_mutex);
-
-        FN_LOGI(TAG, "close: cleaned up (no task)");
+    // If a task is running, DO NOT close/cleanup/reset here.
+    // The task will perform cleanup and clear s->client/s->task.
+    if (_s->task) {
+        FN_LOGW(TAG, "close: task still running; stop requested (task will cleanup)");
         return;
     }
 
-    FN_LOGW(TAG, "close: cancel requested; waiting for task to cleanup");
+    // No task => safe to clean up synchronously.
+    if (_s->client) {
+        (void)esp_http_client_close(_s->client);
+        esp_http_client_cleanup(_s->client);
+        _s->client = nullptr;
+    }
+
+    if (_s->stream) {
+        (void)xStreamBufferReset(_s->stream);
+    }
+
+    take_mutex(_s->meta_mutex);
+    _s->headers_block.clear();
+    _s->has_http_status = false;
+    _s->http_status = 0;
+    _s->has_content_length = false;
+    _s->content_length = 0;
+    _s->done = true;
+    _s->err = ESP_OK;
+    give_mutex(_s->meta_mutex);
+
+    FN_LOGD(TAG, "close: cleaned up (no task)");
 }
-
-
-
 
 
 } // namespace fujinet::platform::esp32
