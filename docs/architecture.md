@@ -617,6 +617,16 @@ data, querying status, and closing connections.
 Internally, `NetworkDevice` does not implement networking directly. Instead, it
 acts as a coordinator for one or more protocol implementations.
 
+`NetworkDevice` is authoritative for:
+- session and handle lifetime
+- capacity limits and eviction policy
+- protocol-level rules (offset sequencing, body length limits, error mapping)
+- integration with the core poll/tick loop
+
+Protocol implementations are responsible only for scheme-specific transport
+behavior (HTTP request lifecycle, TCP socket I/O, etc.).
+
+
 ### Protocol-based design
 
 Networking is implemented via protocol handlers that conform to a common
@@ -646,13 +656,33 @@ Handles are bounded and reused via generation counters to prevent stale access.
 Multiple sessions may be active concurrently, allowing the host to interleave
 reads across different network connections.
 
+If a handle becomes invalid (due to Close, eviction, or timeout reaping), all
+subsequent operations on that handle (Info, Read, Write, Close) will fail with
+`InvalidRequest`.
+
+Handles are intentionally non-idempotent: a Close on an unknown or expired handle
+is treated as an error rather than a no-op.
+
+### Session capacity and eviction
+
+NetworkDevice maintains a finite pool of concurrent sessions.
+
+When the session pool is exhausted:
+- By default, new Open requests fail with `DeviceBusy`.
+- If eviction is enabled via Open flags, NetworkDevice may evict the
+  least-recently-used active session.
+
+Eviction immediately invalidates the evicted handle. No further guarantees are
+made about in-flight operations on that handle.
+
 ### Streaming model
 
 All network reads are **stream-oriented**.
 
 - Data is not required to be buffered in full.
 - Backends may deliver data incrementally as it becomes available.
-- Reads may return `NotReady` if data has not yet arrived.
+- Reads MAY return `NotReady` when no data is currently available.
+- Reads returning `Ok` with zero bytes are valid **only** when EOF has been reached.
 - EOF is signaled explicitly once the transfer is complete.
 
 This model allows large responses (e.g. multi-megabyte HTTP bodies) to be handled
@@ -682,8 +712,18 @@ advance asynchronous operations or perform lightweight bookkeeping. Other backen
 (e.g. synchronous POSIX implementations, or ESP-IDF HTTP where transfer progress is
 driven by the ESP-IDF task/event system) may implement `poll()` as a no-op.
 
-Today, HTTP on both POSIX and ESP32 does not require protocol polling to make progress;
-the hook exists for future protocols such as TCP streams.
+All network progress is considered poll-driven from the perspective of the
+NetworkDevice API.
+
+Even when underlying platforms use synchronous libraries (e.g. POSIX libcurl)
+or background tasks (e.g. ESP-IDF HTTP), hosts MUST treat Open, Info, Read, and
+Write as potentially asynchronous operations and be prepared to handle
+`StatusCode::NotReady` via retry.
+
+The poll hook exists to provide a consistent execution model across platforms
+and protocols, even when individual backends do not require explicit polling
+to advance I/O.
+
 ---
 
 # **Hardware Capabilities**

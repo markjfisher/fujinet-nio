@@ -200,7 +200,7 @@ Notes:
 - The device/backend stores **only** those headers (case-insensitive match).
 - If `respHeaderCount == 0`, the device stores **no** response headers.
 - Devices MUST NOT add implicit HTTP headers (e.g. Content-Type) unless explicitly requested by the host via headers in the Open request.
-
+- This mechanism is the sole v1 mechanism for HTTP response header selection.
 
 ---
 
@@ -314,6 +314,9 @@ Notes:
 - `truncated`: set when the device filled the requested max_bytes (i.e. caller buffer limit hit).
   It does NOT mean "server truncated the response".
 - The host reads until `eof=1` or `dataLen=0`.
+- `offsetEcho` MUST equal the `offset` value from the corresponding Read request.
+  Hosts MUST treat a mismatch as a protocol error.
+
 
 ### Offset semantics (important)
 
@@ -398,6 +401,11 @@ u8[] headerBytes    // raw "Key: Value\r\n" bytes (only requested headers)
 Notes:
 - `headerBytes` is intentionally unstructured to keep parsing simple for 8-bit hosts.
 - Modern tooling can parse it easily.
+- If no response headers were requested in `Open()`, `headerBytesLen` MUST be 0 and
+  `headersIncluded` MUST be 0. This is not an error.
+- `Ok` with `dataLen == 0` MUST only be returned when `eof == true`.
+  Returning `Ok` with `dataLen == 0` and `eof == false` is invalid.
+
 
 ### Protocol-specific interpretation
 
@@ -585,6 +593,7 @@ Implications:
 - Handle values are not sequential, and may look like multiples of 256, etc.
 - Max concurrent sessions is bounded by MAX_SESSIONS; OPEN returns DeviceBusy when full.
 - A handle may become invalid after CLOSE (or timeout reaping), even if the numeric value is later reused with a new generation.
+- Open does not target an existing handle. Handles are allocated; they are not reused.
 
 ---
 

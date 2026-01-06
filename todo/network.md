@@ -156,18 +156,32 @@ Rationale:
 - `tests/test_network_device_protocol.cpp`
 
 
-## 2) HTTP headers: move from “max bytes” to “requested header keys”
-- [ ] Introduce protocol change (v2) to let the client request specific response headers by name:
-      - open request includes list of desired response headers (case-insensitive match)
-      - backend stores only those headers (plus minimal required metadata)
-      - info() returns only requested headers (or a structured result)
-- [ ] Decide behaviour when headers are not requested:
-      - info() still returns http_status and content_length (if available)
-      - header block empty and headersIncluded=false
-- [ ] Keep backward compatibility strategy:
-      - v1: maxHeaderBytes continues to work
-      - v2: preferred header filtering API
-      - document negotiation and version handling clearly
+## 2) HTTP response headers (v1 clarified, no version bump)
+
+### Goal (definition of done)
+- HTTP response headers are opt-in and name-based in v1.
+- Clients explicitly request response headers by key (case-insensitive).
+- Backends store and return only the requested headers.
+- No backend relies on a fixed or maximum header byte budget.
+- POSIX (curl) and ESP32 implementations behave identically.
+
+### v1 semantics (now canonical)
+- Open request MAY include a list of desired response header names.
+- If no response headers are requested:
+  - `Info()` still returns `http_status`
+  - `content_length` is returned when known
+  - `headersBlock` is empty
+- If response headers are requested:
+  - Only matching headers are stored and returned
+  - Matching is case-insensitive
+  - Header order is preserved as received
+
+### Status
+- [x] POSIX backend (curl) implemented
+- [x] ESP32 backend (esp-idf) implemented
+- [x] Python CLI supports `--resp-header` and default allowlists
+- [x] Integration tests validate large headers and filtering behaviour
+- [x] Documentation updated to define this as **v1 behaviour**
 
 ## 3) HTTP streaming correctness + performance
 - [ ] Ensure ESP32 HTTP read semantics are deterministic:
@@ -199,25 +213,37 @@ Rationale:
           - last error code presence
 
 ## 5) Session management rules (bad clients / legacy behaviour)
-- [ ] Decide policy for “open on an already-open handle/slot”:
+- [x] Decide policy for “open on an already-open handle/slot”:
       - strict (return DeviceBusy)
-      - or legacy-compatible (close existing and reopen)
-      - if supporting both, gate it behind a config flag and document it
 - [ ] Ensure idle-timeout + max-lifetime behaviour is consistent across platforms.
 - [ ] Add optional diagnostics logging / lightweight debug command support (probably via FujiDevice) to dump session table:
       - active handles, scheme, state, bytes available, done/error flags, age/idle ticks
 
 ## 6) Documentation updates
-- [ ] Update docs/network_device_protocol.md:
-      - include current schemes, v1 semantics, and planned v2 header filtering + status/bytes-waiting support
-      - clarify EOF rules and NotReady usage
-- [ ] Update docs/architecture.md:
-      - include the networking section (registry/backends/sessions/polling hook) and explicitly note which parts are hooks vs required today.
+- [x] Update docs/network_device_protocol.md:
+      - define HTTP header filtering as v1 behaviour
+      - clarify EOF and NotReady usage
+- [x] Update docs/architecture.md:
+      - clarify asynchronous networking model
+      - document polling hooks vs required behaviour
 
 ## 7) Tooling (Python CLI) hardening
-- [ ] Make net.py behave like a real host client:
-      - retry NotReady with short backoff
-      - stop reading once eof=true OR (read==0 and eof==true)
-      - do not rely on long serial timeouts as flow control
-- [ ] Add status text mapping everywhere (already partially present) and print StatusCode names in errors consistently.
-- [ ] Add a small “net soak” script that opens N sessions, interleaves reads, and verifies correctness + timing.
+
+### Status
+- [x] Retry-on-NotReady with bounded backoff
+- [x] Offset-validated READ handling (reject stale responses)
+- [x] EOF and zero-length read handling is correct
+- [x] Short serial timeouts used safely
+- [x] Works reliably with both sync (POSIX) and async (ESP32) backends
+
+### Optional follow-ups
+- [ ] Normalize StatusCode name printing everywhere (cosmetic)
+- [ ] Add optional long-running soak/stress script
+
+## Overall status (Jan 2026)
+
+- HTTP v1 semantics fully defined and implemented
+- POSIX and ESP32 backends are behaviourally aligned
+- Python CLI exercises real-world async semantics correctly
+- No protocol version bump required
+- Remaining work is documentation polish and optional tooling
