@@ -37,6 +37,8 @@ public:
     // to let devices do background work.
     void pollDevices();
 
+    std::size_t device_count() const noexcept { return _devices.size(); }
+
 private:
     std::unordered_map<DeviceID, std::unique_ptr<VirtualDevice>> _devices;
 };

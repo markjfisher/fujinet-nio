@@ -9,6 +9,7 @@ extern "C" {
 }
 
 #include "fujinet/build/profile.h"
+#include "fujinet/console/console_engine.h"
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/core/core.h"
 #include "fujinet/core/device_init.h"
@@ -26,6 +27,8 @@ extern "C" {
 #include "fujinet/platform/fuji_device_factory.h"
 
 #include "fujinet/core/logging.h"
+#include "fujinet/diag/diagnostic_provider.h"
+#include "fujinet/diag/diagnostic_registry.h"
 
 #include <unistd.h>
 
@@ -87,6 +90,16 @@ extern "C" void fujinet_core_task(void* arg)
 {
     core::FujinetCore core;
     Esp32Services services;
+
+    // Diagnostics + console (cooperative; keep in the core task to avoid races).
+    fujinet::diag::DiagnosticRegistry diagRegistry;
+    auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
+    diagRegistry.add_provider(*coreDiag);
+
+    auto consoleTransport = fujinet::console::create_default_console_transport();
+    fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport);
+    bool console_running = true;
+    consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
 
     services.init_phase0(core);
     
@@ -153,6 +166,10 @@ extern "C" void fujinet_core_task(void* arg)
         }
 
         services.poll();
+
+        if (console_running) {
+            console_running = console.step(0);
+        }
 
 // Do this later when we want to check the water mark
 // #if defined(FN_DEBUG)

@@ -6,11 +6,14 @@
 idf_component_register(
     SRCS
 # __TARGET_SOURCES_START__
+        app/console_engine.cpp
         app/main_esp32.cpp
         lib/bootstrap.cpp
         lib/build_profile.cpp
         lib/clock_device.cpp
         lib/clock_device_init.cpp
+        lib/diagnostic_core_provider.cpp
+        lib/diagnostic_registry.cpp
         lib/file_device.cpp
         lib/file_device_init.cpp
         lib/fs_stdio.cpp
@@ -30,6 +33,7 @@ idf_component_register(
         lib/storage_manager.cpp
         lib/tcp_network_protocol_common.cpp
         platform/esp32/channel_factory.cpp
+        platform/esp32/console_transport_usbcdc.cpp
         platform/esp32/fs_factory.cpp
         platform/esp32/fs_init.cpp
         platform/esp32/fuji_config_store_factory.cpp

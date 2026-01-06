@@ -3,8 +3,11 @@
 #include "fujinet/diag/diagnostic_types.h"
 
 #include <cstddef>
+#include <memory>
 #include <string_view>
 #include <vector>
+
+namespace fujinet::core { class FujinetCore; }
 
 namespace fujinet::diag {
 
@@ -25,5 +28,9 @@ public:
     // Provider should return NotFound if it doesn't recognize the command.
     virtual DiagResult execute(const DiagArgsView& args) = 0;
 };
+
+// Minimal built-in provider: core stats and build/version info.
+// Note: providers own their own state; registry stores only pointers.
+std::unique_ptr<IDiagnosticProvider> create_core_diagnostic_provider(::fujinet::core::FujinetCore& core);
 
 } // namespace fujinet::diag

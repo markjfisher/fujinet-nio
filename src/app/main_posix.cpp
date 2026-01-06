@@ -6,10 +6,13 @@
 #include <thread>
 
 #include "fujinet/build/profile.h"
+#include "fujinet/console/console_engine.h"
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/core/core.h"
 #include "fujinet/core/device_init.h"
 #include "fujinet/core/logging.h"
+#include "fujinet/diag/diagnostic_provider.h"
+#include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/channel.h"
@@ -22,7 +25,7 @@
 
 // Quick forward declaration (we’ll make a proper header later).
 namespace fujinet {
-    std::string_view version();
+    const char* version();
 }
 
 using namespace fujinet;
@@ -53,6 +56,15 @@ int main()
     FN_LOGI(TAG, "Version: %s", fujinet::version());
 
     core::FujinetCore core;
+
+    // Diagnostics + console (cooperative; no extra threads).
+    fujinet::diag::DiagnosticRegistry diagRegistry;
+    auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
+    diagRegistry.add_provider(*coreDiag);
+
+    auto consoleTransport = fujinet::console::create_default_console_transport();
+    fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport);
+    consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
 
     // POSIX: assume network is available; publish a synthetic GotIp for services.
     {
@@ -132,7 +144,8 @@ int main()
 
     // Run core loop until the process is terminated (Ctrl+C, kill, etc.).
     DeferredOnce startFuji{std::chrono::steady_clock::now(), std::chrono::milliseconds(50), false};
-    while (true) {
+    bool running = true;
+    while (running) {
         core.tick();
 
         // Defer config loading off the initial startup path (mirrors ESP32 behavior).
@@ -141,6 +154,7 @@ int main()
             fujiConcrete->start();
         });
 
+        running = console.step(0);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 

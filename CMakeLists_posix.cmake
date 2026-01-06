@@ -66,7 +66,6 @@ target_compile_definitions(fujinet-nio
         # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
 )
 
-# Use script scripts/update_cmake_sources.py to amend the src list:
 target_sources(fujinet-nio
     PRIVATE
 # __TARGET_SOURCES_START__
@@ -74,6 +73,8 @@ target_sources(fujinet-nio
         src/lib/build_profile.cpp
         src/lib/clock_device.cpp
         src/lib/clock_device_init.cpp
+        src/lib/diagnostic_core_provider.cpp
+        src/lib/diagnostic_registry.cpp
         src/lib/file_device.cpp
         src/lib/file_device_init.cpp
         src/lib/fs_stdio.cpp
@@ -93,6 +94,9 @@ target_sources(fujinet-nio
         src/lib/storage_manager.cpp
         src/lib/tcp_network_protocol_common.cpp
         src/platform/posix/channel_factory.cpp
+        src/platform/posix/console_transport_default.cpp
+        src/platform/posix/console_transport_pty.cpp
+        src/platform/posix/console_transport_stdio.cpp
         src/platform/posix/fs_factory.cpp
         src/platform/posix/fuji_config_store_factory.cpp
         src/platform/posix/fuji_device_factory.cpp
@@ -131,11 +135,10 @@ if(FN_BUILD_POSIX_APP)
         src/app/main_posix.cpp
     )
 
-    # Use script scripts/update_cmake_sources.py to amend the src list:
     target_sources(fujinet-nio-posix
         PRIVATE
 # __POSIX_APP_SOURCES_START__
-
+            src/app/console_engine.cpp
 # __POSIX_APP_SOURCES_END__
     )
 
