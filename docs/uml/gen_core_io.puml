@@ -93,6 +93,7 @@ class C_0010794218937492142358 {
 ..
 +operator=(const IODeviceManager &) = deleted : IODeviceManager &
 ..
++device_count() const noexcept : std::size_t
 +getDevice(DeviceID id) : VirtualDevice *
 +getDevice(DeviceID id) const : const VirtualDevice *
 +handleRequest(const IORequest & request) : IOResponse

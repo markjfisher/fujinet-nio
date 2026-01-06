@@ -74,6 +74,7 @@ class C_0010794218937492142358 {
 ..
 +operator=(const IODeviceManager &) = deleted : IODeviceManager &
 ..
++device_count() const noexcept : std::size_t
 +getDevice(DeviceID id) : VirtualDevice *
 +getDevice(DeviceID id) const : const VirtualDevice *
 +handleRequest(const IORequest & request) : IOResponse
@@ -453,6 +454,73 @@ __
 -_name : std::string
 -_root : std::string
 }
+enum "diag::DiagStatus" as C_0010514397783410162538
+enum C_0010514397783410162538 {
+Ok
+Error
+NotFound
+InvalidArgs
+NotReady
+Busy
+}
+class "diag::DiagResult" as C_0011046427244206106114
+class C_0011046427244206106114 {
+{static} +busy(std::string t) : DiagResult
+{static} +error(std::string t) : DiagResult
+{static} +invalid_args(std::string t) : DiagResult
+{static} +not_found(std::string t) : DiagResult
+{static} +not_ready(std::string t) : DiagResult
+{static} +ok(std::string t = = {}) : DiagResult
+__
++kv : std::vector<std::pair<std::string,std::string>>
++status : DiagStatus
++text : std::string
+}
+class "diag::DiagCommandSpec" as C_0014265545497805753192
+class C_0014265545497805753192 {
+__
++name : std::string
++summary : std::string
++usage : std::string
+}
+class "diag::DiagArgsView" as C_0018340176854803608744
+class C_0018340176854803608744 {
+__
++argv : std::vector<std::string_view>
++line : std::string_view
+}
+abstract "diag::IDiagnosticProvider" as C_0007944674237235781138
+abstract C_0007944674237235781138 {
++~IDiagnosticProvider() constexpr = default : void
+..
+{abstract} +execute(const DiagArgsView & args) = 0 : DiagResult
+{abstract} +list_commands(std::vector<DiagCommandSpec> & out) const = 0 : void
+{abstract} +provider_id() const noexcept = 0 : std::string_view
+__
+}
+class "diag::CoreDiagnosticProvider" as C_0011633639399304046317
+class C_0011633639399304046317 {
++CoreDiagnosticProvider(core::FujinetCore & core) : void
+..
+-cmd_info() : DiagResult
+-cmd_stats() : DiagResult
++execute(const DiagArgsView & args) : DiagResult
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+__
+-_core : core::FujinetCore &
+}
+class "diag::DiagnosticRegistry" as C_0010263522683166994737
+class C_0010263522683166994737 {
++DiagnosticRegistry() = default : void
+..
++add_provider(IDiagnosticProvider & p) : void
++dispatch(const DiagArgsView & args) : DiagResult
++list_all_commands(std::vector<DiagCommandSpec> & out) const : void
+__
+-_mutex : std::mutex
+-_providers : std::vector<IDiagnosticProvider *>
+}
 class "config::GeneralConfig" as C_0016837659718836839167
 class C_0016837659718836839167 {
 __
@@ -611,6 +679,19 @@ C_0001007711765235056436 ..> C_0014904826619290153445
 C_0001007711765235056436 ..> C_0007646493544420080876
 C_0001007711765235056436 o-- C_0014883681608496495557 : -_kind
 C_0012397556205933868732 <|-- C_0001007711765235056436
+C_0011046427244206106114 o-- C_0010514397783410162538 : +status
+C_0007944674237235781138 ..> C_0014265545497805753192
+C_0007944674237235781138 ..> C_0018340176854803608744
+C_0007944674237235781138 ..> C_0011046427244206106114
+C_0011633639399304046317 ..> C_0014265545497805753192
+C_0011633639399304046317 ..> C_0018340176854803608744
+C_0011633639399304046317 ..> C_0011046427244206106114
+C_0011633639399304046317 --> C_0011474842863539673819 : -_core
+C_0007944674237235781138 <|-- C_0011633639399304046317
+C_0010263522683166994737 ..> C_0014265545497805753192
+C_0010263522683166994737 ..> C_0018340176854803608744
+C_0010263522683166994737 ..> C_0011046427244206106114
+C_0010263522683166994737 --> C_0007944674237235781138 : -_providers
 C_0013064010099190715901 o-- C_0016837659718836839167 : +general
 C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
 C_0013064010099190715901 o-- C_0006762991430694965068 : +hosts
