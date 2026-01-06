@@ -96,10 +96,18 @@ extern "C" void fujinet_core_task(void* arg)
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
     diagRegistry.add_provider(*coreDiag);
 
-    auto consoleTransport = fujinet::console::create_default_console_transport();
-    fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport);
-    bool console_running = true;
-    consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
+    std::unique_ptr<fujinet::console::IConsoleTransport> consoleTransport;
+    std::unique_ptr<fujinet::console::ConsoleEngine> console;
+    bool console_running = false;
+
+#if CONFIG_FN_CONSOLE_ENABLE
+    consoleTransport = fujinet::console::create_default_console_transport();
+    if (consoleTransport) {
+        console = std::make_unique<fujinet::console::ConsoleEngine>(diagRegistry, *consoleTransport);
+        console_running = true;
+        consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
+    }
+#endif
 
     services.init_phase0(core);
     
@@ -168,7 +176,7 @@ extern "C" void fujinet_core_task(void* arg)
         services.poll();
 
         if (console_running) {
-            console_running = console.step(0);
+            console_running = console->step(0);
         }
 
 // Do this later when we want to check the water mark

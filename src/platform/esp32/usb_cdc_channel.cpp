@@ -24,6 +24,8 @@ namespace fujinet::platform::esp32 {
 static const char* TAG = "platform";
 
 static bool s_tinyusb_inited = false;
+static bool s_cdc0_inited = false;
+static bool s_cdc1_inited = false;
 
 static void ensure_tinyusb_init()
 {
@@ -35,34 +37,52 @@ static void ensure_tinyusb_init()
     const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
 
     esp_err_t err = tinyusb_driver_install(&tusb_cfg);
-    if (err != ESP_OK) {
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         FN_LOGE(TAG, "tinyusb_driver_install failed: %d", static_cast<int>(err));
         return;
     }
 
-    // Configure CDC-ACM port 0.
-    // Your local tinyusb_config_cdcacm_t does NOT have rx_unread_buf_sz,
-    // and tusb_cdc_acm_init() is deprecated in favour of tinyusb_cdcacm_init().
+    // Init CDC ACM ports on-demand; see ensure_cdc_port_init().
+
+    s_tinyusb_inited = true;
+}
+
+static tinyusb_cdcacm_itf_t to_itf_from_cfg(int idx)
+{
+    return (idx == 0) ? TINYUSB_CDC_ACM_0 : TINYUSB_CDC_ACM_1;
+}
+
+static void ensure_cdc_port_init(tinyusb_cdcacm_itf_t itf)
+{
+    ensure_tinyusb_init();
+    if (!s_tinyusb_inited) {
+        return;
+    }
+
+    if (itf == TINYUSB_CDC_ACM_0 && s_cdc0_inited) return;
+    if (itf == TINYUSB_CDC_ACM_1 && s_cdc1_inited) return;
+
     tinyusb_config_cdcacm_t acm_cfg = {};
-    acm_cfg.cdc_port                     = TINYUSB_CDC_ACM_0;
+    acm_cfg.cdc_port                     = itf;
     acm_cfg.callback_rx                  = nullptr;
     acm_cfg.callback_rx_wanted_char      = nullptr;
     acm_cfg.callback_line_state_changed  = nullptr;
     acm_cfg.callback_line_coding_changed = nullptr;
 
-    // New-style init function suggested by the compiler
-    err = tinyusb_cdcacm_init(&acm_cfg);
-    if (err != ESP_OK) {
-        FN_LOGE(TAG, "tinyusb_cdcacm_init failed: %d", static_cast<int>(err));
+    esp_err_t err = tinyusb_cdcacm_init(&acm_cfg);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        FN_LOGE(TAG, "tinyusb_cdcacm_init(itf=%d) failed: %d", (int)itf, static_cast<int>(err));
         return;
     }
 
-    s_tinyusb_inited = true;
+    if (itf == TINYUSB_CDC_ACM_0) s_cdc0_inited = true;
+    if (itf == TINYUSB_CDC_ACM_1) s_cdc1_inited = true;
 }
 
 UsbCdcChannel::UsbCdcChannel()
 {
     ensure_tinyusb_init();
+    ensure_cdc_port_init(to_itf_from_cfg(CONFIG_FN_FUJIBUS_USB_CDC_PORT));
 }
 
 bool UsbCdcChannel::available()
@@ -79,9 +99,12 @@ std::size_t UsbCdcChannel::read(std::uint8_t* buffer, std::size_t maxLen)
         return 0;
     }
 
+    const tinyusb_cdcacm_itf_t itf = to_itf_from_cfg(CONFIG_FN_FUJIBUS_USB_CDC_PORT);
+    ensure_cdc_port_init(itf);
+
     size_t rx_size = 0;
     esp_err_t err = tinyusb_cdcacm_read(
-        TINYUSB_CDC_ACM_0,
+        itf,
         buffer,
         maxLen,
         &rx_size
@@ -100,6 +123,9 @@ void UsbCdcChannel::write(const std::uint8_t* buffer, std::size_t len)
         return;
     }
 
+    const tinyusb_cdcacm_itf_t itf = to_itf_from_cfg(CONFIG_FN_FUJIBUS_USB_CDC_PORT);
+    ensure_cdc_port_init(itf);
+
     const std::uint8_t* p = buffer;
     std::size_t remaining = len;
 
@@ -111,7 +137,7 @@ void UsbCdcChannel::write(const std::uint8_t* buffer, std::size_t len)
     while (remaining > 0) {
         // Queue as much as TinyUSB will accept right now.
         size_t queued = tinyusb_cdcacm_write_queue(
-            TINYUSB_CDC_ACM_0,
+            itf,
             const_cast<std::uint8_t*>(p),
             remaining
         );
@@ -121,12 +147,12 @@ void UsbCdcChannel::write(const std::uint8_t* buffer, std::size_t len)
             remaining -= queued;
 
             // Flush what we just queued.
-            (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+            (void)tinyusb_cdcacm_write_flush(itf, 0);
             continue;
         }
 
         // Nothing queued: flush and yield briefly to let USB ISR/task drain.
-        (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+        (void)tinyusb_cdcacm_write_flush(itf, 0);
         vTaskDelay(1);
 
         if ((xTaskGetTickCount() - start) > max_wait_ticks) {

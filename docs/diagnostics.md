@@ -127,13 +127,36 @@ On ESP32 builds, FujiBus commonly uses **USB CDC** for normal traffic (BuildProf
 
 Console transport note:
 - The console must **not share** the same USB CDC stream as FujiBus, or it will corrupt the wire protocol.
-- The current implementation uses **UART0** for the diagnostic console (via ESP-IDF UART driver), because a dedicated second CDC interface/port has not been added yet.
+- The console transport is configurable via **sdkconfig/Kconfig** (see below).
 
 Typical usage:
 - Use PlatformIO/ESP-IDF serial monitor (UART0) to interact with the console.
 - The console prompt and commands are the same as POSIX.
 
 Future direction:
-- Add a second CDC ACM interface (separate endpoint) for the console, then switch the ESP32 console transport to USB CDC safely.
+- Use **two TinyUSB CDC ACM ports** (multi-CDC) so the host sees two separate `/dev/ttyACM*` devices:
+  - FujiBus on one port (default: ACM0)
+  - Console on a different port (default: ACM1)
+
+#### ESP32: configuration (sdkconfig)
+
+FujiNet-NIO provides Kconfig options under `menuconfig` → **FujiNet-NIO**:
+
+- `CONFIG_FN_CONSOLE_ENABLE`
+  - Enable/disable the diagnostic console in the ESP32 app.
+- `CONFIG_FN_CONSOLE_TRANSPORT_UART0` / `CONFIG_FN_CONSOLE_TRANSPORT_USB_CDC`
+  - Select whether console runs on UART0 or TinyUSB CDC ACM.
+- `CONFIG_FN_FUJIBUS_USB_CDC_PORT`
+  - Which TinyUSB CDC ACM port FujiBus uses (default: `0`).
+- `CONFIG_FN_CONSOLE_USB_CDC_PORT`
+  - Which TinyUSB CDC ACM port the console uses (default: `1`).
+
+To expose **two** CDC ACM ports from TinyUSB, set:
+- `CONFIG_TINYUSB_CDC_ENABLED=y`
+- `CONFIG_TINYUSB_CDC_COUNT=2`
+
+Notes:
+- If `CONFIG_TINYUSB_CDC_COUNT<2`, a USB-CDC console cannot be dedicated; FujiNet-NIO will fall back to UART0 when configured for USB CDC.
+- The exact host node numbering (`/dev/ttyACM0`, `/dev/ttyACM1`, `/dev/ttyACM2`) is not guaranteed to be stable across replug/boot; consider udev rules for stable symlinks if needed.
 
 

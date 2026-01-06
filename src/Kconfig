@@ -1,0 +1,57 @@
+menu "FujiNet-NIO"
+
+    config FN_CONSOLE_ENABLE
+        bool "Enable diagnostic console"
+        default y
+        help
+            Enables the interactive diagnostic console task/loop in the ESP32 app.
+
+    choice FN_CONSOLE_TRANSPORT
+        prompt "Diagnostic console transport"
+        default FN_CONSOLE_TRANSPORT_UART0
+        depends on FN_CONSOLE_ENABLE
+        help
+            Select which transport is used for the diagnostic console.
+
+            Notes:
+            - UART0 works on all ESP32 variants.
+            - USB OTG CDC (TinyUSB) requires TinyUSB CDC to be enabled and
+              provides a separate /dev/ttyACM* on the host.
+            - If FujiBus is also using USB OTG CDC, you must not share the same
+              CDC ACM port for console and FujiBus.
+
+        config FN_CONSOLE_TRANSPORT_UART0
+            bool "UART0"
+
+        config FN_CONSOLE_TRANSPORT_USB_CDC
+            bool "USB OTG CDC (TinyUSB CDC ACM)"
+            depends on TINYUSB_CDC_ENABLED
+            help
+                Uses TinyUSB CDC ACM for console.
+
+                For a dedicated console port alongside a FujiBus CDC port,
+                set CONFIG_TINYUSB_CDC_COUNT=2 and choose a different ACM port.
+
+    endchoice
+
+    config FN_FUJIBUS_USB_CDC_PORT
+        int "FujiBus USB CDC ACM port index"
+        range 0 1
+        default 0
+        depends on TINYUSB_CDC_ENABLED
+        help
+            Select which TinyUSB CDC ACM port is used by FujiBus (UsbCdcChannel).
+            Valid values depend on CONFIG_TINYUSB_CDC_COUNT (0..count-1).
+
+    config FN_CONSOLE_USB_CDC_PORT
+        int "Console USB CDC ACM port index"
+        range 0 1
+        default 1
+        depends on FN_CONSOLE_TRANSPORT_USB_CDC
+        help
+            Select which TinyUSB CDC ACM port is used by the diagnostic console.
+            Valid values depend on CONFIG_TINYUSB_CDC_COUNT (0..count-1).
+
+endmenu
+
+
