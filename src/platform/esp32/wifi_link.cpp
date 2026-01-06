@@ -4,6 +4,7 @@
 
 extern "C" {
 #include "esp_err.h"
+#include "esp_netif.h"
 #include "esp_wifi.h"
 #include "lwip/inet.h" // IPSTR/IP2STR
 }
@@ -42,7 +43,16 @@ void Esp32WifiLink::init()
     }
 
     // Requires NVS to be initialized by platform bootstrap.
-    ESP_ERROR_CHECK(esp_netif_init());
+    {
+        // If the TCP/IP stack is already initialized (e.g. by early platform bootstrap),
+        // ignore invalid state.
+        esp_err_t err = esp_netif_init();
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            FN_LOGE(TAG, "esp_netif_init failed: %d", (int)err);
+            _state = fujinet::net::LinkState::Failed;
+            return;
+        }
+    }
 
     // If default loop already exists, ignore invalid state.
     esp_err_t err = esp_event_loop_create_default();

@@ -1,6 +1,7 @@
 #include "fujinet/platform/esp32/http_network_protocol_espidf.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -85,6 +86,13 @@ struct HttpNetworkProtocolEspIdfState {
     volatile bool cancel_requested{false};
     volatile bool cleanup_pending{false};
 
+    // Intrusive lifetime management:
+    // - protocol object owns 1 ref
+    // - HTTP task owns 1 ref while running
+    // This prevents use-after-free / double-free when sessions are closed/evicted
+    // while the esp_http_client task is still running.
+    std::atomic<std::uint32_t> refcnt{1};
+
 
     void reset_session_state() {
         response_header_names_lower.clear();
@@ -113,6 +121,21 @@ struct HttpNetworkProtocolEspIdfState {
 
     std::string headers_block;
 };
+
+static void state_acquire(HttpNetworkProtocolEspIdfState* s)
+{
+    if (!s) return;
+    s->refcnt.fetch_add(1, std::memory_order_relaxed);
+}
+
+static void state_release(HttpNetworkProtocolEspIdfState* s)
+{
+    if (!s) return;
+    const std::uint32_t prev = s->refcnt.fetch_sub(1, std::memory_order_acq_rel);
+    if (prev == 1) {
+        delete s;
+    }
+}
 
 static std::string to_lower_ascii(std::string_view s)
 {
@@ -288,6 +311,9 @@ static void http_task_entry(void* arg)
         return;
     }
 
+    // Cache semaphore handle early (it lives in s).
+    SemaphoreHandle_t done_sem = s->done_sem;
+
     esp_http_client_handle_t client = nullptr;
 
     // Snapshot client pointer under mutex.
@@ -321,9 +347,12 @@ static void http_task_entry(void* arg)
     s->task = nullptr;
     give_mutex(s->meta_mutex);
 
-    if (s->done_sem) {
-        (void)xSemaphoreGive(s->done_sem);
+    if (done_sem) {
+        (void)xSemaphoreGive(done_sem);
     }
+
+    // Release task's reference.
+    state_release(s);
 
     vTaskDelete(nullptr);
 }
@@ -337,6 +366,9 @@ static void http_task_entry_after_upload(void* arg)
         vTaskDelete(nullptr);
         return;
     }
+
+    // Cache semaphore handle early (it lives in s).
+    SemaphoreHandle_t done_sem = s->done_sem;
 
     esp_http_client_handle_t client = nullptr;
 
@@ -386,9 +418,12 @@ static void http_task_entry_after_upload(void* arg)
     s->task = nullptr;
     give_mutex(s->meta_mutex);
 
-    if (s->done_sem) {
-        (void)xSemaphoreGive(s->done_sem);
+    if (done_sem) {
+        (void)xSemaphoreGive(done_sem);
     }
+
+    // Release task's reference.
+    state_release(s);
 
     vTaskDelete(nullptr);
 }
@@ -409,8 +444,13 @@ HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
 
 HttpNetworkProtocolEspIdf::~HttpNetworkProtocolEspIdf()
 {
+    if (!_s) {
+        return;
+    }
+
     close();
-    delete _s;
+    // Release protocol's reference (task may still hold the other reference).
+    state_release(_s);
     _s = nullptr;
 }
 
@@ -558,8 +598,13 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         (void)xSemaphoreTake(_s->done_sem, 0); // drain
     }
 
+    // Task owns a reference while it runs.
+    state_acquire(_s);
+
     BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 4096, _s, 3, &_s->task);
     if (ok != pdPASS || !_s->task) {
+        // Release task ref we just acquired.
+        state_release(_s);
         // No task exists => safe to cleanup here.
         esp_http_client_cleanup(_s->client);
         _s->client = nullptr;
@@ -604,49 +649,57 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
         return fujinet::io::StatusCode::InvalidRequest;
     }
 
+    // IMPORTANT:
+    // NetworkDevice's contract expects:
+    //   - Ok  => written == dataLen (whole chunk accepted)
+    //   - DeviceBusy => written == 0 (no progress; host retries same offset)
+    //
+    // esp_http_client_write() may accept partial writes, so we MUST NOT return
+    // DeviceBusy after partial progress, or we'd wedge the session with a gap/dup.
     const int64_t t_enter = esp_timer_get_time();
-    FN_LOGI(TAG, "write_body: enter off=%u len=%u expected=%u sent=%u",
-                 (unsigned)offset, (unsigned)dataLen,
-                 (unsigned)_s->expected_body_len, (unsigned)_s->sent_body_len);
 
-    // Stream write to esp_http_client (may accept partial); we loop to send all or return DeviceBusy/IOError.
+    // Stream write to esp_http_client (may accept partial); we loop internally until
+    // we send the whole chunk or we fail/abort.
     std::size_t total = 0;
+    int zero_writes = 0;
     while (total < dataLen) {
         if (_s->stop_requested) {
             FN_LOGW(TAG, "write_body: stop_requested");
             return fujinet::io::StatusCode::IOError;
         }
 
-        const int64_t t0 = esp_timer_get_time();
         const int w = esp_http_client_write(
             _s->client,
             reinterpret_cast<const char*>(data + total),
             static_cast<int>(dataLen - total)
         );
-        const int64_t t1 = esp_timer_get_time();
-        FN_LOGI(TAG, "write_body: esp_http_client_write req=%u ret=%d dt_ms=%lld",
-            (unsigned)(dataLen - total), w, (long long)((t1 - t0) / 1000));
 
         if (w < 0) {
             FN_LOGE(TAG, "write_body: write error ret=%d", w);
             return fujinet::io::StatusCode::IOError;
         }
         if (w == 0) {
-            // Backpressure (rare); let host retry.
-            written = static_cast<std::uint16_t>(total);
-            FN_LOGW(TAG, "write_body: backpressure total=%u", (unsigned)total);
-            return fujinet::io::StatusCode::DeviceBusy;
+            // Backpressure. We keep trying here to preserve "whole chunk" semantics.
+            ++zero_writes;
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+            // If we've been blocked for too long, abort this session instead of wedging.
+            const int64_t now = esp_timer_get_time();
+            const int64_t elapsed_ms = (now - t_enter) / 1000;
+            if (elapsed_ms > 2000 || zero_writes > 200) {
+                FN_LOGW(TAG, "write_body: backpressure timeout (ms=%lld, zero_writes=%d); aborting",
+                        (long long)elapsed_ms, zero_writes);
+                _s->stop_requested = true;
+                (void)esp_http_client_close(_s->client);
+                return fujinet::io::StatusCode::IOError;
+            }
+            continue;
         }
         total += static_cast<std::size_t>(w);
     }
 
     _s->sent_body_len += static_cast<std::uint32_t>(total);
     written = static_cast<std::uint16_t>(total);
-
-    const int64_t t_exit = esp_timer_get_time();
-    FN_LOGI(TAG, "write_body: exit wrote=%u new_sent=%u dt_ms=%lld",
-                 (unsigned)written, (unsigned)_s->sent_body_len,
-                 (long long)((t_exit - t_enter) / 1000));
 
     // Body complete: start the "read response" task now.
     if (_s->sent_body_len == _s->expected_body_len) {
@@ -658,8 +711,12 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
         _s->task = nullptr;
         if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
 
+        // Task owns a reference while it runs.
+        state_acquire(_s);
+
         BaseType_t ok = xTaskCreate(&http_task_entry_after_upload, "fn_http2", 4096, _s, 3, &_s->task);
         if (ok != pdPASS || !_s->task) {
+            state_release(_s);
             return fujinet::io::StatusCode::InternalError;
         }
     }

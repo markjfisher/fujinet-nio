@@ -53,6 +53,11 @@ void NetworkDevice::poll()
 {
     ++_tickNow;
 
+    // Shorter timeout for "body upload in progress" sessions so we don't
+    // wedge the session table if the host dies mid-upload.
+    // With a 50ms tick, 20 ticks = 1s.
+    static constexpr std::uint64_t BODY_UPLOAD_TIMEOUT_TICKS = 20ull * 10ull; // ~10s
+
     for (auto& s : _sessions) {
         if (!s.active || !s.proto) continue;
 
@@ -63,6 +68,13 @@ void NetworkDevice::poll()
         // and/or touch(s) here when progress is made.
         // const std::uint64_t age  = _tickNow - s.createdTick;
         const std::uint64_t idle = _tickNow - s.lastActivityTick;
+
+        // If we're waiting for request body data and the client goes away,
+        // reap quickly to free the session slot.
+        if (s.awaitingBody && idle > BODY_UPLOAD_TIMEOUT_TICKS) {
+            close_and_free(s);
+            continue;
+        }
 
         // Reap dead/leaked handles:
         // - Enforce idle timeout

@@ -1,7 +1,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "esp_timer.h"
+#include "esp_event.h"
 
 
 extern "C" {
@@ -240,6 +242,20 @@ extern "C" void app_main(void)
         if (err != ESP_OK) {
             FN_LOGE(TAG, "nvs_flash_init failed: %d", (int)err);
             // Continue boot; Wi-Fi will fail later if requested.
+        }
+    }
+
+    // Initialize the TCP/IP stack + default event loop early so network protocols
+    // cannot crash if invoked before Wi-Fi link bring-up (phase-1).
+    {
+        esp_err_t err = esp_netif_init();
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            FN_LOGE(TAG, "esp_netif_init failed: %d", (int)err);
+        }
+
+        err = esp_event_loop_create_default();
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            FN_LOGE(TAG, "esp_event_loop_create_default failed: %d", (int)err);
         }
     }
 
