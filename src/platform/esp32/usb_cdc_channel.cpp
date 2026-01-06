@@ -1,5 +1,6 @@
 #include "fujinet/platform/esp32/usb_cdc_channel.h"
 #include "fujinet/core/logging.h"
+#include "fujinet/platform/esp32/tinyusb_cdc.h"
 
 #include <cstddef>
 
@@ -23,84 +24,35 @@ namespace fujinet::platform::esp32 {
 
 static const char* TAG = "platform";
 
-static bool s_tinyusb_inited = false;
-static bool s_cdc0_inited = false;
-static bool s_cdc1_inited = false;
-
-static void ensure_tinyusb_init()
-{
-    if (s_tinyusb_inited) {
-        return;
-    }
-
-    // Use the default TinyUSB device config provided by esp_tinyusb v2.x
-    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-
-    esp_err_t err = tinyusb_driver_install(&tusb_cfg);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        FN_LOGE(TAG, "tinyusb_driver_install failed: %d", static_cast<int>(err));
-        return;
-    }
-
-    // Init CDC ACM ports on-demand; see ensure_cdc_port_init().
-
-    s_tinyusb_inited = true;
-}
-
-static tinyusb_cdcacm_itf_t to_itf_from_cfg(int idx)
-{
-    return (idx == 0) ? TINYUSB_CDC_ACM_0 : TINYUSB_CDC_ACM_1;
-}
-
-static void ensure_cdc_port_init(tinyusb_cdcacm_itf_t itf)
-{
-    ensure_tinyusb_init();
-    if (!s_tinyusb_inited) {
-        return;
-    }
-
-    if (itf == TINYUSB_CDC_ACM_0 && s_cdc0_inited) return;
-    if (itf == TINYUSB_CDC_ACM_1 && s_cdc1_inited) return;
-
-    tinyusb_config_cdcacm_t acm_cfg = {};
-    acm_cfg.cdc_port                     = itf;
-    acm_cfg.callback_rx                  = nullptr;
-    acm_cfg.callback_rx_wanted_char      = nullptr;
-    acm_cfg.callback_line_state_changed  = nullptr;
-    acm_cfg.callback_line_coding_changed = nullptr;
-
-    esp_err_t err = tinyusb_cdcacm_init(&acm_cfg);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        FN_LOGE(TAG, "tinyusb_cdcacm_init(itf=%d) failed: %d", (int)itf, static_cast<int>(err));
-        return;
-    }
-
-    if (itf == TINYUSB_CDC_ACM_0) s_cdc0_inited = true;
-    if (itf == TINYUSB_CDC_ACM_1) s_cdc1_inited = true;
-}
-
 UsbCdcChannel::UsbCdcChannel()
 {
-    ensure_tinyusb_init();
-    ensure_cdc_port_init(to_itf_from_cfg(CONFIG_FN_FUJIBUS_USB_CDC_PORT));
+    const auto port = (CONFIG_FN_FUJIBUS_USB_CDC_PORT == 0)
+        ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
+        : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
+    (void)fujinet::platform::esp32::ensure_tinyusb_cdc_acm(port);
 }
 
 bool UsbCdcChannel::available()
 {
-    // We don't have a cheap way to query bytes-available without reading;
-    // just say "maybe" if TinyUSB is up. The transport will call read()
-    // and get 0 if there's nothing there.
-    return s_tinyusb_inited;
+    return fujinet::platform::esp32::ensure_tinyusb_driver();
 }
 
 std::size_t UsbCdcChannel::read(std::uint8_t* buffer, std::size_t maxLen)
 {
-    if (!s_tinyusb_inited || maxLen == 0) {
+    if (maxLen == 0) {
         return 0;
     }
 
-    const tinyusb_cdcacm_itf_t itf = to_itf_from_cfg(CONFIG_FN_FUJIBUS_USB_CDC_PORT);
-    ensure_cdc_port_init(itf);
+    const auto port = (CONFIG_FN_FUJIBUS_USB_CDC_PORT == 0)
+        ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
+        : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
+    if (!fujinet::platform::esp32::ensure_tinyusb_cdc_acm(port)) {
+        return 0;
+    }
+
+    const tinyusb_cdcacm_itf_t itf = (port == fujinet::platform::esp32::UsbCdcAcmPort::Port0)
+        ? TINYUSB_CDC_ACM_0
+        : TINYUSB_CDC_ACM_1;
 
     size_t rx_size = 0;
     esp_err_t err = tinyusb_cdcacm_read(
@@ -119,12 +71,20 @@ std::size_t UsbCdcChannel::read(std::uint8_t* buffer, std::size_t maxLen)
 
 void UsbCdcChannel::write(const std::uint8_t* buffer, std::size_t len)
 {
-    if (!s_tinyusb_inited || !buffer || len == 0) {
+    if (!buffer || len == 0) {
         return;
     }
 
-    const tinyusb_cdcacm_itf_t itf = to_itf_from_cfg(CONFIG_FN_FUJIBUS_USB_CDC_PORT);
-    ensure_cdc_port_init(itf);
+    const auto port = (CONFIG_FN_FUJIBUS_USB_CDC_PORT == 0)
+        ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
+        : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
+    if (!fujinet::platform::esp32::ensure_tinyusb_cdc_acm(port)) {
+        return;
+    }
+
+    const tinyusb_cdcacm_itf_t itf = (port == fujinet::platform::esp32::UsbCdcAcmPort::Port0)
+        ? TINYUSB_CDC_ACM_0
+        : TINYUSB_CDC_ACM_1;
 
     const std::uint8_t* p = buffer;
     std::size_t remaining = len;

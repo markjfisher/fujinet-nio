@@ -47,6 +47,7 @@ idf_component_register(
         platform/esp32/tcp_network_protocol_espidf.cpp
         platform/esp32/tcp_socket_ops_espidf.cpp
         platform/esp32/time.cpp
+        platform/esp32/tinyusb_cdc.cpp
         platform/esp32/usb_cdc_channel.cpp
         platform/esp32/wifi_link.cpp
 # __TARGET_SOURCES_END__

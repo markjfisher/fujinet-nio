@@ -17,11 +17,11 @@ extern "C" {
 }
 
 #include "fujinet/core/logging.h"
+#include "fujinet/platform/esp32/tinyusb_cdc.h"
 
 #if CONFIG_TINYUSB_CDC_ENABLED
 extern "C" {
 #include "tinyusb.h"
-#include "tinyusb_default_config.h"
 #include "tinyusb_cdc_acm.h"
 }
 #endif
@@ -112,40 +112,12 @@ static tinyusb_cdcacm_itf_t to_itf_from_cfg(int idx)
     return (idx == 0) ? TINYUSB_CDC_ACM_0 : TINYUSB_CDC_ACM_1;
 }
 
-static void ensure_tinyusb_and_cdc_init(tinyusb_cdcacm_itf_t itf)
+static bool ensure_console_cdc_ready(tinyusb_cdcacm_itf_t itf)
 {
-    static bool s_tinyusb_inited = false;
-    static bool s_cdc0_inited = false;
-    static bool s_cdc1_inited = false;
-
-    if (!s_tinyusb_inited) {
-        const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-        esp_err_t err = tinyusb_driver_install(&tusb_cfg);
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-            FN_LOGE(TAG, "tinyusb_driver_install failed: %d", (int)err);
-            return;
-        }
-        s_tinyusb_inited = true;
-    }
-
-    if (itf == TINYUSB_CDC_ACM_0 && s_cdc0_inited) return;
-    if (itf == TINYUSB_CDC_ACM_1 && s_cdc1_inited) return;
-
-    tinyusb_config_cdcacm_t acm_cfg = {};
-    acm_cfg.cdc_port                     = itf;
-    acm_cfg.callback_rx                  = nullptr;
-    acm_cfg.callback_rx_wanted_char      = nullptr;
-    acm_cfg.callback_line_state_changed  = nullptr;
-    acm_cfg.callback_line_coding_changed = nullptr;
-
-    esp_err_t err = tinyusb_cdcacm_init(&acm_cfg);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        FN_LOGE(TAG, "tinyusb_cdcacm_init(itf=%d) failed: %d", (int)itf, (int)err);
-        return;
-    }
-
-    if (itf == TINYUSB_CDC_ACM_0) s_cdc0_inited = true;
-    if (itf == TINYUSB_CDC_ACM_1) s_cdc1_inited = true;
+    const auto port = (itf == TINYUSB_CDC_ACM_0)
+        ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
+        : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
+    return fujinet::platform::esp32::ensure_tinyusb_cdc_acm(port);
 }
 
 class Esp32UsbCdcConsoleTransport final : public IConsoleTransport {
@@ -153,7 +125,7 @@ public:
     explicit Esp32UsbCdcConsoleTransport(tinyusb_cdcacm_itf_t itf)
         : _itf(itf)
     {
-        ensure_tinyusb_and_cdc_init(_itf);
+        (void)ensure_console_cdc_ready(_itf);
     }
 
     bool read_line(std::string& out, int timeout_ms) override
@@ -164,7 +136,9 @@ public:
 
         std::uint8_t tmp[64];
         for (;;) {
-            ensure_tinyusb_and_cdc_init(_itf);
+            if (!ensure_console_cdc_ready(_itf)) {
+                return false;
+            }
 
             size_t rx_size = 0;
             esp_err_t err = tinyusb_cdcacm_read(_itf, tmp, sizeof(tmp), &rx_size);
@@ -201,7 +175,9 @@ public:
 
     void write(std::string_view s) override
     {
-        ensure_tinyusb_and_cdc_init(_itf);
+        if (!ensure_console_cdc_ready(_itf)) {
+            return;
+        }
 
         const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(s.data());
         std::size_t remaining = s.size();

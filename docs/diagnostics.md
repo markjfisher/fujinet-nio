@@ -159,4 +159,86 @@ Notes:
 - If `CONFIG_TINYUSB_CDC_COUNT<2`, a USB-CDC console cannot be dedicated; FujiNet-NIO will fall back to UART0 when configured for USB CDC.
 - The exact host node numbering (`/dev/ttyACM0`, `/dev/ttyACM1`, `/dev/ttyACM2`) is not guaranteed to be stable across replug/boot; consider udev rules for stable symlinks if needed.
 
+#### Linux: stable `/dev/` names with udev (recommended)
+
+When you expose multiple serial interfaces (e.g. USB-Serial-JTAG + TinyUSB CDC ACM0 + TinyUSB CDC ACM1),
+Linux may assign `/dev/ttyACM*` numbers differently across boots or re-plugs.
+
+To make tooling reliable, create stable symlinks like:
+- `/dev/fujinet-fujibus`
+- `/dev/fujinet-console`
+
+##### 1) Inspect the attributes for each port
+
+Plug the device in, then for each candidate port (example: `/dev/ttyACM1`, `/dev/ttyACM2`):
+
+```bash
+udevadm info -a -n /dev/ttyACM1 | less
+```
+
+You’re looking for values like:
+- `ATTRS{idVendor}=="...."`
+- `ATTRS{idProduct}=="...."`
+- `ATTRS{bInterfaceNumber}==".."`  (often distinguishes ACM0 vs ACM1)
+
+Tip: quick view via sysfs:
+
+```bash
+cat /sys/class/tty/ttyACM1/device/bInterfaceNumber
+```
+
+For multi-CDC, a common pattern is:
+- CDC ACM0 → interface number `00`
+- CDC ACM1 → interface number `02`
+
+…but **verify on your system** using the commands above.
+
+Alternate way to check the values is via journalctl logs:
+```
+Jan 06 19:03:29 archy kernel: usb 7-1.3.3: new full-speed USB device number 49 using xhci_hcd
+Jan 06 19:03:29 archy kernel: usb 7-1.3.3: New USB device found, idVendor=1a86, idProduct=55d3, bcdDevice= 4.45
+Jan 06 19:03:29 archy kernel: usb 7-1.3.3: New USB device strings: Mfr=0, Product=2, SerialNumber=3
+Jan 06 19:03:29 archy kernel: usb 7-1.3.3: Product: USB Single Serial
+Jan 06 19:03:29 archy kernel: usb 7-1.3.3: SerialNumber: 5875011611
+Jan 06 19:03:29 archy kernel: cdc_acm 7-1.3.3:1.0: ttyACM0: USB ACM device
+```
+
+##### 2) Create udev rules
+
+Create a rules file:
+
+```bash
+sudoedit /etc/udev/rules.d/99-fujinet-nio.rules
+```
+
+Template (replace VID/PID and interface numbers with what you observed):
+
+```udev
+# FujiNet-NIO (TinyUSB CDC ACM)
+# Replace idVendor/idProduct and bInterfaceNumber to match your device.
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4000", ATTRS{bInterfaceNumber}=="00", SYMLINK+="fujinet-fujibus"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4000", ATTRS{bInterfaceNumber}=="02", SYMLINK+="fujinet-console"
+
+# Optional: if you have multiple identical devices connected, add a serial match:
+# SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4000", ATTRS{serial}=="<your-serial>", ATTRS{bInterfaceNumber}=="00", SYMLINK+="fujinet-fujibus"
+```
+
+Notes:
+- The example `303a` VID is Espressif; your PID may differ depending on descriptor settings.
+- `bInterfaceNumber` matching is usually the most reliable way to separate ACM0 vs ACM1 on the same USB device.
+
+##### 3) Reload rules
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Then unplug/replug the device, and verify:
+
+```bash
+ls -l /dev/fujinet-*
+```
+
 

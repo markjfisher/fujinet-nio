@@ -143,6 +143,17 @@ def main():
         platformio_ini_file = args.ini_file
     build_board = read_build_board_value(platformio_ini_file)
 
+    # Force regeneration of the per-board sdkconfig file.
+    # PlatformIO/ESP-IDF can otherwise keep a stale merged sdkconfig.<build_board>
+    # even when sdkconfig.local.defaults changes.
+    stale_sdkconfig = f"sdkconfig.{build_board}"
+    if os.path.exists(stale_sdkconfig):
+        try:
+            os.remove(stale_sdkconfig)
+            print(f"Removed stale '{stale_sdkconfig}'")
+        except OSError as e:
+            print(f"Warning: failed to remove '{stale_sdkconfig}': {e}", file=sys.stderr)
+
     names = get_names_from_map(args.map_file, build_board)
     concatenate_sdkconfig_files(names, args.output_file)
 
