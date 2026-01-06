@@ -1,3 +1,5 @@
+# __GENERATED_COMMENT__
+
 project(fujinet_nio
     VERSION 0.1.1
     LANGUAGES C CXX
@@ -63,43 +65,9 @@ target_compile_definitions(fujinet-nio
         # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
 )
 
-# Use script scripts/update_cmake_sources.py to amend the src list:
-# __TARGET_SOURCES_START__
 target_sources(fujinet-nio
     PRIVATE
-        src/lib/bootstrap.cpp
-        src/lib/build_profile.cpp
-        src/lib/clock_device.cpp
-        src/lib/clock_device_init.cpp
-        src/lib/file_device.cpp
-        src/lib/file_device_init.cpp
-        src/lib/fs_stdio.cpp
-        src/lib/fuji_bus_packet.cpp
-        src/lib/fuji_config_yaml_store.cpp
-        src/lib/fuji_device.cpp
-        src/lib/fujibus_transport.cpp
-        src/lib/fujinet_core.cpp
-        src/lib/fujinet_init.cpp
-        src/lib/io_device_manager.cpp
-        src/lib/io_service.cpp
-        src/lib/network_device.cpp
-        src/lib/network_device_init.cpp
-        src/lib/network_protocol_registry.cpp
-        src/lib/network_protocol_stub.cpp
-        src/lib/routing_manager.cpp
-        src/lib/storage_manager.cpp
-        src/lib/tcp_network_protocol_common.cpp
-        src/platform/posix/channel_factory.cpp
-        src/platform/posix/fs_factory.cpp
-        src/platform/posix/fuji_config_store_factory.cpp
-        src/platform/posix/fuji_device_factory.cpp
-        src/platform/posix/hardware_caps.cpp
-        src/platform/posix/http_network_protocol_curl.cpp
-        src/platform/posix/logging.cpp
-        src/platform/posix/network_registry.cpp
-        src/platform/posix/tcp_network_protocol_posix.cpp
-        src/platform/posix/tcp_socket_ops_posix.cpp
-        src/platform/posix/time.cpp
+# __TARGET_SOURCES_START__
 # __TARGET_SOURCES_END__
         third_party/cjson/cJSON.c
 )
@@ -126,6 +94,12 @@ target_link_libraries(fujinet-nio
 if(FN_BUILD_POSIX_APP)
     add_executable(fujinet-nio-posix
         src/app/main_posix.cpp
+    )
+
+    target_sources(fujinet-nio-posix
+        PRIVATE
+# __POSIX_APP_SOURCES_START__
+# __POSIX_APP_SOURCES_END__
     )
 
     target_link_libraries(fujinet-nio-posix
