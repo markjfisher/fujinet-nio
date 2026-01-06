@@ -170,6 +170,13 @@ __
 +receivedBodyLen : std::uint32_t
 +url : std::string
 }
+class "io::NetworkDeviceDiagnosticsAccessor" as C_0010580021346264420268
+class C_0010580021346264420268 {
+{static} +close(NetworkDevice & dev, std::uint16_t handle) noexcept : bool
+{static} +close_all(NetworkDevice & dev) noexcept : std::size_t
+{static} +sessions(const NetworkDevice & dev) : std::vector<SessionRow>
+__
+}
 class "io::ClockDevice" as C_0006193474076654383504
 class C_0006193474076654383504 {
 +handle(const IORequest & request) : IOResponse
@@ -480,6 +487,7 @@ class "diag::DiagCommandSpec" as C_0014265545497805753192
 class C_0014265545497805753192 {
 __
 +name : std::string
++safe : bool
 +summary : std::string
 +usage : std::string
 }
@@ -504,6 +512,18 @@ class C_0011633639399304046317 {
 ..
 -cmd_info() : DiagResult
 -cmd_stats() : DiagResult
++execute(const DiagArgsView & args) : DiagResult
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+__
+-_core : core::FujinetCore &
+}
+class "diag::NetworkDiagnosticProvider" as C_0005339174589336306392
+class C_0005339174589336306392 {
++NetworkDiagnosticProvider(core::FujinetCore & core) : void
+..
+-cmd_close(const DiagArgsView & args) : DiagResult
+-cmd_sessions() : DiagResult
 +execute(const DiagArgsView & args) : DiagResult
 +list_commands(std::vector<DiagCommandSpec> & out) const : void
 +provider_id() const noexcept : std::string_view
@@ -627,9 +647,11 @@ C_0006245826437162508923 ..> C_0002386736627821114488
 C_0006245826437162508923 ..> C_0002942984525013396621
 C_0006245826437162508923 o-- C_0011301425670680674257 : -_sessions
 C_0006245826437162508923 o-- C_0011868125949252482179 : -_registry
+C_0006245826437162508923 <.. C_0010580021346264420268 : +<<friend>>
 C_0010069830097413987109 <|-- C_0006245826437162508923
 C_0011301425670680674257 --+ C_0006245826437162508923
 C_0011301425670680674257 o-- C_0010613333864250568344 : +proto
+C_0010580021346264420268 ..> C_0006245826437162508923
 C_0006193474076654383504 ..> C_0002386736627821114488
 C_0006193474076654383504 ..> C_0002942984525013396621
 C_0010069830097413987109 <|-- C_0006193474076654383504
@@ -688,6 +710,11 @@ C_0011633639399304046317 ..> C_0018340176854803608744
 C_0011633639399304046317 ..> C_0011046427244206106114
 C_0011633639399304046317 --> C_0011474842863539673819 : -_core
 C_0007944674237235781138 <|-- C_0011633639399304046317
+C_0005339174589336306392 ..> C_0014265545497805753192
+C_0005339174589336306392 ..> C_0018340176854803608744
+C_0005339174589336306392 ..> C_0011046427244206106114
+C_0005339174589336306392 --> C_0011474842863539673819 : -_core
+C_0007944674237235781138 <|-- C_0005339174589336306392
 C_0010263522683166994737 ..> C_0014265545497805753192
 C_0010263522683166994737 ..> C_0018340176854803608744
 C_0010263522683166994737 ..> C_0011046427244206106114
