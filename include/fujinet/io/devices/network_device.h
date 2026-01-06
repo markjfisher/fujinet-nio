@@ -23,6 +23,9 @@ public:
     void poll() override;
 
 private:
+    // Allow out-of-band diagnostics (console) without polluting the on-wire API surface.
+    friend struct NetworkDeviceDiagnosticsAccessor;
+
     static constexpr std::uint8_t NETPROTO_VERSION = 1;
     static constexpr std::size_t MAX_SESSIONS = 4;
 

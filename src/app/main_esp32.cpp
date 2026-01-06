@@ -94,7 +94,9 @@ extern "C" void fujinet_core_task(void* arg)
     // Diagnostics + console (cooperative; keep in the core task to avoid races).
     fujinet::diag::DiagnosticRegistry diagRegistry;
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
+    auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
     diagRegistry.add_provider(*coreDiag);
+    diagRegistry.add_provider(*netDiag);
 
     std::unique_ptr<fujinet::console::IConsoleTransport> consoleTransport;
     std::unique_ptr<fujinet::console::ConsoleEngine> console;

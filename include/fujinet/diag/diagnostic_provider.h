@@ -33,4 +33,7 @@ public:
 // Note: providers own their own state; registry stores only pointers.
 std::unique_ptr<IDiagnosticProvider> create_core_diagnostic_provider(::fujinet::core::FujinetCore& core);
 
+// Network device provider: session table and handle control.
+std::unique_ptr<IDiagnosticProvider> create_network_diagnostic_provider(::fujinet::core::FujinetCore& core);
+
 } // namespace fujinet::diag

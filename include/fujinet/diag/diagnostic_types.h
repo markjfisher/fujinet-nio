@@ -79,6 +79,10 @@ struct DiagCommandSpec {
 
     // Usage string, e.g. "net.sessions" or "net.info <handle>"
     std::string usage;
+
+    // If true, command is informational / read-only and safe to run in bulk (e.g. via "dump").
+    // If false, command may mutate state (e.g. close handles, format media) and must be opt-in.
+    bool safe{true};
 };
 
 // A lightweight, immutable view of argv

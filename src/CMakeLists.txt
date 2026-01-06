@@ -13,6 +13,7 @@ idf_component_register(
         lib/clock_device.cpp
         lib/clock_device_init.cpp
         lib/diagnostic_core_provider.cpp
+        lib/diagnostic_network_provider.cpp
         lib/diagnostic_registry.cpp
         lib/file_device.cpp
         lib/file_device_init.cpp

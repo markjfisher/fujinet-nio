@@ -60,7 +60,9 @@ int main()
     // Diagnostics + console (cooperative; no extra threads).
     fujinet::diag::DiagnosticRegistry diagRegistry;
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
+    auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
     diagRegistry.add_provider(*coreDiag);
+    diagRegistry.add_provider(*netDiag);
 
     auto consoleTransport = fujinet::console::create_default_console_transport();
     fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport);

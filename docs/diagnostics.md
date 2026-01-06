@@ -57,10 +57,13 @@ It depends on:
 
 - `help`
 - `exit` / `quit`
-- `diag list`
-- `diag get <provider> [<key_or_subpath>]`
-  - Example: `diag get core stats` → dispatches `core.stats`
-- `diag dump`
+- `<provider> <command> [args...]`
+  - Example: `core stats` → dispatches `core.stats`
+  - Example: `net close 0x0102` → dispatches `net.close 0x0102`
+- `<provider>.<command> [args...]`
+  - Example: `core.stats`
+- `list`
+- `dump`
 
 ### Prompt + echo
 
@@ -173,15 +176,18 @@ To make tooling reliable, create stable symlinks like:
 Plug the device in, then for each candidate port (example: `/dev/ttyACM1`, `/dev/ttyACM2`):
 
 ```bash
-udevadm info -a -n /dev/ttyACM1 | less
+❯ udevadm info -n /dev/ttyACM1 -q property | grep -E 'ID_VENDOR_ID|ID_MODEL_ID|ID_USB_INTERFACE_NUM'
+ID_MODEL_ID=4002
+ID_VENDOR_ID=303a
+ID_USB_INTERFACE_NUM=00
+
+❯ udevadm info -n /dev/ttyACM2 -q property | grep -E 'ID_VENDOR_ID|ID_MODEL_ID|ID_USB_INTERFACE_NUM'
+ID_MODEL_ID=4002
+ID_VENDOR_ID=303a
+ID_USB_INTERFACE_NUM=02
 ```
 
-You’re looking for values like:
-- `ATTRS{idVendor}=="...."`
-- `ATTRS{idProduct}=="...."`
-- `ATTRS{bInterfaceNumber}==".."`  (often distinguishes ACM0 vs ACM1)
-
-Tip: quick view via sysfs:
+Tip: quick view via sysfs for the ID_USB_INTERFACE_NUM, it equates to the following path:
 
 ```bash
 cat /sys/class/tty/ttyACM1/device/bInterfaceNumber
@@ -215,24 +221,26 @@ Template (replace VID/PID and interface numbers with what you observed):
 
 ```udev
 # FujiNet-NIO (TinyUSB CDC ACM)
-# Replace idVendor/idProduct and bInterfaceNumber to match your device.
+# Replace ID_VENDOR_ID/ID_MODEL_ID and ID_USB_INTERFACE_NUM to match your device.
 
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4000", ATTRS{bInterfaceNumber}=="00", SYMLINK+="fujinet-fujibus"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4000", ATTRS{bInterfaceNumber}=="02", SYMLINK+="fujinet-console"
+ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", \
+  ENV{ID_VENDOR_ID}=="303a", ENV{ID_MODEL_ID}=="4002", ENV{ID_USB_INTERFACE_NUM}=="00", \
+  SYMLINK+="fujinet-fujibus"
 
-# Optional: if you have multiple identical devices connected, add a serial match:
-# SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4000", ATTRS{serial}=="<your-serial>", ATTRS{bInterfaceNumber}=="00", SYMLINK+="fujinet-fujibus"
+ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", \
+  ENV{ID_VENDOR_ID}=="303a", ENV{ID_MODEL_ID}=="4002", ENV{ID_USB_INTERFACE_NUM}=="02", \
+  SYMLINK+="fujinet-console"
 ```
 
 Notes:
 - The example `303a` VID is Espressif; your PID may differ depending on descriptor settings.
-- `bInterfaceNumber` matching is usually the most reliable way to separate ACM0 vs ACM1 on the same USB device.
+- `ID_USB_INTERFACE_NUM` matching is usually the most reliable way to separate ACM0 vs ACM1 on the same USB device.
 
 ##### 3) Reload rules
 
 ```bash
 sudo udevadm control --reload-rules
-sudo udevadm trigger
+sudo udevadm trigger --subsytem-match=tty
 ```
 
 Then unplug/replug the device, and verify:
