@@ -20,13 +20,13 @@ This can be done with the `./build.sh` script, and should not be done manually a
 ```bash
 # list the board types that can be built
 $ ./build.sh -S
-cdc-fujibus-s3-wroom-1-n16r8
-sio-legacy-s3-wroom-1-n16r8
+fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8
+atari-sio-consolecdc-s3-wroom-1-n16r8
 
 # setup the build environment for the board type
 # WARNING: this will overwrite the sdkconfig.local.defaults file, and platformio.local.ini files
 # and should only be done once unless you want to reset the build environment
-$ ./build.sh -s cdc-fujibus-s3-wroom-1-n16r8
+$ ./build.sh -s fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8
 ```
 
 ### local configuration files

@@ -12,7 +12,7 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="fujinet")
     p.add_argument("--port", "-p", required=True)
     p.add_argument("--baud", type=int, default=115200)
-    p.add_argument("--timeout", type=float, default=1)
+    p.add_argument("--timeout", type=float, default=5)
     p.add_argument("--read-max", type=int, default=2048)
     p.add_argument("-d", "--debug", action="store_true", help="Dump raw FujiBus packets")
     p.add_argument("-v", "--verbose", action="store_true")

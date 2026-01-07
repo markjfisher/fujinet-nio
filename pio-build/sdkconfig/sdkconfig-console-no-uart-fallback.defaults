@@ -1,0 +1,7 @@
+###########################################################################
+# Diagnostic console - policy
+###########################################################################
+# If the console is configured for USB CDC but unavailable, do NOT fall back to UART0.
+CONFIG_FN_CONSOLE_ALLOW_UART_FALLBACK=n
+
+

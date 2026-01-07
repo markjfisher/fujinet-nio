@@ -52,6 +52,17 @@ menu "FujiNet-NIO"
             Select which TinyUSB CDC ACM port is used by the diagnostic console.
             Valid values depend on CONFIG_TINYUSB_CDC_COUNT (0..count-1).
 
+    config FN_CONSOLE_ALLOW_UART_FALLBACK
+        bool "Allow UART0 fallback when USB CDC console unavailable"
+        default y
+        depends on FN_CONSOLE_TRANSPORT_USB_CDC
+        help
+            When enabled, if the console is configured for USB CDC but the CDC
+            transport cannot be created (TinyUSB disabled, too few CDC ports, or
+            port conflict with FujiBus), the console will fall back to UART0.
+            When disabled, the console will be disabled instead of pulling in
+            UART0 console support.
+
 endmenu
 
 

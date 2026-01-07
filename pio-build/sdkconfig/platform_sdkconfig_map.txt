@@ -1,4 +1,12 @@
-# List the sdkconfig-<name>.defaults files that should be combined to create the sdkconfig.defaults file for the platform
+# List the sdkconfig-<name>.defaults files that should be combined to create the
+# sdkconfig.defaults file for the platform (per build_board).
 
-cdc-fujibus-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb
-sio-legacy-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb
+# cdc x 2, one for fujibus (port 0), other for console (port 1), do not fallback to UART
+fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2,consolecdc,consolecdc-port1,console-no-uart-fallback
+
+# cdc x 1 for the fujibus only
+fujibus-usbcdc-consoleuart-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,consoleuart
+fujibus-usbcdc-noconsole-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,noconsole
+
+## TODO: more added when we support legacy/gpio/sio etc. This won't work, but it's here for documentation
+legacy-siogpio-consoleuart-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,consoleuart

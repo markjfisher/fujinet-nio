@@ -223,6 +223,7 @@ Template (replace VID/PID and interface numbers with what you observed):
 # FujiNet-NIO (TinyUSB CDC ACM)
 # Replace ID_VENDOR_ID/ID_MODEL_ID and ID_USB_INTERFACE_NUM to match your device.
 
+# When TinyUSB is configured with 2 ports, the ID_MODEL_ID is 4002
 ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", \
   ENV{ID_VENDOR_ID}=="303a", ENV{ID_MODEL_ID}=="4002", ENV{ID_USB_INTERFACE_NUM}=="00", \
   SYMLINK+="fujinet-fujibus"
@@ -230,6 +231,12 @@ ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", \
 ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", \
   ENV{ID_VENDOR_ID}=="303a", ENV{ID_MODEL_ID}=="4002", ENV{ID_USB_INTERFACE_NUM}=="02", \
   SYMLINK+="fujinet-console"
+
+# When TinyUSB is configured with 1 port, the ID_MODEL_ID is 4001
+ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", \
+  ENV{ID_VENDOR_ID}=="303a", ENV{ID_MODEL_ID}=="4001", ENV{ID_USB_INTERFACE_NUM}=="00", \
+  SYMLINK+="fujinet-fujibus"
+
 ```
 
 Notes:

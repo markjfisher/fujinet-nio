@@ -26,9 +26,9 @@ def get_names_from_map(map_file: str, build_board: str):
 
     Map file format:
 
-        # comment
-        cdc-fujibus-s3-wroom-1-n16r8=common,fs-littlefs,spiram-oct80,tinyusb
-        sio-legacy-s3-wroom-1-n16r8=common,fs-littlefs,spiram-oct80,tinyusb
+        # examples follow the format:
+        fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8=common,fs-littlefs,spiram-oct80,tinyusb-cdc2,consolecdc,consolecdc-port1
+        legacy-sio-noconsole-s3-wroom-1-n16r8=common,fs-littlefs,spiram-oct80,tinyusb-cdc1,consolecdc,consolecdc-port0
     """
     if not os.path.exists(map_file):
         print(f"Error: map file does not exist: {map_file}", file=sys.stderr)
@@ -143,16 +143,23 @@ def main():
         platformio_ini_file = args.ini_file
     build_board = read_build_board_value(platformio_ini_file)
 
-    # Force regeneration of the per-board sdkconfig file.
-    # PlatformIO/ESP-IDF can otherwise keep a stale merged sdkconfig.<build_board>
-    # even when sdkconfig.local.defaults changes.
-    stale_sdkconfig = f"sdkconfig.{build_board}"
-    if os.path.exists(stale_sdkconfig):
+    # Force regeneration of per-board sdkconfig files.
+    # PlatformIO/ESP-IDF can otherwise keep stale merged sdkconfig.<build_board> files
+    # around when switching build_board values.
+    #
+    # Remove *all* sdkconfig.* in the project root, except sdkconfig.local.defaults.
+    for fname in os.listdir("."):
+        if not fname.startswith("sdkconfig."):
+            continue
+        if fname == "sdkconfig.local.defaults":
+            continue
+        if not os.path.isfile(fname):
+            continue
         try:
-            os.remove(stale_sdkconfig)
-            print(f"Removed stale '{stale_sdkconfig}'")
+            os.remove(fname)
+            print(f"Removed stale '{fname}'")
         except OSError as e:
-            print(f"Warning: failed to remove '{stale_sdkconfig}': {e}", file=sys.stderr)
+            print(f"Warning: failed to remove '{fname}': {e}", file=sys.stderr)
 
     names = get_names_from_map(args.map_file, build_board)
     concatenate_sdkconfig_files(names, args.output_file)

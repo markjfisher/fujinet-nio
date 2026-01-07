@@ -1,0 +1,17 @@
+###########################################################################
+# TinyUSB (CDC ACM) - 2 interfaces
+###########################################################################
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=2
+
+# These two implicitly tell IDF we’re a CDC-only device:
+CONFIG_TINYUSB_HID_COUNT=0
+CONFIG_TINYUSB_MIDI_COUNT=0
+CONFIG_TINYUSB_NET_MODE_NONE=y
+CONFIG_TINYUSB_VENDOR_COUNT=0
+
+CONFIG_TINYUSB_DFU_MODE_NONE=y
+CONFIG_TINYUSB_MODE_DMA=y
+CONFIG_TINYUSB_DEBUG_LEVEL=0
+
+
