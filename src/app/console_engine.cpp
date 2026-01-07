@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <ctime>
 #include <string>
 #include <string_view>
@@ -87,8 +88,9 @@ bool ConsoleEngine::step(int timeout_ms)
 
 void ConsoleEngine::clear_edit_line()
 {
-    // CR + clear whole line (ANSI). If the peer doesn't understand ANSI, CR still helps.
-    _io.write("\r\x1b[2K");
+    // Avoid '\r' here: many serial clients map CR->LF (or CRLF), which would
+    // make every redraw jump to the next line. Use ANSI "cursor to column 1".
+    _io.write("\x1b[2K\x1b[1G");
 }
 
 void ConsoleEngine::render_edit_line()
@@ -134,7 +136,10 @@ bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
     out_line.clear();
 
     if (!_edit_rendered) {
-        render_edit_line();
+        // First prompt render: avoid ANSI clear codes until we actually need to redraw.
+        // Some serial clients (or mappings) will show ESC sequences visibly.
+        _io.write(_prompt);
+        _io.write(_edit);
         _edit_rendered = true;
     }
 
@@ -187,6 +192,7 @@ bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
         _edit.clear();
         _cursor = 0;
         _esc.clear();
+        _pending_eol = 0;
         _hist_active = false;
         _hist_saved.clear();
         _edit_rendered = false;
@@ -226,6 +232,15 @@ bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
     auto process_byte = [&](std::uint8_t b) -> bool {
         // Returns true when a line was committed.
 
+        // Swallow CRLF/LFCR pairs as a single "enter".
+        if (_pending_eol != 0) {
+            const bool is_pair = (_pending_eol == '\r' && b == '\n') || (_pending_eol == '\n' && b == '\r');
+            _pending_eol = 0;
+            if (is_pair) {
+                return false;
+            }
+        }
+
         if (!_esc.empty() || b == 0x1b) {
             if (_esc.empty() && b == 0x1b) {
                 _esc.push_back(static_cast<char>(b));
@@ -259,6 +274,7 @@ bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
 
         // Enter
         if (b == '\r' || b == '\n') {
+            _pending_eol = static_cast<char>(b);
             commit_line();
             return true;
         }
@@ -367,6 +383,82 @@ static std::string fmt_time_utc(std::chrono::system_clock::time_point tp)
     return std::string(buf);
 }
 
+static std::string fmt_time_ls(std::chrono::system_clock::time_point tp)
+{
+    if (tp == std::chrono::system_clock::time_point{}) {
+        return "??? ?? ??:??";
+    }
+
+    const std::time_t t = std::chrono::system_clock::to_time_t(tp);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+
+    char buf[16];
+    // ls-style: "Jan  7 22:59" (12 chars)
+    if (std::strftime(buf, sizeof(buf), "%b %e %H:%M", &tm) == 0) {
+        return "??? ?? ??:??";
+    }
+    return std::string(buf);
+}
+
+static std::string fmt_size(std::uint64_t bytes)
+{
+    // Fixed-ish width, human-ish (base-1024). Examples:
+    //   314 -> "314"
+    //   5271 -> "5.1K"
+    //   102400 -> "100K"
+    char buf[16];
+    if (bytes < 1024ULL) {
+        std::snprintf(buf, sizeof(buf), "%llu", static_cast<unsigned long long>(bytes));
+        return std::string(buf);
+    }
+    if (bytes < 1024ULL * 1024ULL) {
+        const double k = static_cast<double>(bytes) / 1024.0;
+        if (k >= 100.0) {
+            std::snprintf(buf, sizeof(buf), "%.0fK", k);
+        } else if (k >= 10.0) {
+            std::snprintf(buf, sizeof(buf), "%.1fK", k);
+        } else {
+            std::snprintf(buf, sizeof(buf), "%.2fK", k);
+        }
+        return std::string(buf);
+    }
+    if (bytes < 1024ULL * 1024ULL * 1024ULL) {
+        const double m = static_cast<double>(bytes) / (1024.0 * 1024.0);
+        if (m >= 100.0) {
+            std::snprintf(buf, sizeof(buf), "%.0fM", m);
+        } else if (m >= 10.0) {
+            std::snprintf(buf, sizeof(buf), "%.1fM", m);
+        } else {
+            std::snprintf(buf, sizeof(buf), "%.2fM", m);
+        }
+        return std::string(buf);
+    }
+    const double g = static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);
+    if (g >= 100.0) {
+        std::snprintf(buf, sizeof(buf), "%.0fG", g);
+    } else if (g >= 10.0) {
+        std::snprintf(buf, sizeof(buf), "%.1fG", g);
+    } else {
+        std::snprintf(buf, sizeof(buf), "%.2fG", g);
+    }
+    return std::string(buf);
+}
+
+static std::string pad_left(std::string_view s, std::size_t width)
+{
+    if (s.size() >= width) return std::string(s);
+    std::string out;
+    out.reserve(width);
+    out.append(width - s.size(), ' ');
+    out.append(s.data(), s.size());
+    return out;
+}
+
 static std::string fs_join(std::string_view base, std::string_view rel)
 {
     if (base.empty()) return std::string(rel);
@@ -473,6 +565,11 @@ bool ConsoleEngine::handle_line(std::string_view line)
 {
     line = trim(line);
     if (line.empty()) {
+        return true;
+    }
+
+    // Ignore lines that contain ANSI escape (often init strings / terminal noise).
+    if (line.find('\x1b') != std::string_view::npos) {
         return true;
     }
 
@@ -623,11 +720,14 @@ bool ConsoleEngine::handle_line(std::string_view line)
             _io.write(target.fs);
             _io.write(":");
             _io.write_line(target.path);
-            _io.write(st.isDirectory ? "DIR " : "FILE");
+            const char type = st.isDirectory ? 'd' : 'f';
+            const std::string sz = fmt_size(st.sizeBytes);
+            const std::string dt = fmt_time_ls(st.modifiedTime);
+            _io.write(std::string_view(&type, 1));
             _io.write(" ");
-            _io.write(std::to_string(st.sizeBytes));
+            _io.write(pad_left(sz, 8));
             _io.write(" ");
-            _io.write(fmt_time_utc(st.modifiedTime));
+            _io.write(dt);
             _io.write(" ");
             _io.write_line(st.path);
             return true;
@@ -660,12 +760,14 @@ bool ConsoleEngine::handle_line(std::string_view line)
         };
 
         for (const auto& e : entries) {
-            _io.write(e.isDirectory ? "DIR " : "FILE");
+            const char type = e.isDirectory ? 'd' : 'f';
+            const std::string sz = fmt_size(e.sizeBytes);
+            const std::string dt = fmt_time_ls(e.modifiedTime);
+            _io.write(std::string_view(&type, 1));
             _io.write(" ");
-            // size
-            _io.write(std::to_string(e.sizeBytes));
+            _io.write(pad_left(sz, 8));
             _io.write(" ");
-            _io.write(fmt_time_utc(e.modifiedTime));
+            _io.write(dt);
             _io.write(" ");
             _io.write_line(leaf_name(e.path));
         }

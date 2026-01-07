@@ -91,6 +91,7 @@ private:
 
     std::string _edit;
     std::size_t _cursor{0};
+    char _pending_eol{0}; // swallow CRLF/LFCR as a single line commit
 
     std::vector<std::string> _history;
     std::size_t _history_max{50};
