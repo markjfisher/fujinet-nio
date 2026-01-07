@@ -1,0 +1,118 @@
+group: Disk / SSD
+steps:
+  - name: "Disk SSD: setup 40-track image + upload to {FS}"
+    only_mode: "esp32"
+    setup_cmd:
+      - argv:
+          - "python3"
+          - "integration-tests/scripts/mk_ssd_disk.py"
+    argv:
+      - "{CLI}"
+      - "write"
+      - "--chunk"
+      - "2048"
+      - "{FS}"
+      - "/test.ssd"
+      - "{STEP_TMP}/test.ssd"
+    timeout_s: 20
+
+  - name: "Disk SSD: mount (auto from .ssd)"
+    only_mode: "esp32"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "mount"
+      - "--slot"
+      - "1"
+      - "--fs"
+      - "{FS}"
+      - "--path"
+      - "/test.ssd"
+      - "--type"
+      - "auto"
+    expect:
+      - "mounted=1"
+      - "readonly=0"
+      - "slot=1"
+      - "type=ssd"
+      - "sector_size=256"
+      - "sector_count=400"
+    timeout_s: 10
+
+  - name: "Disk SSD: read sector 0 (verify pattern)"
+    only_mode: "esp32"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "read-sector"
+      - "--slot"
+      - "1"
+      - "--lba"
+      - "0"
+      - "--max-bytes"
+      - "256"
+    capture:
+      mode: "file"
+    expect_file:
+      path: "{CAPTURED_OUT}"
+      size_exact: 256
+      contains_bytes_hex:
+        - "112233445566778899aabbccddeeff00"
+    timeout_s: 10
+
+  - name: "Disk SSD: write sector 10"
+    only_mode: "esp32"
+    setup_cmd:
+      - argv:
+          - "python3"
+          - "integration-tests/scripts/mk_ssd_disk.py"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "write-sector"
+      - "--slot"
+      - "1"
+      - "--lba"
+      - "10"
+      - "{STEP_TMP}/w10.bin"
+    expect:
+      - "written_len=256"
+      - "slot=1"
+      - "lba=10"
+    timeout_s: 10
+
+  - name: "Disk SSD: read sector 10 (verify write took effect)"
+    only_mode: "esp32"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "read-sector"
+      - "--slot"
+      - "1"
+      - "--lba"
+      - "10"
+      - "--max-bytes"
+      - "256"
+    capture:
+      mode: "file"
+    expect_file:
+      path: "{CAPTURED_OUT}"
+      size_exact: 256
+      contains_bytes_hex:
+        - "5a5a5a5a"
+    timeout_s: 10
+
+  - name: "Disk SSD: unmount"
+    only_mode: "esp32"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "unmount"
+      - "--slot"
+      - "1"
+    expect:
+      - "unmounted=1"
+      - "slot=1"
+    timeout_s: 10
+
+

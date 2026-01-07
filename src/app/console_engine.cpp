@@ -1,8 +1,12 @@
 #include "fujinet/console/console_engine.h"
 
+#include "fujinet/fs/filesystem.h"
+#include "fujinet/fs/storage_manager.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <ctime>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -57,6 +61,12 @@ static const char* status_to_str(diag::DiagStatus st)
 ConsoleEngine::ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io)
     : _registry(registry)
     , _io(io)
+{}
+
+ConsoleEngine::ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io, fujinet::fs::StorageManager& storage)
+    : _registry(registry)
+    , _io(io)
+    , _storage(&storage)
 {}
 
 void ConsoleEngine::run_loop()
@@ -336,6 +346,129 @@ bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
     return false;
 }
 
+static std::string fmt_time_utc(std::chrono::system_clock::time_point tp)
+{
+    if (tp == std::chrono::system_clock::time_point{}) {
+        return "-";
+    }
+
+    const std::time_t t = std::chrono::system_clock::to_time_t(tp);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+
+    char buf[32];
+    if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm) == 0) {
+        return "-";
+    }
+    return std::string(buf);
+}
+
+static std::string fs_join(std::string_view base, std::string_view rel)
+{
+    if (base.empty()) return std::string(rel);
+    if (base.back() == '/') {
+        if (!rel.empty() && rel.front() == '/') {
+            return std::string(base) + std::string(rel.substr(1));
+        }
+        return std::string(base) + std::string(rel);
+    }
+    if (!rel.empty() && rel.front() == '/') {
+        return std::string(base) + std::string(rel);
+    }
+    std::string out(base);
+    out.push_back('/');
+    out.append(rel.data(), rel.size());
+    return out;
+}
+
+static std::string fs_norm(std::string_view in)
+{
+    // Normalize to absolute POSIX-like path.
+    std::vector<std::string_view> parts;
+    std::string_view s = in;
+    if (s.empty() || s.front() != '/') {
+        // caller should ensure absolute; be defensive.
+        // treat as relative to root
+        // (this still produces stable behavior)
+    }
+
+    // split on '/'
+    std::size_t i = 0;
+    while (i < s.size()) {
+        while (i < s.size() && s[i] == '/') ++i;
+        const std::size_t start = i;
+        while (i < s.size() && s[i] != '/') ++i;
+        if (i == start) break;
+        parts.push_back(s.substr(start, i - start));
+    }
+
+    std::vector<std::string_view> stack;
+    for (auto p : parts) {
+        if (p == "." || p.empty()) continue;
+        if (p == "..") {
+            if (!stack.empty()) stack.pop_back();
+            continue;
+        }
+        stack.push_back(p);
+    }
+
+    std::string out;
+    out.push_back('/');
+    for (std::size_t k = 0; k < stack.size(); ++k) {
+        if (k != 0) out.push_back('/');
+        out.append(stack[k].data(), stack[k].size());
+    }
+    return out;
+}
+
+struct FsPath {
+    std::string fs;
+    std::string path; // absolute within fs
+};
+
+static bool parse_fs_path(
+    std::string_view spec,
+    std::string_view cur_fs,
+    std::string_view cur_path,
+    FsPath& out)
+{
+    // Supports:
+    // - "sd0:/dir"
+    // - "sd0:" (meaning "/")
+    // - "/dir" absolute in current fs
+    // - "dir" relative in current fs
+    const std::size_t colon = spec.find(':');
+    if (colon != std::string_view::npos) {
+        out.fs = std::string(spec.substr(0, colon));
+        std::string_view p = spec.substr(colon + 1);
+        if (p.empty()) p = "/";
+        if (!p.empty() && p.front() != '/') {
+            // treat as absolute anyway
+            std::string tmp("/");
+            tmp.append(p.data(), p.size());
+            out.path = fs_norm(tmp);
+        } else {
+            out.path = fs_norm(p);
+        }
+        return true;
+    }
+
+    if (cur_fs.empty()) {
+        return false;
+    }
+    out.fs = std::string(cur_fs);
+    if (!spec.empty() && spec.front() == '/') {
+        out.path = fs_norm(spec);
+        return true;
+    }
+    out.path = fs_norm(fs_join(cur_path, spec));
+    return true;
+}
+
 bool ConsoleEngine::handle_line(std::string_view line)
 {
     line = trim(line);
@@ -360,8 +493,216 @@ bool ConsoleEngine::handle_line(std::string_view line)
         _io.write_line("  exit | quit");
         _io.write_line("  list                  (list diagnostic commands)");
         _io.write_line("  dump                  (run all diagnostic commands)");
+        _io.write_line("  fs                    (list mounted filesystems)");
+        _io.write_line("  pwd                   (show current filesystem path)");
+        _io.write_line("  cd <fs:/>|<path>      (change directory; use fs:/ to select filesystem)");
+        _io.write_line("  ls [<fs:/>|<path>]    (list directory)");
+        _io.write_line("  mkdir <path>");
+        _io.write_line("  rmdir <path>");
+        _io.write_line("  mv <from> <to>");
         _io.write_line("  <provider> <command> [args...]");
         _io.write_line("  <provider>.<command> [args...]");
+        return true;
+    }
+
+    // ---------------------------------------------------------------------
+    // Filesystem shell commands (optional; requires StorageManager)
+    // ---------------------------------------------------------------------
+    if (cmd0 == "fs") {
+        if (!_storage) {
+            _io.write_line("error: filesystem support not wired");
+            return true;
+        }
+        auto names = _storage->listNames();
+        std::sort(names.begin(), names.end());
+        if (names.empty()) {
+            _io.write_line("(no filesystems registered)");
+            return true;
+        }
+        for (const auto& n : names) {
+            _io.write_line(n);
+        }
+        return true;
+    }
+
+    if (cmd0 == "pwd") {
+        if (_cwd_fs.empty()) {
+            _io.write_line("(no filesystem selected)");
+            return true;
+        }
+        _io.write(_cwd_fs);
+        _io.write(":");
+        _io.write_line(_cwd_path);
+        return true;
+    }
+
+    if (cmd0 == "cd") {
+        if (!_storage) {
+            _io.write_line("error: filesystem support not wired");
+            return true;
+        }
+        if (argv.size() < 2) {
+            // keep it friendly
+            return handle_line("pwd");
+        }
+
+        FsPath target;
+        if (!parse_fs_path(argv[1], _cwd_fs, _cwd_path, target)) {
+            _io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+            return true;
+        }
+
+        auto* fs = _storage->get(target.fs);
+        if (!fs) {
+            _io.write_line("error: unknown filesystem");
+            return true;
+        }
+        if (!fs->exists(target.path) || !fs->isDirectory(target.path)) {
+            _io.write_line("error: not a directory");
+            return true;
+        }
+
+        _cwd_fs = target.fs;
+        _cwd_path = target.path;
+        return true;
+    }
+
+    if (cmd0 == "mkdir" || cmd0 == "rmdir" || cmd0 == "ls") {
+        if (!_storage) {
+            _io.write_line("error: filesystem support not wired");
+            return true;
+        }
+
+        FsPath target;
+        if (argv.size() >= 2) {
+            if (!parse_fs_path(argv[1], _cwd_fs, _cwd_path, target)) {
+                _io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+                return true;
+            }
+        } else {
+            if (_cwd_fs.empty()) {
+                _io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+                return true;
+            }
+            target.fs = _cwd_fs;
+            target.path = _cwd_path;
+        }
+
+        auto* fs = _storage->get(target.fs);
+        if (!fs) {
+            _io.write_line("error: unknown filesystem");
+            return true;
+        }
+
+        if (cmd0 == "mkdir") {
+            if (!fs->createDirectory(target.path)) {
+                _io.write_line("error: mkdir failed");
+            }
+            return true;
+        }
+        if (cmd0 == "rmdir") {
+            if (!fs->removeDirectory(target.path)) {
+                _io.write_line("error: rmdir failed");
+            }
+            return true;
+        }
+
+        // ls
+        if (!fs->exists(target.path)) {
+            _io.write_line("error: not found");
+            return true;
+        }
+
+        fujinet::fs::FileInfo st;
+        if (!fs->stat(target.path, st)) {
+            _io.write_line("error: stat failed");
+            return true;
+        }
+
+        if (!st.isDirectory) {
+            _io.write(target.fs);
+            _io.write(":");
+            _io.write_line(target.path);
+            _io.write(st.isDirectory ? "DIR " : "FILE");
+            _io.write(" ");
+            _io.write(std::to_string(st.sizeBytes));
+            _io.write(" ");
+            _io.write(fmt_time_utc(st.modifiedTime));
+            _io.write(" ");
+            _io.write_line(st.path);
+            return true;
+        }
+
+        std::vector<fujinet::fs::FileInfo> entries;
+        if (!fs->listDirectory(target.path, entries)) {
+            _io.write_line("error: ls failed");
+            return true;
+        }
+
+        // Deterministic ordering: dirs first, then by path.
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            if (a.isDirectory != b.isDirectory) return a.isDirectory > b.isDirectory;
+            return a.path < b.path;
+        });
+
+        _io.write(target.fs);
+        _io.write(":");
+        _io.write(target.path);
+        _io.write(" (count=");
+        _io.write(std::to_string(entries.size()));
+        _io.write_line(")");
+
+        auto leaf_name = [&](const std::string& p) -> std::string_view {
+            // If entry paths are absolute (they are), show leaf name.
+            const std::size_t slash = p.find_last_of('/');
+            if (slash == std::string::npos) return p;
+            return std::string_view(p).substr(slash + 1);
+        };
+
+        for (const auto& e : entries) {
+            _io.write(e.isDirectory ? "DIR " : "FILE");
+            _io.write(" ");
+            // size
+            _io.write(std::to_string(e.sizeBytes));
+            _io.write(" ");
+            _io.write(fmt_time_utc(e.modifiedTime));
+            _io.write(" ");
+            _io.write_line(leaf_name(e.path));
+        }
+
+        return true;
+    }
+
+    if (cmd0 == "mv") {
+        if (!_storage) {
+            _io.write_line("error: filesystem support not wired");
+            return true;
+        }
+        if (argv.size() < 3) {
+            _io.write_line("error: usage: mv <from> <to>");
+            return true;
+        }
+
+        FsPath from;
+        FsPath to;
+        if (!parse_fs_path(argv[1], _cwd_fs, _cwd_path, from) ||
+            !parse_fs_path(argv[2], _cwd_fs, _cwd_path, to)) {
+            _io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+            return true;
+        }
+        if (from.fs != to.fs) {
+            _io.write_line("error: mv across filesystems is not supported");
+            return true;
+        }
+
+        auto* fs = _storage->get(from.fs);
+        if (!fs) {
+            _io.write_line("error: unknown filesystem");
+            return true;
+        }
+        if (!fs->rename(from.path, to.path)) {
+            _io.write_line("error: mv failed");
+        }
         return true;
     }
 

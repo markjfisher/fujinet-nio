@@ -1,0 +1,141 @@
+group: Disk / Raw
+steps:
+  - name: "Disk RAW: setup image + upload to {FS}"
+    setup_cmd:
+      - argv:
+          - "python3"
+          - "integration-tests/scripts/mk_raw_disk.py"
+    argv:
+      - "{CLI}"
+      - "write"
+      - "--chunk"
+      - "2048"
+      - "{FS}"
+      - "/raw_test.img"
+      - "{STEP_TMP}/raw_test.img"
+    timeout_s: 15
+
+  - name: "Disk RAW: mount (auto from .img)"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "mount"
+      - "--slot"
+      - "1"
+      - "--fs"
+      - "{FS}"
+      - "--path"
+      - "/raw_test.img"
+      - "--type"
+      - "auto"
+      - "--sector-size"
+      - "256"
+    expect:
+      - "mounted=1"
+      - "readonly=0"
+      - "slot=1"
+      - "type=raw"
+      - "sector_size=256"
+      - "sector_count=4"
+    timeout_s: 10
+
+  - name: "Disk RAW: info shows inserted + geometry"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "info"
+      - "--slot"
+      - "1"
+    expect:
+      - "inserted=1"
+      - "slot=1"
+      - "type=raw"
+      - "sector_size=256"
+      - "sector_count=4"
+    timeout_s: 10
+
+  - name: "Disk RAW: read sector 0 (verify pattern)"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "read-sector"
+      - "--slot"
+      - "1"
+      - "--lba"
+      - "0"
+      - "--max-bytes"
+      - "256"
+    capture:
+      mode: "file"
+    expect_file:
+      path: "{CAPTURED_OUT}"
+      size_exact: 256
+      contains_bytes_hex:
+        - "000102030405060708090a0b0c0d0e0f"
+    timeout_s: 10
+
+  - name: "Disk RAW: write sector 0"
+    setup_cmd:
+      - argv:
+          - "python3"
+          - "integration-tests/scripts/mk_raw_disk.py"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "write-sector"
+      - "--slot"
+      - "1"
+      - "--lba"
+      - "0"
+      - "{STEP_TMP}/w0.bin"
+    expect:
+      - "written_len=256"
+      - "slot=1"
+      - "lba=0"
+    timeout_s: 10
+
+  - name: "Disk RAW: read sector 0 (verify write took effect)"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "read-sector"
+      - "--slot"
+      - "1"
+      - "--lba"
+      - "0"
+      - "--max-bytes"
+      - "256"
+    capture:
+      mode: "file"
+    expect_file:
+      path: "{CAPTURED_OUT}"
+      size_exact: 256
+      contains_bytes_hex:
+        - "aa55"
+    timeout_s: 10
+
+  - name: "Disk RAW: unmount"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "unmount"
+      - "--slot"
+      - "1"
+    expect:
+      - "unmounted=1"
+      - "slot=1"
+    timeout_s: 10
+
+  - name: "Disk RAW: info shows not inserted"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "info"
+      - "--slot"
+      - "1"
+    expect:
+      - "inserted=0"
+      - "slot=1"
+    timeout_s: 10
+
+

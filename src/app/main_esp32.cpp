@@ -107,7 +107,7 @@ extern "C" void fujinet_core_task(void* arg)
 #if CONFIG_FN_CONSOLE_ENABLE
     consoleTransport = fujinet::console::create_default_console_transport();
     if (consoleTransport) {
-        console = std::make_unique<fujinet::console::ConsoleEngine>(diagRegistry, *consoleTransport);
+        console = std::make_unique<fujinet::console::ConsoleEngine>(diagRegistry, *consoleTransport, core.storageManager());
         console_running = true;
         consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
     }

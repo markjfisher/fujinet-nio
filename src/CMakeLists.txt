@@ -18,6 +18,7 @@ idf_component_register(
         lib/disk/disk_service.cpp
         lib/disk/image_registry.cpp
         lib/disk/raw_image.cpp
+        lib/disk/ssd_image.cpp
         lib/disk_device.cpp
         lib/disk_device_init.cpp
         lib/file_device.cpp

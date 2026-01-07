@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 
+#include "fujinet/disk/ssd_image.h"
+
 namespace fujinet::disk {
 
 namespace {
@@ -89,7 +91,7 @@ ImageRegistry make_default_image_registry()
     // Raw is implemented in raw_image.cpp (registered by DiskService init code).
     // Atr/Ssd/Dsd are placeholders for v1; format handlers can be added later.
     reg.register_type(ImageType::Atr, [] { return std::make_unique<UnsupportedImage>(ImageType::Atr); });
-    reg.register_type(ImageType::Ssd, [] { return std::make_unique<UnsupportedImage>(ImageType::Ssd); });
+    reg.register_type(ImageType::Ssd, [] { return make_ssd_disk_image(); });
     reg.register_type(ImageType::Dsd, [] { return std::make_unique<UnsupportedImage>(ImageType::Dsd); });
 
     return reg;

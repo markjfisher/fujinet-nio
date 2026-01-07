@@ -1,0 +1,88 @@
+group: Disk / SSD (POSIX fast)
+steps:
+  - name: "Disk SSD (posix fast): create image directly under {HOST_ROOT}"
+    only_mode: "posix"
+    setup_cmd:
+      - argv:
+          - "python3"
+          - "-c"
+          - |
+            import os, pathlib, sys
+            host_root = os.environ.get("HOST_ROOT", "").strip()
+            if not host_root:
+              print("HOST_ROOT not set. Re-run with: integration-tests/run_integration.py --host-root /abs/path/to/fujinet-data", file=sys.stderr)
+              raise SystemExit(2)
+            root = pathlib.Path(host_root)
+            root.mkdir(parents=True, exist_ok=True)
+            img = root / "test.ssd"
+            data = bytearray(400 * 256)
+            data[0:16] = bytes.fromhex("112233445566778899aabbccddeeff00")
+            img.write_bytes(data)
+            w = root / "w10.bin"
+            w.write_bytes(bytes([0x5A]) * 256)
+            print(str(img))
+    argv:
+      - "bash"
+      - "-lc"
+      - "true"
+    timeout_s: 5
+
+  - name: "Disk SSD (posix fast): mount (auto from .ssd)"
+    only_mode: "posix"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "mount"
+      - "--slot"
+      - "1"
+      - "--fs"
+      - "{FS}"
+      - "--path"
+      - "/test.ssd"
+      - "--type"
+      - "auto"
+    expect:
+      - "mounted=1"
+      - "readonly=0"
+      - "slot=1"
+      - "type=ssd"
+      - "sector_size=256"
+      - "sector_count=400"
+    timeout_s: 10
+
+  - name: "Disk SSD (posix fast): write sector 10 from {HOST_ROOT}/w10.bin"
+    only_mode: "posix"
+    argv:
+      - "bash"
+      - "-lc"
+      - |
+        test -n "{HOST_ROOT}"
+        ./scripts/fujinet -p "{PORT}" disk write-sector --slot 1 --lba 10 "{HOST_ROOT}/w10.bin"
+    expect:
+      - "written_len=256"
+      - "slot=1"
+      - "lba=10"
+    timeout_s: 10
+
+  - name: "Disk SSD (posix fast): read sector 10 (verify write)"
+    only_mode: "posix"
+    argv:
+      - "{CLI}"
+      - "disk"
+      - "read-sector"
+      - "--slot"
+      - "1"
+      - "--lba"
+      - "10"
+      - "--max-bytes"
+      - "256"
+    capture:
+      mode: "file"
+    expect_file:
+      path: "{CAPTURED_OUT}"
+      size_exact: 256
+      contains_bytes_hex:
+        - "5a5a5a5a"
+    timeout_s: 10
+
+

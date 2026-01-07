@@ -8,6 +8,10 @@
 #include <string_view>
 #include <vector>
 
+namespace fujinet::fs {
+class StorageManager;
+}
+
 namespace fujinet::console {
 
 class IConsoleTransport {
@@ -55,6 +59,7 @@ std::unique_ptr<IConsoleTransport> create_default_console_transport();
 class ConsoleEngine {
 public:
     ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io);
+    ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io, fujinet::fs::StorageManager& storage);
 
     // Blocking loop (best for dedicated thread/task).
     void run_loop();
@@ -76,9 +81,13 @@ private:
 
     diag::DiagnosticRegistry& _registry;
     IConsoleTransport& _io;
+    fujinet::fs::StorageManager* _storage{nullptr};
 
     std::string _prompt{"> "};
     bool _edit_rendered{false};
+
+    std::string _cwd_fs;
+    std::string _cwd_path{"/"};
 
     std::string _edit;
     std::size_t _cursor{0};

@@ -65,7 +65,7 @@ int main()
     diagRegistry.add_provider(*netDiag);
 
     auto consoleTransport = fujinet::console::create_default_console_transport();
-    fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport);
+    fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport, core.storageManager());
     consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
 
     // POSIX: assume network is available; publish a synthetic GotIp for services.

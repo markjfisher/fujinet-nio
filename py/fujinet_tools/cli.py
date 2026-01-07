@@ -6,6 +6,7 @@ import argparse
 from . import file as file_cmds
 from . import clock as clock_cmds
 from . import net as net_cmds
+from . import disk as disk_cmds
 
 
 def main() -> None:
@@ -22,6 +23,7 @@ def main() -> None:
     file_cmds.register_subcommands(sub)
     clock_cmds.register_subcommands(sub)
     net_cmds.register_subcommands(sub)
+    disk_cmds.register_subcommands(sub)
 
     args = p.parse_args()
     raise SystemExit(args.fn(args))

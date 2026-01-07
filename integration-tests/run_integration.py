@@ -50,6 +50,7 @@ class Step:
     expect: List[str]
     forbid: List[str]
     timeout_s: float
+    only_mode: Optional[str] = None  # "posix" | "esp32" | None
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     expect_file: Optional[ExpectFileConfig] = None
     setup_cmd: List[List[str]] = field(default_factory=list)
@@ -159,6 +160,7 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
         argv_tpl = s.get("argv")
         expect = s.get("expect", [])
         forbid = s.get("forbid", [])
+        only_mode = s.get("only_mode", None)
         timeout_s = float(s.get("timeout_s", 8.0))
         expect_exit = int(s.get("expect_exit", 0))
 
@@ -170,6 +172,8 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
             raise ValueError(f"{path}: step {i} 'expect' must be a list")
         if not isinstance(forbid, list):
             raise ValueError(f"{path}: step {i} 'forbid' must be a list")
+        if only_mode is not None and only_mode not in ("posix", "esp32"):
+            raise ValueError(f"{path}: step {i} only_mode must be 'posix' or 'esp32'")
 
         argv = _expand_argv(argv_tpl, vars=vars, cli_parts=cli_parts)
 
@@ -215,6 +219,7 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
                 expect=[str(p) for p in expect],
                 forbid=[str(p) for p in forbid],
                 timeout_s=timeout_s,
+                only_mode=only_mode,
                 capture=capture,
                 expect_file=expect_file,
                 setup_cmd=setup_cmd,
@@ -325,11 +330,10 @@ def _validate_expect_file(
 def run_step(
     step: Step, *, show_output_on_success: bool, keep_temp: bool = False, repo_root: Path
 ) -> bool:
-    print(f"  -> {step.name}")
-    print(f"     $ {' '.join(step.argv)}")
-
     step_tmp = tempfile.TemporaryDirectory(prefix="fujinet-step-")
     step_tmp_path = step_tmp.name
+    print(f"  -> {step.name}")
+    print(f"     STEP_TMP={step_tmp_path}")
 
     # Determine if we need file capture
     needs_file_capture = step.capture.mode == "file" or step.expect_file is not None
@@ -367,11 +371,16 @@ def run_step(
     if step.setup_cmd:
         env = os.environ.copy()
         env["STEP_TMP"] = step_tmp_path
+        # Provided by main() based on CLI args
+        env["MODE"] = env.get("MODE", "")
+        env["HOST_ROOT"] = env.get("HOST_ROOT", "")
 
         for cmd_argv in step.setup_cmd:
             expanded = []
             for a in cmd_argv:
                 a = a.replace("{STEP_TMP}", step_tmp_path)
+                a = a.replace("{HOST_ROOT}", env.get("HOST_ROOT", ""))
+                a = a.replace("{MODE}", env.get("MODE", ""))
                 expanded.append(a)
 
             try:
@@ -410,7 +419,11 @@ def run_step(
         stderr_dest = subprocess.PIPE  # Keep stderr separate for error messages
 
     try:
+        # Expand common placeholders for the main argv too (useful for bash -lc blocks)
         step_argv = [a.replace("{STEP_TMP}", step_tmp_path) for a in step_argv]
+        step_argv = [a.replace("{HOST_ROOT}", os.environ.get("HOST_ROOT", "")) for a in step_argv]
+        step_argv = [a.replace("{MODE}", os.environ.get("MODE", "")) for a in step_argv]
+        print(f"     $ {' '.join(step_argv)}")
         cp = subprocess.run(
             step_argv,
             stdout=stdout_dest,
@@ -549,6 +562,11 @@ def main() -> int:
 
     ap.add_argument("--esp32", action="store_true", help="ESP32 mode: requires --ip for remote endpoints")
     ap.add_argument("--ip", default=None, help="Host IP for HTTP/TCP services (http://IP:8080, tcp://IP:7777)")
+    ap.add_argument(
+        "--host-root",
+        default=None,
+        help="POSIX-only: absolute path to the running fujinet-nio app's host FS root (the directory backing fs name 'host')",
+    )
 
     ap.add_argument("--http-url", default=None, help="Override HTTP base URL (rare)")
     ap.add_argument("--tcp-url", default=None, help="Override TCP URL (rare)")
@@ -572,6 +590,26 @@ def main() -> int:
     ap.add_argument("--keep-temp", action="store_true", help="Keep temporary files even on success (for debugging)")
 
     args = ap.parse_args()
+    mode = "esp32" if args.esp32 else "posix"
+    repo_root = Path(__file__).parent.parent  # integration-tests/.. = repo root
+
+    # POSIX convenience: auto-detect host root if not provided and there is exactly one build/*/fujinet-data.
+    host_root = args.host_root
+    if mode == "posix" and not host_root:
+        build_dir = repo_root / "build"
+        candidates: list[Path] = []
+        if build_dir.exists():
+            for p in build_dir.iterdir():
+                if not p.is_dir():
+                    continue
+                if p.name == ".venv":
+                    continue
+                cand = p / "fujinet-data"
+                if cand.exists() and cand.is_dir():
+                    candidates.append(cand)
+        if len(candidates) == 1:
+            host_root = str(candidates[0].resolve())
+            print(f"[auto] detected --host-root {host_root}")
 
     # Resolve endpoints
     if args.esp32:
@@ -600,7 +638,12 @@ def main() -> int:
         "TCP": tcp_url,
         "FS": args.fs,
         "PORT": args.port,
+        "MODE": mode,
+        "HOST_ROOT": host_root or "",
     }
+    # Export to environment so run_step() can pass through to setup_cmd and argv expansions.
+    os.environ["MODE"] = mode
+    os.environ["HOST_ROOT"] = vars["HOST_ROOT"]
 
     steps_dir = Path(args.steps_dir)
     step_files = _discover_step_files(steps_dir)
@@ -619,6 +662,9 @@ def main() -> int:
     if args.only_file:
         wanted = {x.strip() for x in args.only_file if x.strip()}
         all_steps = [s for s in all_steps if s.source_file in wanted]
+
+    # Mode filtering
+    all_steps = [s for s in all_steps if (s.only_mode is None or s.only_mode == mode)]
 
     all_steps = [s for s in all_steps if match_any_substr(s.group, args.only_group)]
     all_steps = [s for s in all_steps if match_any_substr(s.name, args.only_step)]
@@ -646,8 +692,6 @@ def main() -> int:
 
     ok_all = True
     current_group = None
-    repo_root = Path(__file__).parent.parent  # integration-tests/.. = repo root
-
     for step in all_steps:
         if step.group != current_group:
             current_group = step.group

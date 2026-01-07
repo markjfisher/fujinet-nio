@@ -79,6 +79,7 @@ target_sources(fujinet-nio
         src/lib/disk/disk_service.cpp
         src/lib/disk/image_registry.cpp
         src/lib/disk/raw_image.cpp
+        src/lib/disk/ssd_image.cpp
         src/lib/disk_device.cpp
         src/lib/disk_device_init.cpp
         src/lib/file_device.cpp
