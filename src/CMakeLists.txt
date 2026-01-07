@@ -15,6 +15,11 @@ idf_component_register(
         lib/diagnostic_core_provider.cpp
         lib/diagnostic_network_provider.cpp
         lib/diagnostic_registry.cpp
+        lib/disk/disk_service.cpp
+        lib/disk/image_registry.cpp
+        lib/disk/raw_image.cpp
+        lib/disk_device.cpp
+        lib/disk_device_init.cpp
         lib/file_device.cpp
         lib/file_device_init.cpp
         lib/fs_stdio.cpp

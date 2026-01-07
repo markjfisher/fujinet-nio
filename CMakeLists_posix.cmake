@@ -76,6 +76,11 @@ target_sources(fujinet-nio
         src/lib/diagnostic_core_provider.cpp
         src/lib/diagnostic_network_provider.cpp
         src/lib/diagnostic_registry.cpp
+        src/lib/disk/disk_service.cpp
+        src/lib/disk/image_registry.cpp
+        src/lib/disk/raw_image.cpp
+        src/lib/disk_device.cpp
+        src/lib/disk_device_init.cpp
         src/lib/file_device.cpp
         src/lib/file_device_init.cpp
         src/lib/fs_stdio.cpp

@@ -133,6 +133,7 @@ int main()
     // Register Core Devices
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
+    fujinet::core::register_disk_device(core);
     fujinet::core::register_network_device(core);
 
     // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).

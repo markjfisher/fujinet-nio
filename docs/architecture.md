@@ -607,6 +607,11 @@ platform-specific transport implementations. The goal is to provide a consistent
 stream-oriented interface to host systems while allowing each platform to use the
 most appropriate native networking stack.
 
+Related protocol docs:
+
+- [`docs/network_device_protocol.md`](network_device_protocol.md) — NetworkDevice v1 binary protocol (Open/Read/Write/Info/Close)
+- [`docs/network_device_tcp.md`](network_device_tcp.md) — TCP scheme mapping for NetworkDevice v1
+
 ### NetworkDevice
 
 `NetworkDevice` is a virtual I/O device registered with the core like any other
@@ -723,6 +728,20 @@ Write as potentially asynchronous operations and be prepared to handle
 The poll hook exists to provide a consistent execution model across platforms
 and protocols, even when individual backends do not require explicit polling
 to advance I/O.
+
+---
+
+## Disk Architecture
+
+FujiNet NIO treats “disk” as a **reusable core service**:
+
+- **DiskService (core)**: mounts disk image files from a named filesystem (`StorageManager`) and exposes sector-level reads/writes.
+- **DiskDevice (VirtualDevice)**: wraps DiskService and exposes a small v1 binary command set for tooling and generic hosts.
+- **Machine-specific disk protocols** (Atari SIO disk, BBC DFS/MMFS, etc.) should reuse DiskService and implement only their own bus semantics.
+
+Disk protocol doc:
+
+- [`docs/disk_device_protocol.md`](disk_device_protocol.md) — Disk subsystem overview + DiskDevice v1 binary protocol
 
 ---
 
@@ -895,6 +914,8 @@ enum class WireDeviceId : std::uint8_t {
     NetworkLast = 0x78,
 
     // FujiNet-NIO extensions
+    DiskService = 0xFC,
+    NetworkService = 0xFD,
     FileService = 0xFE,
 };
 ```

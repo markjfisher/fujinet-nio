@@ -9,5 +9,6 @@ void register_file_device(FujinetCore& core);
 void register_clock_device(FujinetCore& core);
 void register_network_device(FujinetCore& core);
 void register_network_device(FujinetCore& core, io::ProtocolRegistry registry);
+void register_disk_device(FujinetCore& core);
 
 } // namespace fujinet::core

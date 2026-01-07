@@ -162,6 +162,7 @@ extern "C" void fujinet_core_task(void* arg)
     // HOWEVER they will have to go in Esp32Services, as we delay loading config.
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
+    fujinet::core::register_disk_device(core);
     fujinet::core::register_network_device(core);
 
     const std::uint64_t phase1_at = core.tick_count() + 20;
