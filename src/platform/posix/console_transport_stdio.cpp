@@ -4,6 +4,7 @@
 #include <string>
 
 #if !defined(_WIN32)
+#include <termios.h>
 #include <poll.h>
 #include <unistd.h>
 #endif
@@ -14,13 +15,44 @@ namespace {
 
 class StdioConsoleTransport final : public IConsoleTransport {
 public:
-    bool read_line(std::string& out, int timeout_ms) override
+    StdioConsoleTransport()
+    {
+#if !defined(_WIN32)
+        if (::isatty(STDIN_FILENO)) {
+            if (::tcgetattr(STDIN_FILENO, &_orig) == 0) {
+                termios t = _orig;
+                // Minimal raw-ish mode for interactive editing.
+                t.c_lflag &= static_cast<tcflag_t>(~(ECHO | ICANON));
+                t.c_iflag &= static_cast<tcflag_t>(~(IXON | ICRNL));
+                t.c_oflag |= OPOST;
+                t.c_cc[VMIN] = 0;
+                t.c_cc[VTIME] = 0;
+                if (::tcsetattr(STDIN_FILENO, TCSANOW, &t) == 0) {
+                    _hasTermios = true;
+                }
+            }
+        }
+#endif
+    }
+
+    ~StdioConsoleTransport() override
+    {
+#if !defined(_WIN32)
+        if (_hasTermios) {
+            (void)::tcsetattr(STDIN_FILENO, TCSANOW, &_orig);
+        }
+#endif
+    }
+
+    bool read_byte(std::uint8_t& out, int timeout_ms) override
     {
 #if defined(_WIN32)
         (void)timeout_ms;
-        if (!std::getline(std::cin, out)) {
-            out = "exit";
+        const int ch = std::cin.get();
+        if (ch == EOF) {
+            return false;
         }
+        out = static_cast<std::uint8_t>(ch);
         return true;
 #else
         struct pollfd pfd;
@@ -34,22 +66,23 @@ public:
         }
 
         if (ret < 0) {
-            out = "exit";
-            return true;
+            return false;
         }
 
         if ((pfd.revents & (POLLHUP | POLLERR)) != 0) {
-            out = "exit";
-            return true;
+            return false;
         }
 
         if ((pfd.revents & POLLIN) == 0) {
             return false;
         }
 
-        if (!std::getline(std::cin, out)) {
-            out = "exit";
+        unsigned char ch = 0;
+        const ssize_t n = ::read(STDIN_FILENO, &ch, 1);
+        if (n != 1) {
+            return false;
         }
+        out = static_cast<std::uint8_t>(ch);
         return true;
 #endif
     }
@@ -66,6 +99,12 @@ public:
         std::cout.put('\n');
         std::cout.flush();
     }
+
+private:
+#if !defined(_WIN32)
+    bool _hasTermios{false};
+    termios _orig{};
+#endif
 };
 
 } // namespace

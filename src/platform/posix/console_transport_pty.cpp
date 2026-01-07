@@ -46,13 +46,18 @@ public:
         }
     }
 
-    bool read_line(std::string& out, int timeout_ms) override
+    bool read_byte(std::uint8_t& out, int timeout_ms) override
     {
         if (_masterFd < 0) {
             return false;
         }
 
-        if (try_extract_line(out)) {
+        if (_rx_off < _rx.size()) {
+            out = static_cast<std::uint8_t>(_rx[_rx_off++]);
+            if (_rx_off >= _rx.size()) {
+                _rx.clear();
+                _rx_off = 0;
+            }
             return true;
         }
 
@@ -82,22 +87,19 @@ public:
         }
 
         char tmp[128];
-        for (;;) {
-            ssize_t n = ::read(_masterFd, tmp, sizeof(tmp));
-            if (n <= 0) {
-                break;
-            }
-            _buf.append(tmp, static_cast<std::size_t>(n));
-
-            // Safety bound: avoid unbounded growth if no newline arrives.
-            if (_buf.size() > 1024) {
-                _buf.clear();
-                out.clear();
-                return true;
-            }
+        ssize_t n = ::read(_masterFd, tmp, sizeof(tmp));
+        if (n <= 0) {
+            return false;
         }
 
-        return try_extract_line(out);
+        _rx.assign(tmp, static_cast<std::size_t>(n));
+        _rx_off = 0;
+        out = static_cast<std::uint8_t>(_rx[_rx_off++]);
+        if (_rx_off >= _rx.size()) {
+            _rx.clear();
+            _rx_off = 0;
+        }
+        return true;
     }
 
     void write(std::string_view s) override
@@ -125,33 +127,9 @@ public:
     }
 
 private:
-    bool try_extract_line(std::string& out)
-    {
-        // Treat either CR or LF as end-of-line (screen often sends CR).
-        const std::size_t eol = _buf.find_first_of("\r\n");
-        if (eol == std::string::npos) {
-            return false;
-        }
-
-        std::string line = _buf.substr(0, eol);
-
-        // Consume EOL. If it's CRLF or LFCR, consume both.
-        std::size_t consume = 1;
-        if (eol + 1 < _buf.size()) {
-            const char a = _buf[eol];
-            const char b = _buf[eol + 1];
-            if ((a == '\r' && b == '\n') || (a == '\n' && b == '\r')) {
-                consume = 2;
-            }
-        }
-        _buf.erase(0, eol + consume);
-
-        out = std::move(line);
-        return true;
-    }
-
     int _masterFd{-1};
-    std::string _buf;
+    std::string _rx;
+    std::size_t _rx_off{0};
 };
 
 } // namespace

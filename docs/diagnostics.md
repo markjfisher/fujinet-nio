@@ -51,7 +51,7 @@ The console engine is pure parsing/dispatch logic:
 
 It depends on:
 - a `diag::DiagnosticRegistry&`
-- an `IConsoleTransport&` that provides line I/O with timeouts
+- an `IConsoleTransport&` that provides byte I/O with timeouts (the engine includes a small line editor + history)
 
 ### Console commands
 

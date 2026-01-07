@@ -35,9 +35,18 @@ public:
                            UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     }
 
-    bool read_line(std::string& out, int timeout_ms) override
+    bool read_byte(std::uint8_t& out, int timeout_ms) override
     {
         const uart_port_t port = UART_NUM_0;
+
+        if (_rx_off < _rx.size()) {
+            out = static_cast<std::uint8_t>(_rx[_rx_off++]);
+            if (_rx_off >= _rx.size()) {
+                _rx.clear();
+                _rx_off = 0;
+            }
+            return true;
+        }
 
         std::uint8_t tmp[64];
         const TickType_t to = (timeout_ms < 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
@@ -47,27 +56,14 @@ public:
             return false;
         }
 
-        for (int i = 0; i < n; ++i) {
-            const char ch = static_cast<char>(tmp[i]);
-            if (ch == '\r') {
-                continue;
-            }
-            if (ch == '\n') {
-                out = _buf;
-                _buf.clear();
-                return true;
-            }
-            _buf.push_back(ch);
-
-            // Basic safety bound (avoid unbounded growth if no newline).
-            if (_buf.size() > 512) {
-                _buf.clear();
-                out.clear();
-                return true;
-            }
+        _rx.assign(reinterpret_cast<const char*>(tmp), static_cast<std::size_t>(n));
+        _rx_off = 0;
+        out = static_cast<std::uint8_t>(_rx[_rx_off++]);
+        if (_rx_off >= _rx.size()) {
+            _rx.clear();
+            _rx_off = 0;
         }
-
-        return false;
+        return true;
     }
 
     void write(std::string_view s) override
@@ -83,7 +79,8 @@ public:
     }
 
 private:
-    std::string _buf;
+    std::string _rx;
+    std::size_t _rx_off{0};
 };
 
 } // namespace

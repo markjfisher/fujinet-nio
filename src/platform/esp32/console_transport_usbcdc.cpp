@@ -53,8 +53,17 @@ public:
         (void)ensure_console_cdc_ready(_itf);
     }
 
-    bool read_line(std::string& out, int timeout_ms) override
+    bool read_byte(std::uint8_t& out, int timeout_ms) override
     {
+        if (_rx_off < _rx.size()) {
+            out = static_cast<std::uint8_t>(_rx[_rx_off++]);
+            if (_rx_off >= _rx.size()) {
+                _rx.clear();
+                _rx_off = 0;
+            }
+            return true;
+        }
+
         // TinyUSB read is non-blocking; emulate timeout by polling/sleeping.
         const TickType_t to = (timeout_ms < 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
         const TickType_t start = xTaskGetTickCount();
@@ -68,22 +77,14 @@ public:
             size_t rx_size = 0;
             esp_err_t err = tinyusb_cdcacm_read(_itf, tmp, sizeof(tmp), &rx_size);
             if (err == ESP_OK && rx_size > 0) {
-                for (size_t i = 0; i < rx_size; ++i) {
-                    const char ch = static_cast<char>(tmp[i]);
-                    if (ch == '\r' || ch == '\n') {
-                        out = _buf;
-                        _buf.clear();
-                        return true;
-                    }
-
-                    _buf.push_back(ch);
-                    if (_buf.size() > 512) {
-                        _buf.clear();
-                        out.clear();
-                        return true;
-                    }
+                _rx.assign(reinterpret_cast<const char*>(tmp), rx_size);
+                _rx_off = 0;
+                out = static_cast<std::uint8_t>(_rx[_rx_off++]);
+                if (_rx_off >= _rx.size()) {
+                    _rx.clear();
+                    _rx_off = 0;
                 }
-                return false;
+                return true;
             }
 
             if (timeout_ms == 0) {
@@ -136,7 +137,8 @@ public:
 
 private:
     tinyusb_cdcacm_itf_t _itf;
-    std::string _buf;
+    std::string _rx;
+    std::size_t _rx_off{0};
 };
 #endif // CONFIG_TINYUSB_CDC_ENABLED
 

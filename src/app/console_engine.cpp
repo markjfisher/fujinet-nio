@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -60,36 +61,279 @@ ConsoleEngine::ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTranspo
 
 void ConsoleEngine::run_loop()
 {
-    std::string line;
-    for (;;) {
-        line.clear();
-        if (!_io.read_line(line, -1)) {
-            break;
-        }
-        if (!handle_line(line)) {
-            break;
-        }
+    while (step(-1)) {
+        // loop
     }
 }
 
 bool ConsoleEngine::step(int timeout_ms)
 {
     std::string line;
-
-    if (!_promptShown) {
-        _io.write("> ");
-        _promptShown = true;
+    if (!read_line_edit(line, timeout_ms)) {
+        return true; // no input / timeout
     }
-
-    if (!_io.read_line(line, timeout_ms)) {
-        return true; // timeout / no input
-    }
-
-    // Most PTY clients will not echo locally; start a fresh line for output.
-    _io.write_line("");
-    _promptShown = false;
-
     return handle_line(line);
+}
+
+void ConsoleEngine::clear_edit_line()
+{
+    // CR + clear whole line (ANSI). If the peer doesn't understand ANSI, CR still helps.
+    _io.write("\r\x1b[2K");
+}
+
+void ConsoleEngine::render_edit_line()
+{
+    clear_edit_line();
+    _io.write(_prompt);
+    _io.write(_edit);
+    _io.write("\x1b[K"); // clear to end
+
+    const std::size_t right = (_edit.size() >= _cursor) ? (_edit.size() - _cursor) : 0;
+    if (right != 0) {
+        _io.write("\x1b[");
+        _io.write(std::to_string(right));
+        _io.write("D"); // cursor left
+    }
+}
+
+static bool is_word_char(char c)
+{
+    const unsigned char uc = static_cast<unsigned char>(c);
+    return std::isalnum(uc) || c == '_';
+}
+
+static std::size_t word_left(std::string_view s, std::size_t cur)
+{
+    if (cur == 0) return 0;
+    std::size_t i = cur;
+    while (i > 0 && !is_word_char(s[i - 1])) --i;
+    while (i > 0 && is_word_char(s[i - 1])) --i;
+    return i;
+}
+
+static std::size_t word_right(std::string_view s, std::size_t cur)
+{
+    std::size_t i = cur;
+    while (i < s.size() && !is_word_char(s[i])) ++i;
+    while (i < s.size() && is_word_char(s[i])) ++i;
+    return i;
+}
+
+bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
+{
+    out_line.clear();
+
+    if (!_edit_rendered) {
+        render_edit_line();
+        _edit_rendered = true;
+    }
+
+    auto apply_history = [&](std::size_t idx) {
+        if (idx >= _history.size()) return;
+        _edit = _history[idx];
+        _cursor = _edit.size();
+        render_edit_line();
+    };
+
+    auto history_up = [&]() {
+        if (_history.empty()) return;
+        if (!_hist_active) {
+            _hist_active = true;
+            _hist_saved = _edit;
+            _hist_index = _history.size() - 1;
+        } else if (_hist_index > 0) {
+            --_hist_index;
+        }
+        apply_history(_hist_index);
+    };
+
+    auto history_down = [&]() {
+        if (!_hist_active) return;
+        if (_hist_index + 1 < _history.size()) {
+            ++_hist_index;
+            apply_history(_hist_index);
+            return;
+        }
+        _hist_active = false;
+        _edit = _hist_saved;
+        _cursor = _edit.size();
+        render_edit_line();
+    };
+
+    auto commit_line = [&]() {
+        _io.write("\r\n");
+        out_line = _edit;
+        out_line = std::string(trim(out_line));
+
+        if (!out_line.empty()) {
+            if (_history.empty() || _history.back() != out_line) {
+                _history.push_back(out_line);
+                if (_history.size() > _history_max) {
+                    _history.erase(_history.begin());
+                }
+            }
+        }
+
+        _edit.clear();
+        _cursor = 0;
+        _esc.clear();
+        _hist_active = false;
+        _hist_saved.clear();
+        _edit_rendered = false;
+    };
+
+    auto handle_escape = [&](const std::string& esc) -> bool {
+        // Arrow keys / home/end (common xterm sequences).
+        if (esc == "\x1b[A") { history_up(); return true; }
+        if (esc == "\x1b[B") { history_down(); return true; }
+        if (esc == "\x1b[C") { if (_cursor < _edit.size()) { ++_cursor; render_edit_line(); } return true; }
+        if (esc == "\x1b[D") { if (_cursor > 0) { --_cursor; render_edit_line(); } return true; }
+
+        // Home/End variants.
+        if (esc == "\x1b[H" || esc == "\x1bOH" || esc == "\x1b[1~") { _cursor = 0; render_edit_line(); return true; }
+        if (esc == "\x1b[F" || esc == "\x1bOF" || esc == "\x1b[4~") { _cursor = _edit.size(); render_edit_line(); return true; }
+
+        // Delete (forward delete)
+        if (esc == "\x1b[3~") {
+            if (_cursor < _edit.size()) {
+                _edit.erase(_cursor, 1);
+                render_edit_line();
+            }
+            return true;
+        }
+
+        // Alt-b / Alt-f (word move) - common: ESC b / ESC f
+        if (esc.size() == 2 && esc[0] == '\x1b' && esc[1] == 'b') { _cursor = word_left(_edit, _cursor); render_edit_line(); return true; }
+        if (esc.size() == 2 && esc[0] == '\x1b' && esc[1] == 'f') { _cursor = word_right(_edit, _cursor); render_edit_line(); return true; }
+
+        // xterm alt-left/right: ESC [ 1 ; 3 D/C
+        if (esc == "\x1b[1;3D") { _cursor = word_left(_edit, _cursor); render_edit_line(); return true; }
+        if (esc == "\x1b[1;3C") { _cursor = word_right(_edit, _cursor); render_edit_line(); return true; }
+
+        return false;
+    };
+
+    auto process_byte = [&](std::uint8_t b) -> bool {
+        // Returns true when a line was committed.
+
+        if (!_esc.empty() || b == 0x1b) {
+            if (_esc.empty() && b == 0x1b) {
+                _esc.push_back(static_cast<char>(b));
+                return false;
+            }
+            if (!_esc.empty()) {
+                _esc.push_back(static_cast<char>(b));
+
+                // ESC <letter> (alt bindings) can complete at len==2.
+                if (_esc.size() == 2 && (_esc[1] == 'b' || _esc[1] == 'f')) {
+                    (void)handle_escape(_esc);
+                    _esc.clear();
+                    return false;
+                }
+
+                // CSI / SS3 sequences complete on a final alpha, or '~'.
+                const char last = _esc.back();
+                if (last == '~' || (last >= 'A' && last <= 'Z') || (last >= 'a' && last <= 'z')) {
+                    (void)handle_escape(_esc);
+                    _esc.clear();
+                    return false;
+                }
+
+                // Safety: drop unknown/long sequences.
+                if (_esc.size() > 8) {
+                    _esc.clear();
+                }
+                return false;
+            }
+        }
+
+        // Enter
+        if (b == '\r' || b == '\n') {
+            commit_line();
+            return true;
+        }
+
+        // Backspace / DEL (treat as backspace)
+        if (b == 0x08 || b == 0x7f) {
+            if (_cursor > 0) {
+                _edit.erase(_cursor - 1, 1);
+                --_cursor;
+                render_edit_line();
+            }
+            return false;
+        }
+
+        // Ctrl-A / Ctrl-E
+        if (b == 0x01) { _cursor = 0; render_edit_line(); return false; }
+        if (b == 0x05) { _cursor = _edit.size(); render_edit_line(); return false; }
+
+        // Ctrl-U: kill line
+        if (b == 0x15) {
+            _edit.clear();
+            _cursor = 0;
+            render_edit_line();
+            return false;
+        }
+
+        // Ctrl-K: kill to end
+        if (b == 0x0b) {
+            if (_cursor < _edit.size()) {
+                _edit.erase(_cursor);
+                render_edit_line();
+            }
+            return false;
+        }
+
+        // Ctrl-W: delete word back
+        if (b == 0x17) {
+            const std::size_t nl = word_left(_edit, _cursor);
+            if (nl < _cursor) {
+                _edit.erase(nl, _cursor - nl);
+                _cursor = nl;
+                render_edit_line();
+            }
+            return false;
+        }
+
+        // Ctrl-P / Ctrl-N (history up/down, like emacs)
+        if (b == 0x10) { history_up(); return false; }
+        if (b == 0x0e) { history_down(); return false; }
+
+        // Printable ASCII
+        if (b >= 0x20 && b < 0x7f) {
+            const char ch = static_cast<char>(b);
+            if (_cursor == _edit.size()) {
+                _edit.push_back(ch);
+                ++_cursor;
+            } else {
+                _edit.insert(_cursor, 1, ch);
+                ++_cursor;
+            }
+            render_edit_line();
+            return false;
+        }
+
+        // Ignore other control bytes.
+        return false;
+    };
+
+    std::uint8_t b = 0;
+    if (!_io.read_byte(b, timeout_ms)) {
+        return false;
+    }
+
+    if (process_byte(b)) {
+        return true;
+    }
+
+    // Drain any immediately available bytes to keep escape sequences responsive.
+    while (_io.read_byte(b, 0)) {
+        if (process_byte(b)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool ConsoleEngine::handle_line(std::string_view line)
