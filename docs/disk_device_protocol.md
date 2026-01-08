@@ -63,19 +63,44 @@ This keeps the disk subsystem independent of how filesystems are provided (POSIX
 
 Disk images are handled by `IDiskImage` implementations.
 
-v1 includes:
+v1 includes (image-format understanding required for sector I/O):
 
 - **Raw** (`ImageType::Raw`): flat `sector_count * sector_size` bytes, **no header**
   - used for tests and tooling
   - requires `sectorSizeHint` (default 256 if not provided)
 
-Planned:
+- **SSD** (`ImageType::Ssd`, `.ssd`): BBC DFS SSD image (flat 256-byte sectors)
+  - supported sizes (validated on mount):
+    - 40 track: 400 sectors = 102,400 bytes
+    - 80 track: 800 sectors = 204,800 bytes
+  - v1 scope: **geometry + sector read/write only** (no DFS catalog parsing)
+
+Planned image formats:
 
 - ATR (`.atr`)
-- SSD (`.ssd`)
 - DSD (`.dsd`)
 
 Autodetect uses file extension (case-insensitive). A host may optionally override type detection.
+
+---
+
+## What DiskDevice does *not* do (by design)
+
+DiskDevice / DiskService provide a **block device** view (sectors in/out). They intentionally do **not** interpret
+filesystem structures *inside* the disk image (e.g. BBC DFS catalog, directory entries, boot options).
+
+Where higher-level “disk intelligence” belongs:
+
+- **Image-format logic** (needed for correct sector offsets and geometry) belongs in `IDiskImage`
+  - example: ATR header parsing and sector-to-file-offset mapping
+- **Filesystem-on-image logic** (optional) should be a separate layer (e.g. “DFS inspector”, “ATR DOS2 inspector”)
+  and can be exposed later via:
+  - a debug/diagnostic service,
+  - a separate VirtualDevice,
+  - or a host-side tool that reads sectors and parses them.
+
+We still want **basic structural validation** at mount time (header magic, file size sanity, geometry bounds),
+but that’s different from parsing the on-disk filesystem.
 
 ---
 
