@@ -175,6 +175,64 @@ std::unique_ptr<IDiskImage> make_atr_disk_image()
     return std::make_unique<AtrDiskImage>();
 }
 
+DiskResult create_atr_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+{
+    // Minimal ATR create derived from classic firmware behavior.
+    // Header is 16 bytes.
+    if (!(sectorSize == 128 || sectorSize == 256 || sectorSize == 512)) {
+        return DiskResult{DiskError::InvalidGeometry};
+    }
+    if (sectorCount == 0) return DiskResult{DiskError::InvalidGeometry};
+
+    std::uint64_t totalData = static_cast<std::uint64_t>(sectorSize) * sectorCount;
+    // Adjust for first 3 sectors being 128 bytes when sectorSize == 256 (matches old firmware logic).
+    if (sectorSize == 256) {
+        if (sectorCount < 3) return DiskResult{DiskError::InvalidGeometry};
+        totalData -= 384ull;
+    }
+
+    const std::uint32_t paragraphs = static_cast<std::uint32_t>(totalData / 16ull);
+
+    std::uint8_t hdr[16]{};
+    hdr[0] = 0x96;
+    hdr[1] = 0x02;
+    hdr[2] = static_cast<std::uint8_t>(paragraphs & 0xFF);
+    hdr[3] = static_cast<std::uint8_t>((paragraphs >> 8) & 0xFF);
+    hdr[4] = static_cast<std::uint8_t>(sectorSize & 0xFF);
+    hdr[5] = static_cast<std::uint8_t>((sectorSize >> 8) & 0xFF);
+    hdr[6] = static_cast<std::uint8_t>((paragraphs >> 16) & 0xFF);
+
+    if (file.write(hdr, sizeof(hdr)) != sizeof(hdr)) return DiskResult{DiskError::IoError};
+
+    // Write first three 128-byte sectors for sectorSize < 512 (spec convention).
+    std::uint8_t blank[512]{};
+    if (sectorSize < 512) {
+        for (int i = 0; i < 3; ++i) {
+            if (file.write(blank, 128) != 128) return DiskResult{DiskError::IoError};
+        }
+    }
+
+    // Sparse seek to last sector and write it.
+    std::uint64_t lastOff = 16;
+    if (sectorSize < 512) {
+        const std::uint32_t remaining = sectorCount - 3;
+        if (remaining > 0) {
+            lastOff += 3ull * 128ull;
+            lastOff += static_cast<std::uint64_t>(remaining) * sectorSize;
+            lastOff -= sectorSize;
+            if (!file.seek(lastOff)) return DiskResult{DiskError::IoError};
+            if (file.write(blank, sectorSize) != sectorSize) return DiskResult{DiskError::IoError};
+        }
+    } else {
+        lastOff += static_cast<std::uint64_t>(sectorCount) * sectorSize;
+        lastOff -= sectorSize;
+        if (!file.seek(lastOff)) return DiskResult{DiskError::IoError};
+        if (file.write(blank, sectorSize) != sectorSize) return DiskResult{DiskError::IoError};
+    }
+
+    return DiskResult{DiskError::None};
+}
+
 } // namespace fujinet::disk
 
 

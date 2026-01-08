@@ -76,8 +76,8 @@ target_sources(fujinet-nio
         src/lib/diagnostic_core_provider.cpp
         src/lib/diagnostic_network_provider.cpp
         src/lib/diagnostic_registry.cpp
-        src/lib/disk/disk_service.cpp
         src/lib/disk/atr_image.cpp
+        src/lib/disk/disk_service.cpp
         src/lib/disk/image_registry.cpp
         src/lib/disk/raw_image.cpp
         src/lib/disk/ssd_image.cpp
@@ -105,6 +105,7 @@ target_sources(fujinet-nio
         src/platform/posix/console_transport_default.cpp
         src/platform/posix/console_transport_pty.cpp
         src/platform/posix/console_transport_stdio.cpp
+        src/platform/posix/disk_registry.cpp
         src/platform/posix/fs_factory.cpp
         src/platform/posix/fuji_config_store_factory.cpp
         src/platform/posix/fuji_device_factory.cpp

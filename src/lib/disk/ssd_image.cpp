@@ -1,5 +1,7 @@
 #include "fujinet/disk/ssd_image.h"
 
+#include <cstring>
+
 namespace fujinet::disk {
 
 class SsdDiskImage final : public IDiskImage {
@@ -92,6 +94,36 @@ private:
 std::unique_ptr<IDiskImage> make_ssd_disk_image()
 {
     return std::make_unique<SsdDiskImage>();
+}
+
+DiskResult create_ssd_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+{
+    if (sectorSize != 256) return DiskResult{DiskError::InvalidGeometry};
+    if (!(sectorCount == 400 || sectorCount == 800)) return DiskResult{DiskError::InvalidGeometry};
+
+    // Write a minimal DFS "blank" catalog (matches classic firmware behavior):
+    // - sector 0: all zeros
+    // - sector 1: disk title, sector count fields
+    std::uint8_t sec[256]{};
+
+    // sector 0
+    if (file.write(sec, sizeof(sec)) != sizeof(sec)) return DiskResult{DiskError::IoError};
+
+    // sector 1
+    std::memset(sec, 0, sizeof(sec));
+    std::memcpy(sec, "BLANK   ", 8); // Disk title (8 bytes)
+    sec[0xF6] = 0; // No files * 8
+    sec[0xF7] = 0; // Boot option
+    sec[0xF8] = static_cast<std::uint8_t>(sectorCount & 0xFF);
+    sec[0xF9] = static_cast<std::uint8_t>((sectorCount >> 8) & 0xFF);
+    if (file.write(sec, sizeof(sec)) != sizeof(sec)) return DiskResult{DiskError::IoError};
+
+    // Ensure final file size (sparse-extend).
+    const std::uint64_t total = 256ull * sectorCount;
+    if (!file.seek(total - 1)) return DiskResult{DiskError::IoError};
+    const std::uint8_t z = 0;
+    if (file.write(&z, 1) != 1) return DiskResult{DiskError::IoError};
+    return DiskResult{DiskError::None};
 }
 
 } // namespace fujinet::disk

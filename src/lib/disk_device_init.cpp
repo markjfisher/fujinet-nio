@@ -3,6 +3,7 @@
 #include "fujinet/io/devices/disk_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/core/logging.h"
+#include "fujinet/platform/disk_registry.h"
 
 namespace fujinet::core {
 
@@ -15,7 +16,8 @@ static const char* TAG = "core";
 
 void register_disk_device(FujinetCore& core)
 {
-    auto dev = std::make_unique<DiskDevice>(core.storageManager());
+    auto reg = fujinet::platform::make_default_disk_image_registry();
+    auto dev = std::make_unique<DiskDevice>(core.storageManager(), std::move(reg));
     DeviceID id = to_device_id(WireDeviceId::DiskService); // 0xFC
 
     bool ok = core.deviceManager().registerDevice(id, std::move(dev));

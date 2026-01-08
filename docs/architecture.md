@@ -739,6 +739,25 @@ FujiNet NIO treats “disk” as a **reusable core service**:
 - **DiskDevice (VirtualDevice)**: wraps DiskService and exposes a small v1 binary command set for tooling and generic hosts.
 - **Machine-specific disk protocols** (Atari SIO disk, BBC DFS/MMFS, etc.) should reuse DiskService and implement only their own bus semantics.
 
+### Registry-based format wiring (no core ifdefs)
+
+Disk image format support is selected via a registry, not hard-coded in `DiskService`:
+
+- `disk::ImageRegistry` contains:
+  - **factories** (ImageType → `IDiskImage`) for mounting/sector I/O
+  - **creators** (ImageType → create function) for creating blank image files
+- `DiskDevice` is constructed with an `ImageRegistry` instance.
+
+The **platform layer** is responsible for building the default registry (this mirrors how NetworkDevice selects protocol backends):
+
+- `platform::make_default_disk_image_registry()` in `src/platform/*/disk_registry.cpp`
+
+This keeps shared/core code free of platform conditionals while still allowing platforms/builds to:
+
+- include/exclude specific image formats,
+- apply policy (e.g. limit formats on constrained storage),
+- or swap implementations later (e.g. optimized handlers).
+
 Disk protocol doc:
 
 - [`docs/disk_device_protocol.md`](disk_device_protocol.md) — Disk subsystem overview + DiskDevice v1 binary protocol

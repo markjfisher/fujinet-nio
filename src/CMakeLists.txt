@@ -15,8 +15,8 @@ idf_component_register(
         lib/diagnostic_core_provider.cpp
         lib/diagnostic_network_provider.cpp
         lib/diagnostic_registry.cpp
-        lib/disk/disk_service.cpp
         lib/disk/atr_image.cpp
+        lib/disk/disk_service.cpp
         lib/disk/image_registry.cpp
         lib/disk/raw_image.cpp
         lib/disk/ssd_image.cpp
@@ -44,6 +44,7 @@ idf_component_register(
         platform/esp32/console_transport_default.cpp
         platform/esp32/console_transport_uart.cpp
         platform/esp32/console_transport_usbcdc.cpp
+        platform/esp32/disk_registry.cpp
         platform/esp32/fs_factory.cpp
         platform/esp32/fs_init.cpp
         platform/esp32/fuji_config_store_factory.cpp

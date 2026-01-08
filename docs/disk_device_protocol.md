@@ -20,7 +20,7 @@ The disk subsystem is split into:
 - **Core disk code** (`namespace fujinet::disk`)
   - `IDiskImage`: per-format image handler (ATR/SSD/DSD/…)
   - `DiskService`: owns a fixed set of slots (default 8) and implements mount/unmount/read/write/info
-  - `ImageRegistry`: maps `ImageType` → factory; used for extension autodetect and injecting format handlers
+  - `ImageRegistry`: maps `ImageType` → factory (mount/I/O) and `ImageType` → creator (blank image create)
 - **VirtualDevice wrapper** (`namespace fujinet::io`)
   - `DiskDevice`: wraps `DiskService` and exposes a v1 command set over `IORequest`/`IOResponse`
 
@@ -28,6 +28,25 @@ The key separation:
 
 > Machine-specific disk protocols **must not** re-implement image parsing or storage lookups.
 > They should reuse `DiskService` (composition) and implement only their wire/bus protocol.
+
+---
+
+## Registry wiring and where it lives
+
+Disk image support is selected via a registry instance passed into `DiskDevice`/`DiskService`:
+
+- **Factories**: `ImageType` → `IDiskImage` implementation (mount + sector I/O)
+- **Creators**: `ImageType` → create function (used by `Create (0x07)`)
+
+Default wiring is intentionally **platform-owned** (mirrors `platform::make_default_network_registry()`):
+
+- `platform::make_default_disk_image_registry()` in `src/platform/*/disk_registry.cpp`
+
+This avoids platform `#ifdef`s inside shared/core code and allows each platform/build to:
+
+- include/exclude formats,
+- apply policy (e.g. storage constraints),
+- or provide different implementations.
 
 ---
 

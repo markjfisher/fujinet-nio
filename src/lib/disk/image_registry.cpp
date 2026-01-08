@@ -4,6 +4,7 @@
 #include <cctype>
 
 #include "fujinet/disk/atr_image.h"
+#include "fujinet/disk/raw_image.h"
 #include "fujinet/disk/ssd_image.h"
 
 namespace fujinet::disk {
@@ -70,6 +71,30 @@ std::unique_ptr<IDiskImage> ImageRegistry::create(ImageType type) const
     return (it->second)();
 }
 
+bool ImageRegistry::register_creator(ImageType type, Creator creator)
+{
+    if (type == ImageType::Auto || !creator) {
+        return false;
+    }
+    const auto key = static_cast<std::uint8_t>(type);
+    if (_creators.find(key) != _creators.end()) {
+        return false;
+    }
+    _creators.emplace(key, std::move(creator));
+    return true;
+}
+
+DiskResult ImageRegistry::create_file(ImageType type, fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount) const
+{
+    if (type == ImageType::Auto) return DiskResult{DiskError::UnsupportedImageType};
+    const auto key = static_cast<std::uint8_t>(type);
+    auto it = _creators.find(key);
+    if (it == _creators.end()) {
+        return DiskResult{DiskError::UnsupportedImageType};
+    }
+    return (it->second)(file, sectorSize, sectorCount);
+}
+
 ImageType guess_type_from_path(std::string_view path)
 {
     const std::string p = lower_ascii(path);
@@ -89,11 +114,22 @@ ImageRegistry make_default_image_registry()
 {
     ImageRegistry reg;
 
-    // Raw is implemented in raw_image.cpp (registered by DiskService init code).
-    // Atr/Ssd/Dsd are placeholders for v1; format handlers can be added later.
+    // Built-in image types (platform-agnostic):
+    reg.register_type(ImageType::Raw, [] { return make_raw_disk_image(); });
     reg.register_type(ImageType::Atr, [] { return make_atr_disk_image(); });
     reg.register_type(ImageType::Ssd, [] { return make_ssd_disk_image(); });
     reg.register_type(ImageType::Dsd, [] { return std::make_unique<UnsupportedImage>(ImageType::Dsd); });
+
+    // Creators (blank image creation).
+    reg.register_creator(ImageType::Raw, [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) {
+        return create_raw_image_file(f, ss, sc);
+    });
+    reg.register_creator(ImageType::Atr, [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) {
+        return create_atr_image_file(f, ss, sc);
+    });
+    reg.register_creator(ImageType::Ssd, [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) {
+        return create_ssd_image_file(f, ss, sc);
+    });
 
     return reg;
 }
