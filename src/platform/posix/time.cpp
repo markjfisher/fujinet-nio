@@ -2,6 +2,7 @@
 
 #include <ctime>
 #include <cstdint>
+#include <cstdio>
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <time.h>
@@ -37,6 +38,42 @@ bool time_is_valid()
 {
     // Anything after 2020-01-01 is “valid enough”
     return unix_time_seconds() >= 1577836800ULL;
+}
+
+static bool gmtime_utc(std::uint64_t unix_seconds, tm& out_tm)
+{
+    const std::time_t t = static_cast<std::time_t>(unix_seconds);
+    tm tm{};
+
+#if defined(__unix__) || defined(__APPLE__)
+    if (::gmtime_r(&t, &tm) == nullptr) {
+        return false;
+    }
+#else
+    // Best-effort fallback if gmtime_r is unavailable.
+    tm* p = std::gmtime(&t);
+    if (!p) return false;
+    tm = *p;
+#endif
+
+    out_tm = tm;
+    return true;
+}
+
+bool format_time_utc_iso8601(std::uint64_t unix_seconds, char* out, std::size_t out_len)
+{
+    if (!out || out_len == 0 || unix_seconds == 0) return false;
+    tm tm{};
+    if (!gmtime_utc(unix_seconds, tm)) return false;
+    return ::strftime(out, out_len, "%Y-%m-%dT%H:%M:%SZ", &tm) != 0;
+}
+
+bool format_time_utc_ls(std::uint64_t unix_seconds, char* out, std::size_t out_len)
+{
+    if (!out || out_len == 0 || unix_seconds == 0) return false;
+    tm tm{};
+    if (!gmtime_utc(unix_seconds, tm)) return false;
+    return ::strftime(out, out_len, "%b %e %H:%M", &tm) != 0;
 }
 
 } // namespace fujinet::platform

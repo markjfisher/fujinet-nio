@@ -29,7 +29,7 @@ namespace fujinet::console {
 
 namespace {
 
-static const char* TAG = "console";
+// static const char* TAG = "console";
 
 #if CONFIG_TINYUSB_CDC_ENABLED
 static tinyusb_cdcacm_itf_t to_itf_from_cfg(int idx)

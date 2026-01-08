@@ -2,12 +2,12 @@
 
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
+#include "fujinet/platform/time.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
-#include <ctime>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -362,44 +362,15 @@ bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
     return false;
 }
 
-static std::string fmt_time_utc(std::chrono::system_clock::time_point tp)
-{
-    if (tp == std::chrono::system_clock::time_point{}) {
-        return "-";
-    }
-
-    const std::time_t t = std::chrono::system_clock::to_time_t(tp);
-    std::tm tm{};
-#if defined(_WIN32)
-    gmtime_s(&tm, &t);
-#else
-    gmtime_r(&t, &tm);
-#endif
-
-    char buf[32];
-    if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm) == 0) {
-        return "-";
-    }
-    return std::string(buf);
-}
-
 static std::string fmt_time_ls(std::chrono::system_clock::time_point tp)
 {
     if (tp == std::chrono::system_clock::time_point{}) {
         return "??? ?? ??:??";
     }
 
-    const std::time_t t = std::chrono::system_clock::to_time_t(tp);
-    std::tm tm{};
-#if defined(_WIN32)
-    gmtime_s(&tm, &t);
-#else
-    gmtime_r(&t, &tm);
-#endif
-
     char buf[16];
-    // ls-style: "Jan  7 22:59" (12 chars)
-    if (std::strftime(buf, sizeof(buf), "%b %e %H:%M", &tm) == 0) {
+    const std::uint64_t secs = static_cast<std::uint64_t>(std::chrono::system_clock::to_time_t(tp));
+    if (!fujinet::platform::format_time_utc_ls(secs, buf, sizeof(buf))) {
         return "??? ?? ??:??";
     }
     return std::string(buf);
