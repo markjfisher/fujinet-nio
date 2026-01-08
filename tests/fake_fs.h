@@ -40,7 +40,11 @@ public:
 
     bool seek(std::uint64_t offset) override
     {
-        if (offset > _bytes.size()) return false;
+        if (offset > _bytes.size()) {
+            // Allow sparse seek when writable (mimics stdio behavior).
+            if (_readOnly) return false;
+            _bytes.resize(static_cast<std::size_t>(offset), 0);
+        }
         _pos = static_cast<std::size_t>(offset);
         return true;
     }

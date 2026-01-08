@@ -77,6 +77,7 @@ target_sources(fujinet-nio
         src/lib/diagnostic_network_provider.cpp
         src/lib/diagnostic_registry.cpp
         src/lib/disk/disk_service.cpp
+        src/lib/disk/atr_image.cpp
         src/lib/disk/image_registry.cpp
         src/lib/disk/raw_image.cpp
         src/lib/disk/ssd_image.cpp

@@ -26,6 +26,17 @@ public:
         const MountOptions& opts
     );
 
+    // Create a new image file of a given type/geometry.
+    // This does NOT mount it; call mount() afterwards if desired.
+    DiskResult create_image(
+        const std::string& fsName,
+        const std::string& path,
+        ImageType type,
+        std::uint16_t sectorSize,
+        std::uint32_t sectorCount,
+        bool overwrite
+    );
+
     DiskResult unmount(std::size_t slotIndex);
 
     DiskResult read_sector(std::size_t slotIndex, std::uint32_t lba, std::uint8_t* dst, std::size_t dstBytes);

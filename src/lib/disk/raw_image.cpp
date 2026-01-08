@@ -49,7 +49,7 @@ public:
         if (!_file->seek(off)) return DiskResult{DiskError::IoError};
         const std::size_t got = _file->read(dst, _geo.sectorSize);
         if (got != _geo.sectorSize) return DiskResult{DiskError::IoError};
-        return DiskResult{DiskError::None};
+        return DiskResult{DiskError::None, static_cast<std::uint16_t>(_geo.sectorSize)};
     }
 
     DiskResult write_sector(std::uint32_t lba, const std::uint8_t* src, std::size_t srcBytes) override
@@ -65,7 +65,7 @@ public:
         if (!_file->seek(off)) return DiskResult{DiskError::IoError};
         const std::size_t wrote = _file->write(src, _geo.sectorSize);
         if (wrote != _geo.sectorSize) return DiskResult{DiskError::IoError};
-        return DiskResult{DiskError::None};
+        return DiskResult{DiskError::None, static_cast<std::uint16_t>(_geo.sectorSize)};
     }
 
     DiskResult flush() override

@@ -195,6 +195,30 @@ def cmd_write_sector(args) -> int:
     return 0
 
 
+def cmd_create(args) -> int:
+    req = dp.build_create_req(
+        fs=args.fs,
+        path=args.path,
+        img_type=_type_parse(args.type),
+        sector_size=args.sector_size,
+        sector_count=args.sector_count,
+        overwrite=args.force,
+    )
+
+    pkt = _send_expect(args=args, command=dp.CMD_CREATE, payload=req, cmd_txt="DISK_CREATE")
+    if pkt is None:
+        print("No response", file=sys.stderr)
+        return 2
+    if not status_ok(pkt):
+        st = int(pkt.params[0]) if pkt.params else -1
+        print(f"status={st} ({_status_str(st)})", file=sys.stderr)
+        return 1
+
+    cr = dp.parse_create_resp(pkt.payload)
+    print(f"created=1 type={_type_str(cr.img_type)} sector_size={cr.sector_size} sector_count={cr.sector_count}")
+    return 0
+
+
 def register_subcommands(subparsers) -> None:
     pd = subparsers.add_parser("disk", help="Disk device commands (DiskDevice v1)")
     sd = pd.add_subparsers(dest="disk_cmd", required=True)
@@ -232,5 +256,14 @@ def register_subcommands(subparsers) -> None:
     pw.add_argument("--lba", type=int, required=True)
     pw.add_argument("inp", help="Local input file containing sector bytes")
     pw.set_defaults(fn=cmd_write_sector)
+
+    pc = sd.add_parser("create", help="Create a new disk image file (raw/ssd/atr)")
+    pc.add_argument("--fs", required=True)
+    pc.add_argument("--path", required=True)
+    pc.add_argument("--type", required=True, help="raw|ssd|atr (or auto but will fail)")
+    pc.add_argument("--sector-size", type=int, required=True)
+    pc.add_argument("--sector-count", type=int, required=True)
+    pc.add_argument("--force", action="store_true", help="Overwrite if exists")
+    pc.set_defaults(fn=cmd_create)
 
 

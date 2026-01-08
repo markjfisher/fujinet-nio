@@ -17,11 +17,14 @@ enum class ImageType : std::uint8_t {
 enum class DiskError : std::uint8_t {
     None = 0,
     InvalidSlot,
+    InvalidRequest,
     NoSuchFileSystem,
     FileNotFound,
+    AlreadyExists,
     OpenFailed,
     UnsupportedImageType,
     BadImage,
+    InvalidGeometry,
     NotMounted,
     ReadOnly,
     OutOfRange,
@@ -47,6 +50,8 @@ struct MountOptions {
 
 struct DiskResult {
     DiskError error{DiskError::None};
+    // For read/write operations: bytes transferred (0 for non-data operations).
+    std::uint16_t bytes{0};
     bool ok() const noexcept { return error == DiskError::None; }
 };
 

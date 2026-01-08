@@ -77,7 +77,6 @@ v1 includes (image-format understanding required for sector I/O):
 
 Planned image formats:
 
-- ATR (`.atr`)
 - DSD (`.dsd`)
 
 Autodetect uses file extension (case-insensitive). A host may optionally override type detection.
@@ -135,6 +134,7 @@ Commands are encoded in the low 8 bits of `IORequest.command` (device masks to 8
 | `WriteSector`  | `0x04` | Write one sector by LBA |
 | `Info`         | `0x05` | Query slot status + geometry |
 | `ClearChanged` | `0x06` | Clear the slot “changed” flag |
+| `Create`       | `0x07` | Create a new image file (blank) |
 
 ### Slot numbering
 
@@ -232,6 +232,9 @@ u16 dataLen        // LE
 u8[] data          // length dataLen
 ```
 
+Notes:
+- `dataLen` may be **less than** the maximum sector size for formats with variable sector sizes (e.g. ATR with base sector size 256 has 128-byte sectors for the first three sectors). Hosts should trust `dataLen`.
+
 ### Status codes
 
 - `Ok`
@@ -265,6 +268,9 @@ u8  slot
 u32 lbaEcho        // LE
 u16 writtenLen     // LE (sectorSize)
 ```
+
+Notes:
+- `writtenLen` is the number of bytes written for that sector. For variable-sector formats, this may be 128 or 256 depending on the sector.
 
 ### Status codes
 
@@ -312,6 +318,49 @@ General mapping:
 - Missing/empty slot → `StatusCode::NotReady`
 - Unsupported image type → `StatusCode::Unsupported`
 - Underlying file I/O failure → `StatusCode::IOError`
+
+---
+
+## Command: Create (0x07)
+
+Create a new image file on a named filesystem. This command does **not** mount the created image.
+
+### Request
+
+```
+u8  version
+u8  flags            // bit0 = overwrite
+u8  type             // 1=ATR, 2=SSD, 3=DSD, 4=Raw (0=Auto invalid)
+u16 sectorSize       // LE
+u32 sectorCount      // LE
+u16 fsLen + fs bytes
+u16 pathLen + path bytes
+```
+
+### Response payload (on `Ok`)
+
+```
+u8  version
+u8  flags=0
+u16 reserved=0
+u8  type
+u16 sectorSize
+u32 sectorCount
+```
+
+### Create rules (v1)
+
+- **Raw**:
+  - file size = \(sectorSize * sectorCount\)
+- **SSD**:
+  - `sectorSize` must be 256
+  - `sectorCount` must be 400 or 800
+  - created file is blank (all zeros / sparse)
+- **ATR**:
+  - `sectorSize` must be 128, 256, or 512
+  - a standard 16-byte ATR header is written
+  - when `sectorSize == 256`, the created layout uses the classic ATR convention where the first three sectors are 128 bytes
+
 
 ---
 

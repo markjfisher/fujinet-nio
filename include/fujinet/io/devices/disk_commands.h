@@ -11,6 +11,7 @@ enum class DiskCommand : std::uint8_t {
     WriteSector  = 0x04,
     Info         = 0x05,
     ClearChanged = 0x06,
+    Create       = 0x07,
 };
 
 inline DiskCommand to_disk_command(std::uint16_t raw)

@@ -25,11 +25,14 @@ static StatusCode map_disk_error(DiskError e) noexcept
     switch (e) {
         case DiskError::None:               return StatusCode::Ok;
         case DiskError::InvalidSlot:        return StatusCode::InvalidRequest;
+        case DiskError::InvalidRequest:     return StatusCode::InvalidRequest;
         case DiskError::NoSuchFileSystem:   return StatusCode::InvalidRequest;
         case DiskError::FileNotFound:       return StatusCode::InvalidRequest;
+        case DiskError::AlreadyExists:      return StatusCode::InvalidRequest;
         case DiskError::OpenFailed:         return StatusCode::IOError;
         case DiskError::UnsupportedImageType:return StatusCode::Unsupported;
         case DiskError::BadImage:           return StatusCode::InvalidRequest;
+        case DiskError::InvalidGeometry:    return StatusCode::InvalidRequest;
         case DiskError::NotMounted:         return StatusCode::NotReady;
         case DiskError::ReadOnly:           return StatusCode::InvalidRequest;
         case DiskError::OutOfRange:         return StatusCode::InvalidRequest;
@@ -152,13 +155,17 @@ IOResponse DiskDevice::handle(const IORequest& request)
             if (!info.inserted) return make_base_response(request, StatusCode::NotReady);
             if (info.geometry.sectorSize == 0) return make_base_response(request, StatusCode::InternalError);
 
-            const std::size_t want = info.geometry.sectorSize;
-            std::vector<std::uint8_t> buf(want);
+            const std::size_t maxSector = info.geometry.sectorSize;
+            std::vector<std::uint8_t> buf(maxSector);
             DiskResult dr = _svc.read_sector(idx, lba, buf.data(), buf.size());
             IOResponse resp = make_base_response(request, map_disk_error(dr.error));
             if (resp.status != StatusCode::Ok) return resp;
 
-            std::uint16_t dataLen = static_cast<std::uint16_t>(want);
+            if (dr.bytes == 0) {
+                return make_base_response(request, StatusCode::InternalError);
+            }
+
+            std::uint16_t dataLen = dr.bytes;
             std::uint8_t flags = 0;
             if (maxBytes < dataLen) {
                 dataLen = maxBytes;
@@ -199,7 +206,14 @@ IOResponse DiskDevice::handle(const IORequest& request)
             if (!info.inserted) return make_base_response(request, StatusCode::NotReady);
             if (info.readOnly) return make_base_response(request, StatusCode::InvalidRequest);
             if (info.geometry.sectorSize == 0) return make_base_response(request, StatusCode::InternalError);
-            if (dataLen < info.geometry.sectorSize) return make_base_response(request, StatusCode::InvalidRequest);
+            if (dataLen == 0) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!info.geometry.supportsVariableSectorSize && dataLen < info.geometry.sectorSize) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+            if (dataLen > info.geometry.sectorSize) {
+                // Caller provided more than max sector; reject (keeps behavior predictable).
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
 
             DiskResult dr = _svc.write_sector(idx, lba, bytes, dataLen);
             IOResponse resp = make_base_response(request, map_disk_error(dr.error));
@@ -212,7 +226,7 @@ IOResponse DiskDevice::handle(const IORequest& request)
             diskproto::write_u16le(out, 0);
             diskproto::write_u8(out, slot1);
             diskproto::write_u32le(out, lba);
-            diskproto::write_u16le(out, info.geometry.sectorSize);
+            diskproto::write_u16le(out, dr.bytes ? dr.bytes : info.geometry.sectorSize);
             resp.payload = std::move(out);
             return resp;
         }
@@ -270,6 +284,38 @@ IOResponse DiskDevice::handle(const IORequest& request)
             diskproto::write_u8(out, 0);
             diskproto::write_u16le(out, 0);
             diskproto::write_u8(out, slot1);
+            resp.payload = std::move(out);
+            return resp;
+        }
+
+        case DiskCommand::Create: {
+            std::uint8_t flags = 0, typeRaw = 0;
+            std::uint16_t sectorSize = 0;
+            std::uint32_t sectorCount = 0;
+            std::string_view fsName, path;
+
+            if (!r.read_u8(flags)) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!r.read_u8(typeRaw)) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!r.read_u16le(sectorSize)) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!r.read_u32le(sectorCount)) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!r.read_lp_u16_string(fsName)) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!r.read_lp_u16_string(path)) return make_base_response(request, StatusCode::InvalidRequest);
+
+            const bool overwrite = (flags & 0x01) != 0;
+            const auto type = static_cast<ImageType>(typeRaw);
+
+            DiskResult dr = _svc.create_image(std::string(fsName), std::string(path), type, sectorSize, sectorCount, overwrite);
+            IOResponse resp = make_base_response(request, map_disk_error(dr.error));
+            if (resp.status != StatusCode::Ok) return resp;
+
+            std::vector<std::uint8_t> out;
+            out.reserve(1 + 1 + 2 + 1 + 2 + 4);
+            diskproto::write_u8(out, DISKPROTO_VERSION);
+            diskproto::write_u8(out, 0);
+            diskproto::write_u16le(out, 0);
+            diskproto::write_u8(out, static_cast<std::uint8_t>(type));
+            diskproto::write_u16le(out, sectorSize);
+            diskproto::write_u32le(out, sectorCount);
             resp.payload = std::move(out);
             return resp;
         }

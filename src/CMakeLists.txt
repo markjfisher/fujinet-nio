@@ -16,6 +16,7 @@ idf_component_register(
         lib/diagnostic_network_provider.cpp
         lib/diagnostic_registry.cpp
         lib/disk/disk_service.cpp
+        lib/disk/atr_image.cpp
         lib/disk/image_registry.cpp
         lib/disk/raw_image.cpp
         lib/disk/ssd_image.cpp

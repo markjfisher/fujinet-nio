@@ -282,4 +282,163 @@ TEST_CASE("DiskDevice v1: Mount -> Info -> ReadSector -> WriteSector -> Close")
     }
 }
 
+TEST_CASE("DiskDevice v1: Create raw image then mount and read/write")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    // ---- Create ----
+    {
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 1); // flags: overwrite
+        diskproto::write_u8(p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+        diskproto::write_u16le(p, 256);
+        diskproto::write_u32le(p, 4);
+        diskproto::write_lp_u16_string(p, "mem");
+        diskproto::write_lp_u16_string(p, "/created.img");
+
+        IORequest req{};
+        req.id = 10;
+        req.deviceId = deviceId;
+        req.command = 0x07; // Create
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+    }
+
+    // ---- Mount ----
+    {
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 1); // slot D1
+        diskproto::write_u8(p, 0); // rw
+        diskproto::write_u8(p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+        diskproto::write_u16le(p, 256);
+        diskproto::write_lp_u16_string(p, "mem");
+        diskproto::write_lp_u16_string(p, "/created.img");
+
+        IORequest req{};
+        req.id = 11;
+        req.deviceId = deviceId;
+        req.command = 0x01; // Mount
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+    }
+
+    // ---- WriteSector lba=0 ----
+    {
+        std::vector<std::uint8_t> sec(256, 0);
+        sec[0] = 0xAA;
+        sec[1] = 0x55;
+
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 1);
+        diskproto::write_u32le(p, 0);
+        diskproto::write_u16le(p, static_cast<std::uint16_t>(sec.size()));
+        p.append(reinterpret_cast<const char*>(sec.data()), sec.size());
+
+        IORequest req{};
+        req.id = 12;
+        req.deviceId = deviceId;
+        req.command = 0x04; // WriteSector
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+    }
+
+    // ---- ReadSector lba=0 ----
+    {
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 1);
+        diskproto::write_u32le(p, 0);
+        diskproto::write_u16le(p, 256);
+
+        IORequest req{};
+        req.id = 13;
+        req.deviceId = deviceId;
+        req.command = 0x03; // ReadSector
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+
+        diskproto::Reader r(resp.payload.data(), resp.payload.size());
+        std::uint8_t ver = 0, flags = 0, slot = 0;
+        std::uint16_t reserved = 0, dataLen = 0;
+        std::uint32_t lba = 0;
+        const std::uint8_t* bytes = nullptr;
+
+        REQUIRE(r.read_u8(ver));
+        REQUIRE(r.read_u8(flags));
+        REQUIRE(r.read_u16le(reserved));
+        REQUIRE(r.read_u8(slot));
+        REQUIRE(r.read_u32le(lba));
+        REQUIRE(r.read_u16le(dataLen));
+        REQUIRE(r.read_bytes(bytes, dataLen));
+
+        CHECK(dataLen == 256);
+        CHECK(bytes[0] == 0xAA);
+        CHECK(bytes[1] == 0x55);
+    }
+}
+
+TEST_CASE("AtrDiskImage: 256-byte ATR has 128-byte first three sectors")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+
+    // Create a small ATR: 256-byte logical sectors, 10 sectors total.
+    // (First 3 are 128 bytes by ATR convention)
+    auto cr = svc.create_image("mem", "/t.atr", fujinet::disk::ImageType::Atr, 256, 10, true);
+    REQUIRE(cr.ok());
+
+    fujinet::disk::MountOptions mo{};
+    mo.typeOverride = fujinet::disk::ImageType::Atr;
+    auto mr = svc.mount(0, "mem", "/t.atr", mo);
+    REQUIRE(mr.ok());
+
+    auto info = svc.info(0);
+    CHECK(info.type == fujinet::disk::ImageType::Atr);
+    CHECK(info.geometry.sectorSize == 256);
+    CHECK(info.geometry.sectorCount == 10);
+
+    std::vector<std::uint8_t> buf(256);
+
+    // Write sector 1 (lba=0) with 128 bytes.
+    std::vector<std::uint8_t> s1(128, 0x11);
+    auto wr1 = svc.write_sector(0, 0, s1.data(), s1.size());
+    REQUIRE(wr1.ok());
+    CHECK(wr1.bytes == 128);
+
+    auto rr1 = svc.read_sector(0, 0, buf.data(), buf.size());
+    REQUIRE(rr1.ok());
+    CHECK(rr1.bytes == 128);
+    CHECK(buf[0] == 0x11);
+
+    // Write sector 4 (lba=3) with 256 bytes.
+    std::vector<std::uint8_t> s4(256, 0x22);
+    auto wr4 = svc.write_sector(0, 3, s4.data(), s4.size());
+    REQUIRE(wr4.ok());
+    CHECK(wr4.bytes == 256);
+
+    auto rr4 = svc.read_sector(0, 3, buf.data(), buf.size());
+    REQUIRE(rr4.ok());
+    CHECK(rr4.bytes == 256);
+    CHECK(buf[0] == 0x22);
+}
+
 

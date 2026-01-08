@@ -24,6 +24,7 @@ CMD_READ_SECTOR = 0x03
 CMD_WRITE_SECTOR = 0x04
 CMD_INFO = 0x05
 CMD_CLEAR_CHANGED = 0x06
+CMD_CREATE = 0x07
 
 
 # ImageType (matches C++ disk::ImageType)
@@ -117,6 +118,41 @@ def build_write_sector_req(*, slot: int, lba: int, data: bytes) -> bytes:
     return bytes([DISKPROTO_VERSION, slot & 0xFF]) + u32le(lba) + u16le(len(data)) + data
 
 
+# Create:
+# u8 version
+# u8 flags (bit0=overwrite)
+# u8 type
+# u16 sectorSize
+# u32 sectorCount
+# lp_u16 fs
+# lp_u16 path
+def build_create_req(
+    *,
+    fs: str,
+    path: str,
+    img_type: int,
+    sector_size: int,
+    sector_count: int,
+    overwrite: bool = False,
+) -> bytes:
+    if not (0 <= img_type <= 255):
+        raise ValueError("img_type must fit u8")
+    if not (1 <= sector_size <= 0xFFFF):
+        raise ValueError("sector_size must fit u16 and be >0")
+    if not (1 <= sector_count <= 0xFFFFFFFF):
+        raise ValueError("sector_count must fit u32 and be >0")
+    flags = 0x01 if overwrite else 0x00
+    out = bytearray()
+    out.append(DISKPROTO_VERSION)
+    out.append(flags & 0xFF)
+    out.append(img_type & 0xFF)
+    out += u16le(sector_size)
+    out += u32le(sector_count)
+    out += _lp_u16(fs)
+    out += _lp_u16(path)
+    return bytes(out)
+
+
 # -------- Responses --------
 
 @dataclass
@@ -155,6 +191,13 @@ class WriteSectorResp:
     slot: int
     lba: int
     written_len: int
+
+
+@dataclass
+class CreateResp:
+    img_type: int
+    sector_size: int
+    sector_count: int
 
 
 def parse_mount_resp(payload: bytes) -> MountResp:
@@ -229,5 +272,16 @@ def parse_write_sector_resp(payload: bytes) -> WriteSectorResp:
     lba, off = read_u32le(payload, off)
     written_len, off = read_u16le(payload, off)
     return WriteSectorResp(slot=slot, lba=lba, written_len=written_len)
+
+
+def parse_create_resp(payload: bytes) -> CreateResp:
+    off = 0
+    off = _check_version(payload, off)
+    _flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    img_type, off = read_u8(payload, off)
+    sector_size, off = read_u16le(payload, off)
+    sector_count, off = read_u32le(payload, off)
+    return CreateResp(img_type=img_type, sector_size=sector_size, sector_count=sector_count)
 
 
