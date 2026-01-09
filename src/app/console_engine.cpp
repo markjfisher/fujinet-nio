@@ -516,10 +516,8 @@ bool ConsoleEngine::handle_line(std::string_view line)
             return a.name < b.name;
         });
 
-        std::size_t skipped_unsafe = 0;
         for (const auto& c : cmds) {
             if (!c.safe) {
-                ++skipped_unsafe;
                 continue;
             }
 
@@ -538,11 +536,6 @@ bool ConsoleEngine::handle_line(std::string_view line)
             if (!r.text.empty()) {
                 _io.write_line(r.text);
             }
-        }
-
-        if (skipped_unsafe != 0) {
-            _io.write("skipped_unsafe: ");
-            _io.write_line(std::to_string(skipped_unsafe));
         }
 
         return true;

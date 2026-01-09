@@ -132,7 +132,7 @@ private:
                 text += ":";
                 text += s.path;
             }
-            text += "\n";
+            text += "\r\n";
         }
 
         return DiagResult::ok(text);

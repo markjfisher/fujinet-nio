@@ -66,7 +66,7 @@ private:
         r.text += fujinet::version();
         r.text += "\nprofile: ";
         r.text.append(profile.name.data(), profile.name.size());
-        r.text += "\n";
+        r.text += "\r\n";
 
         return r;
     }
@@ -85,7 +85,7 @@ private:
         r.text += std::to_string(ticks);
         r.text += "\ndevices_registered: ";
         r.text += std::to_string(devs);
-        r.text += "\n";
+        r.text += "\r\n";
 
         return r;
     }

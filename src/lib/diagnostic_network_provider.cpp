@@ -121,7 +121,7 @@ private:
 
         text += "active_sessions: ";
         text += std::to_string(active);
-        text += "\n";
+        text += "\r\n";
 
         for (const auto& r : rows) {
             if (!r.active) continue;
@@ -142,7 +142,7 @@ private:
             text += (r.completed ? "1" : "0");
             text += " url=";
             text += r.url;
-            text += "\n";
+            text += "\r\n";
         }
 
         DiagResult res = DiagResult::ok(text);
@@ -165,7 +165,7 @@ private:
         const std::string_view target = args.argv[1];
         if (target == "all") {
             const std::size_t n = fujinet::io::NetworkDeviceDiagnosticsAccessor::close_all(*net);
-            DiagResult r = DiagResult::ok("closed: " + std::to_string(n) + "\n");
+            DiagResult r = DiagResult::ok("closed: " + std::to_string(n) + "\r\n");
             r.kv.emplace_back("closed", std::to_string(n));
             return r;
         }
@@ -180,7 +180,7 @@ private:
             return DiagResult::error("close failed (invalid handle?)\n");
         }
 
-        DiagResult r = DiagResult::ok("closed: " + hex4(handle) + "\n");
+        DiagResult r = DiagResult::ok("closed: " + hex4(handle) + "\r\n");
         r.kv.emplace_back("closed_handle", hex4(handle));
         return r;
     }
