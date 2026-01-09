@@ -454,4 +454,55 @@ u32 sectorCount
 - DiskDevice: `include/fujinet/io/devices/disk_device.h`, `src/lib/disk_device.cpp`
 - Registration: `src/lib/disk_device_init.cpp` via `core::register_disk_device()`
 
+---
 
+## Example session via python tools
+
+### SSD DFS Catalogue
+
+```shell
+❯ scripts/fujinet -p /dev/pts/7 write --chunk 2048 --mkdirs host /images/ ../../bbc/fn-rom/test.ssd
+
+❯ scripts/fujinet -p /dev/pts/7 disk mount --slot 1 --fs host --path images/test.ssd --ro --type auto
+mounted=1 readonly=1 slot=1 type=ssd sector_size=256 sector_count=800
+
+❯ scripts/fujinet -p /dev/pts/7 bbc dfs info --slot 1
+title=BASIC cycle=0 files=22 boot=exec sectors=800
+
+❯ scripts/fujinet -p /dev/pts/7 bbc dfs cat --slot 1
+Disk: BASIC  Files: 22  Sectors: 800
+$.1CREAT    load=01900 exec=08023 len=00038 start=0002
+$.2WRITE    load=01900 exec=08023 len=00157 start=0003
+$.3TESTWR   load=01900 exec=08023 len=002B5 start=0005
+$.4MULTI    load=01900 exec=08023 len=0050E start=0008
+$.5RAND     load=01900 exec=08023 len=00D01 start=000E
+$.6DELETE   load=01900 exec=08023 len=00850 start=001C
+$.7REUSE    load=01900 exec=08023 len=0035D start=0025
+$.8OSFILE   load=01900 exec=08023 len=0131B start=0029
+$.BASM      load=01900 exec=08023 len=001BA start=003D
+$.BASTST    load=01900 exec=08023 len=001D1 start=003F
+$.BPUTEST   load=01900 exec=08023 len=00700 start=0041
+$.DELETE    load=01900 exec=08023 len=002AE start=0048
+$.FBGET     load=01900 exec=08023 len=006B2 start=004B
+$.FHOST     load=01900 exec=08023 len=011C4 start=0052
+$.FRESET    load=01900 exec=08023 len=00AAB start=0064
+$.FUJIECH   load=01900 exec=08023 len=005E6 start=006F
+$.FUJITST   load=01900 exec=08023 len=0042A start=0075
+$.HELLO     load=00000 exec=00000 len=00002 start=007A
+$.README    load=00000 exec=00000 len=00F81 start=007B
+$.SIMTEST   load=01900 exec=08023 len=00243 start=008B
+$.XFILL1    load=01900 exec=08023 len=004FE start=008E
+$.XFILL2    load=01900 exec=08023 len=004FE start=0093
+
+❯ scripts/fujinet -p /dev/pts/7 bbc dfs read --slot 1 README
+# FujiNet BBC BASIC Test Programs
+
+These programs test serial communication with FujiNet devices via the b2 emulator.
+
+## Programs
+
+### FUJITST.bas
+Simple test that:
+- Configures the ACIA and SERPROC for 19200 baud
+...
+```
