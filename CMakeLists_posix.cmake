@@ -149,6 +149,7 @@ if(FN_BUILD_POSIX_APP)
         PRIVATE
 # __POSIX_APP_SOURCES_START__
             src/app/console_engine.cpp
+            src/app/console_fs_shell.cpp
 # __POSIX_APP_SOURCES_END__
     )
 

@@ -7,6 +7,7 @@ idf_component_register(
     SRCS
 # __TARGET_SOURCES_START__
         app/console_engine.cpp
+        app/console_fs_shell.cpp
         app/main_esp32.cpp
         lib/bootstrap.cpp
         lib/build_profile.cpp
