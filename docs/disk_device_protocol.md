@@ -122,6 +122,70 @@ but that’s different from parsing the on-disk filesystem.
 
 ---
 
+## BBC DFS 0.90 “client emulator” tooling (host-side)
+
+Because DiskDevice is intentionally block-level, FujiNet NIO includes **host-side tooling** that reads sectors via DiskDevice and interprets the on-disk filesystem structures.
+
+For BBC Micro DFS 0.90, the tooling lives in:
+
+- `py/fujinet_tools/bbc.py` (CLI)
+- `py/fujinet_tools/bbc_dfs.py` (DFS 0.90 catalogue parser)
+
+### Commands
+
+- `fujinet ... bbc dfs info --slot N`
+  - reads catalogue sectors (LBA 0 and 1) and prints title/cycle/files/boot/sectors
+- `fujinet ... bbc dfs cat --slot N`
+  - lists catalogue entries (name, load/exec/len/start, locked)
+- `fujinet ... bbc dfs read --slot N D.NAME [--out file]`
+  - reads file data by start sector + length (contiguous sectors)
+
+### DFS 0.90 catalogue layout (2-sector)
+
+The DFS catalogue is held in **two 256-byte sectors**, exposed here as:
+
+- sector 0 → offsets `0x000..0x0FF`
+- sector 1 → offsets `0x100..0x1FF`
+
+#### Catalogue header
+
+- `0x000..0x007`: first 8 bytes of disk title (padded with spaces/NULs)
+- `0x100..0x103`: last 4 bytes of disk title (padded with spaces/NULs)
+- `0x104`: disk cycle number (BCD)
+- `0x105`: (number of catalogue entries) × 8 (offset to end of directory)
+- `0x106` bits:
+  - `b7..b6`: zero
+  - `b5..b4`: !BOOT option (`*OPT 4`)
+  - `b3`: 0=DFS/WDFS, 1=HDFS (if used)
+  - `b2`: total sectors bit 10 (DFS); (number of sides)-1 (HDFS)
+  - `b1..b0`: total sectors bits 9..8
+- `0x107`: total sectors bits 7..0
+
+#### File entries (per entry N)
+
+Each entry is 8 bytes in sector 0 and 8 bytes in sector 1, with:
+
+- sector 0: offset `0x008 + N*8`
+  - `+0..+6`: filename (7 bytes) + attributes (implementation-defined by DFS variant)
+  - `+7`: directory char + locked flag in bit 7
+- sector 1: offset `0x108 + N*8`
+  - `+0..+1`: load address bits 0..15
+  - `+2..+3`: exec address bits 0..15
+  - `+4..+5`: file length bits 0..15
+  - `+6` bits:
+    - `b7..b6`: exec address bits 17..16
+    - `b5..b4`: file length bits 17..16
+    - `b3..b2`: load address bits 17..16
+    - `b1..b0`: start sector bits 9..8
+  - `+7`: start sector bits 7..0
+
+Notes:
+
+- File data is assumed **contiguous** on disk (DFS constraint).
+- These offsets/bit-packings are what `py/fujinet_tools/bbc_dfs.py` implements today.
+
+---
+
 ## DiskDevice: wire IDs and versioning
 
 - **Wire device ID**: `WireDeviceId::DiskService` (`0xFC`)

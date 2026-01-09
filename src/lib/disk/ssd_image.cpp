@@ -101,22 +101,29 @@ DiskResult create_ssd_image_file(fs::IFile& file, std::uint16_t sectorSize, std:
     if (sectorSize != 256) return DiskResult{DiskError::InvalidGeometry};
     if (!(sectorCount == 400 || sectorCount == 800)) return DiskResult{DiskError::InvalidGeometry};
 
-    // Write a minimal DFS "blank" catalog (matches classic firmware behavior):
-    // - sector 0: all zeros
-    // - sector 1: disk title, sector count fields
-    std::uint8_t sec[256]{};
+    // Write a minimal DFS 0.90 catalogue header (2 sectors).
+    // Reference: https://beebwiki.mdfs.net/Acorn_DFS_disc_format
+    //
+    // Sector 0 bytes 0..7: title (first 8 chars), padded with NULs for DFS 0.90.
+    // Sector 1 bytes 0..3: title (last 4 chars)
+    // Sector 1 byte 4: cycle (BCD) - start at 0.
+    // Sector 1 byte 5: file offset = 8 * file_count (0 for blank).
+    // Sector 1 byte 6: bits 0..1 disc size high bits; bits 4..5 boot option (0).
+    // Sector 1 byte 7: disc size low 8 bits.
+    std::uint8_t sec0[256]{};
+    std::uint8_t sec1[256]{};
 
-    // sector 0
-    if (file.write(sec, sizeof(sec)) != sizeof(sec)) return DiskResult{DiskError::IoError};
+    // Title "BLANK" (DFS permits up to 12 chars). We keep it short and NUL padded.
+    std::memcpy(sec0 + 0, "BLANK", 5);
 
-    // sector 1
-    std::memset(sec, 0, sizeof(sec));
-    std::memcpy(sec, "BLANK   ", 8); // Disk title (8 bytes)
-    sec[0xF6] = 0; // No files * 8
-    sec[0xF7] = 0; // Boot option
-    sec[0xF8] = static_cast<std::uint8_t>(sectorCount & 0xFF);
-    sec[0xF9] = static_cast<std::uint8_t>((sectorCount >> 8) & 0xFF);
-    if (file.write(sec, sizeof(sec)) != sizeof(sec)) return DiskResult{DiskError::IoError};
+    // cycle=0, file_count=0 => file offset=0 already.
+    // boot option=0 (none)
+    const std::uint8_t disc_hi = static_cast<std::uint8_t>((sectorCount >> 8) & 0x03);
+    sec1[6] = disc_hi; // other bits clear
+    sec1[7] = static_cast<std::uint8_t>(sectorCount & 0xFF);
+
+    if (file.write(sec0, sizeof(sec0)) != sizeof(sec0)) return DiskResult{DiskError::IoError};
+    if (file.write(sec1, sizeof(sec1)) != sizeof(sec1)) return DiskResult{DiskError::IoError};
 
     // Ensure final file size (sparse-extend).
     const std::uint64_t total = 256ull * sectorCount;

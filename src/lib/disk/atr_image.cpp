@@ -6,7 +6,7 @@
 namespace fujinet::disk {
 
 namespace {
-static constexpr std::uint16_t ATR_MAGIC = 0x0296;
+static constexpr std::uint16_t ATR_MAGIC = 0x0296; // Sum of bytes in "NICKATARI" from name of author Nick Kennedy
 static constexpr std::uint64_t ATR_HEADER_BYTES = 16;
 
 static std::uint16_t u16le(const std::uint8_t* p) noexcept
