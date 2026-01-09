@@ -11,6 +11,7 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <termios.h>
 #include <unistd.h>
 
 #if defined(__linux__)
@@ -44,6 +45,26 @@ public:
             ::close(_masterFd);
             _masterFd = -1;
         }
+    }
+
+    bool is_connected() const override
+    {
+        if (_masterFd < 0) return false;
+
+        struct pollfd pfd;
+        pfd.fd = _masterFd;
+        pfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+        pfd.revents = 0;
+
+        const int ret = ::poll(&pfd, 1, 0);
+        if (ret < 0) {
+            return false;
+        }
+        // When no slave is connected, PTY master commonly reports HUP/NVAL.
+        if ((pfd.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0) {
+            return false;
+        }
+        return true;
     }
 
     bool read_byte(std::uint8_t& out, int timeout_ms) override
@@ -144,6 +165,22 @@ std::unique_ptr<IConsoleTransport> create_console_transport_pty()
     if (::openpty(&masterFd, &slaveFd, slaveName, nullptr, nullptr) != 0) {
         std::perror("openpty(console)");
         return nullptr;
+    }
+
+    // Configure the slave side to avoid kernel line editing/echo.
+    // The ConsoleEngine does its own line editing and echo; we want raw bytes.
+    {
+        termios tio{};
+        if (::tcgetattr(slaveFd, &tio) == 0) {
+            ::cfmakeraw(&tio);
+            // Be explicit: no echo, no canonical mode.
+            tio.c_lflag &= static_cast<unsigned>(~(ECHO | ECHONL | ICANON | ISIG | IEXTEN));
+            tio.c_iflag &= static_cast<unsigned>(~(IXON | IXOFF | ICRNL | INLCR | IGNCR));
+            tio.c_oflag &= static_cast<unsigned>(~(OPOST));
+            (void)::tcsetattr(slaveFd, TCSANOW, &tio);
+        }
+        // Drop any pending input (paranoia: avoids stray bytes on first connect).
+        (void)::tcflush(slaveFd, TCIFLUSH);
     }
 
     ::close(slaveFd);

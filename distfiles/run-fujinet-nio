@@ -1,0 +1,16 @@
+#!/bin/sh
+
+echo "Starting fujinet-nio"
+./fujinet-nio "$@"
+rc=$?
+
+# from sysexits.h:
+# #define EX_TEMPFAIL     75      /* temp failure; user is invited to retry */
+while [ $rc -eq 75 ]; do
+    echo "Restarting fujinet-nio (rc=75)"
+    ./fujinet-nio "$@"
+    rc=$?
+done
+
+echo "fujinet-nio ended with exit code $rc"
+

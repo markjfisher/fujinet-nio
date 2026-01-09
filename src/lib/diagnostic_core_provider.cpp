@@ -64,7 +64,7 @@ private:
         r.text.reserve(128);
         r.text += "version: ";
         r.text += fujinet::version();
-        r.text += "\nprofile: ";
+        r.text += "\r\nprofile: ";
         r.text.append(profile.name.data(), profile.name.size());
         r.text += "\r\n";
 
@@ -83,7 +83,7 @@ private:
         r.text.reserve(128);
         r.text += "tick_count: ";
         r.text += std::to_string(ticks);
-        r.text += "\ndevices_registered: ";
+        r.text += "\r\ndevices_registered: ";
         r.text += std::to_string(devs);
         r.text += "\r\n";
 

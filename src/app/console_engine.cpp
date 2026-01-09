@@ -1,5 +1,7 @@
 #include "fujinet/console/console_engine.h"
 
+#include "fujinet/console/console_commands.h"
+#include "fujinet/console/console_parse.h"
 #include "fujinet/console/fs_shell.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
@@ -17,33 +19,6 @@ namespace fujinet::console {
 
 namespace {
 
-static std::string_view trim(std::string_view s)
-{
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
-        s.remove_prefix(1);
-    }
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
-        s.remove_suffix(1);
-    }
-    return s;
-}
-
-static std::vector<std::string_view> split_ws(std::string_view s)
-{
-    std::vector<std::string_view> out;
-    s = trim(s);
-    while (!s.empty()) {
-        std::size_t i = 0;
-        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) {
-            ++i;
-        }
-        out.push_back(s.substr(0, i));
-        s.remove_prefix(i);
-        s = trim(s);
-    }
-    return out;
-}
-
 static const char* status_to_str(diag::DiagStatus st)
 {
     using diag::DiagStatus;
@@ -58,18 +33,145 @@ static const char* status_to_str(diag::DiagStatus st)
     return "unknown";
 }
 
+static void print_diagnostic_help(diag::DiagnosticRegistry& reg, IConsoleTransport& io)
+{
+    std::vector<diag::DiagCommandSpec> cmds;
+    reg.list_all_commands(cmds);
+
+    io.write_line("");
+    io.write_line("diagnostics:");
+
+    if (cmds.empty()) {
+        io.write_line("  (no diagnostics registered)");
+        return;
+    }
+
+    std::sort(cmds.begin(), cmds.end(), [](const auto& a, const auto& b) {
+        return a.name < b.name;
+    });
+
+    auto provider_of = [](std::string_view full) -> std::string_view {
+        const std::size_t dot = full.find('.');
+        if (dot == std::string_view::npos || dot == 0) return "misc";
+        return full.substr(0, dot);
+    };
+
+    std::string_view cur;
+    for (const auto& c : cmds) {
+        const std::string_view prov = provider_of(c.name);
+        if (prov != cur) {
+            cur = prov;
+            io.write_line("");
+            io.write("  [");
+            io.write(cur);
+            io.write_line("]");
+        }
+        io.write("    ");
+        io.write(c.name);
+        if (!c.summary.empty()) {
+            io.write(" - ");
+            io.write(c.summary);
+        }
+        io.write_line("");
+    }
+}
+
 } // namespace
 
 ConsoleEngine::ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io)
     : _registry(registry)
     , _io(io)
-{}
+{
+    _cmds = std::make_unique<ConsoleCommandRegistry>();
+
+    // Core console commands
+    (void)_cmds->register_command(ConsoleCommandSpec{
+        .name = "help",
+        .summary = "show this help",
+        .usage = "help",
+    }, [this](const auto&) {
+        _cmds->print_help(_io);
+        print_diagnostic_help(_registry, _io);
+        return true;
+    });
+
+    (void)_cmds->register_command(ConsoleCommandSpec{
+        .name = "kill",
+        .summary = "terminate fujinet-nio (stops the process)",
+        .usage = "kill",
+    }, [this](const auto&) {
+        _io.write_line("warning: stopping fujinet-nio");
+        return false;
+    });
+
+    (void)_cmds->register_command(ConsoleCommandSpec{
+        .name = "reboot",
+        .summary = "reboot/reset via platform hook (if supported)",
+        .usage = "reboot",
+    }, [this](const auto&) {
+        if (_reboot) {
+            _io.write_line("reboot: requested");
+            _reboot();
+        } else {
+            _io.write_line("error: reboot not supported on this platform/app");
+        }
+        return true;
+    });
+
+    // Start "disconnected" so the first observed connected state prints MOTD/prompt.
+    _last_connected = false;
+}
 
 ConsoleEngine::ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io, fujinet::fs::StorageManager& storage)
     : _registry(registry)
     , _io(io)
     , _storage(&storage)
-{}
+{
+    _cmds = std::make_unique<ConsoleCommandRegistry>();
+
+    // Core console commands
+    (void)_cmds->register_command(ConsoleCommandSpec{
+        .name = "help",
+        .summary = "show this help",
+        .usage = "help",
+    }, [this](const auto&) {
+        _cmds->print_help(_io);
+        print_diagnostic_help(_registry, _io);
+        return true;
+    });
+
+    (void)_cmds->register_command(ConsoleCommandSpec{
+        .name = "kill",
+        .summary = "terminate fujinet-nio (stops the process)",
+        .usage = "kill",
+    }, [this](const auto&) {
+        _io.write_line("warning: stopping fujinet-nio");
+        return false;
+    });
+
+    (void)_cmds->register_command(ConsoleCommandSpec{
+        .name = "reboot",
+        .summary = "reboot/reset via platform hook (if supported)",
+        .usage = "reboot",
+    }, [this](const auto&) {
+        if (_reboot) {
+            _io.write_line("reboot: requested");
+            _reboot();
+        } else {
+            _io.write_line("error: reboot not supported on this platform/app");
+        }
+        return true;
+    });
+
+    // FS shell helper
+    _fs_shell = std::make_unique<FsShell>(storage);
+    (void)_fs_shell->register_commands(*_cmds, _io);
+
+    // Start "disconnected" so the first observed connected state prints MOTD/prompt.
+    _last_connected = false;
+}
+
+ConsoleEngine::~ConsoleEngine() = default;
 
 void ConsoleEngine::run_loop()
 {
@@ -80,6 +182,23 @@ void ConsoleEngine::run_loop()
 
 bool ConsoleEngine::step(int timeout_ms)
 {
+    const bool connected = _io.is_connected();
+    if (connected && !_last_connected) {
+        // New connection: print MOTD + prompt.
+        _io.write_line("fujinet-nio diagnostic console (type: help)");
+        _edit_rendered = false;
+        // Render initial prompt without ANSI clears (matches read_line_edit first render behavior).
+        _io.write(_prompt);
+        _io.write(_edit);
+        _edit_rendered = true;
+    }
+    if (!connected) {
+        // While disconnected, avoid emitting prompts (they'll just be lost).
+        _last_connected = connected;
+        return true;
+    }
+    _last_connected = connected;
+
     std::string line;
     if (!read_line_edit(line, timeout_ms)) {
         return true; // no input / timeout
@@ -179,7 +298,7 @@ bool ConsoleEngine::read_line_edit(std::string& out_line, int timeout_ms)
     auto commit_line = [&]() {
         _io.write("\r\n");
         out_line = _edit;
-        out_line = std::string(trim(out_line));
+        out_line = std::string(trim_ws(out_line));
 
         if (!out_line.empty()) {
             if (_history.empty() || _history.back() != out_line) {
@@ -433,7 +552,7 @@ static std::string pad_left(std::string_view s, std::size_t width)
 
 bool ConsoleEngine::handle_line(std::string_view line)
 {
-    line = trim(line);
+    line = trim_ws(line);
     if (line.empty()) {
         return true;
     }
@@ -449,96 +568,15 @@ bool ConsoleEngine::handle_line(std::string_view line)
     }
 
     const std::string_view cmd0 = argv[0];
-    if (cmd0 == "exit" || cmd0 == "quit") {
-        _io.write_line("bye");
-        return false;
-    }
-
-    if (cmd0 == "help") {
-        _io.write_line("commands:");
-        _io.write_line("  help");
-        _io.write_line("  exit | quit");
-        _io.write_line("  list                  (list diagnostic commands)");
-        _io.write_line("  dump                  (run all diagnostic commands)");
-        _io.write_line("  fs                    (list mounted filesystems)");
-        _io.write_line("  pwd                   (show current filesystem path)");
-        _io.write_line("  cd <fs:/>|<path>      (change directory; use fs:/ to select filesystem)");
-        _io.write_line("  ls [<fs:/>|<path>]    (list directory)");
-        _io.write_line("  mkdir <path>");
-        _io.write_line("  rmdir <path>");
-        _io.write_line("  mv <from> <to>");
-        _io.write_line("  <provider> <command> [args...]");
-        _io.write_line("  <provider>.<command> [args...]");
-        return true;
-    }
-
-    // ---------------------------------------------------------------------
-    // Filesystem shell commands (optional; requires StorageManager)
-    // ---------------------------------------------------------------------
-    if (cmd0 == "fs" || cmd0 == "pwd" || cmd0 == "cd" ||
-        cmd0 == "ls" || cmd0 == "mkdir" || cmd0 == "rmdir" ||
-        cmd0 == "mv") {
-        if (!_storage) {
-            _io.write_line("error: filesystem support not wired");
-            return true;
-        }
-        return FsShell::handle(*_storage, _io, argv, _cwd_fs, _cwd_path);
-    }
-
-    // Shorthand: list commands without needing "diag".
-    if (cmd0 == "list") {
-        std::vector<diag::DiagCommandSpec> cmds;
-        _registry.list_all_commands(cmds);
-        std::sort(cmds.begin(), cmds.end(), [](const auto& a, const auto& b) {
-            return a.name < b.name;
-        });
-
-        if (cmds.empty()) {
-            _io.write_line("(no diagnostics registered)");
-            return true;
-        }
-
-        for (const auto& c : cmds) {
-            _io.write(c.name);
-            if (!c.summary.empty()) {
-                _io.write(" - ");
-                _io.write(c.summary);
+    // Try console-registered commands first.
+    if (_cmds) {
+        const auto r = _cmds->dispatch(argv);
+        if (r.has_value()) {
+            if (!r.value()) {
+                _io.write_line("bye");
             }
-            _io.write_line("");
+            return r.value();
         }
-        return true;
-    }
-
-    if (cmd0 == "dump") {
-        std::vector<diag::DiagCommandSpec> cmds;
-        _registry.list_all_commands(cmds);
-        std::sort(cmds.begin(), cmds.end(), [](const auto& a, const auto& b) {
-            return a.name < b.name;
-        });
-
-        for (const auto& c : cmds) {
-            if (!c.safe) {
-                continue;
-            }
-
-            diag::DiagArgsView av;
-            av.line = c.name;
-            av.argv.push_back(av.line);
-
-            diag::DiagResult r = _registry.dispatch(av);
-
-            _io.write("== ");
-            _io.write(c.name);
-            _io.write(" (");
-            _io.write(status_to_str(r.status));
-            _io.write_line(") ==");
-
-            if (!r.text.empty()) {
-                _io.write_line(r.text);
-            }
-        }
-
-        return true;
     }
 
     // Default: dispatch as a diagnostic command:

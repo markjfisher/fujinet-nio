@@ -4,6 +4,7 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_event.h"
+#include "esp_system.h" // esp_restart
 
 
 extern "C" {
@@ -110,6 +111,9 @@ extern "C" void fujinet_core_task(void* arg)
     consoleTransport = fujinet::console::create_default_console_transport();
     if (consoleTransport) {
         console = std::make_unique<fujinet::console::ConsoleEngine>(diagRegistry, *consoleTransport, core.storageManager());
+        console->set_reboot_handler([]{
+            esp_restart();
+        });
         console_running = true;
         consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
     }

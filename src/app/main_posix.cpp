@@ -4,6 +4,10 @@
 #include <string_view>
 #include <memory>
 #include <thread>
+#include <atomic>
+#if __has_include(<sysexits.h>)
+#include <sysexits.h> // EX_TEMPFAIL=75
+#endif
 
 #include "fujinet/build/profile.h"
 #include "fujinet/console/console_engine.h"
@@ -68,7 +72,7 @@ int main()
 
     auto consoleTransport = fujinet::console::create_default_console_transport();
     fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport, core.storageManager());
-    consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
+    // Note: for PTY transports, ConsoleEngine prints MOTD/prompt on connect so first-time connects see it.
 
     // POSIX: assume network is available; publish a synthetic GotIp for services.
     {
@@ -100,13 +104,24 @@ int main()
         FN_LOGI(TAG, "Host filesystem registered as 'host'");
     }
 
-    // Reset hook — version 1: just log; later we can add restart loop.
+    // Reset hook:
+    // - ESP32: typically restarts the MCU
+    // - POSIX: we request a controlled restart/exit of the process (supervisor/script can re-launch)
+    std::atomic_bool reboot_requested{false};
+
     fujinet::platform::FujiDeviceHooks hooks{
         .onReset = []{
-            FN_LOGI(TAG, "[FujiDevice] Reset requested (POSIX)");
-            // TODO: set a restart flag or similar
+            // Placeholder overwritten below.
         }
     };
+
+    hooks.onReset = [&]{
+        FN_LOGI(TAG, "[FujiDevice] Reset requested (POSIX)");
+        reboot_requested.store(true);
+    };
+
+    // Wire reboot command from console to the same reset hook used by FujiDevice.
+    console.set_reboot_handler(hooks.onReset);
 
     // Keep a non-owning pointer so we can call start() after the unique_ptr is moved.
     // DeviceManager owns the FujiDevice for the remainder of the process lifetime.
@@ -160,6 +175,17 @@ int main()
         });
 
         running = console.step(0);
+        if (reboot_requested.load()) {
+            // Return a conventional "retry me" code so a wrapper/supervisor can relaunch.
+            // Mirrors old FujiNet run scripts and sysexits.h.
+#ifdef EX_TEMPFAIL
+            FN_LOGI(TAG, "Reboot requested; exiting process with EX_TEMPFAIL=%d (POSIX)", EX_TEMPFAIL);
+            return EX_TEMPFAIL;
+#else
+            FN_LOGI(TAG, "Reboot requested; exiting process with code 75 (POSIX)");
+            return 75;
+#endif
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 

@@ -3,6 +3,7 @@
 #include "fujinet/diag/diagnostic_registry.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -14,9 +15,16 @@ class StorageManager;
 
 namespace fujinet::console {
 
+class ConsoleCommandRegistry;
+class FsShell;
+
 class IConsoleTransport {
 public:
     virtual ~IConsoleTransport() = default;
+
+    // Optional: for transports that can detect attach/detach (e.g. PTY).
+    // Default assumes "always connected".
+    virtual bool is_connected() const { return true; }
 
     // Reads a single input byte.
     // Returns false on timeout (and implementations may also return false when input is unavailable).
@@ -60,6 +68,10 @@ class ConsoleEngine {
 public:
     ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io);
     ConsoleEngine(diag::DiagnosticRegistry& registry, IConsoleTransport& io, fujinet::fs::StorageManager& storage);
+    ~ConsoleEngine();
+
+    // Optional: provide a platform/app-specific reboot handler (e.g. esp_restart on ESP32).
+    void set_reboot_handler(std::function<void()> fn) { _reboot = std::move(fn); }
 
     // Blocking loop (best for dedicated thread/task).
     void run_loop();
@@ -83,11 +95,13 @@ private:
     IConsoleTransport& _io;
     fujinet::fs::StorageManager* _storage{nullptr};
 
+    std::unique_ptr<ConsoleCommandRegistry> _cmds;
+    std::unique_ptr<FsShell> _fs_shell;
+    std::function<void()> _reboot;
+
     std::string _prompt{"> "};
     bool _edit_rendered{false};
-
-    std::string _cwd_fs;
-    std::string _cwd_path{"/"};
+    bool _last_connected{true};
 
     std::string _edit;
     std::size_t _cursor{0};

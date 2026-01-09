@@ -1,5 +1,6 @@
 #include "fujinet/console/fs_shell.h"
 
+#include "fujinet/console/console_commands.h"
 #include "fujinet/console/console_engine.h" // IConsoleTransport
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
@@ -16,6 +17,64 @@
 namespace fujinet::console {
 
 namespace {
+
+static bool has_wildcard(std::string_view s)
+{
+    return s.find('*') != std::string_view::npos || s.find('?') != std::string_view::npos;
+}
+
+static bool glob_match(std::string_view pat, std::string_view s)
+{
+    // Very small glob: '*' matches any sequence, '?' matches one char.
+    // No character classes/escapes.
+    std::size_t pi = 0, si = 0;
+    std::size_t star = std::string_view::npos;
+    std::size_t star_si = 0;
+
+    while (si < s.size()) {
+        if (pi < pat.size() && (pat[pi] == '?' || pat[pi] == s[si])) {
+            ++pi;
+            ++si;
+            continue;
+        }
+        if (pi < pat.size() && pat[pi] == '*') {
+            star = pi++;
+            star_si = si;
+            continue;
+        }
+        if (star != std::string_view::npos) {
+            pi = star + 1;
+            ++star_si;
+            si = star_si;
+            continue;
+        }
+        return false;
+    }
+
+    while (pi < pat.size() && pat[pi] == '*') ++pi;
+    return pi == pat.size();
+}
+
+static std::string parent_path(std::string_view abs)
+{
+    if (abs.empty() || abs == "/") return "/";
+    std::string_view s = abs;
+    while (s.size() > 1 && s.back() == '/') s.remove_suffix(1);
+    const std::size_t slash = s.find_last_of('/');
+    if (slash == std::string_view::npos || slash == 0) return "/";
+    return std::string(s.substr(0, slash));
+}
+
+static std::string leaf_name(std::string_view abs)
+{
+    if (abs.empty() || abs == "/") return "";
+    std::string_view s = abs;
+    while (s.size() > 1 && s.back() == '/') s.remove_suffix(1);
+    const std::size_t slash = s.find_last_of('/');
+    if (slash == std::string_view::npos) return std::string(s);
+    if (slash + 1 >= s.size()) return "";
+    return std::string(s.substr(slash + 1));
+}
 
 static std::string fmt_time_ls(std::chrono::system_clock::time_point tp)
 {
@@ -181,207 +240,462 @@ static bool parse_fs_path(
     return true;
 }
 
-} // namespace
+struct RmFlags {
+    bool force{false};     // -f
+    bool recursive{false}; // -r
+};
 
-bool FsShell::handle(
-    fujinet::fs::StorageManager& storage,
-    IConsoleTransport& io,
-    const std::vector<std::string_view>& argv,
-    std::string& cwd_fs,
-    std::string& cwd_path
-)
+static void parse_rm_flags(const std::vector<std::string_view>& argv, std::size_t& idx, RmFlags& out)
 {
-    if (argv.empty()) return false;
-    const std::string_view cmd0 = argv[0];
-
-    if (cmd0 == "fs") {
-        auto names = storage.listNames();
-        std::sort(names.begin(), names.end());
-        if (names.empty()) {
-            io.write_line("(no filesystems registered)");
-            return true;
+    // Accept -f, -r, -rf, -fr (repeated).
+    while (idx < argv.size()) {
+        const std::string_view a = argv[idx];
+        if (a.size() < 2 || a[0] != '-') break;
+        if (a == "--") { ++idx; break; }
+        bool any = false;
+        for (std::size_t i = 1; i < a.size(); ++i) {
+            if (a[i] == 'f') { out.force = true; any = true; }
+            else if (a[i] == 'r') { out.recursive = true; any = true; }
+            else { any = false; break; }
         }
-        for (const auto& n : names) {
-            io.write_line(n);
-        }
-        return true;
+        if (!any) break;
+        ++idx;
     }
+}
 
-    if (cmd0 == "pwd") {
-        if (cwd_fs.empty()) {
-            io.write_line("(no filesystem selected)");
-            return true;
-        }
-        io.write(cwd_fs);
-        io.write(":");
-        io.write_line(cwd_path);
-        return true;
-    }
-
-    if (cmd0 == "cd") {
-        if (argv.size() < 2) {
-            // keep it friendly
-            std::vector<std::string_view> tmp;
-            tmp.push_back("pwd");
-            return handle(storage, io, tmp, cwd_fs, cwd_path);
-        }
-
-        FsPath target;
-        if (!parse_fs_path(argv[1], cwd_fs, cwd_path, target)) {
-            io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
-            return true;
-        }
-
-        auto* fs = storage.get(target.fs);
-        if (!fs) {
-            io.write_line("error: unknown filesystem");
-            return true;
-        }
-        if (!fs->exists(target.path) || !fs->isDirectory(target.path)) {
-            io.write_line("error: not a directory");
-            return true;
-        }
-
-        cwd_fs = target.fs;
-        cwd_path = target.path;
-        return true;
-    }
-
-    if (cmd0 == "mkdir" || cmd0 == "rmdir" || cmd0 == "ls") {
-        FsPath target;
-        if (argv.size() >= 2) {
-            if (!parse_fs_path(argv[1], cwd_fs, cwd_path, target)) {
-                io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
-                return true;
-            }
-        } else {
-            if (cwd_fs.empty()) {
-                io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
-                return true;
-            }
-            target.fs = cwd_fs;
-            target.path = cwd_path;
-        }
-
-        auto* fs = storage.get(target.fs);
-        if (!fs) {
-            io.write_line("error: unknown filesystem");
-            return true;
-        }
-
-        if (cmd0 == "mkdir") {
-            if (!fs->createDirectory(target.path)) {
-                io.write_line("error: mkdir failed");
-            }
-            return true;
-        }
-        if (cmd0 == "rmdir") {
-            if (!fs->removeDirectory(target.path)) {
-                io.write_line("error: rmdir failed");
-            }
-            return true;
-        }
-
-        // ls
-        if (!fs->exists(target.path)) {
+static bool delete_tree(
+    fujinet::fs::IFileSystem& fs,
+    const std::string& absPath,
+    const RmFlags& flags,
+    bool require_dir_for_rmdir,
+    IConsoleTransport& io)
+{
+    fujinet::fs::FileInfo st{};
+    if (!fs.stat(absPath, st)) {
+        if (!flags.force) {
             io.write_line("error: not found");
-            return true;
         }
+        return flags.force;
+    }
 
-        fujinet::fs::FileInfo st;
-        if (!fs->stat(target.path, st)) {
-            io.write_line("error: stat failed");
-            return true;
-        }
-
-        if (!st.isDirectory) {
-            io.write(target.fs);
-            io.write(":");
-            io.write_line(target.path);
-            const char type = st.isDirectory ? 'd' : 'f';
-            const std::string sz = fmt_size(st.sizeBytes);
-            const std::string dt = fmt_time_ls(st.modifiedTime);
-            io.write(std::string_view(&type, 1));
-            io.write(" ");
-            io.write(pad_left(sz, 8));
-            io.write(" ");
-            io.write(dt);
-            io.write(" ");
-            io.write_line(st.path);
-            return true;
+    if (st.isDirectory) {
+        if (!flags.recursive) {
+            io.write_line("error: is a directory (use -r)");
+            return false;
         }
 
         std::vector<fujinet::fs::FileInfo> entries;
-        if (!fs->listDirectory(target.path, entries)) {
-            io.write_line("error: ls failed");
-            return true;
+        if (!fs.listDirectory(absPath, entries)) {
+            if (!flags.force) io.write_line("error: ls failed");
+            return flags.force;
         }
-
-        // Deterministic ordering: dirs first, then by path.
-        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
-            if (a.isDirectory != b.isDirectory) return a.isDirectory > b.isDirectory;
-            return a.path < b.path;
-        });
-
-        io.write(target.fs);
-        io.write(":");
-        io.write(target.path);
-        io.write(" (count=");
-        io.write(std::to_string(entries.size()));
-        io.write_line(")");
-
-        auto leaf_name = [&](const std::string& p) -> std::string_view {
-            const std::size_t slash = p.find_last_of('/');
-            if (slash == std::string::npos) return p;
-            return std::string_view(p).substr(slash + 1);
-        };
 
         for (const auto& e : entries) {
-            const char type = e.isDirectory ? 'd' : 'f';
-            const std::string sz = fmt_size(e.sizeBytes);
-            const std::string dt = fmt_time_ls(e.modifiedTime);
-            io.write(std::string_view(&type, 1));
-            io.write(" ");
-            io.write(pad_left(sz, 8));
-            io.write(" ");
-            io.write(dt);
-            io.write(" ");
-            io.write_line(leaf_name(e.path));
+            // Entries are absolute paths already.
+            if (!delete_tree(fs, e.path, flags, false, io)) {
+                if (!flags.force) return false;
+            }
         }
 
+        // Finally remove directory itself.
+        if (!fs.removeDirectory(absPath)) {
+            if (!flags.force) io.write_line("error: rmdir failed");
+            return flags.force;
+        }
         return true;
     }
 
-    if (cmd0 == "mv") {
-        if (argv.size() < 3) {
-            io.write_line("error: usage: mv <from> <to>");
+    if (require_dir_for_rmdir) {
+        io.write_line("error: not a directory");
+        return false;
+    }
+
+    if (!fs.removeFile(absPath)) {
+        if (!flags.force) io.write_line("error: rm failed");
+        return flags.force;
+    }
+    return true;
+}
+
+static void fs_resolve_target(
+    const std::vector<std::string_view>& argv,
+    std::string_view cwd_fs,
+    std::string_view cwd_path,
+    FsPath& out,
+    bool& ok
+)
+{
+    ok = false;
+    if (argv.size() >= 2) {
+        ok = parse_fs_path(argv[1], cwd_fs, cwd_path, out);
+        return;
+    }
+    if (cwd_fs.empty()) {
+        return;
+    }
+    out.fs = std::string(cwd_fs);
+    out.path = std::string(cwd_path);
+    ok = true;
+}
+
+} // namespace
+
+bool FsShell::register_commands(ConsoleCommandRegistry& reg, IConsoleTransport& io)
+{
+    bool ok = true;
+    ok &= reg.register_command(ConsoleCommandSpec{"fs", "list mounted filesystems", "fs"}, [&](const auto& argv) {
+        return this->cmd_fs(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"pwd", "show current filesystem path", "pwd"}, [&](const auto& argv) {
+        return this->cmd_pwd(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"cd", "change directory; use fs:/ to select filesystem", "cd <fs:/>|<path>"}, [&](const auto& argv) {
+        return this->cmd_cd(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"ls", "list directory (or stat file)", "ls [<fs:/>|<path>]"}, [&](const auto& argv) {
+        return this->cmd_ls(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"mkdir", "create directory", "mkdir <path>"}, [&](const auto& argv) {
+        return this->cmd_mkdir(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"rm", "remove file(s)", "rm [-f] [-r] <path...>"}, [&](const auto& argv) {
+        return this->cmd_rm(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"rmdir", "remove directory", "rmdir [-f] [-r] <path>"}, [&](const auto& argv) {
+        return this->cmd_rmdir(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"mv", "rename within a filesystem", "mv <from> <to>"}, [&](const auto& argv) {
+        return this->cmd_mv(io, argv);
+    });
+    if (!ok) {
+        io.write_line("error: FsShell failed to register one or more commands (name collision?)");
+    }
+    return ok;
+}
+
+bool FsShell::cmd_fs(IConsoleTransport& io, const std::vector<std::string_view>& /*argv*/)
+{
+    auto names = _storage.listNames();
+    std::sort(names.begin(), names.end());
+    if (names.empty()) {
+        io.write_line("(no filesystems registered)");
+        return true;
+    }
+    for (const auto& n : names) {
+        io.write_line(n);
+    }
+    return true;
+}
+
+bool FsShell::cmd_pwd(IConsoleTransport& io, const std::vector<std::string_view>& /*argv*/)
+{
+    if (_cwd_fs.empty()) {
+        io.write_line("(no filesystem selected)");
+        return true;
+    }
+    io.write(_cwd_fs);
+    io.write(":");
+    io.write_line(_cwd_path);
+    return true;
+}
+
+bool FsShell::cmd_cd(IConsoleTransport& io, const std::vector<std::string_view>& argv)
+{
+    if (argv.size() < 2) {
+        return cmd_pwd(io, argv);
+    }
+
+    FsPath target;
+    if (!parse_fs_path(argv[1], _cwd_fs, _cwd_path, target)) {
+        io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+        return true;
+    }
+
+    auto* fs = _storage.get(target.fs);
+    if (!fs) {
+        io.write_line("error: unknown filesystem");
+        return true;
+    }
+    if (!fs->exists(target.path) || !fs->isDirectory(target.path)) {
+        io.write_line("error: not a directory");
+        return true;
+    }
+
+    _cwd_fs = target.fs;
+    _cwd_path = target.path;
+    return true;
+}
+
+bool FsShell::cmd_ls(IConsoleTransport& io, const std::vector<std::string_view>& argv)
+{
+    FsPath target;
+    bool ok = false;
+    fs_resolve_target(argv, _cwd_fs, _cwd_path, target, ok);
+    if (!ok) {
+        io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+        return true;
+    }
+
+    auto* fs = _storage.get(target.fs);
+    if (!fs) {
+        io.write_line("error: unknown filesystem");
+        return true;
+    }
+
+    // Wildcard support: if the last path component contains '*' or '?', list the parent and filter.
+    std::string filter_pat;
+    if (has_wildcard(target.path)) {
+        filter_pat = leaf_name(target.path);
+        target.path = parent_path(target.path);
+        if (filter_pat.empty()) {
+            io.write_line("error: bad pattern");
             return true;
+        }
+    }
+
+    if (!fs->exists(target.path)) {
+        io.write_line("error: not found");
+        return true;
+    }
+
+    fujinet::fs::FileInfo st;
+    if (!fs->stat(target.path, st)) {
+        io.write_line("error: stat failed");
+        return true;
+    }
+
+    if (!st.isDirectory) {
+        io.write(target.fs);
+        io.write(":");
+        io.write_line(target.path);
+        const char type = st.isDirectory ? 'd' : 'f';
+        const std::string sz = fmt_size(st.sizeBytes);
+        const std::string dt = fmt_time_ls(st.modifiedTime);
+        io.write(std::string_view(&type, 1));
+        io.write(" ");
+        io.write(pad_left(sz, 8));
+        io.write(" ");
+        io.write(dt);
+        io.write(" ");
+        io.write_line(st.path);
+        return true;
+    }
+
+    std::vector<fujinet::fs::FileInfo> entries;
+    if (!fs->listDirectory(target.path, entries)) {
+        io.write_line("error: ls failed");
+        return true;
+    }
+
+    std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+        if (a.isDirectory != b.isDirectory) return a.isDirectory > b.isDirectory;
+        return a.path < b.path;
+    });
+
+    io.write(target.fs);
+    io.write(":");
+    io.write(target.path);
+    io.write(" (count=");
+    io.write(std::to_string(entries.size()));
+    io.write_line(")");
+
+    auto leaf_name = [&](const std::string& p) -> std::string_view {
+        const std::size_t slash = p.find_last_of('/');
+        if (slash == std::string::npos) return p;
+        return std::string_view(p).substr(slash + 1);
+    };
+
+    for (const auto& e : entries) {
+        if (!filter_pat.empty()) {
+            const std::string leaf(leaf_name(e.path));
+            if (!glob_match(filter_pat, leaf)) {
+                continue;
+            }
+        }
+        const char type = e.isDirectory ? 'd' : 'f';
+        const std::string sz = fmt_size(e.sizeBytes);
+        const std::string dt = fmt_time_ls(e.modifiedTime);
+        io.write(std::string_view(&type, 1));
+        io.write(" ");
+        io.write(pad_left(sz, 8));
+        io.write(" ");
+        io.write(dt);
+        io.write(" ");
+        io.write_line(leaf_name(e.path));
+    }
+
+    return true;
+}
+
+bool FsShell::cmd_mkdir(IConsoleTransport& io, const std::vector<std::string_view>& argv)
+{
+    FsPath target;
+    bool ok = false;
+    fs_resolve_target(argv, _cwd_fs, _cwd_path, target, ok);
+    if (!ok) {
+        io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+        return true;
+    }
+
+    auto* fs = _storage.get(target.fs);
+    if (!fs) {
+        io.write_line("error: unknown filesystem");
+        return true;
+    }
+    if (!fs->createDirectory(target.path)) {
+        io.write_line("error: mkdir failed");
+    }
+    return true;
+}
+
+bool FsShell::cmd_rm(IConsoleTransport& io, const std::vector<std::string_view>& argv)
+{
+    if (_cwd_fs.empty()) {
+        io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+        return true;
+    }
+    if (argv.size() < 2) {
+        io.write_line("error: usage: rm [-f] [-r] <path...>");
+        return true;
+    }
+
+    std::size_t idx = 1;
+    RmFlags flags;
+    parse_rm_flags(argv, idx, flags);
+    if (idx >= argv.size()) {
+        io.write_line("error: usage: rm [-f] [-r] <path...>");
+        return true;
+    }
+
+    bool all_ok = true;
+    for (; idx < argv.size(); ++idx) {
+        FsPath target;
+        if (!parse_fs_path(argv[idx], _cwd_fs, _cwd_path, target)) {
+            if (!flags.force) io.write_line("error: bad path");
+            all_ok = false;
+            continue;
         }
 
-        FsPath from;
-        FsPath to;
-        if (!parse_fs_path(argv[1], cwd_fs, cwd_path, from) ||
-            !parse_fs_path(argv[2], cwd_fs, cwd_path, to)) {
-            io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
-            return true;
-        }
-        if (from.fs != to.fs) {
-            io.write_line("error: mv across filesystems is not supported");
-            return true;
-        }
-
-        auto* fs = storage.get(from.fs);
+        auto* fs = _storage.get(target.fs);
         if (!fs) {
-            io.write_line("error: unknown filesystem");
-            return true;
+            if (!flags.force) io.write_line("error: unknown filesystem");
+            all_ok = false;
+            continue;
         }
-        if (!fs->rename(from.path, to.path)) {
-            io.write_line("error: mv failed");
+
+        // If wildcard, expand against parent dir.
+        if (has_wildcard(target.path)) {
+            const std::string pat = leaf_name(target.path);
+            const std::string dir = parent_path(target.path);
+            std::vector<fujinet::fs::FileInfo> entries;
+            if (!fs->listDirectory(dir, entries)) {
+                if (!flags.force) io.write_line("error: ls failed");
+                all_ok = false;
+                continue;
+            }
+            bool matched = false;
+            for (const auto& e : entries) {
+                const std::string leaf = leaf_name(e.path);
+                if (!glob_match(pat, leaf)) continue;
+                matched = true;
+                if (!delete_tree(*fs, e.path, flags, false, io)) {
+                    all_ok = false;
+                }
+            }
+            if (!matched && !flags.force) {
+                io.write_line("error: not found");
+                all_ok = false;
+            }
+            continue;
         }
+
+        if (!delete_tree(*fs, target.path, flags, false, io)) {
+            all_ok = false;
+        }
+    }
+
+    (void)all_ok;
+    return true;
+}
+
+bool FsShell::cmd_rmdir(IConsoleTransport& io, const std::vector<std::string_view>& argv)
+{
+    if (argv.size() < 2) {
+        io.write_line("error: usage: rmdir [-f] [-r] <path>");
         return true;
     }
 
-    return false;
+    std::size_t idx = 1;
+    RmFlags flags;
+    parse_rm_flags(argv, idx, flags);
+    if (idx >= argv.size()) {
+        io.write_line("error: usage: rmdir [-f] [-r] <path>");
+        return true;
+    }
+
+    // Only operate on the first path (like current shell behavior).
+    FsPath target;
+    if (!parse_fs_path(argv[idx], _cwd_fs, _cwd_path, target)) {
+        io.write_line("error: bad path");
+        return true;
+    }
+
+    auto* fs = _storage.get(target.fs);
+    if (!fs) {
+        io.write_line("error: unknown filesystem");
+        return true;
+    }
+
+    // rmdir must not delete files.
+    (void)delete_tree(*fs, target.path, flags, true, io);
+    return true;
+}
+
+bool FsShell::cmd_mv(IConsoleTransport& io, const std::vector<std::string_view>& argv)
+{
+    if (argv.size() < 3) {
+        io.write_line("error: usage: mv <from> <to>");
+        return true;
+    }
+
+    FsPath from;
+    FsPath to;
+    if (!parse_fs_path(argv[1], _cwd_fs, _cwd_path, from) ||
+        !parse_fs_path(argv[2], _cwd_fs, _cwd_path, to)) {
+        io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+        return true;
+    }
+    if (from.fs != to.fs) {
+        io.write_line("error: mv across filesystems is not supported");
+        return true;
+    }
+
+    auto* fs = _storage.get(from.fs);
+    if (!fs) {
+        io.write_line("error: unknown filesystem");
+        return true;
+    }
+
+    // If destination is an existing directory (or explicitly ends with '/'), append basename(from).
+    fujinet::fs::FileInfo to_st{};
+    std::string dst = to.path;
+    const bool to_slash = (!argv[2].empty() && argv[2].back() == '/');
+    const bool to_is_dir = (fs->stat(to.path, to_st) && to_st.isDirectory);
+    if (to_slash && !to_is_dir) {
+        io.write_line("error: destination ends with '/' but is not a directory");
+        return true;
+    }
+    if (to_is_dir) {
+        const std::string base = leaf_name(from.path);
+        if (dst.size() > 1 && dst.back() == '/') dst.pop_back();
+        dst += "/";
+        dst += base;
+    }
+
+    if (!fs->rename(from.path, dst)) {
+        io.write_line("error: mv failed");
+    }
+    return true;
 }
 
 } // namespace fujinet::console

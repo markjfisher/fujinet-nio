@@ -177,7 +177,7 @@ private:
 
         const bool ok = fujinet::io::NetworkDeviceDiagnosticsAccessor::close(*net, handle);
         if (!ok) {
-            return DiagResult::error("close failed (invalid handle?)\n");
+            return DiagResult::error("close failed (invalid handle?)\r\n");
         }
 
         DiagResult r = DiagResult::ok("closed: " + hex4(handle) + "\r\n");
