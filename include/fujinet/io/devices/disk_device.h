@@ -21,6 +21,9 @@ public:
     void poll() override {}
 
 private:
+    // Allow out-of-band diagnostics (console) without polluting the on-wire API surface.
+    friend struct DiskDeviceDiagnosticsAccessor;
+
     static constexpr std::uint8_t DISKPROTO_VERSION = 1;
 
     disk::DiskService _svc;

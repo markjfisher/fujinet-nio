@@ -74,6 +74,7 @@ target_sources(fujinet-nio
         src/lib/clock_device.cpp
         src/lib/clock_device_init.cpp
         src/lib/diagnostic_core_provider.cpp
+        src/lib/diagnostic_disk_provider.cpp
         src/lib/diagnostic_network_provider.cpp
         src/lib/diagnostic_registry.cpp
         src/lib/disk/atr_image.cpp

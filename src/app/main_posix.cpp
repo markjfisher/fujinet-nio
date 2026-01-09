@@ -61,8 +61,10 @@ int main()
     fujinet::diag::DiagnosticRegistry diagRegistry;
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
     auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
+    auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
     diagRegistry.add_provider(*coreDiag);
     diagRegistry.add_provider(*netDiag);
+    diagRegistry.add_provider(*diskDiag);
 
     auto consoleTransport = fujinet::console::create_default_console_transport();
     fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport, core.storageManager());

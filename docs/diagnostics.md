@@ -41,6 +41,16 @@ It currently exposes:
 - `core.info` — version + build profile
 - `core.stats` — tick count + registered device count
 
+### Built-in provider: `disk`
+
+The built-in disk provider is created with:
+
+- `fujinet::diag::create_disk_diagnostic_provider(core::FujinetCore&)`
+
+It currently exposes:
+
+- `disk.slots` — list slot state (inserted/ro/dirty/changed), geometry, and mounted image path (`fs:path`)
+
 ---
 
 ## Console engine (app-only)

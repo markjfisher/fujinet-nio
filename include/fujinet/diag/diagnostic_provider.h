@@ -36,4 +36,7 @@ std::unique_ptr<IDiagnosticProvider> create_core_diagnostic_provider(::fujinet::
 // Network device provider: session table and handle control.
 std::unique_ptr<IDiagnosticProvider> create_network_diagnostic_provider(::fujinet::core::FujinetCore& core);
 
+// Disk device provider: slot table (mounted images, geometry, status).
+std::unique_ptr<IDiagnosticProvider> create_disk_diagnostic_provider(::fujinet::core::FujinetCore& core);
+
 } // namespace fujinet::diag
