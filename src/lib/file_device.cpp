@@ -90,9 +90,50 @@ IOResponse FileDevice::handle(const IORequest& request)
             return handle_read_file(request);
         case protocol::FileCommand::WriteFile:
             return handle_write_file(request);
+        case protocol::FileCommand::MakeDirectory:
+            return handle_make_directory(request);
         default:
             return make_base_response(request, StatusCode::Unsupported);
     }
+}
+
+static std::string normalize_dir_path(std::string p)
+{
+    // Trim trailing slashes except root.
+    while (p.size() > 1 && p.back() == '/') p.pop_back();
+    // Force absolute within FS (convention).
+    if (!p.empty() && p.front() != '/') p.insert(p.begin(), '/');
+    return p;
+}
+
+static bool mkdir_parents(IFileSystem& fs, const std::string& path)
+{
+    // Create each prefix directory in order: /a, /a/b, /a/b/c
+    std::string p = normalize_dir_path(path);
+    if (p.empty() || p == "/") return true;
+
+    std::string cur;
+    cur.reserve(p.size());
+
+    std::size_t i = 0;
+    while (i < p.size()) {
+        // Skip repeated '/'
+        while (i < p.size() && p[i] == '/') ++i;
+        if (i >= p.size()) break;
+
+        std::size_t j = i;
+        while (j < p.size() && p[j] != '/') ++j;
+
+        const std::string part = p.substr(i, j - i);
+        cur += "/";
+        cur += part;
+
+        if (!fs.createDirectory(cur) && !fs.isDirectory(cur)) {
+            return false;
+        }
+        i = j;
+    }
+    return true;
 }
 
 // --------------------
@@ -377,6 +418,68 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
     fileproto::write_u32le(out, offset);
     fileproto::write_u16le(out, static_cast<std::uint16_t>(written));
 
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+// --------------------
+// MakeDirectory (0x05)
+// --------------------
+IOResponse FileDevice::handle_make_directory(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+
+    Reader r(request.payload.data(), request.payload.size());
+    CommonPrefix p{};
+    if (!parse_common_prefix(r, p)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    std::uint8_t flags = 0;
+    if (!r.read_u8(flags)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    const bool parents = (flags & 0x01) != 0;
+    const bool existOk = (flags & 0x02) != 0;
+
+    auto* fs = _storage.get(p.fs);
+    if (!fs) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    const std::string dirPath = normalize_dir_path(p.path);
+
+    bool ok = false;
+    if (parents) {
+        ok = mkdir_parents(*fs, dirPath);
+    } else {
+        ok = fs->createDirectory(dirPath);
+    }
+
+    if (!ok) {
+        if (existOk && fs->isDirectory(dirPath)) {
+            ok = true;
+        }
+    }
+
+    if (!ok) {
+        resp.status = StatusCode::IOError;
+        return resp;
+    }
+
+    // Response payload:
+    // u8 version
+    // u8 flags (0)
+    // u16 reserved
+    std::string out;
+    out.reserve(1 + 1 + 2);
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, 0);
+    fileproto::write_u16le(out, 0);
     resp.payload.assign(out.begin(), out.end());
     return resp;
 }

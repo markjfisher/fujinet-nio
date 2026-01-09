@@ -10,6 +10,49 @@ from .common import open_serial, status_ok
 # Commands
 # ----------------------------------------------------------------------
 
+def _join_dest_path(dest_path: str, src_file: str) -> str:
+    # If user gives a directory path (ends with '/'), append basename of src_file.
+    if dest_path.endswith("/"):
+        name = Path(src_file).name
+        if dest_path == "/":
+            return "/" + name
+        return dest_path + name
+    return dest_path
+
+
+def _parent_dir(path: str) -> str:
+    # Return parent directory for a filesystem path.
+    # "/a/b/c.bin" -> "/a/b"
+    # "/c.bin" -> "/"
+    p = path.rstrip("/")
+    if p == "":
+        return "/"
+    i = p.rfind("/")
+    if i <= 0:
+        return "/"
+    return p[:i]
+
+
+def _mkdir_p(*, args, bus: FujiBusSession, fs: str, path: str) -> bool:
+    req = fp.build_mkdir_req(fs=fs, path=path, parents=True, exist_ok=True)
+    pkt = bus.send_command_expect(
+        device=fp.FILE_DEVICE_ID,
+        command=fp.CMD_MKDIR,
+        payload=req,
+        expect_device=fp.FILE_DEVICE_ID,
+        expect_command=fp.CMD_MKDIR,
+        timeout=args.timeout,
+        cmd_txt="MKDIR",
+    )
+    if pkt is None:
+        print("No response")
+        return False
+    if not status_ok(pkt):
+        print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+        return False
+    fp.parse_mkdir_resp(pkt.payload)
+    return True
+
 def cmd_list(args) -> int:
     req = fp.build_list_req(args.fs, args.path, args.start, args.max)
 
@@ -180,17 +223,25 @@ def cmd_read_all(args) -> int:
 
 def cmd_write(args) -> int:
     data = Path(args.inp).read_bytes()
+    dst_path = _join_dest_path(args.path, args.inp)
 
     # Reuse one Serial for the whole transfer (robust for CDC + faster).
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
+
+        if args.mkdirs:
+            parent = _parent_dir(dst_path)
+            if parent and parent != "/":
+                if not _mkdir_p(args=args, bus=bus, fs=args.fs, path=parent):
+                    return 1
+
         offset = args.offset
         idx = 0
         total_written = 0
 
         while idx < len(data):
             chunk = data[idx : idx + args.chunk]
-            req = fp.build_write_req(args.fs, args.path, offset, chunk)
+            req = fp.build_write_req(args.fs, dst_path, offset, chunk)
 
             pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
@@ -269,6 +320,7 @@ def register_subcommands(subparsers) -> None:
     pw = subparsers.add_parser("write", help="Write a local file to the remote path in chunks")
     pw.add_argument("--offset", type=int, default=0)
     pw.add_argument("--chunk", type=int, default=512)
+    pw.add_argument("--mkdirs", action="store_true", help="Create parent directories if needed (mkdir -p)")
     pw.add_argument("fs")
     pw.add_argument("path")
     pw.add_argument("inp", help="Local input file")

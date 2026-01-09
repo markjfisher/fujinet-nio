@@ -25,6 +25,7 @@ CMD_STAT = 0x01
 CMD_LIST = 0x02
 CMD_READ = 0x03
 CMD_WRITE = 0x04
+CMD_MKDIR = 0x05
 
 
 def build_common_prefix(fs: str, path: str) -> bytes:
@@ -67,6 +68,23 @@ def build_write_req(fs: str, path: str, offset: int, data: bytes) -> bytes:
     if len(data) > 0xFFFF:
         raise ValueError("data chunk too large for u16 length; split it")
     return build_common_prefix(fs, path) + u32le(offset) + u16le(len(data)) + data
+
+
+def build_mkdir_req(*, fs: str, path: str, parents: bool = True, exist_ok: bool = True) -> bytes:
+    flags = 0
+    if parents:
+        flags |= 0x01
+    if exist_ok:
+        flags |= 0x02
+    return build_common_prefix(fs, path) + bytes([flags & 0xFF])
+
+
+def parse_mkdir_resp(payload: bytes) -> None:
+    off = 0
+    off = _check_version(payload, off)
+    # flags + reserved
+    _flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
 
 
 # -------- Responses --------
