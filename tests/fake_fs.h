@@ -61,26 +61,72 @@ private:
 class MemoryFileSystem final : public fujinet::fs::IFileSystem {
 public:
     explicit MemoryFileSystem(std::string name)
-        : _name(std::move(name)) {}
+        : _name(std::move(name))
+    {
+        _dirs.push_back("/"); // root
+    }
 
     fujinet::fs::FileSystemKind kind() const override { return fujinet::fs::FileSystemKind::HostPosix; }
     std::string name() const override { return _name; }
 
     bool exists(const std::string& path) override
     {
-        return _files.find(path) != _files.end();
+        const std::string p = norm(path);
+        if (is_dir_path(p)) return true;
+        return _files.find(p) != _files.end();
     }
 
-    bool isDirectory(const std::string&) override { return false; }
+    bool isDirectory(const std::string& path) override { return is_dir_path(norm(path)); }
 
-    bool createDirectory(const std::string&) override { return false; }
-    bool removeFile(const std::string& path) override { return _files.erase(path) > 0; }
-    bool removeDirectory(const std::string&) override { return false; }
+    bool createDirectory(const std::string& path) override
+    {
+        const std::string p = norm(path);
+        if (p == "/") return true;
+        const std::string parent = parent_path(p);
+        if (!is_dir_path(parent)) return false;
+        if (is_dir_path(p)) return true;
+        _dirs.push_back(p);
+        return true;
+    }
+
+    bool removeFile(const std::string& path) override
+    {
+        const std::string p = norm(path);
+        return _files.erase(p) > 0;
+    }
+
+    bool removeDirectory(const std::string& path) override
+    {
+        const std::string p = norm(path);
+        if (p == "/") return false;
+        if (!is_dir_path(p)) return false;
+        // must be empty (no immediate children)
+        for (const auto& d : _dirs) {
+            if (d != p && parent_path(d) == p) return false;
+        }
+        for (const auto& kv : _files) {
+            if (parent_path(kv.first) == p) return false;
+        }
+        // erase
+        for (auto it = _dirs.begin(); it != _dirs.end(); ++it) {
+            if (*it == p) {
+                _dirs.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool rename(const std::string& from, const std::string& to) override
     {
-        auto it = _files.find(from);
+        const std::string f = norm(from);
+        const std::string t = norm(to);
+        auto it = _files.find(f);
         if (it == _files.end()) return false;
-        _files[to] = std::move(it->second);
+        // parent of dest must exist
+        const std::string parent = parent_path(t);
+        if (!is_dir_path(parent)) return false;
+        _files[t] = std::move(it->second);
         _files.erase(it);
         return true;
     }
@@ -91,10 +137,17 @@ public:
         const bool wantWrite = m.find('w') != std::string::npos || m.find('+') != std::string::npos || m.find('a') != std::string::npos;
         const bool readOnly = !wantWrite;
 
-        auto it = _files.find(path);
+        const std::string p = norm(path);
+        if (is_dir_path(p)) {
+            return nullptr;
+        }
+        auto it = _files.find(p);
         if (it == _files.end()) {
             if (m.find('w') != std::string::npos) {
-                it = _files.emplace(path, std::vector<std::uint8_t>{}).first;
+                // Require parent directory to exist.
+                const std::string parent = parent_path(p);
+                if (!is_dir_path(parent)) return nullptr;
+                it = _files.emplace(p, std::vector<std::uint8_t>{}).first;
             } else {
                 return nullptr;
             }
@@ -105,21 +158,94 @@ public:
 
     bool stat(const std::string& path, fujinet::fs::FileInfo& outInfo) override
     {
-        auto it = _files.find(path);
+        const std::string p = norm(path);
+        if (is_dir_path(p)) {
+            outInfo.path = p;
+            outInfo.isDirectory = true;
+            outInfo.sizeBytes = 0;
+            return true;
+        }
+        auto it = _files.find(p);
         if (it == _files.end()) return false;
-        outInfo.path = path;
+        outInfo.path = p;
         outInfo.isDirectory = false;
         outInfo.sizeBytes = it->second.size();
         return true;
     }
 
-    bool listDirectory(const std::string&, std::vector<fujinet::fs::FileInfo>&) override { return false; }
+    bool listDirectory(const std::string& path, std::vector<fujinet::fs::FileInfo>& out) override
+    {
+        const std::string p = norm(path);
+        if (!is_dir_path(p)) return false;
+        out.clear();
 
-    std::vector<std::uint8_t>& file_bytes(const std::string& path) { return _files[path]; }
+        for (const auto& d : _dirs) {
+            if (d == "/") continue;
+            if (parent_path(d) != p) continue;
+            fujinet::fs::FileInfo fi{};
+            fi.path = d;
+            fi.isDirectory = true;
+            fi.sizeBytes = 0;
+            out.push_back(std::move(fi));
+        }
+        for (const auto& kv : _files) {
+            if (parent_path(kv.first) != p) continue;
+            fujinet::fs::FileInfo fi{};
+            fi.path = kv.first;
+            fi.isDirectory = false;
+            fi.sizeBytes = kv.second.size();
+            out.push_back(std::move(fi));
+        }
+        return true;
+    }
+
+    bool create_file(const std::string& path, const std::vector<std::uint8_t>& bytes)
+    {
+        const std::string p = norm(path);
+        if (is_dir_path(p)) return false;
+        const std::string parent = parent_path(p);
+        if (!is_dir_path(parent)) return false;
+        _files[p] = bytes;
+        return true;
+    }
+
+    std::vector<std::uint8_t>& file_bytes(const std::string& path) { return _files[norm(path)]; }
 
 private:
+    static std::string norm(const std::string& in)
+    {
+        if (in.empty()) return "/";
+        if (in[0] != '/') return "/" + in;
+        if (in.size() > 1 && in.back() == '/') {
+            // normalize away trailing slash
+            std::string out = in;
+            while (out.size() > 1 && out.back() == '/') out.pop_back();
+            return out;
+        }
+        return in;
+    }
+
+    static std::string parent_path(const std::string& abs)
+    {
+        if (abs.empty() || abs == "/") return "/";
+        std::string s = abs;
+        while (s.size() > 1 && s.back() == '/') s.pop_back();
+        const std::size_t slash = s.find_last_of('/');
+        if (slash == std::string::npos || slash == 0) return "/";
+        return s.substr(0, slash);
+    }
+
+    bool is_dir_path(const std::string& abs) const
+    {
+        for (const auto& d : _dirs) {
+            if (d == abs) return true;
+        }
+        return false;
+    }
+
     std::string _name;
     std::unordered_map<std::string, std::vector<std::uint8_t>> _files;
+    std::vector<std::string> _dirs;
 };
 
 } // namespace fujinet::tests
