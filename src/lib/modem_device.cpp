@@ -972,7 +972,17 @@ IOResponse ModemDevice::handle(const IORequest& request)
             if (_numericResult) flags |= 0x80;
 
             std::string out;
-            out.reserve(1 + 1 + 2 + 2 + 4 + 4 + 4 + 4);
+            // v1 response payload:
+            //   u8  version
+            //   u8  flags
+            //   u16 reserved
+            //   u16 listenPort
+            //   u32 hostRxAvail
+            //   u32 hostWriteCursor
+            //   u32 hostReadCursor
+            //   u32 netReadCursor
+            //   u32 netWriteCursor
+            out.reserve(1 + 1 + 2 + 2 + 4 + 4 + 4 + 4 + 4);
             bytecodec::write_u8(out, MODEM_VERSION);
             bytecodec::write_u8(out, flags);
             bytecodec::write_u16le(out, 0);
@@ -980,6 +990,7 @@ IOResponse ModemDevice::handle(const IORequest& request)
             bytecodec::write_u32le(out, static_cast<std::uint32_t>(_toHost.size()));
             // NB: hostTxCursor is the next required offset for host write.
             bytecodec::write_u32le(out, _hostWriteCursor);
+            bytecodec::write_u32le(out, _hostReadCursor);
             bytecodec::write_u32le(out, _netReadCursor);
             bytecodec::write_u32le(out, _netWriteCursor);
 
@@ -1000,8 +1011,14 @@ IOResponse ModemDevice::handle(const IORequest& request)
 
             switch (op) {
                 case 0x01: { // hangup
+                    const bool wasConnected = is_connected();
                     close_network();
                     _cmdMode = true;
+                    if (wasConnected) {
+                        emit_result_no_carrier();
+                    } else {
+                        emit_result_ok();
+                    }
                     break;
                 }
                 case 0x02: { // dial: lp_u16 string host[:port]

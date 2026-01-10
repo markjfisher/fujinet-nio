@@ -104,7 +104,8 @@ Query modem state bits and cursors.
 - `u16 reserved` (0)
 - `u16 listenPort` (0 if not listening)
 - `u32 hostRxAvail` (bytes available for `Read`)
-- `u32 hostTxCursor` (next required host `Write` offset)
+- `u32 hostWriteCursor` (next required host `Write` offset)
+- `u32 hostReadCursor` (next required host `Read` offset)
 - `u32 netRxCursor` (network read cursor)
 - `u32 netTxCursor` (network write cursor)
 

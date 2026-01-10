@@ -136,6 +136,7 @@ class StatusResp:
     listen_port: int
     host_rx_avail: int
     host_write_cursor: int
+    host_read_cursor: int
     net_read_cursor: int
     net_write_cursor: int
 
@@ -156,7 +157,8 @@ def parse_status_resp(payload: bytes) -> StatusResp:
       u16 reserved
       u16 listenPort
       u32 hostRxAvail
-      u32 hostTxCursor
+      u32 hostWriteCursor
+      u32 hostReadCursor
       u32 netRxCursor
       u32 netTxCursor
     """
@@ -166,6 +168,7 @@ def parse_status_resp(payload: bytes) -> StatusResp:
     listen_port, off = read_u16le(payload, off)
     host_rx_avail, off = read_u32le(payload, off)
     host_write_cursor, off = read_u32le(payload, off)
+    host_read_cursor, off = read_u32le(payload, off)
     net_read_cursor, off = read_u32le(payload, off)
     net_write_cursor, off = read_u32le(payload, off)
     if off != len(payload):
@@ -175,6 +178,7 @@ def parse_status_resp(payload: bytes) -> StatusResp:
         listen_port=listen_port,
         host_rx_avail=host_rx_avail,
         host_write_cursor=host_write_cursor,
+        host_read_cursor=host_read_cursor,
         net_read_cursor=net_read_cursor,
         net_write_cursor=net_write_cursor,
     )

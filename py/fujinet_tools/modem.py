@@ -371,6 +371,34 @@ def cmd_modem_sendrecv(args) -> int:
         return 0
 
 
+def cmd_modem_hangup(args) -> int:
+    # op=0x01 Hangup
+    req = mp.build_control_req(0x01)
+
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+        pkt = _send(
+            bus=bus,
+            device=mp.MODEM_DEVICE_ID,
+            command=mp.CMD_CONTROL,
+            payload=req,
+            timeout=args.timeout,
+            cmd_txt="MODEM HANGUP",
+        )
+        if pkt is None:
+            print("No response")
+            return 2
+        if not status_ok(pkt):
+            code = _pkt_status_code(pkt)
+            print(f"Device status={code} ({_status_str(code)})")
+            return 1
+
+        # Drain any textual result the device emitted (NO CARRIER / OK).
+        out = _drain(bus=bus, timeout=args.timeout, max_total=args.read_max)
+        sys.stdout.buffer.write(out)
+        return 0
+
+
 def register_subcommands(subparsers) -> None:
     pm = subparsers.add_parser("modem", help="Modem device commands (AT + binary protocol)")
     msub = pm.add_subparsers(dest="modem_cmd", required=True)
@@ -408,5 +436,9 @@ def register_subcommands(subparsers) -> None:
     psr = msub.add_parser("sendrecv", help="Write bytes, then read back same number of bytes (TCP echo convenience)")
     psr.add_argument("--data", required=True, help="UTF-8 bytes to send")
     psr.set_defaults(fn=cmd_modem_sendrecv)
+
+    ph = msub.add_parser("hangup", help="Hang up (binary control op; emits NO CARRIER if connected)")
+    ph.add_argument("--read-max", type=int, default=2048)
+    ph.set_defaults(fn=cmd_modem_hangup)
 
 

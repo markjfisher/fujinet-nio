@@ -30,8 +30,8 @@ steps:
       - "hello"
     timeout_s: 8
 
-  - name: "MODEM: hang up (ATH)"
-    argv: ["{CLI}", "modem", "at", "ATH"]
+  - name: "MODEM: hang up (binary control)"
+    argv: ["{CLI}", "modem", "hangup"]
     expect:
       - "NO CARRIER"
     timeout_s: 5
