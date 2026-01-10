@@ -66,9 +66,11 @@ int main()
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
     auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
     auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
+    auto modemDiag = fujinet::diag::create_modem_diagnostic_provider(core);
     diagRegistry.add_provider(*coreDiag);
     diagRegistry.add_provider(*netDiag);
     diagRegistry.add_provider(*diskDiag);
+    diagRegistry.add_provider(*modemDiag);
 
     auto consoleTransport = fujinet::console::create_default_console_transport();
     fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport, core.storageManager());
@@ -152,6 +154,7 @@ int main()
     fujinet::core::register_clock_device(core);
     fujinet::core::register_disk_device(core);
     fujinet::core::register_network_device(core);
+    fujinet::core::register_modem_device(core);
 
     // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).
     // and set up transports based on profile.

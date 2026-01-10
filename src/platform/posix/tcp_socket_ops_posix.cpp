@@ -32,6 +32,22 @@ public:
         return &hints;
     }
 
+    const void* tcp_stream_passive_addrinfo_hints() const noexcept override
+    {
+        // Provide stable, platform-native addrinfo hints for a passive (server) TCP socket.
+        static struct addrinfo hints {};
+        static bool inited = false;
+        if (!inited) {
+            hints = {};
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_STREAM;
+            hints.ai_protocol = IPPROTO_TCP;
+            hints.ai_flags = AI_PASSIVE;
+            inited = true;
+        }
+        return &hints;
+    }
+
     int socket(int domain, int type, int protocol) override
     {
         return ::socket(domain, type, protocol);
@@ -47,6 +63,31 @@ public:
     int connect(int fd, const struct sockaddr* addr, SockLen addrlen) override
     {
         return ::connect(fd, addr, static_cast<socklen_t>(addrlen));
+    }
+
+    int bind(int fd, const struct sockaddr* addr, SockLen addrlen) override
+    {
+        return ::bind(fd, addr, static_cast<socklen_t>(addrlen));
+    }
+
+    int listen(int fd, int backlog) override
+    {
+        return ::listen(fd, backlog);
+    }
+
+    int accept(int fd, struct sockaddr* addr, SockLen* inout_addrlen) override
+    {
+        socklen_t alen = 0;
+        socklen_t* p = nullptr;
+        if (addr && inout_addrlen) {
+            alen = static_cast<socklen_t>(*inout_addrlen);
+            p = &alen;
+        }
+        const int cfd = ::accept(fd, addr, p);
+        if (cfd >= 0 && inout_addrlen && p) {
+            *inout_addrlen = static_cast<SockLen>(alen);
+        }
+        return cfd;
     }
 
     int set_nonblocking(int fd) override
@@ -116,6 +157,13 @@ public:
             int v = 1;
             (void)::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &v, static_cast<socklen_t>(sizeof(v)));
         }
+    }
+
+    void apply_listen_socket_options(int fd) override
+    {
+        if (fd < 0) return;
+        int v = 1;
+        (void)::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &v, static_cast<socklen_t>(sizeof(v)));
     }
 
     int getaddrinfo(const char* host, const char* port, const void* hints, AddrInfo** out) override

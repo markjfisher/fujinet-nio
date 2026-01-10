@@ -44,6 +44,14 @@ public:
     // Main protocol interface
     fujinet::io::StatusCode open(const fujinet::io::NetworkOpenRequest& req);
 
+    // Adopt an already-connected TCP socket (e.g. accepted from a listen socket).
+    // The caller transfers ownership of `fd` to this object on success.
+    // On failure, this call closes `fd`.
+    fujinet::io::StatusCode adopt_connected_socket(int fd,
+                                                   Options opt,
+                                                   std::string host,
+                                                   std::uint16_t port);
+
     fujinet::io::StatusCode write_body(std::uint32_t offset,
                                        const std::uint8_t* data,
                                        std::size_t len,

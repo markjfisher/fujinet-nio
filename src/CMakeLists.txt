@@ -17,6 +17,7 @@ idf_component_register(
         lib/clock_device_init.cpp
         lib/diagnostic_core_provider.cpp
         lib/diagnostic_disk_provider.cpp
+        lib/diagnostic_modem_provider.cpp
         lib/diagnostic_network_provider.cpp
         lib/diagnostic_registry.cpp
         lib/disk/atr_image.cpp
@@ -37,6 +38,8 @@ idf_component_register(
         lib/fujinet_init.cpp
         lib/io_device_manager.cpp
         lib/io_service.cpp
+        lib/modem_device.cpp
+        lib/modem_device_init.cpp
         lib/network_device.cpp
         lib/network_device_init.cpp
         lib/network_protocol_registry.cpp
@@ -60,6 +63,7 @@ idf_component_register(
         platform/esp32/pinmap.cpp
         platform/esp32/sntp_service.cpp
         platform/esp32/tcp_network_protocol_espidf.cpp
+        platform/esp32/tcp_socket_ops_default.cpp
         platform/esp32/tcp_socket_ops_espidf.cpp
         platform/esp32/time.cpp
         platform/esp32/tinyusb_cdc.cpp

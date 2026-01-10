@@ -384,6 +384,34 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::open(const fujinet::io::Networ
     return fujinet::io::StatusCode::Ok;
 }
 
+fujinet::io::StatusCode TcpNetworkProtocolCommon::adopt_connected_socket(int fd,
+                                                                         Options opt,
+                                                                         std::string host,
+                                                                         std::uint16_t port)
+{
+    // Reset any prior connection
+    close();
+    reset_state();
+
+    if (fd < 0) {
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
+
+    _fd = fd;
+    _opt = opt;
+    _host = std::move(host);
+    _port = port;
+
+    // Ensure rx buffer exists
+    if (_opt.rx_buf < 256) _opt.rx_buf = 256;
+    _rx.assign(_opt.rx_buf, 0);
+
+    apply_socket_options();
+    _state = State::Connected;
+    _peer_closed = false;
+    return fujinet::io::StatusCode::Ok;
+}
+
 fujinet::io::StatusCode TcpNetworkProtocolCommon::write_body(std::uint32_t offset,
                                                              const std::uint8_t* data,
                                                              std::size_t len,

@@ -67,6 +67,8 @@ inline void log(Level, const char*, std::string_view) {}
 // The whole macro invocation (including arguments / fmt strings)
 // disappears at preprocessing time, so no strings or code remain.
 
+#define FN_ELOG(fmt, ...) ((void)0)
+
 #define FN_LOGE(tag, fmt, ...) ((void)0)
 #define FN_LOGW(tag, fmt, ...) ((void)0)
 #define FN_LOGI(tag, fmt, ...) ((void)0)

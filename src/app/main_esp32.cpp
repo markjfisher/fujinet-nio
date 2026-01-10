@@ -99,9 +99,11 @@ extern "C" void fujinet_core_task(void* arg)
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
     auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
     auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
+    auto modemDiag = fujinet::diag::create_modem_diagnostic_provider(core);
     diagRegistry.add_provider(*coreDiag);
     diagRegistry.add_provider(*netDiag);
     diagRegistry.add_provider(*diskDiag);
+    diagRegistry.add_provider(*modemDiag);
 
     std::unique_ptr<fujinet::console::IConsoleTransport> consoleTransport;
     std::unique_ptr<fujinet::console::ConsoleEngine> console;
@@ -170,6 +172,7 @@ extern "C" void fujinet_core_task(void* arg)
     fujinet::core::register_clock_device(core);
     fujinet::core::register_disk_device(core);
     fujinet::core::register_network_device(core);
+    fujinet::core::register_modem_device(core);
 
     const std::uint64_t phase1_at = core.tick_count() + 20;
     

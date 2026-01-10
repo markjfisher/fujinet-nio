@@ -50,8 +50,15 @@ BuildProfile current_build_profile()
         .hw               = {},
     };
 #else
-    // throw a compile time error for the compiler
-#   error "No build profile defined. Please specify one of the following: FN_BUILD_ATARI, FN_BUILD_ESP32_USB_CDC, FN_BUILD_FUJIBUS_PTY, etc."
+    // Default: POSIX-friendly profile when no explicit build profile macro is provided.
+    // This keeps local/test builds working without requiring a preset.
+    profile = BuildProfile{
+        .machine          = Machine::Generic,
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::Pty,
+        .name             = "POSIX + FujiBus over PTY (default)",
+        .hw               = {},
+    };
 #endif
 
     profile.hw = detect_hardware_capabilities();

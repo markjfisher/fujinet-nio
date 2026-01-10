@@ -32,6 +32,17 @@ public:
     // Connect (nonblocking). Returns 0 on immediate success, -1 with errno=EINPROGRESS/EWOULDBLOCK if async.
     virtual int connect(int fd, const struct sockaddr* addr, SockLen addrlen) = 0;
 
+    // Bind (for passive/listen sockets). Returns 0 on success, -1 on error (errno set).
+    virtual int bind(int fd, const struct sockaddr* addr, SockLen addrlen) = 0;
+
+    // Listen (for passive sockets). Returns 0 on success, -1 on error (errno set).
+    virtual int listen(int fd, int backlog) = 0;
+
+    // Accept (nonblocking). Returns:
+    // - >= 0: new connected socket fd
+    // - < 0: error (errno set). EAGAIN/EWOULDBLOCK means "no pending client".
+    virtual int accept(int fd, struct sockaddr* addr, SockLen* inout_addrlen) = 0;
+
     // Set nonblocking mode. Returns 0 on success, -1 on error (errno set).
     virtual int set_nonblocking(int fd) = 0;
 
@@ -62,6 +73,10 @@ public:
     // Common code must not assume SOL_SOCKET/IPPROTO_TCP/TCP_NODELAY/SO_KEEPALIVE numeric values.
     virtual void apply_stream_socket_options(int fd, bool nodelay, bool keepalive) = 0;
 
+    // Apply semantic options for a passive/listen socket (e.g. reuseaddr).
+    // Common code must not assume SOL_SOCKET/SO_REUSEADDR numeric values.
+    virtual void apply_listen_socket_options(int fd) = 0;
+
     // Address resolution
     // Resolve hostname and port. Returns 0 on success, non-zero error code on failure.
     // On success, *out is set to an opaque handle that must be freed with free_addrinfo.
@@ -70,6 +85,10 @@ public:
     // Platform-provided hints for a TCP stream socket resolution (lifetime must outlive getaddrinfo()).
     // Common code must not assume AF_*/SOCK_*/IPPROTO_* numeric values.
     virtual const void* tcp_stream_addrinfo_hints() const noexcept = 0;
+
+    // Platform-provided hints for a passive TCP stream socket (AI_PASSIVE).
+    // Intended for server sockets: getaddrinfo(nullptr, port, passive_hints,...)
+    virtual const void* tcp_stream_passive_addrinfo_hints() const noexcept = 0;
 
     // Free address resolution result
     virtual void freeaddrinfo(AddrInfo* ai) = 0;

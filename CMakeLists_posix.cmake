@@ -75,6 +75,7 @@ target_sources(fujinet-nio
         src/lib/clock_device_init.cpp
         src/lib/diagnostic_core_provider.cpp
         src/lib/diagnostic_disk_provider.cpp
+        src/lib/diagnostic_modem_provider.cpp
         src/lib/diagnostic_network_provider.cpp
         src/lib/diagnostic_registry.cpp
         src/lib/disk/atr_image.cpp
@@ -95,6 +96,8 @@ target_sources(fujinet-nio
         src/lib/fujinet_init.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
+        src/lib/modem_device.cpp
+        src/lib/modem_device_init.cpp
         src/lib/network_device.cpp
         src/lib/network_device_init.cpp
         src/lib/network_protocol_registry.cpp
@@ -115,6 +118,7 @@ target_sources(fujinet-nio
         src/platform/posix/logging.cpp
         src/platform/posix/network_registry.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
+        src/platform/posix/tcp_socket_ops_default.cpp
         src/platform/posix/tcp_socket_ops_posix.cpp
         src/platform/posix/time.cpp
 # __TARGET_SOURCES_END__

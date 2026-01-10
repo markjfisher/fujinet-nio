@@ -39,4 +39,7 @@ std::unique_ptr<IDiagnosticProvider> create_network_diagnostic_provider(::fujine
 // Disk device provider: slot table (mounted images, geometry, status).
 std::unique_ptr<IDiagnosticProvider> create_disk_diagnostic_provider(::fujinet::core::FujinetCore& core);
 
+// Modem device provider: AT command injection + status/control.
+std::unique_ptr<IDiagnosticProvider> create_modem_diagnostic_provider(::fujinet::core::FujinetCore& core);
+
 } // namespace fujinet::diag
