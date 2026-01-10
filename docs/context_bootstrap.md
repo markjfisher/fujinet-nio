@@ -1,58 +1,91 @@
-# BOOTSTRAP SECTIONS
+# fujinet-nio bootstrap (new ChatGPT session)
 
+This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets multiple platforms (notably **POSIX** and **ESP32**) while keeping most logic **platform-agnostic**.
 
-## NETWORK
+## What you should assume (core architecture rules)
 
+- **Platform-agnostic first**: device logic lives under `include/fujinet/` + `src/lib/` and should not contain platform `#ifdef`s.
+- **Platform glue only**: platform differences live in `src/platform/<platform>/` and are expressed via factories/registries, not preprocessor conditionals.
+- **Registration over branching**: new device/image/protocol types are registered via **init/registry** APIs (e.g. `register_*_device`, `make_default_*_registry`).
+- **Binary protocols**: host↔device commands are little-endian binary payloads over the IO bus, exposed as `VirtualDevice` implementations.
+- **Tests**: keep unit tests fast and deterministic (doctest). Integration tests (Python) verify end-to-end protocol behavior.
 
-I’m working on fujinet-nio.
-We’ve signed off HTTP verbs + body lifecycle; next is TODO item 4: TCP backend (stream sockets).
+## Start here (high-signal docs)
 
-Repo refs:
-- TODO: https://raw.githubusercontent.com/markjfisher/fujinet-nio/refs/heads/master/todo/network.md
-- NetworkDevice binary protocol spec (v1): https://raw.githubusercontent.com/markjfisher/fujinet-nio/refs/heads/master/docs/network_device_protocol.md
-- (Possibly relevant overview): https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/protocol_reference.md
-- Architecture overview of fujinet-nio: https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/architecture.md
+- **Architecture overview**: `docs/architecture.md`
+- **Protocol references**:
+  - `docs/protocol_reference.md`
+  - `docs/network_device_protocol.md` (good exemplar for a v1 binary protocol doc)
+- **Diagnostics framework**: `docs/diagnostics.md`
 
-Please design the TCP scheme/backend semantics that fit the existing v1 NetworkDevice protocol (Open/Read/Write/Info/Close), for both POSIX and ESP32.
+## Key concepts and where they live
 
-Concretely:
-1) URL form(s): tcp://host:port (and any query options like connect timeout, nodelay, etc).
-2) How Open/Write/Read map to socket connect/send/recv, including:
-   - sequential offset rules (still required?) for stream sockets
-   - what “Read(handle, offset, maxBytes)” means when a TCP stream has no natural offsets
-3) What Info() should return for TCP in v1 (given current Info payload format is HTTP-ish):
-   - do we extend flags/fields, or define TCP-only meaning for http_status/content_length/headers?
-   - how do we expose “connected/alive”, “bytes available”, and “last error” without breaking v1?
-4) StatusCode mapping matrix for TCP (InvalidRequest/NotReady/DeviceBusy/IOError/etc) that matches the TODO contract style.
-5) A minimal implementation plan:
-   - POSIX sockets backend structure + timeouts/nonblocking strategy
-   - ESP32 lwIP sockets backend structure + RX buffering/backpressure
-   - tests we should add (platform-agnostic session tests vs backend parity)
-Please answer with a crisp set of rules + recommended implementation approach.
+- **Virtual devices (host protocol endpoints)**:
+  - `include/fujinet/io/devices/virtual_device.h`
+  - `include/fujinet/io/core/io_message.h` (`IORequest`, `IOResponse`, `StatusCode`)
+- **Wire device IDs**:
+  - `include/fujinet/io/protocol/wire_device_ids.h`
+- **Core registration entrypoint(s)**:
+  - `include/fujinet/core/device_init.h` (`register_*_device(...)`)
+- **Storage/filesystems**:
+  - `include/fujinet/fs/storage_manager.h`
+  - `include/fujinet/fs/filesystem.h`
+- **Diagnostics**:
+  - `include/fujinet/diag/diagnostic_provider.h`
+  - `include/fujinet/diag/diagnostic_registry.h`
 
+## Exemplars to copy (existing devices)
 
-Project: fujinet-nio NetworkDevice
+- **NetworkDevice** (binary protocol + backend split):
+  - headers: `include/fujinet/io/devices/network_device.h`, `include/fujinet/io/devices/network_commands.h`
+  - impl: `src/lib/network_device.cpp`, `src/lib/network_device_init.cpp`
+  - platform registries: `src/platform/posix/network_registry.cpp`, `src/platform/esp32/network_registry.cpp`
+  - doc: `docs/network_device_protocol.md`
 
-Context:
-- HTTP protocol is complete and tested
-- Open / Read / Write / Info / Close are stable
-- POSIX and ESP32 implementations aligned
+- **FileDevice** (filesystem operations over protocol):
+  - header: `include/fujinet/io/devices/file_device.h`
+  - impl: `src/lib/file_device.cpp`, `src/lib/file_device_init.cpp`
 
-Docs:
-- Protocol specs:
-  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/protocol_reference.md
-  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/network_device_protocol.md
-- Network TODO:
-  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/todo/network.md
-- Architecture:
-  https://github.com/markjfisher/fujinet-nio/raw/refs/heads/master/docs/architecture.md
+- **DiskDevice** (service + format registry + protocol):
+  - protocol/device: `include/fujinet/io/devices/disk_device.h`, `src/lib/disk_device.cpp`, `src/lib/disk_device_init.cpp`
+  - disk subsystem: `include/fujinet/disk/`, `src/lib/disk/`
+  - platform registry: `src/platform/posix/disk_registry.cpp`, `src/platform/esp32/disk_registry.cpp`
+  - doc: `docs/disk_device_protocol.md`
 
-Goal:
-Design TCP protocol support that fits the existing NetworkDevice model.
+## How to add a new device (minimal checklist)
 
-Please focus on:
-- protocol design first (no code yet)
-- compatibility with v1
-- test strategy
+- **Define a wire ID** in `include/fujinet/io/protocol/wire_device_ids.h`.
+- **Define commands/codecs** in `include/fujinet/io/devices/<device>_commands.h` (+ optional `<device>_codec.h`).
+- **Implement the `VirtualDevice`** in:
+  - header: `include/fujinet/io/devices/<device>.h`
+  - source: `src/lib/<device>.cpp`
+- **Add a registration function** (no platform `#ifdef`):
+  - header: `include/fujinet/core/device_init.h` (declare `register_<device>_device(...)`)
+  - source: `src/lib/<device>_init.cpp` (construct device + any platform-provided registries)
+- **Provide platform registries/factories** (if needed):
+  - `include/fujinet/platform/<thing>_registry.h` (platform-agnostic interface)
+  - `src/platform/posix/<thing>_registry.cpp`
+  - `src/platform/esp32/<thing>_registry.cpp`
+- **Hook into the app/core init** by calling your `register_<device>_device(...)` from the platform main (e.g. `src/app/main_posix.cpp`, `src/app/main_esp32.cpp`) in the same style as other devices.
+- **Document the protocol** in `docs/<device>_protocol.md` (copy the NetworkDevice doc style).
+- **Add tests**:
+  - unit/doctest: `tests/test_<device>*.cpp` (fast, deterministic)
+  - integration (Python): `integration-tests/steps/*.yaml` + `py/fujinet_tools/*` protocol helpers if applicable
 
+## What “no ifdefs” means in practice
 
+- Device/business logic should compile for both targets without conditional compilation.
+- Platform differences are expressed through:
+  - injected interfaces (factories, registries, hooks)
+  - platform-specific implementations in `src/platform/<platform>/`
+  - selection performed at **build graph / registration time**, not with `#ifdef` in device code
+
+## Prompt template for future sessions (copy/paste)
+
+I’m working on `fujinet-nio` (multi-platform: POSIX + ESP32). Please follow these rules:
+- Keep new device logic platform-agnostic in `include/` + `src/lib/`. No `#ifdef` in device/service code.
+- Put platform-specific glue in `src/platform/<platform>/` via registries/factories.
+- Mirror existing device patterns (`NetworkDevice`, `FileDevice`, `DiskDevice`).
+- Use `VirtualDevice` + binary little-endian payloads; map failures to `StatusCode`.
+- Add doctest unit tests + (when applicable) Python integration tests.
+- Update docs and link from `docs/architecture.md` when adding a new subsystem.
