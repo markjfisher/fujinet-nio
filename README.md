@@ -12,6 +12,13 @@ This project is a fresh start, intentionally designed to:
 
 ## Building TL;DR:
 
+### prerequisites
+
+Install dependencies:
+
+- [PlatformIO](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide) (abbreviated as "PIO" - VSCode extension recommended)
+- [ESP32-S3 toolchain](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html) (auto-installed by PIO)
+
 ### esp32 initial setup
 
 You need to create an appropriate `sdkconfig.defaults` and `platformio.ini` file for your board type.
