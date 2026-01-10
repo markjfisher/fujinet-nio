@@ -110,15 +110,8 @@ if [ $DO_CLEAN -eq 1 ] ; then
     rm -rf $SCRIPT_DIR/build/${CMAKE_PROFILE}
 fi
 
-## TODO: enable this when we need python modules
-# # python_modules.txt contains pairs of module name and installable package names, separated by pipe symbol
-# MOD_LIST=$(sed '/^#/d' < "${SCRIPT_DIR}/python_modules.txt" | cut -d\| -f1 | tr '\n' ' ' | sed 's# *$##;s# \{1,\}# #g')
-# echo "Checking python modules installed: $MOD_LIST"
-# ${PYTHON} -c "import importlib.util, sys; sys.exit(0 if all(importlib.util.find_spec(mod.strip()) for mod in '''$MOD_LIST'''.split()) else 1)"
-# if [ $? -eq 1 ] ; then
-#   echo "At least one of the required python modules is missing"
-#   bash ${SCRIPT_DIR}/install_python_modules.sh
-# fi
+# Install required Python modules
+pip install -r "${SCRIPT_DIR}/scripts/python-requirements.txt"
 
 ##################################################################
 # CMake Profiles
