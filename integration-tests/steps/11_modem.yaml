@@ -1,0 +1,39 @@
+group: Modem / TCP
+steps:
+  - name: "MODEM: AT basic OK"
+    argv: ["{CLI}", "modem", "at", "AT"]
+    expect:
+      - "OK"
+    timeout_s: 5
+
+  - name: "MODEM: disable telnet (ATNET0)"
+    argv: ["{CLI}", "modem", "at", "ATNET0"]
+    expect:
+      - "OK"
+    timeout_s: 5
+
+  - name: "MODEM: set baud 19200 (ATB19200)"
+    argv: ["{CLI}", "modem", "at", "ATB19200"]
+    expect:
+      - "OK"
+    timeout_s: 5
+
+  - name: "MODEM: dial TCP echo service (expect CONNECT 19200)"
+    argv: ["{CLI}", "modem", "dial", "{TCP}"]
+    expect:
+      - "CONNECT 19200"
+    timeout_s: 8
+
+  - name: "MODEM: sendrecv echoes bytes (hello)"
+    argv: ["{CLI}", "modem", "sendrecv", "--data", "hello"]
+    expect:
+      - "hello"
+    timeout_s: 8
+
+  - name: "MODEM: hang up (ATH)"
+    argv: ["{CLI}", "modem", "at", "ATH"]
+    expect:
+      - "NO CARRIER"
+    timeout_s: 5
+
+

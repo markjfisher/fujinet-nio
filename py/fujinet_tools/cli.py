@@ -8,6 +8,7 @@ from . import clock as clock_cmds
 from . import net as net_cmds
 from . import disk as disk_cmds
 from . import bbc as bbc_cmds
+from . import modem as modem_cmds
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
     net_cmds.register_subcommands(sub)
     disk_cmds.register_subcommands(sub)
     bbc_cmds.register_subcommands(sub)
+    modem_cmds.register_subcommands(sub)
 
     args = p.parse_args()
     raise SystemExit(args.fn(args))

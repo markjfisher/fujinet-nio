@@ -167,6 +167,16 @@ if(FN_BUILD_POSIX_APP)
     set_target_properties(fujinet-nio-posix PROPERTIES
         OUTPUT_NAME "fujinet-nio"
     )
+
+    # Copy a small runner script next to the built binary (for "reboot" restarts on EX_TEMPFAIL=75).
+    add_custom_command(TARGET fujinet-nio-posix POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/distfiles/run-fujinet-nio
+            $<TARGET_FILE_DIR:fujinet-nio-posix>/run-fujinet-nio
+        COMMAND /bin/chmod +x
+            $<TARGET_FILE_DIR:fujinet-nio-posix>/run-fujinet-nio
+        VERBATIM
+    )
 endif()
 
 # --------------------------------------------------
