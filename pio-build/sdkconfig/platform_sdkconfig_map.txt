@@ -2,7 +2,7 @@
 # sdkconfig.defaults file for the platform (per build_board).
 
 # cdc x 2, one for fujibus (port 0), other for console (port 1), do not fallback to UART
-fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2,consolecdc,consolecdc-port1,console-no-uart-fallback
+fujibus-usbcdc-consolecdc-nosd-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2,consolecdc,consolecdc-port1,console-no-uart-fallback
 
 # Freenove variant uses same defaults as standard S3 WROOM N16R8
 fujibus-usbcdc-consolecdc-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2,consolecdc,consolecdc-port1,console-no-uart-fallback
@@ -14,8 +14,5 @@ fujibus-usbcdc-consoleuart-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-little
 fujibus-usbcdc-noconsole-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,noconsole
 
 # cdc x 1 for the fujibus only
-fujibus-usbcdc-consoleuart-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,consoleuart
-fujibus-usbcdc-noconsole-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,noconsole
-
-## TODO: more added when we support legacy/gpio/sio etc. This won't work, but it's here for documentation
-legacy-siogpio-consoleuart-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,consoleuart
+fujibus-usbcdc-consoleuart-nosd-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,consoleuart
+fujibus-usbcdc-noconsole-nosd-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,noconsole
