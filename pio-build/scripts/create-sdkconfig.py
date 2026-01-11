@@ -15,6 +15,15 @@ def read_build_board_value(ini_file):
         exit(1)
 
 
+def read_console_type_value(ini_file):
+    config = configparser.RawConfigParser()
+    config.read(ini_file)
+    try:
+        return config.get('fujinet', 'console_type')
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        return "noconsole"
+
+
 def build_sdkconfig_path(name: str) -> str:
     """Return the path to the sdkconfig defaults file for a given name."""
     return os.path.join("pio-build", "sdkconfig", f"sdkconfig-{name}.defaults")
@@ -71,7 +80,7 @@ def get_names_from_map(map_file: str, build_board: str):
     return names
 
 
-def concatenate_sdkconfig_files(names, output_file):
+def concatenate_sdkconfig_files(names, console_names, output_file):
     """Concatenate sdkconfig-<name>.defaults files and sdkconfig.local.defaults into output_file."""
     input_files = []
 
@@ -83,6 +92,17 @@ def concatenate_sdkconfig_files(names, output_file):
         path = build_sdkconfig_path(name)
         if not os.path.exists(path):
             print(f"Error: sdkconfig defaults file does not exist: {path}", file=sys.stderr)
+            sys.exit(1)
+        input_files.append(path)
+
+    # Add the console config paths, by looking those up in the map too
+    for name in console_names:
+        name = name.strip()
+        if not name:
+            continue
+        path = build_sdkconfig_path(name)
+        if not os.path.exists(path):
+            print(f"Error: sdkconfig console defaults file does not exist: {path}", file=sys.stderr)
             sys.exit(1)
         input_files.append(path)
 
@@ -142,6 +162,7 @@ def main():
     if args.ini_file:
         platformio_ini_file = args.ini_file
     build_board = read_build_board_value(platformio_ini_file)
+    console_type = read_console_type_value(platformio_ini_file)
 
     # Force regeneration of per-board sdkconfig files.
     # PlatformIO/ESP-IDF can otherwise keep stale merged sdkconfig.<build_board> files
@@ -162,7 +183,8 @@ def main():
             print(f"Warning: failed to remove '{fname}': {e}", file=sys.stderr)
 
     names = get_names_from_map(args.map_file, build_board)
-    concatenate_sdkconfig_files(names, args.output_file)
+    console_names = get_names_from_map(args.map_file, console_type)
+    concatenate_sdkconfig_files(names, console_names, args.output_file)
 
 
 if __name__ == "__main__":

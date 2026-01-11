@@ -16,8 +16,10 @@ def create_local_ini(board_name, local_file_name):
     config = configparser.RawConfigParser()
     config.add_section('fujinet')
     config.set('fujinet', 'build_board', board_name)
+    config.set('fujinet', 'console_type', "noconsole")
     with open(local_file_name, 'w') as configfile:
         config.write(configfile)
+        configfile.write("; console_type can be one of [noconsole, consolecdc, consoleuart], if unset, it defaults to noconsole\n\n")
         configfile.write("[env]\n;build_flags += \n")
     print(f"{local_file_name} file created with build_board = {board_name}")
 
