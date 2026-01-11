@@ -2,7 +2,7 @@
 
 ## **FujiNet-NIO Project**  
 
-*Version 1.0 — 2025-12*
+*Version 1.1 — 2026-01*
 
 Welcome to the **FujiNet-NIO** project!  
 This document provides everything a new developer needs to understand the codebase, set up a development environment, and begin contributing confidently.
@@ -95,11 +95,11 @@ void poll()
 ```
 
 Device examples:
-- FujiDevice  
-- DiskDevice  
-- NetworkDevice  
-- PrinterDevice  
-- DBCDevice  
+- FujiDevice
+- DiskDevice
+- NetworkDevice
+- ClockDevice
+- ModemDevice
 
 ---
 

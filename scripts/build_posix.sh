@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
 # an interface to running fujinet-nio builds for cmake targets
-
 set -euo pipefail
 
 # ASSUMPTION: this is one directory deeper than the repo root
@@ -29,11 +28,9 @@ function show_profiles {
 }
 
 function show_help {
-  echo "Usage: $(basename $0) [options] -- [additional args]"
+  echo "Usage: $(basename $0) [options] PROFILE_NAME -- [additional args]"
   echo ""
-  echo "fujinet-pc (cmake) options:"
   echo "   -c          # run clean before build"
-  echo "   -p PROFILE  # choose configure profile from CMakePresets.json"
   echo "   -S          # show available profiles from CMakePresets.json"
   echo ""
   echo "other options:"
@@ -49,11 +46,11 @@ if [ $# -eq 0 ] ; then
   show_help
 fi
 
-while getopts "chp:SV:" flag
+while getopts "chpSV:" flag
 do
   case "$flag" in
     c) DO_CLEAN=1 ;;
-    p) CMAKE_PROFILE=${OPTARG} ;;
+    p) ;; # this is just a "posix" flag, the profile is now an argument
     S) SHOW_PROFILES=1 ;;
     V) VENV_ROOT=${OPTARG} ;;
     h) show_help ;;
@@ -66,6 +63,14 @@ if [ $SHOW_PROFILES -eq 1 ] ; then
   show_profiles
   exit 0
 fi
+
+if [ $# -eq 0 ]; then
+  echo "No profile selected. Please specify one on the command line"
+  show_help
+fi
+
+CMAKE_PROFILE="$1"
+shift  # Remove profile from $@ so it's not passed to cmake
 
 ##################################################################################
 # Python check and venv setup
