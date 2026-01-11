@@ -70,6 +70,21 @@ fi
 ##################################################################################
 # Python check and venv setup
 ##################################################################################
+# Default venv location if VENV_ROOT not set
+VENV_ROOT="${VENV_ROOT:-"${SCRIPT_DIR}/build/.venv"}"
+ACTIVATE="${VENV_ROOT}/bin/activate"
+
+mkdir -p "$SCRIPT_DIR/build"
+
+if ! uv --version &> /dev/null ; then
+  echo "Python uv is required but not found."
+  exit 1
+fi
+
+uv venv --clear "$VENV_ROOT"
+source "$ACTIVATE"
+uv sync --active
+
 PYTHON=$(command -v python3 || command -v python) || {
   echo "Python is not installed"; exit 1;
 }
@@ -77,40 +92,36 @@ PYTHON=$(command -v python3 || command -v python) || {
 "$PYTHON" -c 'import sys, venv, ensurepip; sys.exit(0 if sys.version_info[0] == 3 else 1)' \
   || { echo "Need Python 3 with venv and ensurepip available"; exit 1; }
 
-# Default venv location if VENV_ROOT not set
-VENV_ROOT="${VENV_ROOT:-"${SCRIPT_DIR}/build/.venv"}"
-ACTIVATE="${VENV_ROOT}/bin/activate"
-
 # Only (re)create/activate if we're not already in this venv
-if [ "$VIRTUAL_ENV" != "$VENV_ROOT" ]; then
-  if [ ! -f "$ACTIVATE" ]; then
-    echo "Creating venv at: $VENV_ROOT"
-    mkdir -p "$(dirname "$VENV_ROOT")"
-    "$PYTHON" -m venv "$VENV_ROOT" || {
-      echo "Failed to create venv at $VENV_ROOT"
-      exit 1
-    }
-  fi
-
-  . "$ACTIVATE" || {
-    echo "Failed to activate venv at $VENV_ROOT"
-    exit 1
-  }
-fi
-
-echo "Virtual env: $VIRTUAL_ENV"
+#if [ "$VIRTUAL_ENV" != "$VENV_ROOT" ]; then
+#  if [ ! -f "$ACTIVATE" ]; then
+#    echo "Creating venv at: $VENV_ROOT"
+#    mkdir -p "$(dirname "$VENV_ROOT")"
+#    "$PYTHON" -m venv "$VENV_ROOT" || {
+#      echo "Failed to create venv at $VENV_ROOT"
+#      exit 1
+#    }
+#  fi
+#
+#  . "$ACTIVATE" || {
+#    echo "Failed to activate venv at $VENV_ROOT"
+#    exit 1
+#  }
+#fi
+#
+#echo "Virtual env: $VIRTUAL_ENV"
 
 ##################################################################################
 # cmake build
 ##################################################################################
 
-mkdir -p "$SCRIPT_DIR/build"
+#mkdir -p "$SCRIPT_DIR/build"
 if [ $DO_CLEAN -eq 1 ] ; then
     echo "Removing old build artifacts"
     rm -rf $SCRIPT_DIR/build/${CMAKE_PROFILE}
 fi
 
-## TODO: enable this when we need python modules
+# TODO: enable this when we need python modules
 # # python_modules.txt contains pairs of module name and installable package names, separated by pipe symbol
 # MOD_LIST=$(sed '/^#/d' < "${SCRIPT_DIR}/python_modules.txt" | cut -d\| -f1 | tr '\n' ' ' | sed 's# *$##;s# \{1,\}# #g')
 # echo "Checking python modules installed: $MOD_LIST"

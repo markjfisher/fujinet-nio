@@ -12,6 +12,28 @@ This project is a fresh start, intentionally designed to:
 
 ## Building TL;DR:
 
+### prerequisites
+
+The following are required:
+
+- Python (with `virtualenv` & `pip`)
+- [PlatformIO](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide) (abbreviated as "PIO" - VSCode extension recommended)
+- [ESP32-S3 toolchain](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html) (auto-installed by PIO)
+
+Install prerquisites from packages:
+
+>**_NOTE:_** PlatformIO Core can be installed from packages but they may be old versions.  Using the VSCode extension will install the current version instead & is recommended.
+- Ubuntu (optionally add `platformio` to install PlatformIO Core)
+
+  ```sh
+  apt install --no-install-recommends python3 python3-venv python3-pip cmake build-essential # platformio
+  ```
+
+- Arch (optionally add `platformio-core` to install PlatformIO Core)
+
+  ```sh
+  pacman -S python python-pip cmake base-devel # platformio-core
+  ```
 ### esp32 initial setup
 
 You need to create an appropriate `sdkconfig.defaults` and `platformio.ini` file for your board type.

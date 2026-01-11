@@ -151,6 +151,19 @@ cmake >= 3.20
 gcc/g++ (C++20)
 python3
 ```
+### Installing Prequisites
+Install prerquisites from packages:
+>**_NOTE:_** PlatformIO Core can be installed from packages but they may be old versions.  Using the VSCode extension will install the current version instead & is recommended.
+- Ubuntu (optionally add `platformio` to install PlatformIO Core)
+  ```sh
+  apt install --no-install-recommends python3 python3-venv python3-pip cmake build-essential # platformio
+  ```
+
+- Arch (optionally add `platformio-core` to install PlatformIO Core)
+
+  ```sh
+  pacman -S python python-pip cmake base-devel # platformio-core
+  ```
 
 Build:
 ```
