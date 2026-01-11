@@ -105,7 +105,6 @@ void log(Level level, const char* tag, std::string_view message)
          message.data());
 }
 
-} // namespace fujinet::log
-
 #endif // FN_DEBUG
 
+} // namespace fujinet::log

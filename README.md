@@ -10,40 +10,48 @@ This project is a fresh start, intentionally designed to:
 - support multiple deployment targets from a single codebase, and
 - be testable, extensible, and maintainable long-term.
 
+## Building
+
+Read the [developer onboarding docs](docs/developer_onboarding.md)
+
 ## Building TL;DR:
 
 ### prerequisites
 
 The following are required:
 
-- Python (with `virtualenv` & `pip`)
+- Python (with `virtualenv` & `uv`)
 - [PlatformIO](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide) (abbreviated as "PIO" - VSCode extension recommended)
 - [ESP32-S3 toolchain](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html) (auto-installed by PIO)
 
 Install prerquisites from packages:
 
->**_NOTE:_** PlatformIO Core can be installed from packages but they may be old versions.  Using the VSCode extension will install the current version instead & is recommended.
+>**_NOTE:_** PlatformIO Core can be installed from packages but they may be old versions.  Using the VSCode extension will install the current version instead.
 - Ubuntu (optionally add `platformio` to install PlatformIO Core)
 
   ```sh
-  apt install --no-install-recommends python3 python3-venv python3-pip cmake build-essential # platformio
+  apt install --no-install-recommends python3 python3-venv python3-uv cmake build-essential # platformio
   ```
 
 - Arch (optionally add `platformio-core` to install PlatformIO Core)
 
   ```sh
-  pacman -S python python-pip cmake base-devel # platformio-core
+  pacman -S python python-uv cmake base-devel # platformio-core
   ```
+
 ### esp32 initial setup
 
-You need to create an appropriate `sdkconfig.defaults` and `platformio.ini` file for your board type.
-This can be done with the `./build.sh` script, and should not be done manually as it will be overwritten on each build.
+You need an appropriate `sdkconfig.defaults` and `platformio.ini` file for your board type.
+This is done by the `./build.sh` script, and should not be done manually as it will be overwritten on each build.
+
+The build script will pull together relevant sections for both files from templates, you only need to provide local
+overrides (see below).
 
 ```bash
 # list the board types that can be built
 $ ./build.sh -S
 fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8
-atari-sio-consolecdc-s3-wroom-1-n16r8
+...
 
 # setup the build environment for the board type
 # WARNING: this will overwrite the sdkconfig.local.defaults file, and platformio.local.ini files
@@ -74,12 +82,11 @@ The posix build is done with cmake, and presets.
 You can view the posix presets with
 
 ```bash
-$ ./scripts/build_posix.sh -S
+$ ./scripts/build -pS
 Available profiles:
 fujibus-pty-debug   - FujiBus over PTY (Debug)
 fujibus-pty-release - FujiBus over PTY (Release)
-atari-release       - Atari SIO profile (Release)
-lib-only            - library only (no app, tests on)
+...
 ```
 
 #### build the posix target
@@ -128,90 +135,14 @@ For the posix builds, the build files are located in the `build` directory at th
 
 ## What This Is (and Isn’t)
 
-- This **is not** a drop-in replacement for existing FujiNet firmware.
+- This **is not** a drop-in replacement for existing FujiNet firmware (yet!)
 - This **is** a new foundation that can:
   - reuse ideas from existing projects,
   - host compatible protocols and virtual devices,
   - and eventually power multiple front ends and platforms.
 
-Compatibility is a *goal*, not a constraint.
-
 ---
-
-## Repository Layout (Early Stage)
-
-```text
-fujinet-nio/
-├── CMakeLists.txt          # Primary build system
-├── platformio.ini          # ESP32 / embedded build support
-├── include/                # Public headers (library API)
-│   └── fujinet/
-│       └── io/
-│           └── core/
-├── src/
-│   ├── lib/                # Core library implementation
-│   └── app/                # Application entry points (POSIX / ESP32)
-├── tests/                  # Unit tests
-└── README.md
-```
-
-This structure will grow as:
-
-- transports (RS232, SIO, IEC, etc.) are added,
-- virtual devices (disk, printer, clock, network, etc.) mature,
-- and platform-specific bootstrap layers are introduced.
-
----
-
-## Building (POSIX)
-
-```
-mkdir build
-cd build
-cmake ..
-cmake --build .
-./fujinet-nio
-```
-
-Tests:
-
-```
-ctest
-```
-
-## ESP32 / PlatformIO
-
-PlatformIO support is scaffolded from the start:
-
-```
-pio run -e esp32dev
-```
-
-ESP32 entry points will be added under src/app/ as the core matures.
-
-## Status
-
-🚧 Early development
-This repository currently provides:
-
-- the project skeleton,
-- build system setup,
-- a minimal core I/O model,
-- and smoke tests to ensure correctness from the beginning.
-
-Expect rapid iteration.
-
----
-
-## Contributing
-
-Early contributions are discussion-driven. If you’re interested:
-
-- architecture feedback is welcome,
-- test coverage is encouraged,
-- code should prioritize clarity over cleverness.
-
-Documentation and comments matter as much as code.
 
 ## License
 
+See [LICENSE](LICENSE)
