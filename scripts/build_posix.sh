@@ -94,44 +94,15 @@ PYTHON=$(command -v python3 || command -v python) || {
 "$PYTHON" -c 'import sys, venv, ensurepip; sys.exit(0 if sys.version_info[0] == 3 else 1)' \
   || { echo "Need Python 3 with venv and ensurepip available"; exit 1; }
 
-# Only (re)create/activate if we're not already in this venv
-#if [ "$VIRTUAL_ENV" != "$VENV_ROOT" ]; then
-#  if [ ! -f "$ACTIVATE" ]; then
-#    echo "Creating venv at: $VENV_ROOT"
-#    mkdir -p "$(dirname "$VENV_ROOT")"
-#    "$PYTHON" -m venv "$VENV_ROOT" || {
-#      echo "Failed to create venv at $VENV_ROOT"
-#      exit 1
-#    }
-#  fi
-#
-#  . "$ACTIVATE" || {
-#    echo "Failed to activate venv at $VENV_ROOT"
-#    exit 1
-#  }
-#fi
-#
-#echo "Virtual env: $VIRTUAL_ENV"
 
 ##################################################################################
 # cmake build
 ##################################################################################
 
-#mkdir -p "$SCRIPT_DIR/build"
 if [ $DO_CLEAN -eq 1 ] ; then
     echo "Removing old build artifacts"
     rm -rf $SCRIPT_DIR/build/${CMAKE_PROFILE}
 fi
-
-# TODO: enable this when we need python modules
-# # python_modules.txt contains pairs of module name and installable package names, separated by pipe symbol
-# MOD_LIST=$(sed '/^#/d' < "${SCRIPT_DIR}/python_modules.txt" | cut -d\| -f1 | tr '\n' ' ' | sed 's# *$##;s# \{1,\}# #g')
-# echo "Checking python modules installed: $MOD_LIST"
-# ${PYTHON} -c "import importlib.util, sys; sys.exit(0 if all(importlib.util.find_spec(mod.strip()) for mod in '''$MOD_LIST'''.split()) else 1)"
-# if [ $? -eq 1 ] ; then
-#   echo "At least one of the required python modules is missing"
-#   bash ${SCRIPT_DIR}/install_python_modules.sh
-# fi
 
 ##################################################################
 # CMake Profiles
@@ -145,7 +116,8 @@ fi
 cmake --preset ${CMAKE_PROFILE} "$@"
 cmake --build --preset ${CMAKE_PROFILE}-build
 
-## TODO: When we build a distribution, do something here.
+## TODO: Review distribution builds. Currently the distfiles folder is copied into the build as part of standard posix build, see FN_BUILD_POSIX_APP in CMakeLists_posix.cmake
+## which copies the run-fujinet-nio shell script, facilitating easy reboot of posix instance via exit codes.
 # cmake --build --preset ${CMAKE_PROFILE}-build --target dist
 
 ctest -V --progress --test-dir "build/${CMAKE_PROFILE}"

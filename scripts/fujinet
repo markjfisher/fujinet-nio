@@ -3,38 +3,33 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${ROOT}/build/.venv"
-PYPROJECT="${ROOT}/pyproject.toml"
-STAMP="${VENV_DIR}/.fujinet_tools_installed"
+ACTIVATE="${VENV_DIR}/bin/activate"
+
+# Ensure uv is available
+ensure_uv() {
+  if ! uv --version &> /dev/null; then
+    echo "[fujinet] uv is required but not found. Installing..."
+    if ! pipx install uv &> /dev/null; then
+      echo "[fujinet] ERROR: pipx is required to install uv. Install with: python3 -m pip install --user pipx"
+      exit 1
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+}
 
 ensure_venv() {
   if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
     echo "[fujinet] creating venv at ${VENV_DIR}"
     mkdir -p "$(dirname "${VENV_DIR}")"
-    python3 -m venv "${VENV_DIR}"
+    uv venv "${VENV_DIR}"
   fi
 }
 
-ensure_installed() {
-  # If pyproject changed since last install, reinstall.
-  local current_hash
-  current_hash="$(python3 - <<'PY'
-import hashlib, pathlib
-p = pathlib.Path("pyproject.toml").read_bytes()
-print(hashlib.sha256(p).hexdigest())
-PY
-)"
-
-  local last_hash=""
-  if [[ -f "${STAMP}" ]]; then
-    last_hash="$(cat "${STAMP}" || true)"
-  fi
-
-  if [[ "${current_hash}" != "${last_hash}" ]]; then
-    echo "[fujinet] installing/updating python deps (editable)"
-    "${VENV_DIR}/bin/python" -m pip install -U pip >/dev/null
-    "${VENV_DIR}/bin/python" -m pip install -e "${ROOT}"
-    echo "${current_hash}" > "${STAMP}"
-  fi
+ensure_synced() {
+  # Activate venv and sync dependencies from pyproject.toml (and uv.lock if present)
+  # uv sync automatically reads pyproject.toml and installs the project in editable mode
+  source "${ACTIVATE}"
+  uv sync --active >/dev/null
 }
 
 run_cli() {
@@ -42,6 +37,7 @@ run_cli() {
 }
 
 cd "${ROOT}"
+ensure_uv
 ensure_venv
-ensure_installed
+ensure_synced
 run_cli "$@"

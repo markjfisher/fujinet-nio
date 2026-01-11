@@ -155,7 +155,7 @@ python3
 
 Install prerquisites from packages:
 
->**_NOTE:_** PlatformIO Core can be installed from packages but they may be old versions.  Using the VSCode extension will install the current version instead & is recommended.
+> **_NOTE:_** PlatformIO Core can be installed from packages but they may be old versions.  Using the VSCode extension will install the current version.
 
 - Ubuntu (optionally add `platformio` to install PlatformIO Core)
 
@@ -171,27 +171,44 @@ Install prerquisites from packages:
 
 Build:
 ```
-# find valid posix targets
-./build.sh -p foo -S
+# Show build script overview
+./build.sh -h
 
-# use one of them to build (-c will clean the build dir first)
-./build.sh -cp fujibus-pty-debug
+# Show detailed POSIX build help (includes available profiles)
+./build.sh -p fujibus-pty-debug -h
+
+# List available POSIX build profiles
+./build.sh -p fujibus-pty-debug -S
+
+# Build a POSIX target (-c will clean the build dir first)
+./build.sh -p fujibus-pty-debug -c
+
+# Args can be combined:
+./build.sh -cp fujibut-pty-debug
 ```
 
-Run:
+Run the posix build via the runner script if you want reboot behaviour to restart the application automatically:
 ```
-./fujinet-nio
+# cd to the build target
+cd build/fujibus-pty-debug
+./run-fujinet-nio
 ```
 
-The POSIX app uses a **PTY channel**, so you will see:
+If you build the POSIX app using the PTY channel, you will see something similar to:
 
 ```
 [PtyChannel] Created PTY. Connect to: /dev/pts/7
 ```
 
-You can send FujiBus packets with:
+Note the pts channel that is opened.
+
+You can send FujiBus packets with the CLI tool:
 ```
-scripts/fujinet TODO PARAMS
+# Example: mount a disk image
+./scripts/fujinet -p /dev/pts/7 disk mount --slot 1 --fs host --path /path/to/image.ssd --type auto
+
+# Show CLI help
+./scripts/fujinet -p /dev/pts/7 --help
 ```
 
 ---
@@ -204,7 +221,14 @@ Install dependencies:
 
 Build:
 ```
+# Show ESP32 build help (includes available boards)
+./build.sh -h
+
+# Clean and build ESP32 (default build type)
 ./build.sh -cb
+
+# Or explicitly specify ESP32 build type
+./build.sh -e -cb
 ```
 
 Flash:
@@ -215,6 +239,15 @@ Flash:
 Monitor:
 ```
 ./build.sh -m
+```
+
+Setup new board:
+```
+# List available boards
+./build.sh -S
+
+# Setup a new board (creates platformio.local.ini)
+./build.sh -s BOARD_NAME
 ```
 
 On ESP32-S3, communication is handled through **TinyUSB CDC-ACM**:
