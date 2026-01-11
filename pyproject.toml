@@ -10,7 +10,6 @@ requires-python = ">=3.10"
 dependencies = [
   "pyserial~=3.5",
   "PyYAML~=6.0.3",
-  "serial~=0.0.96",
   "ninja~=1.13.0"
 ]
 
