@@ -4,6 +4,15 @@
 # cdc x 2, one for fujibus (port 0), other for console (port 1), do not fallback to UART
 fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2,consolecdc,consolecdc-port1,console-no-uart-fallback
 
+# Freenove variant uses same defaults as standard S3 WROOM N16R8
+fujibus-usbcdc-consolecdc-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2,consolecdc,consolecdc-port1,console-no-uart-fallback
+
+# Freenove UART console variant
+fujibus-usbcdc-consoleuart-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,consoleuart
+
+# Freenove no-console variant
+fujibus-usbcdc-noconsole-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,noconsole
+
 # cdc x 1 for the fujibus only
 fujibus-usbcdc-consoleuart-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,consoleuart
 fujibus-usbcdc-noconsole-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc1,noconsole
