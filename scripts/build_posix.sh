@@ -76,9 +76,11 @@ ACTIVATE="${VENV_ROOT}/bin/activate"
 
 mkdir -p "$SCRIPT_DIR/build"
 
+# Python uv needs to be installed with pipx if not already present
 if ! uv --version &> /dev/null ; then
-  echo "Python uv is required but not found."
-  exit 1
+  echo "Python uv is required but not found.  Installing... "
+  pipx install uv 
+  export PATH="$HOME/.local/bin:$PATH"
 fi
 
 uv venv --clear "$VENV_ROOT"
