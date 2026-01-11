@@ -9,6 +9,15 @@ from .fujibus import FujiBusSession, FujiPacket
 from . import modemproto as mp
 from .byte_proto import u16le
 
+try:
+    import select  # type: ignore
+    import termios  # type: ignore
+    import tty  # type: ignore
+except Exception:
+    select = None  # type: ignore
+    termios = None  # type: ignore
+    tty = None  # type: ignore
+
 
 STATUS_TEXT = {
     0: "Ok",
@@ -119,6 +128,31 @@ def _drain(
         time.sleep(0.02)
 
     return bytes(out)
+
+
+class _RawTerminal:
+    """
+    Put stdin into raw mode (POSIX) for interactive modem sessions.
+    Safe no-op on non-POSIX platforms (command will error earlier).
+    """
+    def __init__(self) -> None:
+        self._fd = None
+        self._old = None
+
+    def __enter__(self):
+        if termios is None or tty is None:
+            return self
+        self._fd = sys.stdin.fileno()
+        self._old = termios.tcgetattr(self._fd)
+        tty.setraw(self._fd)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if termios is None:
+            return False
+        if self._fd is not None and self._old is not None:
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
+        return False
 
 
 # ----------------------------------------------------------------------
@@ -399,6 +433,169 @@ def cmd_modem_hangup(args) -> int:
         return 0
 
 
+def cmd_modem_term(args) -> int:
+    """
+    Interactive terminal session:
+      - reads from stdin and writes to modem (Write)
+      - reads from modem output (Read) and writes to stdout
+
+    Exit: Ctrl-] (0x1D) or Ctrl-C.
+    """
+    if select is None:
+        print("error: interactive mode not supported on this platform")
+        return 2
+
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+
+        # Optional pre-dial.
+        if args.dial:
+            # Keep telnet enabled by default (most BBSes are telnet on 23).
+            # User can run: modem at ATNET0 before this if they want raw TCP.
+            hostport = mp.normalize_hostport(args.dial)
+            payload = hostport.encode("utf-8", errors="replace")
+            req = mp.build_control_req(0x02, data=u16le(len(payload)) + payload)
+            pkt = _send(
+                bus=bus,
+                device=mp.MODEM_DEVICE_ID,
+                command=mp.CMD_CONTROL,
+                payload=req,
+                timeout=args.timeout,
+                cmd_txt="MODEM DIAL",
+            )
+            if pkt is None:
+                print("No response")
+                return 2
+            if not status_ok(pkt):
+                code = _pkt_status_code(pkt)
+                print(f"Device status={code} ({_status_str(code)})")
+                return 1
+
+        # Prime cursors from status.
+        st = _get_status(bus, timeout=args.timeout, debug=args.debug)
+        woff = st.host_write_cursor
+        roff = st.host_read_cursor
+        was_connected = bool(st.connected)
+
+        # Status polling cadence + idle backoff (reduces FujiBus chatter).
+        next_status_at = time.monotonic()
+        idle_sleep = 0.002
+        idle_sleep_max = 0.05
+
+        sys.stdout.write("\n[fujinet modem] interactive session (exit: Ctrl-])\n")
+        sys.stdout.flush()
+
+        with _RawTerminal():
+            while True:
+                now = time.monotonic()
+
+                # Periodic status poll: used to decide if we should issue READ requests at all,
+                # and to detect disconnect transitions.
+                if now >= next_status_at:
+                    try:
+                        st = _get_status(bus, timeout=min(args.timeout, 0.2), debug=args.debug)
+                        woff = st.host_write_cursor
+
+                        # If we were connected and now we're not, exit (server hangup / local hangup).
+                        if was_connected and not st.connected:
+                            # Drain any remaining output (e.g. "NO CARRIER") then exit.
+                            try:
+                                out = _drain(bus=bus, timeout=min(args.timeout, 0.5), max_total=4096)
+                                if out:
+                                    sys.stdout.buffer.write(out)
+                                    sys.stdout.buffer.flush()
+                            except Exception:
+                                pass
+                            sys.stdout.write("\n[fujinet modem] disconnected\n")
+                            sys.stdout.flush()
+                            return 0
+
+                        was_connected = bool(st.connected)
+                    except Exception:
+                        # If status fails transiently, don't abort the session immediately.
+                        pass
+                    next_status_at = now + 0.10  # 10Hz
+
+                # Read from modem -> stdout
+                did_read = False
+                if getattr(st, "host_rx_avail", 0) > 0:
+                    pkt = _send(
+                        bus=bus,
+                        device=mp.MODEM_DEVICE_ID,
+                        command=mp.CMD_READ,
+                        payload=mp.build_read_req(offset=roff, max_bytes=args.read_chunk),
+                        timeout=0.05,
+                        cmd_txt="MODEM READ",
+                    )
+                    if pkt is not None:
+                        if not status_ok(pkt):
+                            code = _pkt_status_code(pkt)
+                            # If our read offset got out of sync, resync and continue.
+                            if code == 2:  # InvalidRequest
+                                try:
+                                    st2 = _get_status(bus, timeout=args.timeout, debug=args.debug)
+                                    roff = st2.host_read_cursor
+                                    continue
+                                except Exception:
+                                    pass
+                            print(f"\nDevice status={code} ({_status_str(code)})")
+                            return 1
+                        rr = mp.parse_read_resp(pkt.payload)
+                        if rr.offset != roff:
+                            # Resync offsets (e.g. if another tool consumed output).
+                            st2 = _get_status(bus, timeout=args.timeout, debug=args.debug)
+                            roff = st2.host_read_cursor
+                        else:
+                            if rr.data:
+                                sys.stdout.buffer.write(rr.data)
+                                sys.stdout.buffer.flush()
+                                roff += len(rr.data)
+                                did_read = True
+
+                # Read from stdin -> modem
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.0)
+                if rlist:
+                    b = sys.stdin.buffer.read1(1024)
+                    if not b:
+                        time.sleep(0.01)
+                        continue
+
+                    # Exit key: Ctrl-]
+                    if b and 0x1D in b:
+                        return 0
+
+                    pkt = _send(
+                        bus=bus,
+                        device=mp.MODEM_DEVICE_ID,
+                        command=mp.CMD_WRITE,
+                        payload=mp.build_write_req(offset=woff, data=b),
+                        timeout=args.timeout,
+                        cmd_txt="MODEM WRITE",
+                    )
+                    if pkt is None:
+                        continue
+                    if not status_ok(pkt):
+                        code = _pkt_status_code(pkt)
+                        # Try to resync write cursor once.
+                        if code == 2:  # InvalidRequest
+                            st = _get_status(bus, timeout=args.timeout, debug=args.debug)
+                            woff = st.host_write_cursor
+                            continue
+                        print(f"\nDevice status={code} ({_status_str(code)})")
+                        return 1
+                    wr = mp.parse_write_resp(pkt.payload)
+                    woff = wr.offset + wr.written
+                    # Writing implies we're active; avoid long idle sleeps.
+                    did_read = True
+
+                # Backoff when idle to reduce bus chatter and improve throughput.
+                if did_read:
+                    idle_sleep = 0.002
+                else:
+                    idle_sleep = min(idle_sleep_max, idle_sleep * 1.25)
+                time.sleep(idle_sleep)
+
+
 def register_subcommands(subparsers) -> None:
     pm = subparsers.add_parser("modem", help="Modem device commands (AT + binary protocol)")
     msub = pm.add_subparsers(dest="modem_cmd", required=True)
@@ -440,5 +637,10 @@ def register_subcommands(subparsers) -> None:
     ph = msub.add_parser("hangup", help="Hang up (binary control op; emits NO CARRIER if connected)")
     ph.add_argument("--read-max", type=int, default=2048)
     ph.set_defaults(fn=cmd_modem_hangup)
+
+    pt = msub.add_parser("term", help="Interactive terminal bridge to the modem (stdin/stdout)")
+    pt.add_argument("--dial", default=None, help="Optional: dial host (host[:port] or tcp://host:port) before entering terminal mode")
+    pt.add_argument("--read-chunk", type=int, default=512, help="Read chunk size from modem")
+    pt.set_defaults(fn=cmd_modem_term)
 
 
