@@ -171,17 +171,14 @@ Install prerquisites from packages:
 
 Build:
 ```
-# Show build script overview
+# Show build script overview, including build boards and profiles
 ./build.sh -h
 
-# Show detailed POSIX build help (includes available profiles)
-./build.sh -p fujibus-pty-debug -h
-
-# List available POSIX build profiles
-./build.sh -p fujibus-pty-debug -S
+# List available POSIX build profiles (included in main help, but here on their own for scripting)
+./build.sh -p -S
 
 # Build a POSIX target (-c will clean the build dir first)
-./build.sh -p fujibus-pty-debug -c
+./build.sh -c -p fujibus-pty-debug
 
 # Args can be combined:
 ./build.sh -cp fujibut-pty-debug
@@ -191,7 +188,9 @@ Run the posix build via the runner script if you want reboot behaviour to restar
 ```
 # cd to the build target
 cd build/fujibus-pty-debug
-./run-fujinet-nio
+# This is useful if you have a terminal in the build folder that gets wiped by building in another terminal. "cd ." will fix the folder having been removed from under you.
+cd . && ./run-fujinet-nio
+
 ```
 
 If you build the POSIX app using the PTY channel, you will see something similar to:
@@ -227,7 +226,7 @@ Build:
 # Clean and build ESP32 (default build type)
 ./build.sh -cb
 
-# Or explicitly specify ESP32 build type
+# Or explicitly specify ESP32 build type with -e
 ./build.sh -e -cb
 ```
 
@@ -253,6 +252,108 @@ Setup new board:
 On ESP32-S3, communication is handled through **TinyUSB CDC-ACM**:
 - CDC0 = debug logging          e.g. /dev/ttyACM0
 - CDC1 = FujiBus data channel        /dev/ttyACM1
+
+---
+
+# 5. Console interaction
+
+The diagnostics framework is described in (diagnostis.md)[diagnostics.md]
+
+If you build the application with a console (on posix this is automatic, on esp32 you must build a board with it enabled on a particular channel, e.g. uart or cdc)
+then you can interact with the running fujinet via the console.
+
+## Example posix session
+
+```shell
+# Build and run the posix instance in one terminal:
+❯ ./build.sh -cp fujibus-pty-debug
+❯ cd build/fujibus-pty-debug
+
+❯ cd . && ./run-fujinet-nio
+Starting fujinet-nio
+[I] nio: fujinet-nio starting (POSIX app)
+[I] nio: Version: 0.1.1
+[Console] PTY created. Connect diagnostic console to: /dev/pts/5
+...
+
+# In a new terminal, use picocom or similar to connect to the console device:
+❯ picocom -q /dev/pts/5
+fujinet-nio diagnostic console (type: help)
+>
+```
+
+## Example esp32 session
+
+```shell
+# Build and run the esp32 instance, with monitoring
+# Assumption, you are using the `fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8` board where the console is CDC.
+# You can also use UART with "consoleuart" board, and commands are then in the pio MONITOR, or via uart port of the esp32
+❯ ./build.ch -cbu
+❯ picocom -q /dev/fujinet-console    # or use /dev/ttyACM2 if you haven't setup udev rules. The exact port can be tricky, hence why udev rules are much nicer
+>
+```
+
+For infomation on setting up /dev/fujinet-console as a symlink to the CDC port when you plug in the 2nd usb cable to the S3, see
+the (diagnostis.md)[diagnostics.md] documentation for setting up udev rules.
+As mentioned above, you can directly use `/dev/ttyACM<N>` if you know exactly which port is correct, usually ttyACM2.
+
+## Running commands in the console
+
+You can now interact with the console, start by typing 'help' to see the available commands.
+
+The console is split into 2 parts:
+- Interacting with the file system using standard ls/rm/mv/cd type commands after specifying which "file system" to use with "fs"
+- Interacting with the diagnostics modules, e.g. "core.info"
+
+```
+> help
+commands:
+  cd - change directory; use fs:/ to select filesystem
+  fs - list mounted filesystems
+  help - show this help
+  kill - terminate fujinet-nio (stops the process)
+  ls - list directory (or stat file)
+  mkdir - create directory
+  mv - rename within a filesystem
+  pwd - show current filesystem path
+  reboot - reboot/reset via platform hook (if supported)
+  rm - remove file(s)
+  rmdir - remove directory
+
+diagnostics:
+
+  [core]
+    core.info - build/version information
+    core.stats - core runtime statistics
+
+  [disk]
+    disk.slots - list disk slots (mounted images, geometry, state)
+
+  [modem]
+    modem.at - send an AT command and return the modem's response
+    modem.baud - set modem baud (informational; affects CONNECT messaging)
+    modem.baudlock - enable/disable baud lock
+    modem.drain - drain pending modem output bytes (if any)
+    modem.status - show modem state (mode, listen, baud, cursors)
+
+  [net]
+    net.close - close a session handle (or all)
+    net.sessions - list active network sessions/handles
+```
+
+An example output from the diagnostics information is disk.slots, listing mounted slots:
+```
+> disk.slots
+status: ok
+slot=1 inserted=1 ro=0 dirty=1 changed=1 type=ssd ss=256 sc=400 last_err=none image=host:/test.ssd
+slot=2 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
+slot=3 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
+slot=4 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
+slot=5 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
+slot=6 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
+slot=7 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
+slot=8 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
+```
 
 ---
 
