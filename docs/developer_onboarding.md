@@ -355,6 +355,10 @@ slot=7 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
 slot=8 inserted=0 ro=0 dirty=0 changed=0 type=auto ss=0 sc=0 last_err=none
 ```
 
+## Exiting the console
+
+You need to issue keystrokes that quit the client, e.g. in picocom `ctrl-a ctrl-x`.
+
 ---
 
 # 5. Adding a New Virtual Device
