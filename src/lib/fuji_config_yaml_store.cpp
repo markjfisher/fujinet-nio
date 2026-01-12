@@ -355,7 +355,7 @@ FujiConfig YamlFujiConfigStoreFs::loadFromFs(fs::IFileSystem& fs)
     YAML::Node root = YAML::Load(yamlText);
 
     FujiConfig cfg{};
-    // <== reuse your existing mapping helper:
+    // <== reuse existing mapping helper:
     from_yaml(root, cfg);
 
     FN_ELOG("Loaded config from '%s' on '%s'",
