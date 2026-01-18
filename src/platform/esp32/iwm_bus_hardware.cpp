@@ -24,6 +24,10 @@ public:
     
     ~IwmHardwareEsp32() override = default;
     
+    void poll() override {
+        // TODO: Poll SPI/GPIO for incoming data
+    }
+    
     bool commandAsserted() const override {
         // IWM doesn't use command assertion like SIO
         // Instead, it uses phase lines (Enable state)

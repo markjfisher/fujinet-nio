@@ -7,6 +7,7 @@
 
 #include "fujinet/io/core/channel.h"
 #include "fujinet/build/profile.h"
+#include "fujinet/config/fuji_config.h"
 
 #if !defined(_WIN32)
 
@@ -114,7 +115,7 @@ static std::unique_ptr<fujinet::io::Channel> create_pty_channel()
 }
 
 std::unique_ptr<fujinet::io::Channel>
-create_channel_for_profile(const build::BuildProfile& profile)
+create_channel_for_profile(const build::BuildProfile& profile, const config::FujiConfig& config)
 {
     using build::ChannelKind;
 
@@ -133,24 +134,9 @@ create_channel_for_profile(const build::BuildProfile& profile)
         return nullptr;
 
     case ChannelKind::UdpSocket: {
-        // Read NetSIO host/port from environment variables (fallback if config not available)
-        // Config will be used by BusHardware factory, not here
-        const char* host_env = std::getenv("NETSIO_HOST");
-        const char* port_env = std::getenv("NETSIO_PORT");
-        
-        std::string host = host_env ? host_env : "localhost";
-        std::uint16_t port = 9997; // Default NetSIO port
-        
-        if (port_env) {
-            try {
-                int p = std::stoi(port_env);
-                if (p > 0 && p <= 65535) {
-                    port = static_cast<std::uint16_t>(p);
-                }
-            } catch (...) {
-                std::cerr << "[ChannelFactory] Invalid NETSIO_PORT: " << port_env << std::endl;
-            }
-        }
+        // Use NetSIO config from fujinet.yaml
+        std::string host = config.netsio.host;
+        std::uint16_t port = config.netsio.port;
         
         std::cout << "[ChannelFactory] Using UDP channel (NetSIO) to " << host << ":" << port << std::endl;
         
@@ -186,7 +172,7 @@ public:
 };
 
 std::unique_ptr<fujinet::io::Channel>
-create_channel_for_profile(const build::BuildProfile& /*profile*/)
+create_channel_for_profile(const build::BuildProfile& /*profile*/, const config::FujiConfig& /*config*/)
 {
     std::cout << "[PtyChannel] PTY not supported on this platform; "
                  "using dummy Channel.\n";

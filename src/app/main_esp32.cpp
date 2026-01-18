@@ -140,14 +140,6 @@ extern "C" void fujinet_core_task(void* arg)
 
     auto profile = build::current_build_profile();
 
-    // Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
-    auto channel = platform::create_channel_for_profile(profile);
-    if (!channel) {
-        FN_LOGE(TAG, "Failed to create Channel for profile");
-        vTaskDelete(nullptr);
-        return;
-    }
-
     {
         auto dev = platform::create_fuji_device(core, profile);
 
@@ -176,6 +168,14 @@ extern "C" void fujinet_core_task(void* arg)
         services.fuji->start();
     }
     const auto& config = services.fuji ? services.fuji->config() : fujinet::config::FujiConfig{};
+
+    // Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
+    auto channel = platform::create_channel_for_profile(profile, config);
+    if (!channel) {
+        FN_LOGE(TAG, "Failed to create Channel for profile");
+        vTaskDelete(nullptr);
+        return;
+    }
 
     // Set up transports based on profile (FujiBus, SIO, etc.).
     core::setup_transports(core, *channel, profile, &config);

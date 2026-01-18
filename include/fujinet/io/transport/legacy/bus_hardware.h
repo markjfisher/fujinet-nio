@@ -20,6 +20,10 @@ class BusHardware {
 public:
     virtual ~BusHardware() = default;
     
+    // Poll for incoming data/events (e.g., from network or hardware)
+    // Should be called periodically to process incoming messages
+    virtual void poll() = 0;
+    
     // GPIO operations
     virtual bool commandAsserted() const = 0;
     virtual bool motorAsserted() const = 0;

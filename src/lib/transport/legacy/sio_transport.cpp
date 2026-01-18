@@ -32,6 +32,9 @@ SioTransport::SioTransport(Channel& channel,
 }
 
 bool SioTransport::readCommandFrame(cmdFrame_t& frame) {
+    // Poll hardware to process incoming messages (critical for NetSIO)
+    _hardware->poll();
+    
     // Wait for CMD pin to be asserted (works for both hardware and NetSIO)
     if (!_hardware->commandAsserted()) {
         return false;

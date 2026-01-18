@@ -164,7 +164,7 @@ int main()
 
     // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).
     // and set up transports based on profile.
-    auto channel = platform::create_channel_for_profile(profile);
+    auto channel = platform::create_channel_for_profile(profile, config);
     if (!channel) {
         FN_LOGE(TAG, "Failed to create Channel for profile");
         return 1;

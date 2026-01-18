@@ -27,6 +27,10 @@ public:
     
     ~SioHardwareEsp32() override = default;
     
+    void poll() override {
+        // TODO: Poll UART/GPIO for incoming data
+    }
+    
     bool commandAsserted() const override {
         // TODO: Read GPIO pin for CMD
         // For now, return false (no command)

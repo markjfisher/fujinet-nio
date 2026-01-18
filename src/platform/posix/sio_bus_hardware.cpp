@@ -26,6 +26,10 @@ public:
     
     ~SioHardwarePosix() override = default;
     
+    void poll() override {
+        // No-op for placeholder (no hardware to poll)
+    }
+    
     bool commandAsserted() const override {
         // For POSIX/NetSIO, command assertion is handled by the protocol
         // Return false for now (no command)
@@ -82,18 +86,15 @@ std::unique_ptr<BusHardware> make_sio_hardware(
     Channel* channel,
     const config::NetSioConfig* netsioConfig
 ) {
-    // Config should always be provided, but handle gracefully if not
-    if (!netsioConfig) {
-        FN_LOGW(TAG, "make_sio_hardware called without NetSIO config - using default hardware");
-        return std::make_unique<SioHardwarePosix>();
-    }
-    
-    // Check if we should use NetSIO hardware (UDP channel + config enabled)
-    if (channel && netsioConfig->enabled) {
+    // If we have a channel and NetSIO config is enabled, use NetSIO hardware
+    // The channel should be a UdpChannel when NetSIO is enabled
+    if (channel && netsioConfig && netsioConfig->enabled) {
+        FN_LOGI(TAG, "Creating NetSioBusHardware for NetSIO mode");
         return make_netsio_bus_hardware(*channel, *netsioConfig);
     }
     
-    // Otherwise, use regular POSIX hardware (placeholder for now)
+    // Otherwise, use regular POSIX hardware (placeholder for serial port)
+    FN_LOGI(TAG, "Creating SioHardwarePosix (placeholder for serial port)");
     return std::make_unique<SioHardwarePosix>();
 }
 

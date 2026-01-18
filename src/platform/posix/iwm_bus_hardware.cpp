@@ -19,6 +19,10 @@ public:
     
     ~IwmHardwarePosix() override = default;
     
+    void poll() override {
+        // No-op for placeholder (no hardware to poll)
+    }
+    
     bool commandAsserted() const override {
         // For POSIX/SLIP, command assertion is protocol-based
         return false;

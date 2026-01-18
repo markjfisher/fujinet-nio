@@ -41,6 +41,11 @@ public:
         }
     }
     
+    void poll() override {
+        // Process incoming NetSIO messages from UDP channel
+        processNetsioMessages();
+    }
+    
     bool commandAsserted() const override {
         return _commandAsserted;
     }

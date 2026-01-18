@@ -63,7 +63,7 @@ struct PrinterConfig {
 };
 
 struct NetSioConfig {
-    bool        enabled{false};
+    bool        enabled{true};
     std::string host{"localhost"};
     std::uint16_t port{9997};
 };
