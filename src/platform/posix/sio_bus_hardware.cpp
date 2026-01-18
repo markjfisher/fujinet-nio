@@ -7,8 +7,6 @@
 #include <memory>
 #include <thread>
 #include <chrono>
-#include <cstdlib>
-#include <string>
 
 namespace fujinet::io::transport::legacy {
 
@@ -84,39 +82,15 @@ std::unique_ptr<BusHardware> make_sio_hardware(
     Channel* channel,
     const config::NetSioConfig* netsioConfig
 ) {
-    // Check if we should use NetSIO hardware (UDP channel + config enabled)
-    bool useNetsio = false;
-    config::NetSioConfig netsioCfg;
-    
-    if (channel && netsioConfig) {
-        useNetsio = netsioConfig->enabled;
-        netsioCfg = *netsioConfig;
-    } else if (channel) {
-        // No config provided, check environment variables as fallback
-        const char* host_env = std::getenv("NETSIO_HOST");
-        const char* port_env = std::getenv("NETSIO_PORT");
-        
-        if (host_env || port_env) {
-            useNetsio = true;
-            netsioCfg.enabled = true;
-            netsioCfg.host = host_env ? host_env : "localhost";
-            netsioCfg.port = 9997;
-            
-            if (port_env) {
-                try {
-                    int p = std::stoi(port_env);
-                    if (p > 0 && p <= 65535) {
-                        netsioCfg.port = static_cast<std::uint16_t>(p);
-                    }
-                } catch (...) {
-                    // Invalid port, use default
-                }
-            }
-        }
+    // Config should always be provided, but handle gracefully if not
+    if (!netsioConfig) {
+        FN_LOGW(TAG, "make_sio_hardware called without NetSIO config - using default hardware");
+        return std::make_unique<SioHardwarePosix>();
     }
     
-    if (useNetsio && channel) {
-        return make_netsio_bus_hardware(*channel, netsioCfg);
+    // Check if we should use NetSIO hardware (UDP channel + config enabled)
+    if (channel && netsioConfig->enabled) {
+        return make_netsio_bus_hardware(*channel, *netsioConfig);
     }
     
     // Otherwise, use regular POSIX hardware (placeholder for now)

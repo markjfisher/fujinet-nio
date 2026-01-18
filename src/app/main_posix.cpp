@@ -149,6 +149,12 @@ int main()
         return 1;
     }
 
+    // Load config immediately - transports need it (especially NetSIO config)
+    // This is fast (just reading a YAML file) and necessary for proper transport setup
+    FN_LOGI(TAG, "[FujiDevice] Loading config for transport setup");
+    fujiConcrete->start();
+    const auto& config = fujiConcrete->config();
+
     // Register Core Devices
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
@@ -163,19 +169,12 @@ int main()
         FN_LOGE(TAG, "Failed to create Channel for profile");
         return 1;
     }
-    core::setup_transports(core, *channel, profile);
+    core::setup_transports(core, *channel, profile, &config);
 
     // Run core loop until the process is terminated (Ctrl+C, kill, etc.).
-    DeferredOnce startFuji{std::chrono::steady_clock::now(), std::chrono::milliseconds(50), false};
     bool running = true;
     while (running) {
         core.tick();
-
-        // Defer config loading off the initial startup path (mirrors ESP32 behavior).
-        startFuji.poll([&] {
-            FN_LOGI(TAG, "[FujiDevice] start() (deferred)");
-            fujiConcrete->start();
-        });
 
         running = console.step(0);
         if (reboot_requested.load()) {

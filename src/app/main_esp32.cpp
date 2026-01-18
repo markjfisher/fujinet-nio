@@ -66,8 +66,7 @@ struct Esp32Services {
         if (phase1_started || !fuji || !events) return;
         phase1_started = true;
 
-        // Load config now (not on phase 0 path)
-        fuji->start();
+        // Config already loaded during transport setup, just get reference
         const auto& cfg = fuji->config();
 
         if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
@@ -149,10 +148,6 @@ extern "C" void fujinet_core_task(void* arg)
         return;
     }
 
-    // Set up transports based on profile (FujiBus, SIO, etc.).
-    core::setup_transports(core, *channel, profile);
-    FN_ELOG("transport initialized");
-
     {
         auto dev = platform::create_fuji_device(core, profile);
 
@@ -173,6 +168,18 @@ extern "C" void fujinet_core_task(void* arg)
                 static_cast<unsigned>(fujiDeviceId));
         }
     }
+
+    // Load config immediately - transports need it (especially NetSIO config)
+    // This is fast (just reading a YAML file) and necessary for proper transport setup
+    if (services.fuji) {
+        FN_ELOG("[FujiDevice] Loading config for transport setup");
+        services.fuji->start();
+    }
+    const auto& config = services.fuji ? services.fuji->config() : fujinet::config::FujiConfig{};
+
+    // Set up transports based on profile (FujiBus, SIO, etc.).
+    core::setup_transports(core, *channel, profile, &config);
+    FN_ELOG("transport initialized");
 
     // If we load config at this point to find out if the services should be enabled or not, it adds 80ms before the main loop starts
     fujinet::core::register_file_device(core);
