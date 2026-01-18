@@ -145,7 +145,7 @@ bool NetSIOProtocol::parseMessage(const std::uint8_t* data, std::size_t len)
     case netsio::CREDIT_UPDATE:
         if (len >= 2) {
             _credit = data[1];
-            FN_LOGD(TAG, "CREDIT_UPDATE: %u", _credit);
+            FN_LOGI(TAG, "CREDIT_UPDATE: %u", _credit);
             return true;
         }
         break;
@@ -159,7 +159,7 @@ bool NetSIOProtocol::parseMessage(const std::uint8_t* data, std::size_t len)
         return true;
 
     default:
-        FN_LOGW(TAG, "Unknown NetSIO message type: 0x%02X", _lastMessageType);
+        FN_LOGW(TAG, "Unknown NetSIO message type: 0x%02X (len=%zu)", _lastMessageType, len);
         return false;
     }
 

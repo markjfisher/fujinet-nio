@@ -108,6 +108,17 @@ public:
             }
             return 0;
         }
+        
+        // Debug: log received UDP packet
+        std::cout << "[UdpChannel] Received " << n << " bytes: ";
+        for (ssize_t i = 0; i < n && i < 16; ++i) {
+            std::printf("%02X ", buffer[i]);
+        }
+        if (n > 16) {
+            std::cout << "...";
+        }
+        std::cout << std::endl;
+        
         return static_cast<std::size_t>(n);
     }
 
@@ -115,6 +126,16 @@ public:
         if (_socketFd < 0 || !_connected) {
             return;
         }
+
+        // Debug: log sent UDP packet
+        std::cout << "[UdpChannel] Sending " << len << " bytes: ";
+        for (std::size_t i = 0; i < len && i < 16; ++i) {
+            std::printf("%02X ", buffer[i]);
+        }
+        if (len > 16) {
+            std::cout << "...";
+        }
+        std::cout << std::endl;
 
         const std::uint8_t* ptr = buffer;
         std::size_t remaining = len;

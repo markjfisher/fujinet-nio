@@ -15,6 +15,18 @@ static constexpr const char* TAG = "sio";
 static constexpr std::uint32_t DELAY_T4 = 850; // microseconds
 static constexpr std::uint32_t DELAY_T5 = 250; // microseconds
 
+void SioTransport::poll() {
+    // For NetSIO, we need to poll the hardware abstraction first to process
+    // incoming UDP packets and parse NetSIO protocol messages.
+    // The hardware abstraction will populate its internal FIFO with SIO bytes.
+    // For hardware SIO, this is a no-op or triggers internal UART/GPIO reads.
+    _hardware->poll();
+    
+    // Don't call base class poll() - it reads raw bytes from channel,
+    // but for NetSIO the channel is UDP and bytes are already processed by hardware.
+    // For hardware SIO, we might want base class poll, but hardware handles it.
+}
+
 SioTransport::SioTransport(Channel& channel, 
                            const build::BuildProfile& profile,
                            const config::NetSioConfig* netsioConfig)
@@ -36,19 +48,22 @@ bool SioTransport::readCommandFrame(cmdFrame_t& frame) {
     _hardware->poll();
     
     // Wait for CMD pin to be asserted (works for both hardware and NetSIO)
-    if (!_hardware->commandAsserted()) {
+    bool cmdAsserted = _hardware->commandAsserted();
+    FN_LOGI(TAG, "readCommandFrame(): commandAsserted=%d", cmdAsserted ? 1 : 0);
+    if (!cmdAsserted) {
         return false;
     }
     
     // Read 5-byte command frame (BusHardware handles NetSIO vs hardware differences)
     std::size_t bytes_read = _hardware->read(reinterpret_cast<std::uint8_t*>(&frame), sizeof(frame));
+    FN_LOGI(TAG, "readCommandFrame(): read %zu bytes (expected %zu)", bytes_read, sizeof(frame));
     if (bytes_read != sizeof(frame)) {
         FN_LOGW(TAG, "Failed to read complete command frame: got %zu bytes, expected %zu",
             bytes_read, sizeof(frame));
         return false;
     }
     
-    FN_LOGD(TAG, "CF: %02x %02x %02x %02x %02x",
+    FN_LOGI(TAG, "readCommandFrame(): CF: %02x %02x %02x %02x %02x",
         frame.device, frame.comnd, frame.aux1, frame.aux2, frame.checksum);
     
     return true;

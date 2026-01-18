@@ -13,7 +13,7 @@ namespace fujinet::io::transport::legacy {
 static constexpr const char* TAG = "sio_hw";
 
 // Forward declaration
-std::unique_ptr<BusHardware> make_netsio_bus_hardware(Channel& channel, const config::NetSioConfig& config);
+std::unique_ptr<BusHardware> make_netsio_bus_hardware(fujinet::io::Channel& channel, const fujinet::config::NetSioConfig& netsioConfig);
 
 // POSIX SIO hardware implementation
 // For POSIX, this typically works with NetSIO or a serial port

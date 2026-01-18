@@ -23,6 +23,8 @@ public:
                           const config::NetSioConfig* netsioConfig = nullptr);
     virtual ~SioTransport() = default;
     
+    void poll() override; // Override to poll hardware before base class poll
+    
 protected:
     bool readCommandFrame(cmdFrame_t& frame) override;
     void sendAck() override;
