@@ -84,7 +84,6 @@ struct Esp32Services {
         fujinet::core::register_network_device(core);
         if (cfg.modem.enabled)
             fujinet::core::register_modem_device(core);
-    
     }
 
     void poll()

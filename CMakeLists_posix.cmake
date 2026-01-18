@@ -112,6 +112,7 @@ target_sources(fujinet-nio
         src/lib/transport/legacy/byte_based_legacy_transport.cpp
         src/lib/transport/legacy/iwm_traits.cpp
         src/lib/transport/legacy/iwm_transport.cpp
+        src/lib/transport/legacy/legacy_network_bridge.cpp
         src/lib/transport/legacy/legacy_transport.cpp
         src/lib/transport/legacy/netsio_protocol.cpp
         src/lib/transport/legacy/packet_based_legacy_transport.cpp

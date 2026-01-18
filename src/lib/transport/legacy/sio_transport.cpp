@@ -164,6 +164,7 @@ void SioTransport::writeDataFrameWithChecksum(const std::uint8_t* buf, std::size
 bool SioTransport::commandNeedsData(std::uint8_t command) const {
     // SIO commands that require a data frame
     switch (command) {
+        case 'O': // Open (network devices need URL in data frame)
         case 'W': // Write sector
         case 'P': // Put sector
         case 'S': // Status (sometimes has data)
