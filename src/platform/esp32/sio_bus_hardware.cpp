@@ -1,4 +1,7 @@
 #include "fujinet/io/transport/legacy/bus_hardware.h"
+#include "fujinet/io/core/channel.h"
+#include "fujinet/build/profile.h"
+#include "fujinet/config/fuji_config.h"
 #include "fujinet/core/logging.h"
 
 #include <memory>
@@ -79,7 +82,15 @@ public:
     }
 };
 
-std::unique_ptr<BusHardware> make_sio_hardware() {
+std::unique_ptr<BusHardware> make_sio_hardware(
+    Channel* channel,
+    const config::NetSioConfig* netsioConfig
+) {
+    // ESP32 doesn't support NetSIO (UDP) - only hardware GPIO/UART
+    // Config parameter is ignored on ESP32, but kept for API consistency
+    (void)channel;
+    (void)netsioConfig;
+    
     return std::make_unique<SioHardwareEsp32>();
 }
 

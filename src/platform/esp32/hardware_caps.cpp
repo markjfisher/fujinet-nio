@@ -2,8 +2,10 @@
 
 extern "C" {
 #include "esp_chip_info.h"
-#include "esp_psram.h"
 #include "esp_flash.h"
+#if CONFIG_SPIRAM_SUPPORT || CONFIG_SPIRAM
+#include "esp_psram.h"
+#endif
 }
 
 namespace fujinet::build {
@@ -23,11 +25,13 @@ HardwareCapabilities detect_hardware_capabilities()
     // -----------------------------
     // PSRAM → large memory pool
     // -----------------------------
+#if CONFIG_SPIRAM_SUPPORT || CONFIG_SPIRAM
     size_t psram = esp_psram_get_size();
     if (psram > 0) {
         caps.memory.largeMemoryPoolBytes = psram;
         caps.memory.hasDedicatedLargePool = true;
     }
+#endif
 
     // -----------------------------
     // Network

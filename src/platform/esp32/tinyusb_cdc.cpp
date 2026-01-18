@@ -47,11 +47,6 @@ bool ensure_tinyusb_driver()
 #endif
 }
 
-static tinyusb_cdcacm_itf_t to_itf(UsbCdcAcmPort port)
-{
-    return (port == UsbCdcAcmPort::Port0) ? TINYUSB_CDC_ACM_0 : TINYUSB_CDC_ACM_1;
-}
-
 bool ensure_tinyusb_cdc_acm(UsbCdcAcmPort port)
 {
 #if !CONFIG_TINYUSB_CDC_ENABLED
@@ -64,6 +59,10 @@ bool ensure_tinyusb_cdc_acm(UsbCdcAcmPort port)
 
     if (port == UsbCdcAcmPort::Port0 && s_cdc0_inited) return true;
     if (port == UsbCdcAcmPort::Port1 && s_cdc1_inited) return true;
+
+    static auto to_itf = [](UsbCdcAcmPort p) -> tinyusb_cdcacm_itf_t {
+        return (p == UsbCdcAcmPort::Port0) ? TINYUSB_CDC_ACM_0 : TINYUSB_CDC_ACM_1;
+    };
 
     tinyusb_config_cdcacm_t acm_cfg = {};
     acm_cfg.cdc_port                     = to_itf(port);
