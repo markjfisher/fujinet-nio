@@ -61,7 +61,7 @@ struct Esp32Services {
         sntp = std::make_unique<fujinet::platform::esp32::SntpService>(*events);
     }
 
-    void start_phase1()
+    void start_phase1(fujinet::core::FujinetCore& core)
     {
         if (phase1_started || !fuji || !events) return;
         phase1_started = true;
@@ -78,6 +78,14 @@ struct Esp32Services {
             // Monitor publishes NetworkEvent transitions based on wifi state/ip.
             wifiMon = std::make_unique<fujinet::net::NetworkLinkMonitor>(*events, *wifi);
         }
+
+        // start all the devices that can be delayed
+        // We can now check if they should be started too
+        fujinet::core::register_clock_device(core);
+        fujinet::core::register_network_device(core);
+        if (cfg.modem.enabled)
+            fujinet::core::register_modem_device(core);
+    
     }
 
     void poll()
@@ -166,25 +174,21 @@ extern "C" void fujinet_core_task(void* arg)
         }
     }
 
-    // TODO: use config to decide if we want to start these or not
-    // HOWEVER they will have to go in Esp32Services, as we delay loading config.
+    // If we load config at this point to find out if the services should be enabled or not, it adds 80ms before the main loop starts
     fujinet::core::register_file_device(core);
-    fujinet::core::register_clock_device(core);
     fujinet::core::register_disk_device(core);
-    fujinet::core::register_network_device(core);
-    fujinet::core::register_modem_device(core);
 
-    const std::uint64_t phase1_at = core.tick_count() + 20;
+    const std::uint64_t phase1_at = core.tick_count() + 100;
     
     FN_ELOG("[%u ms] starting main loop", (unsigned)(esp_timer_get_time()/1000));
 
-    // 5. Run the core loop forever.
+    // Run the core loop forever.
     for (;;) {
         core.tick();
 
         // start phase-1 services after a small delay
         if (!services.phase1_started && core.tick_count() >= phase1_at) {
-            services.start_phase1();
+            services.start_phase1(core);
         }
 
         services.poll();
