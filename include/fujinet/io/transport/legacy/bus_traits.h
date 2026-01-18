@@ -6,7 +6,7 @@
 
 #include "fujinet/io/core/io_message.h"
 
-namespace fujinet::platform::legacy {
+namespace fujinet::io::transport::legacy {
 
 // Response protocol styles for different legacy buses
 enum class ResponseStyle : std::uint8_t {
@@ -21,7 +21,7 @@ using ChecksumFn = std::function<std::uint8_t(const std::uint8_t*, std::size_t)>
 // Device ID mapping function (wire ID → internal DeviceID)
 using DeviceIdMapper = std::function<io::DeviceID(std::uint8_t)>;
 
-// Bus-specific traits that vary by platform/protocol
+// Bus-specific traits that vary by protocol (platform-agnostic)
 struct BusTraits {
     // Checksum algorithm for command frames
     ChecksumFn checksum;
@@ -46,7 +46,8 @@ struct BusTraits {
     }
 };
 
-// Platform-specific factories for bus traits
+// Platform-agnostic factories for bus traits (same for all platforms)
 BusTraits make_sio_traits();
+BusTraits make_iwm_traits();
 
-} // namespace fujinet::platform::legacy
+} // namespace fujinet::io::transport::legacy

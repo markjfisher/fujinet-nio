@@ -2,6 +2,7 @@
 
 #include "fujinet/io/transport/fujibus_transport.h"
 #include "fujinet/io/transport/legacy/sio_transport.h"
+#include "fujinet/io/transport/legacy/iwm_transport.h"
 // #include "fujinet/io/transport/iec_transport.h"
 // etc.
 
@@ -23,6 +24,12 @@ io::ITransport* setup_transports(FujinetCore& core,
     }
     case TransportKind::SIO: {
         auto* t = new io::transport::legacy::SioTransport(channel);
+        core.addTransport(t);
+        primary = t;
+        break;
+    }
+    case TransportKind::IWM: {
+        auto* t = new io::transport::legacy::IwmTransport(channel);
         core.addTransport(t);
         primary = t;
         break;

@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <memory>
 
-namespace fujinet::platform::legacy {
+namespace fujinet::io::transport::legacy {
 
 // Abstract interface for platform-specific hardware access
 // This allows transports to work with hardware without platform-specific code
@@ -29,7 +29,8 @@ public:
     virtual void delayMicroseconds(std::uint32_t us) = 0;
 };
 
-// Platform-specific factories
+// Platform-specific factories (implemented in platform-specific files)
 std::unique_ptr<BusHardware> make_sio_hardware();
+std::unique_ptr<BusHardware> make_iwm_hardware();
 
-} // namespace fujinet::platform::legacy
+} // namespace fujinet::io::transport::legacy

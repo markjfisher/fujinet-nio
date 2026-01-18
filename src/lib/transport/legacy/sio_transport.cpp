@@ -1,6 +1,6 @@
 #include "fujinet/io/transport/legacy/sio_transport.h"
-#include "fujinet/platform/legacy/bus_traits.h"
-#include "fujinet/platform/legacy/bus_hardware.h"
+#include "fujinet/io/transport/legacy/bus_traits.h"
+#include "fujinet/io/transport/legacy/bus_hardware.h"
 #include "fujinet/core/logging.h"
 
 namespace fujinet::io::transport::legacy {
@@ -12,11 +12,11 @@ static constexpr std::uint32_t DELAY_T4 = 850; // microseconds
 static constexpr std::uint32_t DELAY_T5 = 250; // microseconds
 
 SioTransport::SioTransport(Channel& channel)
-    : LegacyTransport(channel, platform::legacy::make_sio_traits())
+    : LegacyTransport(channel, make_sio_traits())
 {
     // Create hardware abstraction
     // Note: For SIO, the Channel may not be used directly - hardware handles UART/GPIO
-    _hardware = platform::legacy::make_sio_hardware();
+    _hardware = make_sio_hardware();
 }
 
 bool SioTransport::readCommandFrame(cmdFrame_t& frame) {

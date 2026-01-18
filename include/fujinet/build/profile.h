@@ -20,6 +20,7 @@ enum class Machine {
 enum class TransportKind {
     FujiBus,
     SIO,
+    IWM,
     IEC,
     // ...
 };

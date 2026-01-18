@@ -1,13 +1,14 @@
-#include "fujinet/platform/legacy/bus_traits.h"
+#include "fujinet/io/transport/legacy/bus_traits.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 
-namespace fujinet::platform::legacy {
+namespace fujinet::io::transport::legacy {
 
 using fujinet::io::protocol::WireDeviceId;
 using fujinet::io::protocol::to_device_id;
 using fujinet::io::DeviceID;
 
 // SIO checksum algorithm (additive wrap-around)
+// Platform-agnostic - same for ESP32 and POSIX
 static std::uint8_t sio_checksum(const std::uint8_t* buf, std::size_t len) {
     unsigned int chk = 0;
     for (std::size_t i = 0; i < len; i++) {
@@ -17,6 +18,7 @@ static std::uint8_t sio_checksum(const std::uint8_t* buf, std::size_t len) {
 }
 
 // Map SIO wire device IDs to internal DeviceID
+// Platform-agnostic - same for ESP32 and POSIX
 static DeviceID map_sio_device_id(std::uint8_t wire_id) {
     // FujiNet device
     if (wire_id == 0x70) {
@@ -64,10 +66,11 @@ BusTraits make_sio_traits() {
     traits.checksum = sio_checksum;
     
     // SIO timing constants (microseconds)
-    // For POSIX/NetSIO, timing is less critical but we still honor the protocol
-    traits.ack_delay = 0;
-    traits.complete_delay = 250;
-    traits.error_delay = 250;
+    // DELAY_T4 = 850us (delay before reading checksum)
+    // DELAY_T5 = 250us (delay before sending COMPLETE/ERROR)
+    traits.ack_delay = 0;        // ACK sent immediately
+    traits.complete_delay = 250; // DELAY_T5
+    traits.error_delay = 250;     // DELAY_T5
     
     // SIO response style: ACK/NAK, then COMPLETE/ERROR + data
     traits.response_style = ResponseStyle::AckNakThenData;
@@ -78,4 +81,4 @@ BusTraits make_sio_traits() {
     return traits;
 }
 
-} // namespace fujinet::platform::legacy
+} // namespace fujinet::io::transport::legacy

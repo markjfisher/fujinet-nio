@@ -7,7 +7,7 @@ static constexpr const char* TAG = "legacy";
 
 LegacyTransport::LegacyTransport(
     Channel& channel,
-    const platform::legacy::BusTraits& traits
+    const BusTraits& traits
 )
     : _channel(channel)
     , _traits(traits)
@@ -79,7 +79,7 @@ bool LegacyTransport::receive(IORequest& outReq) {
 
 void LegacyTransport::send(const IOResponse& resp) {
     switch (_traits.response_style) {
-        case platform::legacy::ResponseStyle::AckNakThenData:
+        case ResponseStyle::AckNakThenData:
             if (resp.status == StatusCode::Ok) {
                 sendComplete();
                 if (!resp.payload.empty()) {
@@ -90,13 +90,13 @@ void LegacyTransport::send(const IOResponse& resp) {
             }
             break;
             
-        case platform::legacy::ResponseStyle::StatusThenData:
+        case ResponseStyle::StatusThenData:
             // IWM-style: status packet, then data packet
             // Platform-specific transport will handle this
             FN_LOGW(TAG, "StatusThenData response style not yet implemented");
             break;
             
-        case platform::legacy::ResponseStyle::ImmediateData:
+        case ResponseStyle::ImmediateData:
             // IEC-style: data immediately
             if (!resp.payload.empty()) {
                 writeDataFrame(resp.payload.data(), resp.payload.size());

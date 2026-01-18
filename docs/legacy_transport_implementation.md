@@ -8,17 +8,19 @@ This document tracks the implementation status of the legacy transport layer for
 
 ### Core Infrastructure
 
-✅ **BusTraits Interface** (`include/fujinet/platform/legacy/bus_traits.h`)
-- Defines platform-specific bus characteristics (checksums, timing, response styles)
-- Provides factory functions for each platform
+✅ **BusTraits Interface** (`include/fujinet/io/transport/legacy/bus_traits.h`)
+- Defines bus characteristics (checksums, timing, response styles)
+- Platform-agnostic - same traits for all platforms
+- Single implementation in `src/lib/transport/legacy/sio_traits.cpp`
 
 ✅ **Command Frame Structure** (`include/fujinet/io/transport/legacy/cmd_frame.h`)
 - Common `cmdFrame_t` structure used by legacy buses
 - 5-byte frame: device, comnd, aux1, aux2, checksum
 
-✅ **Bus Hardware Abstraction** (`include/fujinet/platform/legacy/bus_hardware.h`)
+✅ **Bus Hardware Abstraction** (`include/fujinet/io/transport/legacy/bus_hardware.h`)
 - Abstract interface for platform-specific hardware access
 - GPIO, UART, and timing operations
+- Platform-specific implementations in `src/platform/<platform>/sio_bus_hardware.cpp`
 
 ✅ **Legacy Transport Base Class** (`include/fujinet/io/transport/legacy/legacy_transport.h`)
 - Common protocol logic for all legacy buses
@@ -31,13 +33,9 @@ This document tracks the implementation status of the legacy transport layer for
 - Atari SIO-specific transport implementation
 - Extends LegacyTransport with SIO-specific protocol handling
 
-✅ **Platform Traits**
-- `src/platform/esp32/legacy/sio_traits.cpp` - ESP32 SIO traits
-- `src/platform/posix/legacy/sio_traits.cpp` - POSIX SIO traits
-
 ✅ **Platform Hardware**
-- `src/platform/esp32/legacy/sio_hardware.cpp` - ESP32 hardware abstraction (placeholder)
-- `src/platform/posix/legacy/sio_hardware.cpp` - POSIX hardware abstraction (placeholder)
+- `src/platform/esp32/sio_bus_hardware.cpp` - ESP32 hardware abstraction (placeholder)
+- `src/platform/posix/sio_bus_hardware.cpp` - POSIX hardware abstraction (placeholder)
 
 ✅ **Integration**
 - Updated `src/lib/bootstrap.cpp` to register SIO transport
@@ -81,7 +79,7 @@ SIO wire device IDs are mapped to internal DeviceIDs:
 
 ### Hardware Implementation
 
-⚠️ **ESP32 Hardware** (`src/platform/esp32/legacy/sio_hardware.cpp`)
+⚠️ **ESP32 Hardware** (`src/platform/esp32/sio_bus_hardware.cpp`)
 - Currently a placeholder
 - Needs GPIO pin configuration for:
   - CMD pin (input)
@@ -90,7 +88,7 @@ SIO wire device IDs are mapped to internal DeviceIDs:
 - Needs UART configuration for SIO bus
 - Needs timing functions (delayMicroseconds)
 
-⚠️ **POSIX Hardware** (`src/platform/posix/legacy/sio_hardware.cpp`)
+⚠️ **POSIX Hardware** (`src/platform/posix/sio_bus_hardware.cpp`)
 - Currently a placeholder
 - Needs integration with NetSIO or serial port
 - For NetSIO, command assertion is protocol-based, not GPIO

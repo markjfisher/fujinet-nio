@@ -1,51 +1,48 @@
-#include "fujinet/platform/legacy/bus_hardware.h"
+#include "fujinet/io/transport/legacy/bus_hardware.h"
 #include "fujinet/core/logging.h"
-#include "fujinet/io/core/channel.h"
 
 #include <memory>
 #include <thread>
 #include <chrono>
 
-namespace fujinet::platform::legacy {
+namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "sio_hw";
+static constexpr const char* TAG = "iwm_hw";
 
-// POSIX SIO hardware implementation
-// For POSIX, this typically works with NetSIO or a serial port
-// This is a placeholder that can be extended for actual hardware
-class SioHardwarePosix : public BusHardware {
+// POSIX IWM hardware implementation
+// For POSIX, this typically works with SLIP relay or emulation
+class IwmHardwarePosix : public BusHardware {
 public:
-    SioHardwarePosix() {
-        FN_LOGI(TAG, "SioHardwarePosix created (placeholder)");
+    IwmHardwarePosix() {
+        FN_LOGI(TAG, "IwmHardwarePosix created (placeholder)");
     }
     
-    ~SioHardwarePosix() override = default;
+    ~IwmHardwarePosix() override = default;
     
     bool commandAsserted() const override {
-        // For POSIX/NetSIO, command assertion is handled by the protocol
-        // Return false for now (no command)
+        // For POSIX/SLIP, command assertion is protocol-based
         return false;
     }
     
     bool motorAsserted() const override {
-        // For POSIX, motor line not typically used
+        // For POSIX, motor line not used
         return false;
     }
     
     void setInterrupt(bool level) override {
-        // For POSIX, interrupt line not typically used
+        // For POSIX, interrupt line not used
         (void)level;
     }
     
     std::size_t read(std::uint8_t* buf, std::size_t len) override {
-        // TODO: Read from serial port or NetSIO
+        // TODO: Read from SLIP relay or serial port
         (void)buf;
         (void)len;
         return 0;
     }
     
     void write(const std::uint8_t* buf, std::size_t len) override {
-        // TODO: Write to serial port or NetSIO
+        // TODO: Write to SLIP relay or serial port
         (void)buf;
         (void)len;
     }
@@ -73,8 +70,8 @@ public:
     }
 };
 
-std::unique_ptr<BusHardware> make_sio_hardware() {
-    return std::make_unique<SioHardwarePosix>();
+std::unique_ptr<BusHardware> make_iwm_hardware() {
+    return std::make_unique<IwmHardwarePosix>();
 }
 
-} // namespace fujinet::platform::legacy
+} // namespace fujinet::io::transport::legacy

@@ -1,6 +1,5 @@
-#include "fujinet/platform/legacy/bus_hardware.h"
+#include "fujinet/io/transport/legacy/bus_hardware.h"
 #include "fujinet/core/logging.h"
-#include "fujinet/io/core/channel.h"
 
 #include <memory>
 
@@ -8,7 +7,7 @@
 // #include "driver/gpio.h"
 // #include "driver/uart.h"
 
-namespace fujinet::platform::legacy {
+namespace fujinet::io::transport::legacy {
 
 static constexpr const char* TAG = "sio_hw";
 
@@ -84,4 +83,4 @@ std::unique_ptr<BusHardware> make_sio_hardware() {
     return std::make_unique<SioHardwareEsp32>();
 }
 
-} // namespace fujinet::platform::legacy
+} // namespace fujinet::io::transport::legacy

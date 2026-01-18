@@ -6,7 +6,7 @@
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/transport/transport.h"
-#include "fujinet/platform/legacy/bus_traits.h"
+#include "fujinet/io/transport/legacy/bus_traits.h"
 #include "fujinet/io/transport/legacy/cmd_frame.h"
 
 namespace fujinet::io::transport::legacy {
@@ -17,7 +17,7 @@ class LegacyTransport : public ITransport {
 public:
     explicit LegacyTransport(
         Channel& channel,
-        const platform::legacy::BusTraits& traits
+        const BusTraits& traits
     );
     
     virtual ~LegacyTransport() = default;
@@ -49,7 +49,7 @@ protected:
     
 protected:
     Channel& _channel;
-    const platform::legacy::BusTraits& _traits;
+    const BusTraits& _traits;
     
 private:
     // Convert cmdFrame_t to IORequest

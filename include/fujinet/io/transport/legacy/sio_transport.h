@@ -4,7 +4,7 @@
 
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/transport/legacy/legacy_transport.h"
-#include "fujinet/platform/legacy/bus_hardware.h"
+#include "fujinet/io/transport/legacy/bus_hardware.h"
 
 namespace fujinet::io::transport::legacy {
 
@@ -25,7 +25,7 @@ protected:
     bool commandNeedsData(std::uint8_t command) const override;
     
 private:
-    std::unique_ptr<platform::legacy::BusHardware> _hardware;
+    std::unique_ptr<BusHardware> _hardware;
     
     // SIO-specific: read data frame with checksum validation
     std::size_t readDataFrameWithChecksum(std::uint8_t* buf, std::size_t len);
