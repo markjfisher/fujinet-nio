@@ -41,6 +41,14 @@ BuildProfile current_build_profile()
         .name             = "Atari + SIO over PTY (POSIX)",
         .hw               = {},
     };
+#elif defined(FN_BUILD_ATARI_NETSIO)
+    profile = BuildProfile{
+        .machine          = Machine::Atari8Bit,
+        .primaryTransport = TransportKind::SIO,
+        .primaryChannel   = ChannelKind::UdpSocket,
+        .name             = "Atari + SIO over NetSIO (UDP)",
+        .hw               = {},
+    };
 #elif defined(FN_BUILD_ESP32_USB_CDC)
     profile = BuildProfile{
         .machine          = Machine::FujiNetESP32,

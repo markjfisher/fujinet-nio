@@ -109,6 +109,13 @@ static void from_yaml(const YAML::Node& node, PrinterConfig& out)
     out.enabled = get_or<bool>(node, "enabled", false);
 }
 
+static void from_yaml(const YAML::Node& node, NetSioConfig& out)
+{
+    out.enabled = get_or<bool>(node, "enabled", false);
+    out.host    = get_or<std::string>(node, "host", "localhost");
+    out.port    = static_cast<std::uint16_t>(get_or<int>(node, "port", 9997));
+}
+
 // Top-level FujiConfig mapper.
 static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
 {
@@ -142,6 +149,10 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
         if (auto n = devs["modem"])   from_yaml(n, cfg.modem);
         if (auto n = devs["cpm"])     from_yaml(n, cfg.cpm);
         if (auto n = devs["printer"]) from_yaml(n, cfg.printer);
+    }
+    
+    if (auto n = root["netsio"]) {
+        from_yaml(n, cfg.netsio);
     }
 }
 
@@ -208,6 +219,13 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     out << YAML::EndMap;
 
     out << YAML::EndMap; // devices
+
+    // netsio:
+    out << YAML::Key << "netsio" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << cfg.netsio.enabled;
+    out << YAML::Key << "host"    << YAML::Value << cfg.netsio.host;
+    out << YAML::Key << "port"    << YAML::Value << cfg.netsio.port;
+    out << YAML::EndMap;
 
     out << YAML::EndMap; // root
 }

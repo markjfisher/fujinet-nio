@@ -23,7 +23,9 @@ io::ITransport* setup_transports(FujinetCore& core,
         break;
     }
     case TransportKind::SIO: {
-        auto* t = new io::transport::legacy::SioTransport(channel);
+        // Config may not be loaded yet, so pass nullptr
+        // Hardware factory will use defaults/env vars if config not available
+        auto* t = new io::transport::legacy::SioTransport(channel, profile, nullptr);
         core.addTransport(t);
         primary = t;
         break;

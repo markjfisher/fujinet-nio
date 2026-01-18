@@ -30,6 +30,7 @@ enum class ChannelKind {
     Pty,
     UsbCdcDevice,
     TcpSocket,
+    UdpSocket,    // UDP socket (for NetSIO protocol)
     HardwareSio,  // ESP32 GPIO-based SIO (UART + GPIO pins)
     // Future: RealTty, SpiBridge, etc.
 };

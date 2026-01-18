@@ -4,6 +4,14 @@
 #include <cstddef>
 #include <memory>
 
+namespace fujinet::config {
+    struct NetSioConfig;
+}
+
+namespace fujinet::io {
+    class Channel;
+}
+
 namespace fujinet::io::transport::legacy {
 
 // Abstract interface for platform-specific hardware access
@@ -27,10 +35,23 @@ public:
     
     // Timing
     virtual void delayMicroseconds(std::uint32_t us) = 0;
+    
+    // NetSIO-specific: check if sync response is needed and send it
+    // Returns true if sync response was sent, false otherwise
+    // Default implementation returns false (no sync needed)
+    virtual bool sendSyncResponseIfNeeded(std::uint8_t ackByte, std::uint16_t writeSize = 0) {
+        (void)ackByte;
+        (void)writeSize;
+        return false;
+    }
 };
 
 // Platform-specific factories (implemented in platform-specific files)
-std::unique_ptr<BusHardware> make_sio_hardware();
+// For SIO, pass channel and optional config (config used for NetSIO mode)
+std::unique_ptr<BusHardware> make_sio_hardware(
+    Channel* channel = nullptr,
+    const config::NetSioConfig* netsioConfig = nullptr
+);
 std::unique_ptr<BusHardware> make_iwm_hardware();
 
 } // namespace fujinet::io::transport::legacy

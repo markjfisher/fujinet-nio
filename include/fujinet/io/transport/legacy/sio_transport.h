@@ -3,16 +3,24 @@
 #include <memory>
 
 #include "fujinet/io/core/channel.h"
+#include "fujinet/build/profile.h"
 #include "fujinet/io/transport/legacy/byte_based_legacy_transport.h"
 #include "fujinet/io/transport/legacy/bus_hardware.h"
+
+namespace fujinet::config {
+    struct NetSioConfig;
+}
 
 namespace fujinet::io::transport::legacy {
 
 // Atari SIO (Serial Input/Output) transport implementation
 // Byte-based protocol using ACK/NAK/COMPLETE/ERROR control bytes
+// Supports both hardware GPIO (ESP32) and NetSIO over UDP (POSIX)
 class SioTransport : public ByteBasedLegacyTransport {
 public:
-    explicit SioTransport(Channel& channel);
+    explicit SioTransport(Channel& channel, 
+                          const build::BuildProfile& profile,
+                          const config::NetSioConfig* netsioConfig = nullptr);
     virtual ~SioTransport() = default;
     
 protected:

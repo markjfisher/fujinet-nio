@@ -72,6 +72,7 @@ enum class ChannelKind {
     Pty,          // POSIX PTY (dev/testing)
     UsbCdcDevice, // USB CDC device mode (ESP32S3, Pi gadget mode later)
     TcpSocket,    // TCP/IP channel for emulators (future)
+    UdpSocket,    // UDP socket (for NetSIO protocol)
     HardwareSio,  // ESP32 GPIO-based SIO (UART + GPIO pins)
 };
 
@@ -360,6 +361,13 @@ Currently supported profiles:
   - `primaryChannel   = ChannelKind::Pty`  
   - Used for POSIX builds (testing/development) with SIO over PTY
 
+- `FN_BUILD_ATARI_NETSIO`  
+  - `machine          = Machine::Atari8Bit`  
+  - `primaryTransport = TransportKind::SIO`  
+  - `primaryChannel   = ChannelKind::UdpSocket`  
+  - Used for POSIX builds with NetSIO protocol over UDP (connects to netsiohub bridge)
+  - Requires `NETSIO_HOST` and optionally `NETSIO_PORT` environment variables
+
 - `FN_BUILD_ESP32_USB_CDC`  
   - `machine          = Machine::FujiNetESP32`  
   - `primaryTransport = TransportKind::FujiBus`  
@@ -377,7 +385,7 @@ defined, `build_profile.cpp` triggers a compile-time error via:
 
 ```cpp
 #error "No build profile selected. Define one of: \
-FN_BUILD_ATARI_SIO, FN_BUILD_ATARI_PTY, FN_BUILD_ESP32_USB_CDC, FN_BUILD_FUJIBUS_PTY."
+FN_BUILD_ATARI_SIO, FN_BUILD_ATARI_PTY, FN_BUILD_ATARI_NETSIO, FN_BUILD_ESP32_USB_CDC, FN_BUILD_FUJIBUS_PTY."
 ```
 
 This ensures we never silently “default” to some arbitrary environment.
@@ -401,6 +409,7 @@ target_compile_definitions(fujinet-nio
         $<$<CONFIG:Debug>:FN_DEBUG>
         $<$<BOOL:${FN_BUILD_ATARI_SIO}>:FN_BUILD_ATARI_SIO>
         $<$<BOOL:${FN_BUILD_ATARI_PTY}>:FN_BUILD_ATARI_PTY>
+        $<$<BOOL:${FN_BUILD_ATARI_NETSIO}>:FN_BUILD_ATARI_NETSIO>
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
 )
 ```
@@ -419,6 +428,7 @@ For native / POSIX builds, these are regular CMake cache options:
 ```cmake
 option(FN_BUILD_ATARI_SIO         "Build for Atari SIO via GPIO (ESP32)" OFF)
 option(FN_BUILD_ATARI_PTY         "Build for Atari SIO over PTY (POSIX)" OFF)
+option(FN_BUILD_ATARI_NETSIO      "Build for Atari SIO over NetSIO/UDP (POSIX)" OFF)
 option(FN_BUILD_ESP32_USB_CDC     "Build for ESP32 USB CDC profile"      OFF)
 option(FN_BUILD_FUJIBUS_PTY       "Build for POSIX FujiBus over PTY"     OFF)
 ```
@@ -440,6 +450,14 @@ cmake -B build/atari-sio-release \
 cmake -B build/atari-pty-debug \
       -DCMAKE_BUILD_TYPE=Debug \
       -DFN_BUILD_ATARI_PTY=ON
+
+# Atari SIO over NetSIO (POSIX), Debug build
+# Requires netsiohub running and NETSIO_HOST environment variable
+export NETSIO_HOST=localhost
+export NETSIO_PORT=9997  # optional, defaults to 9997
+cmake -B build/atari-netsio-debug \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DFN_BUILD_ATARI_NETSIO=ON
 ```
 
 The `target_compile_definitions(fujinet-nio ...)` call then turns those options

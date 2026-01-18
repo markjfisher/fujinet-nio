@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace fujinet::config {
 
@@ -61,6 +62,12 @@ struct PrinterConfig {
     // add printer-specific fields later
 };
 
+struct NetSioConfig {
+    bool        enabled{false};
+    std::string host{"localhost"};
+    std::uint16_t port{9997};
+};
+
 // Unified config for the whole FujiNet instance.
 struct FujiConfig {
     GeneralConfig        general;
@@ -72,6 +79,7 @@ struct FujiConfig {
     ModemConfig          modem;
     CpmConfig            cpm;
     PrinterConfig        printer;
+    NetSioConfig         netsio;
 };
 
 

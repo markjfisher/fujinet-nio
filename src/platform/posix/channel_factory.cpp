@@ -2,8 +2,11 @@
 
 #include <memory>
 #include <iostream>
+#include <cstdlib>
+#include <string>
 
 #include "fujinet/io/core/channel.h"
+#include "fujinet/build/profile.h"
 
 #if !defined(_WIN32)
 
@@ -129,8 +132,35 @@ create_channel_for_profile(const build::BuildProfile& profile)
         std::cout << "[ChannelFactory] TcpSocket channel not implemented yet.\n";
         return nullptr;
 
+    case ChannelKind::UdpSocket: {
+        // Read NetSIO host/port from environment variables (fallback if config not available)
+        // Config will be used by BusHardware factory, not here
+        const char* host_env = std::getenv("NETSIO_HOST");
+        const char* port_env = std::getenv("NETSIO_PORT");
+        
+        std::string host = host_env ? host_env : "localhost";
+        std::uint16_t port = 9997; // Default NetSIO port
+        
+        if (port_env) {
+            try {
+                int p = std::stoi(port_env);
+                if (p > 0 && p <= 65535) {
+                    port = static_cast<std::uint16_t>(p);
+                }
+            } catch (...) {
+                std::cerr << "[ChannelFactory] Invalid NETSIO_PORT: " << port_env << std::endl;
+            }
+        }
+        
+        std::cout << "[ChannelFactory] Using UDP channel (NetSIO) to " << host << ":" << port << std::endl;
+        
+        // Forward declaration - implementation in udp_channel.cpp
+        extern std::unique_ptr<fujinet::io::Channel> create_udp_channel(const std::string& host, std::uint16_t port);
+        return create_udp_channel(host, port);
+    }
+
     case ChannelKind::HardwareSio:
-        std::cout << "[ChannelFactory] HardwareSio not supported on POSIX (use Pty for SIO testing).\n";
+        std::cout << "[ChannelFactory] HardwareSio not supported on POSIX (use Pty or UdpSocket for SIO testing).\n";
         return nullptr;
     }
 

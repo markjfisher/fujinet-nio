@@ -51,6 +51,7 @@ idf_component_register(
         lib/transport/legacy/iwm_traits.cpp
         lib/transport/legacy/iwm_transport.cpp
         lib/transport/legacy/legacy_transport.cpp
+        lib/transport/legacy/netsio_protocol.cpp
         lib/transport/legacy/packet_based_legacy_transport.cpp
         lib/transport/legacy/sio_traits.cpp
         lib/transport/legacy/sio_transport.cpp

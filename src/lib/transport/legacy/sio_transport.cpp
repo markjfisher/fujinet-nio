@@ -1,7 +1,11 @@
 #include "fujinet/io/transport/legacy/sio_transport.h"
 #include "fujinet/io/transport/legacy/bus_traits.h"
 #include "fujinet/io/transport/legacy/bus_hardware.h"
+#include "fujinet/build/profile.h"
+#include "fujinet/config/fuji_config.h"
 #include "fujinet/core/logging.h"
+
+#include <cstring>
 
 namespace fujinet::io::transport::legacy {
 
@@ -11,30 +15,35 @@ static constexpr const char* TAG = "sio";
 static constexpr std::uint32_t DELAY_T4 = 850; // microseconds
 static constexpr std::uint32_t DELAY_T5 = 250; // microseconds
 
-SioTransport::SioTransport(Channel& channel)
+SioTransport::SioTransport(Channel& channel, 
+                           const build::BuildProfile& profile,
+                           const config::NetSioConfig* netsioConfig)
     : ByteBasedLegacyTransport(channel, make_sio_traits())
 {
-    // Create hardware abstraction
-    // Note: For SIO, the Channel may not be used directly - hardware handles UART/GPIO
-    _hardware = make_sio_hardware();
+    // Create hardware abstraction - factory decides based on channel type and config
+    bool useNetsio = (profile.primaryChannel == build::ChannelKind::UdpSocket);
+    if (useNetsio && netsioConfig) {
+        _hardware = make_sio_hardware(&channel, netsioConfig);
+        FN_LOGI(TAG, "SIO Transport initialized in NetSIO mode (UDP)");
+    } else {
+        _hardware = make_sio_hardware(&channel, nullptr);
+        FN_LOGI(TAG, "SIO Transport initialized in hardware mode");
+    }
 }
 
 bool SioTransport::readCommandFrame(cmdFrame_t& frame) {
-    // Wait for CMD pin to be asserted (platform-specific)
+    // Wait for CMD pin to be asserted (works for both hardware and NetSIO)
     if (!_hardware->commandAsserted()) {
         return false;
     }
     
-    // Read 5-byte command frame
+    // Read 5-byte command frame (BusHardware handles NetSIO vs hardware differences)
     std::size_t bytes_read = _hardware->read(reinterpret_cast<std::uint8_t*>(&frame), sizeof(frame));
     if (bytes_read != sizeof(frame)) {
         FN_LOGW(TAG, "Failed to read complete command frame: got %zu bytes, expected %zu",
             bytes_read, sizeof(frame));
         return false;
     }
-    
-    // Wait for CMD line to de-assert (platform-specific)
-    // This is handled by the hardware abstraction
     
     FN_LOGD(TAG, "CF: %02x %02x %02x %02x %02x",
         frame.device, frame.comnd, frame.aux1, frame.aux2, frame.checksum);
@@ -43,14 +52,20 @@ bool SioTransport::readCommandFrame(cmdFrame_t& frame) {
 }
 
 void SioTransport::sendAck() {
-    _hardware->write('A');
-    _hardware->flush();
+    // Try sync response first (NetSIO mode), fall back to regular ACK
+    if (!_hardware->sendSyncResponseIfNeeded('A')) {
+        _hardware->write('A');
+        _hardware->flush();
+    }
     FN_LOGD(TAG, "ACK!");
 }
 
 void SioTransport::sendNak() {
-    _hardware->write('N');
-    _hardware->flush();
+    // Try sync response first (NetSIO mode), fall back to regular NAK
+    if (!_hardware->sendSyncResponseIfNeeded('N')) {
+        _hardware->write('N');
+        _hardware->flush();
+    }
     FN_LOGD(TAG, "NAK!");
 }
 
@@ -77,7 +92,7 @@ void SioTransport::writeDataFrame(const std::uint8_t* buf, std::size_t len) {
 }
 
 std::size_t SioTransport::readDataFrameWithChecksum(std::uint8_t* buf, std::size_t len) {
-    // Read data frame
+    // Read data frame (BusHardware handles NetSIO vs hardware differences)
     std::size_t bytes_read = _hardware->read(buf, len);
     if (bytes_read != len) {
         FN_LOGW(TAG, "Failed to read complete data frame: got %zu bytes, expected %zu",
@@ -88,7 +103,6 @@ std::size_t SioTransport::readDataFrameWithChecksum(std::uint8_t* buf, std::size
     
     // Wait for checksum byte
     while (_hardware->available() == 0) {
-        // Yield or delay - platform-specific
         _hardware->delayMicroseconds(10);
     }
     
@@ -117,7 +131,7 @@ std::size_t SioTransport::readDataFrameWithChecksum(std::uint8_t* buf, std::size
 }
 
 void SioTransport::writeDataFrameWithChecksum(const std::uint8_t* buf, std::size_t len) {
-    // Write data frame
+    // Write data frame (BusHardware handles NetSIO vs hardware differences)
     _hardware->write(buf, len);
     
     // Calculate and write checksum

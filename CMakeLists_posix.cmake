@@ -24,6 +24,7 @@ option(FN_WITH_CURL           "Enable libcurl-backed HTTP/HTTPS on POSIX" ON)
 # These can then be used as flags for the build type in cmake via CMakePresets.json
 option (FN_BUILD_ATARI_SIO    "Build for Atari SIO via GPIO (ESP32)"  OFF)
 option (FN_BUILD_ATARI_PTY    "Build for Atari SIO over PTY (POSIX)"  OFF)
+option (FN_BUILD_ATARI_NETSIO "Build for Atari SIO over NetSIO/UDP (POSIX)" OFF)
 option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -64,6 +65,7 @@ target_compile_definitions(fujinet-nio
         $<$<CONFIG:Debug>:FN_DEBUG>
         $<$<BOOL:${FN_BUILD_ATARI_SIO}>:FN_BUILD_ATARI_SIO>
         $<$<BOOL:${FN_BUILD_ATARI_PTY}>:FN_BUILD_ATARI_PTY>
+        $<$<BOOL:${FN_BUILD_ATARI_NETSIO}>:FN_BUILD_ATARI_NETSIO>
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
         # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
 )
@@ -111,6 +113,7 @@ target_sources(fujinet-nio
         src/lib/transport/legacy/iwm_traits.cpp
         src/lib/transport/legacy/iwm_transport.cpp
         src/lib/transport/legacy/legacy_transport.cpp
+        src/lib/transport/legacy/netsio_protocol.cpp
         src/lib/transport/legacy/packet_based_legacy_transport.cpp
         src/lib/transport/legacy/sio_traits.cpp
         src/lib/transport/legacy/sio_transport.cpp
@@ -126,12 +129,14 @@ target_sources(fujinet-nio
         src/platform/posix/http_network_protocol_curl.cpp
         src/platform/posix/iwm_bus_hardware.cpp
         src/platform/posix/logging.cpp
+        src/platform/posix/netsio_bus_hardware.cpp
         src/platform/posix/network_registry.cpp
         src/platform/posix/sio_bus_hardware.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
         src/platform/posix/tcp_socket_ops_default.cpp
         src/platform/posix/tcp_socket_ops_posix.cpp
         src/platform/posix/time.cpp
+        src/platform/posix/udp_channel.cpp
 # __TARGET_SOURCES_END__
         third_party/cjson/cJSON.c
 )
