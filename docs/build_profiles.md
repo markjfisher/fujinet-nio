@@ -99,42 +99,62 @@ File: `src/lib/build_profile.cpp`
 ```cpp
 BuildProfile current_build_profile()
 {
+    BuildProfile profile{};
+
 #if defined(FN_BUILD_ATARI_SIO)
-    return {
+    profile = BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
         .primaryChannel   = ChannelKind::HardwareSio,
         .name             = "Atari + SIO via GPIO",
-        .hw               = detect_hardware_capabilities(),
+        .hw               = {},
     };
-
 #elif defined(FN_BUILD_ATARI_PTY)
-    return {
+    profile = BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
         .primaryChannel   = ChannelKind::Pty,
         .name             = "Atari + SIO over PTY (POSIX)",
-        .hw               = detect_hardware_capabilities(),
+        .hw               = {},
     };
-
+#elif defined(FN_BUILD_ATARI_NETSIO)
+    profile = BuildProfile{
+        .machine          = Machine::Atari8Bit,
+        .primaryTransport = TransportKind::SIO,
+        .primaryChannel   = ChannelKind::UdpSocket,
+        .name             = "Atari + SIO over NetSIO (UDP)",
+        .hw               = {},
+    };
 #elif defined(FN_BUILD_ESP32_USB_CDC)
-    return {
+    profile = BuildProfile{
         .machine          = Machine::FujiNetESP32,
         .primaryTransport = TransportKind::FujiBus,
         .primaryChannel   = ChannelKind::UsbCdcDevice,
-        .name             = "ESP32-S3 + FujiBus over USB CDC",
-        .hw               = detect_hardware_capabilities(),
+        .name             = "S3 + FujiBus over USB CDC",
+        .hw               = {},
     };
-
-#else
-    return {
+#elif defined(FN_BUILD_FUJIBUS_PTY)
+    profile = BuildProfile{
         .machine          = Machine::Generic,
         .primaryTransport = TransportKind::FujiBus,
         .primaryChannel   = ChannelKind::Pty,
         .name             = "POSIX + FujiBus over PTY",
-        .hw               = detect_hardware_capabilities(),
+        .hw               = {},
+    };
+#else
+    // Default: POSIX-friendly profile when no explicit build profile macro is provided.
+    // This keeps local/test builds working without requiring a preset.
+    profile = BuildProfile{
+        .machine          = Machine::Generic,
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::Pty,
+        .name             = "POSIX + FujiBus over PTY (default)",
+        .hw               = {},
     };
 #endif
+
+    profile.hw = detect_hardware_capabilities();
+    return profile;
 }
 ```
 
@@ -366,7 +386,8 @@ Currently supported profiles:
   - `primaryTransport = TransportKind::SIO`  
   - `primaryChannel   = ChannelKind::UdpSocket`  
   - Used for POSIX builds with NetSIO protocol over UDP (connects to netsiohub bridge)
-  - Requires `NETSIO_HOST` and optionally `NETSIO_PORT` environment variables
+  - Requires NetSIO host/port configuration in `fujinet.yaml` (see `NetSioConfig` section)
+  - CMake preset: `atari-netsio-debug` / `atari-netsio-release`
 
 - `FN_BUILD_ESP32_USB_CDC`  
   - `machine          = Machine::FujiNetESP32`  
@@ -452,12 +473,15 @@ cmake -B build/atari-pty-debug \
       -DFN_BUILD_ATARI_PTY=ON
 
 # Atari SIO over NetSIO (POSIX), Debug build
-# Requires netsiohub running and NETSIO_HOST environment variable
-export NETSIO_HOST=localhost
-export NETSIO_PORT=9997  # optional, defaults to 9997
+# Requires netsiohub running and NetSIO config in fujinet.yaml
+# (or NETSIO_HOST/NETSIO_PORT environment variables as fallback)
 cmake -B build/atari-netsio-debug \
       -DCMAKE_BUILD_TYPE=Debug \
       -DFN_BUILD_ATARI_NETSIO=ON
+
+# Or use CMakePresets.json:
+cmake --preset atari-netsio-debug
+cmake --build --preset atari-netsio-debug-build
 ```
 
 The `target_compile_definitions(fujinet-nio ...)` call then turns those options

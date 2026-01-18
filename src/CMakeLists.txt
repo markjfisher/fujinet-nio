@@ -86,6 +86,7 @@ idf_component_register(
         "../third_party/cjson"
     REQUIRES
         yaml-cpp-idf
+        esp_psram
         esp_wifi
         esp_netif
         nvs_flash

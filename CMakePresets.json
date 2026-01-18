@@ -16,6 +16,7 @@
         "FN_BUILD_FUJIBUS_PTY": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
         "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
         "FN_BUILD_TESTS": "ON"
       }
@@ -30,6 +31,7 @@
         "FN_BUILD_FUJIBUS_PTY": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
         "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
         "FN_BUILD_TESTS": "ON"
       }
@@ -43,6 +45,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "FN_BUILD_ATARI_PTY": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
         "FN_BUILD_FUJIBUS_PTY": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
         "FN_BUILD_TESTS": "ON"
@@ -57,6 +60,37 @@
         "CMAKE_BUILD_TYPE": "Release",
         "FN_BUILD_ATARI_PTY": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "atari-netsio-debug",
+      "displayName": "Atari Legacy over NetSIO (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_BUILD_ATARI_NETSIO": "ON",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "atari-netsio-release",
+      "displayName": "Atari Legacy over NetSIO (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FN_BUILD_ATARI_NETSIO": "ON",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
         "FN_BUILD_FUJIBUS_PTY": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
         "FN_BUILD_TESTS": "ON"
@@ -72,6 +106,7 @@
         "FN_BUILD_FUJIBUS_PTY": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
         "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
         "FN_BUILD_POSIX_APP": "OFF",
         "FN_BUILD_TESTS": "ON"
       }
@@ -93,6 +128,14 @@
     {
       "name": "atari-pty-release-build",
       "configurePreset": "atari-pty-release"
+    },
+    {
+      "name": "atari-netsio-debug-build",
+      "configurePreset": "atari-netsio-debug"
+    },
+    {
+      "name": "atari-netsio-release-build",
+      "configurePreset": "atari-netsio-release"
     },
     {
       "name": "lib-only-build",
