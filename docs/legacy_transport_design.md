@@ -15,16 +15,34 @@ This document describes the architecture for supporting legacy bus protocols (SI
 
 ### 1. Transport Layer Structure
 
+The legacy transport architecture uses a three-tier inheritance hierarchy to cleanly separate protocol styles:
+
 ```
 fujinet::io::ITransport (abstract)
-├── FujiBusTransport (existing)
 └── LegacyTransport (abstract base)
-    ├── SioTransport (Atari)
-    ├── IwmTransport (Apple II)
-    ├── IecTransport (Commodore)
-    ├── AdamNetTransport (Coleco Adam)
-    └── ... (other platforms)
+    ├── ByteBasedLegacyTransport (SIO, IEC)
+    │   └── SioTransport (Atari)
+    └── PacketBasedLegacyTransport (IWM)
+        └── IwmTransport (Apple II)
 ```
+
+**LegacyTransport** provides common functionality:
+- `poll()` - reads raw bytes from channel
+- `convertToIORequest()` - converts cmdFrame_t to IORequest
+- State machine management
+- Abstract methods: `receive()`, `send()`, `readCommandFrame()`
+
+**ByteBasedLegacyTransport** handles protocols with explicit control bytes:
+- Implements `receive()` with ACK/NAK flow control
+- Implements `send()` with COMPLETE/ERROR + data
+- Requires: `sendAck()`, `sendNak()`, `sendComplete()`, `sendError()`, `readDataFrame()`, `writeDataFrame()`
+
+**PacketBasedLegacyTransport** handles packet-based protocols:
+- Implements `receive()` for packet-based protocols
+- Implements `send()` with status packet + data packet
+- Requires: `sendStatusPacket()`, `sendDataPacket()`, `readDataPacket()`
+
+This separation ensures each protocol only implements what it actually uses, avoiding no-op methods.
 
 ### 2. Command Frame Abstraction
 
@@ -114,105 +132,148 @@ private:
 } // namespace fujinet::io::transport::legacy
 ```
 
-### 5. Legacy Transport Base Class
+### 5. Legacy Transport Base Classes
 
-Abstract base that handles common legacy protocol logic:
+The architecture uses three base classes to handle different protocol styles:
 
+**LegacyTransport** (most abstract):
 ```cpp
 namespace fujinet::io::transport::legacy {
 
 class LegacyTransport : public ITransport {
 public:
-    explicit LegacyTransport(
-        Channel& channel,
-        const platform::legacy::BusTraits& traits
-    );
+    explicit LegacyTransport(Channel& channel, const BusTraits& traits);
     
     void poll() override;
-    bool receive(IORequest& outReq) override;
-    void send(const IOResponse& resp) override;
+    
+    // Pure virtual - protocol-specific implementations
+    virtual bool receive(IORequest& outReq) = 0;
+    virtual void send(const IOResponse& resp) = 0;
     
 protected:
     // Platform-specific: read command frame from hardware
     virtual bool readCommandFrame(cmdFrame_t& frame) = 0;
     
-    // Platform-specific: send ACK/NAK/COMPLETE/ERROR
-    virtual void sendAck() = 0;
-    virtual void sendNak() = 0;
-    virtual void sendComplete() = 0;
-    virtual void sendError() = 0;
+    // Shared helpers
+    IORequest convertToIORequest(const cmdFrame_t& frame);
+    bool commandNeedsData(std::uint8_t command) const;
     
-    // Platform-specific: read/write data frames
-    virtual size_t readDataFrame(uint8_t* buf, size_t len) = 0;
-    virtual void writeDataFrame(const uint8_t* buf, size_t len) = 0;
-    
-private:
     Channel& _channel;
-    const platform::legacy::BusTraits& _traits;
-    LegacyFrameParser _parser;
-    std::vector<uint8_t> _rxBuffer;
-    RequestID _nextRequestId{1};
-    
-    // State machine for legacy protocol
-    enum class State {
-        WaitingForCommand,
-        WaitingForData,
-        SendingResponse,
-    };
+    const BusTraits& _traits;
     State _state{State::WaitingForCommand};
+    std::vector<std::uint8_t> _rxBuffer;
+    RequestID _nextRequestId{1};
 };
 
 } // namespace fujinet::io::transport::legacy
 ```
 
+**ByteBasedLegacyTransport** (for SIO, IEC):
+```cpp
+class ByteBasedLegacyTransport : public LegacyTransport {
+public:
+    bool receive(IORequest& outReq) override;  // Implements ACK/NAK flow
+    void send(const IOResponse& resp) override; // Implements COMPLETE/ERROR + data
+    
+protected:
+    // Protocol-specific control bytes
+    virtual void sendAck() = 0;
+    virtual void sendNak() = 0;
+    virtual void sendComplete() = 0;
+    virtual void sendError() = 0;
+    
+    // Protocol-specific data frames
+    virtual std::size_t readDataFrame(std::uint8_t* buf, std::size_t len) = 0;
+    virtual void writeDataFrame(const std::uint8_t* buf, std::size_t len) = 0;
+};
+```
+
+**PacketBasedLegacyTransport** (for IWM):
+```cpp
+class PacketBasedLegacyTransport : public LegacyTransport {
+public:
+    bool receive(IORequest& outReq) override;  // Implements packet parsing
+    void send(const IOResponse& resp) override; // Implements status + data packets
+    
+protected:
+    // Protocol-specific packet methods
+    virtual void sendStatusPacket(std::uint8_t status_byte) = 0;
+    virtual void sendDataPacket(const std::uint8_t* buf, std::size_t len) = 0;
+};
+```
+
 ### 6. Platform-Specific Transport Implementation
 
-Example: SIO Transport for Atari
-
+**SIO Transport** (inherits from ByteBasedLegacyTransport):
 ```cpp
 namespace fujinet::io::transport::legacy {
 
-class SioTransport : public LegacyTransport {
+class SioTransport : public ByteBasedLegacyTransport {
 public:
     explicit SioTransport(Channel& channel)
-        : LegacyTransport(channel, platform::legacy::make_sio_traits())
-    {}
+        : ByteBasedLegacyTransport(channel, make_sio_traits())
+    {
+        _hardware = make_sio_hardware();
+    }
     
 protected:
     bool readCommandFrame(cmdFrame_t& frame) override {
-        // Platform-specific: read from UART, check CMD pin, etc.
-        // Uses traits.checksum() for validation
+        // Wait for CMD pin assertion, read 5-byte frame from UART
+        // Uses hardware abstraction for GPIO/UART access
     }
     
-    void sendAck() override {
-        _channel.write('A');
-        fnSystem.delay_microseconds(_traits.ack_delay);
-    }
-    
-    void sendNak() override {
-        _channel.write('N');
-    }
-    
+    void sendAck() override { _hardware->write('A'); }
+    void sendNak() override { _hardware->write('N'); }
     void sendComplete() override {
-        fnSystem.delay_microseconds(_traits.complete_delay);
-        _channel.write('C');
+        _hardware->delayMicroseconds(DELAY_T5);
+        _hardware->write('C');
     }
-    
     void sendError() override {
-        fnSystem.delay_microseconds(_traits.error_delay);
-        _channel.write('E');
+        _hardware->delayMicroseconds(DELAY_T5);
+        _hardware->write('E');
     }
     
-    size_t readDataFrame(uint8_t* buf, size_t len) override {
-        // SIO-specific: read data + checksum, validate, ACK/NAK
+    std::size_t readDataFrame(std::uint8_t* buf, std::size_t len) override {
+        // Read data + checksum, validate, send ACK/NAK
     }
     
-    void writeDataFrame(const uint8_t* buf, size_t len) override {
-        // SIO-specific: write data + checksum
+    void writeDataFrame(const std::uint8_t* buf, std::size_t len) override {
+        // Write data + checksum
     }
+    
+private:
+    std::unique_ptr<BusHardware> _hardware;
 };
 
 } // namespace fujinet::io::transport::legacy
+```
+
+**IWM Transport** (inherits from PacketBasedLegacyTransport):
+```cpp
+class IwmTransport : public PacketBasedLegacyTransport {
+public:
+    explicit IwmTransport(Channel& channel)
+        : PacketBasedLegacyTransport(channel, make_iwm_traits())
+    {
+        _hardware = make_iwm_hardware();
+    }
+    
+protected:
+    bool readCommandFrame(cmdFrame_t& frame) override {
+        // Check phase lines, decode IWM packet to cmdFrame_t
+    }
+    
+    void sendStatusPacket(std::uint8_t status_byte) override {
+        // Encode and send IWM status packet via SPI
+    }
+    
+    void sendDataPacket(const std::uint8_t* buf, std::size_t len) override {
+        // Encode and send IWM data packet via SPI
+    }
+    
+private:
+    std::unique_ptr<BusHardware> _hardware;
+};
 ```
 
 ## Conversion Logic
@@ -438,10 +499,23 @@ void LegacyTransport::send(const IOResponse& resp) {
 4. **Phase 4**: Add to main initialization
 5. **Phase 5**: Test with real hardware
 
+## Protocol Comparison
+
+| Feature | SIO (Byte-Based) | IWM (Packet-Based) |
+|---------|------------------|-------------------|
+| Control bytes | ACK/NAK/COMPLETE/ERROR | None |
+| Response style | Control byte + data | Status packet + data packet |
+| Checksum | Additive wrap-around | XOR |
+| Hardware | UART + GPIO | SPI + GPIO |
+| Device IDs | Fixed (0x70, 0x31-0x3F, etc.) | Dynamic (assigned during INIT) |
+| Flow control | Time-based (T4, T5 delays) | Phase-based (idle/reset/enable) |
+
 ## Benefits
 
 1. **Clean separation**: Platform-specific code isolated in registries
 2. **No duplication**: Common logic in base class, traits capture differences
-3. **Testable**: Mock traits and hardware for unit tests
-4. **Extensible**: New platforms add traits + transport, no core changes
-5. **Maintainable**: Single codebase for all platforms, no `#ifdef` soup
+3. **Type safety**: Protocol differences enforced by inheritance hierarchy
+4. **No no-op methods**: Each protocol only implements what it uses
+5. **Testable**: Mock traits and hardware for unit tests
+6. **Extensible**: New protocols inherit from appropriate base class
+7. **Maintainable**: Single codebase for all platforms, no `#ifdef` soup

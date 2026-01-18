@@ -29,8 +29,8 @@ BuildProfile current_build_profile()
     profile = BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::Pty,   // placeholder
-        .name             = "Atari + SIO",
+        .primaryChannel   = ChannelKind::Pty,   // TODO: Change to HardwareSio when channel is implemented
+        .name             = "Atari + SIO via GPIO",
         .hw               = {},
     };
 #elif defined(FN_BUILD_ESP32_USB_CDC)

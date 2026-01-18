@@ -3,13 +3,14 @@
 #include <memory>
 
 #include "fujinet/io/core/channel.h"
-#include "fujinet/io/transport/legacy/legacy_transport.h"
+#include "fujinet/io/transport/legacy/byte_based_legacy_transport.h"
 #include "fujinet/io/transport/legacy/bus_hardware.h"
 
 namespace fujinet::io::transport::legacy {
 
 // Atari SIO (Serial Input/Output) transport implementation
-class SioTransport : public LegacyTransport {
+// Byte-based protocol using ACK/NAK/COMPLETE/ERROR control bytes
+class SioTransport : public ByteBasedLegacyTransport {
 public:
     explicit SioTransport(Channel& channel);
     virtual ~SioTransport() = default;

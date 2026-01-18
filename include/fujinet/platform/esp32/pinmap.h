@@ -11,11 +11,20 @@ struct SdSpiPins {
     int cs;
 };
 
+struct SioPins {
+    int cmd;      // Command line (input)
+    int int_pin;  // Interrupt line (output, open drain)
+    int mtr;      // Motor line (input)
+    int proc;     // Proceed line (output, open drain)
+    int cki;      // Clock in (output, open drain)
+    int cko;      // Clock out (input)
+    int uart_rx;  // UART RX for SIO data
+    int uart_tx;  // UART TX for SIO data
+};
+
 struct PinMap {
     SdSpiPins sd;
-    // Future: uart, leds, buttons, etc.
-    // struct UartPins { int tx; int rx; };
-    // UartPins sio;
+    SioPins sio;
 };
 
 /// Returns the globally selected pin mapping for this build.

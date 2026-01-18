@@ -12,7 +12,7 @@ static constexpr std::uint32_t DELAY_T4 = 850; // microseconds
 static constexpr std::uint32_t DELAY_T5 = 250; // microseconds
 
 SioTransport::SioTransport(Channel& channel)
-    : LegacyTransport(channel, make_sio_traits())
+    : ByteBasedLegacyTransport(channel, make_sio_traits())
 {
     // Create hardware abstraction
     // Note: For SIO, the Channel may not be used directly - hardware handles UART/GPIO

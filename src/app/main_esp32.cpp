@@ -227,6 +227,7 @@ extern "C" void app_main(void)
     esp_log_level_set("nio-wifi",    ESP_LOG_INFO);
     esp_log_level_set("platform",    ESP_LOG_INFO);
     esp_log_level_set("service",     ESP_LOG_INFO);
+    esp_log_level_set("byte_legacy", ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init",   ESP_LOG_ERROR);

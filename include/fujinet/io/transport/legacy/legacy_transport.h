@@ -12,7 +12,10 @@
 namespace fujinet::io::transport::legacy {
 
 // Base class for legacy bus transports (SIO, IWM, IEC, etc.)
-// Handles common protocol logic while allowing platform-specific hardware access
+// Provides common functionality: polling, frame conversion, state management
+// Protocol-specific behavior is handled by derived classes:
+// - ByteBasedLegacyTransport (SIO, IEC) - uses control bytes
+// - PacketBasedLegacyTransport (IWM) - uses packet-based protocol
 class LegacyTransport : public ITransport {
 public:
     explicit LegacyTransport(
@@ -23,8 +26,10 @@ public:
     virtual ~LegacyTransport() = default;
     
     void poll() override;
-    bool receive(IORequest& outReq) override;
-    void send(const IOResponse& resp) override;
+    
+    // Derived classes implement receive() and send() based on their protocol style
+    virtual bool receive(IORequest& outReq) = 0;
+    virtual void send(const IOResponse& resp) = 0;
     
 protected:
     // Platform-specific implementations must provide these methods
@@ -33,27 +38,15 @@ protected:
     // Returns true if a valid frame was read, false otherwise
     virtual bool readCommandFrame(cmdFrame_t& frame) = 0;
     
-    // Send protocol control bytes
-    virtual void sendAck() = 0;
-    virtual void sendNak() = 0;
-    virtual void sendComplete() = 0;
-    virtual void sendError() = 0;
-    
-    // Read/write data frames (after command frame)
-    // Returns number of bytes read/written
-    virtual std::size_t readDataFrame(std::uint8_t* buf, std::size_t len) = 0;
-    virtual void writeDataFrame(const std::uint8_t* buf, std::size_t len) = 0;
-    
     // Check if command requires a data frame
     virtual bool commandNeedsData(std::uint8_t command) const;
+    
+    // Convert cmdFrame_t to IORequest (shared by all protocols)
+    IORequest convertToIORequest(const cmdFrame_t& frame);
     
 protected:
     Channel& _channel;
     const BusTraits& _traits;
-    
-private:
-    // Convert cmdFrame_t to IORequest
-    IORequest convertToIORequest(const cmdFrame_t& frame);
     
     // State machine for legacy protocol
     enum class State {

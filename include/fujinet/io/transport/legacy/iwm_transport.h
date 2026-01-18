@@ -3,26 +3,23 @@
 #include <memory>
 
 #include "fujinet/io/core/channel.h"
-#include "fujinet/io/transport/legacy/legacy_transport.h"
+#include "fujinet/io/transport/legacy/packet_based_legacy_transport.h"
 #include "fujinet/io/transport/legacy/bus_hardware.h"
 
 namespace fujinet::io::transport::legacy {
 
 // Apple II IWM (Integrated Woz Machine) transport implementation
-// Handles SmartPort protocol over IWM bus
-class IwmTransport : public LegacyTransport {
+// Packet-based protocol using status and data packets (no control bytes)
+class IwmTransport : public PacketBasedLegacyTransport {
 public:
     explicit IwmTransport(Channel& channel);
     virtual ~IwmTransport() = default;
     
 protected:
     bool readCommandFrame(cmdFrame_t& frame) override;
-    void sendAck() override;
-    void sendNak() override;
-    void sendComplete() override;
-    void sendError() override;
-    std::size_t readDataFrame(std::uint8_t* buf, std::size_t len) override;
-    void writeDataFrame(const std::uint8_t* buf, std::size_t len) override;
+    void sendStatusPacket(std::uint8_t status) override;
+    void sendDataPacket(const std::uint8_t* buf, std::size_t len) override;
+    std::size_t readDataPacket(std::uint8_t* buf, std::size_t len) override;
     bool commandNeedsData(std::uint8_t command) const override;
     
 private:
