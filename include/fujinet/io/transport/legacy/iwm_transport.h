@@ -39,12 +39,6 @@ private:
     
     // IWM-specific: handle INIT command (assigns device IDs dynamically)
     void handleInit();
-    
-    // IWM-specific: send status packet (IWM uses packet-based protocol)
-    void sendStatusPacket(std::uint8_t status);
-    
-    // IWM-specific: send data packet
-    void sendDataPacket(const std::uint8_t* buf, std::size_t len);
 };
 
 } // namespace fujinet::io::transport::legacy

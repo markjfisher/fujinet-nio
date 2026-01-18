@@ -37,6 +37,10 @@ create_channel_for_profile(const build::BuildProfile& profile)
     case ChannelKind::TcpSocket:
         FN_LOGE(TAG, "TcpSocket channel kind not implemented on ESP32");
         return nullptr;
+
+    case ChannelKind::HardwareSio:
+        FN_LOGE(TAG, "HardwareSio channel kind not implemented yet");
+        return nullptr;
     }
 
     FN_LOGE(TAG, "Unknown ChannelKind in create_channel_for_profile");

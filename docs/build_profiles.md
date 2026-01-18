@@ -72,6 +72,7 @@ enum class ChannelKind {
     Pty,          // POSIX PTY (dev/testing)
     UsbCdcDevice, // USB CDC device mode (ESP32S3, Pi gadget mode later)
     TcpSocket,    // TCP/IP channel for emulators (future)
+    HardwareSio,  // ESP32 GPIO-based SIO (UART + GPIO pins)
 };
 
 struct BuildProfile {
@@ -97,12 +98,21 @@ File: `src/lib/build_profile.cpp`
 ```cpp
 BuildProfile current_build_profile()
 {
-#if defined(FN_BUILD_ATARI)
+#if defined(FN_BUILD_ATARI_SIO)
     return {
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::Pty,      // until real SIO HW
-        .name             = "Atari + SIO",
+        .primaryChannel   = ChannelKind::HardwareSio,
+        .name             = "Atari + SIO via GPIO",
+        .hw               = detect_hardware_capabilities(),
+    };
+
+#elif defined(FN_BUILD_ATARI_PTY)
+    return {
+        .machine          = Machine::Atari8Bit,
+        .primaryTransport = TransportKind::SIO,
+        .primaryChannel   = ChannelKind::Pty,
+        .name             = "Atari + SIO over PTY (POSIX)",
         .hw               = detect_hardware_capabilities(),
     };
 
@@ -249,7 +259,9 @@ create_channel_for_profile(const BuildProfile& profile)
 switch (profile.primaryChannel) {
     case ChannelKind::UsbCdcDevice:
         return std::make_unique<UsbCdcChannel>();
-    // future: HardwareSio, Uart0, etc.
+    case ChannelKind::HardwareSio:
+        return std::make_unique<HardwareSioChannel>();  // TODO: implement
+    // future: Uart0, etc.
 }
 ```
 
@@ -262,7 +274,7 @@ switch (profile.primaryChannel) {
 | Concept | Meaning | Examples |
 |--------|---------|----------|
 | **Transport** | Protocol spoken over the link | FujiBus, SIO |
-| **Channel** | How raw bytes move | PTY, USB-CDC, TCP |
+| **Channel** | How raw bytes move | PTY, USB-CDC, TCP, HardwareSio |
 | **Hardware capabilities** | What the device *can* do | Wi-Fi? PSRAM? USB host? |
 | **Build profile** | Which combination this firmware targets | ESP32-USB, POSIX-PTY |
 
@@ -336,10 +348,17 @@ device / transport / channel a build is targeting. These are expressed as
 
 Currently supported profiles:
 
-- `FN_BUILD_ATARI`  
+- `FN_BUILD_ATARI_SIO`  
   - `machine          = Machine::Atari8Bit`  
   - `primaryTransport = TransportKind::SIO`  
-  - `primaryChannel   = ChannelKind::Pty` (placeholder until real SIO on GPIO)
+  - `primaryChannel   = ChannelKind::HardwareSio`  
+  - Used for ESP32 builds with GPIO-based SIO hardware
+
+- `FN_BUILD_ATARI_PTY`  
+  - `machine          = Machine::Atari8Bit`  
+  - `primaryTransport = TransportKind::SIO`  
+  - `primaryChannel   = ChannelKind::Pty`  
+  - Used for POSIX builds (testing/development) with SIO over PTY
 
 - `FN_BUILD_ESP32_USB_CDC`  
   - `machine          = Machine::FujiNetESP32`  
@@ -358,7 +377,7 @@ defined, `build_profile.cpp` triggers a compile-time error via:
 
 ```cpp
 #error "No build profile selected. Define one of: \
-FN_BUILD_ATARI, FN_BUILD_ESP32_USB_CDC, FN_BUILD_FUJIBUS_PTY."
+FN_BUILD_ATARI_SIO, FN_BUILD_ATARI_PTY, FN_BUILD_ESP32_USB_CDC, FN_BUILD_FUJIBUS_PTY."
 ```
 
 This ensures we never silently “default” to some arbitrary environment.
@@ -380,7 +399,8 @@ target_compile_definitions(fujinet-nio
     PUBLIC
         FN_PLATFORM_POSIX
         $<$<CONFIG:Debug>:FN_DEBUG>
-        $<$<BOOL:${FN_BUILD_ATARI}>:FN_BUILD_ATARI>
+        $<$<BOOL:${FN_BUILD_ATARI_SIO}>:FN_BUILD_ATARI_SIO>
+        $<$<BOOL:${FN_BUILD_ATARI_PTY}>:FN_BUILD_ATARI_PTY>
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
 )
 ```
@@ -397,7 +417,8 @@ That means:
 For native / POSIX builds, these are regular CMake cache options:
 
 ```cmake
-option(FN_BUILD_ATARI             "Build for Atari SIO profile"          OFF)
+option(FN_BUILD_ATARI_SIO         "Build for Atari SIO via GPIO (ESP32)" OFF)
+option(FN_BUILD_ATARI_PTY         "Build for Atari SIO over PTY (POSIX)" OFF)
 option(FN_BUILD_ESP32_USB_CDC     "Build for ESP32 USB CDC profile"      OFF)
 option(FN_BUILD_FUJIBUS_PTY       "Build for POSIX FujiBus over PTY"     OFF)
 ```
@@ -410,10 +431,15 @@ cmake -B build/posix-fujibus-pty-debug \
       -DCMAKE_BUILD_TYPE=Debug \
       -DFN_BUILD_FUJIBUS_PTY=ON
 
-# Atari profile, Release build
-cmake -B build/atari-release \
+# Atari SIO via GPIO (ESP32), Release build
+cmake -B build/atari-sio-release \
       -DCMAKE_BUILD_TYPE=Release \
-      -DFN_BUILD_ATARI=ON
+      -DFN_BUILD_ATARI_SIO=ON
+
+# Atari SIO over PTY (POSIX), Debug build
+cmake -B build/atari-pty-debug \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DFN_BUILD_ATARI_PTY=ON
 ```
 
 The `target_compile_definitions(fujinet-nio ...)` call then turns those options

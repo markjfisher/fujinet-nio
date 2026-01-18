@@ -37,21 +37,6 @@ bool IwmTransport::readCommandFrame(cmdFrame_t& frame) {
     return false;
 }
 
-void IwmTransport::sendStatusPacket(std::uint8_t status) {
-    // IWM sends status packets via SPI
-    // Packet format: sync bytes + header + status + checksum
-    // TODO: Implement SPI packet encoding and sending
-    (void)status;
-}
-
-void IwmTransport::sendDataPacket(const std::uint8_t* buf, std::size_t len) {
-    // IWM sends data packets via SPI
-    // Data is encoded in groups of 7 bytes
-    // TODO: Implement SPI packet encoding and sending
-    (void)buf;
-    (void)len;
-}
-
 std::size_t IwmTransport::readDataPacket(std::uint8_t* buf, std::size_t len) {
     // IWM reads data packets via SPI
     // TODO: Implement SPI packet reading and decoding

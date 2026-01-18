@@ -25,12 +25,20 @@ BuildProfile current_build_profile()
 {
     BuildProfile profile{};
 
-#if defined(FN_BUILD_ATARI)
+#if defined(FN_BUILD_ATARI_SIO)
     profile = BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::Pty,   // TODO: Change to HardwareSio when channel is implemented
+        .primaryChannel   = ChannelKind::HardwareSio,
         .name             = "Atari + SIO via GPIO",
+        .hw               = {},
+    };
+#elif defined(FN_BUILD_ATARI_PTY)
+    profile = BuildProfile{
+        .machine          = Machine::Atari8Bit,
+        .primaryTransport = TransportKind::SIO,
+        .primaryChannel   = ChannelKind::Pty,
+        .name             = "Atari + SIO over PTY (POSIX)",
         .hw               = {},
     };
 #elif defined(FN_BUILD_ESP32_USB_CDC)

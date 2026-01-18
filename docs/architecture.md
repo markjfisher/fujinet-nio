@@ -566,12 +566,19 @@ File: `src/lib/build_profile.cpp`
 ```cpp
 BuildProfile current_build_profile()
 {
-#if defined(FN_BUILD_ATARI)
+#if defined(FN_BUILD_ATARI_SIO)
     BuildProfile p{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::Pty, // placeholder
-        .name             = "Atari + SIO",
+        .primaryChannel   = ChannelKind::HardwareSio,
+        .name             = "Atari + SIO via GPIO",
+    };
+#elif defined(FN_BUILD_ATARI_PTY)
+    BuildProfile p{
+        .machine          = Machine::Atari8Bit,
+        .primaryTransport = TransportKind::SIO,
+        .primaryChannel   = ChannelKind::Pty,
+        .name             = "Atari + SIO over PTY (POSIX)",
     };
 
 #elif defined(FN_BUILD_ESP32_USB_CDC)

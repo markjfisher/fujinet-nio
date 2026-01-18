@@ -14,7 +14,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "FN_BUILD_FUJIBUS_PTY": "ON",
-        "FN_BUILD_ATARI": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
         "FN_BUILD_TESTS": "ON"
       }
@@ -27,19 +28,35 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "FN_BUILD_FUJIBUS_PTY": "ON",
-        "FN_BUILD_ATARI": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
         "FN_BUILD_TESTS": "ON"
       }
     },
     {
-      "name": "atari-release",
-      "displayName": "Atari SIO profile (Release)",
+      "name": "atari-pty-debug",
+      "displayName": "Atari Legacy over PTY (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_BUILD_ATARI_PTY": "ON",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "atari-pty-release",
+      "displayName": "Atari Legacy over PTY (Release)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "FN_BUILD_ATARI": "ON",
+        "FN_BUILD_ATARI_PTY": "ON",
+        "FN_BUILD_ATARI_SIO": "OFF",
         "FN_BUILD_FUJIBUS_PTY": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
         "FN_BUILD_TESTS": "ON"
@@ -53,7 +70,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "FN_BUILD_FUJIBUS_PTY": "ON",
-        "FN_BUILD_ATARI": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
         "FN_BUILD_POSIX_APP": "OFF",
         "FN_BUILD_TESTS": "ON"
       }
@@ -69,8 +87,12 @@
       "configurePreset": "fujibus-pty-release"
     },
     {
-      "name": "atari-release-build",
-      "configurePreset": "atari-release"
+      "name": "atari-pty-debug-build",
+      "configurePreset": "atari-pty-debug"
+    },
+    {
+      "name": "atari-pty-release-build",
+      "configurePreset": "atari-pty-release"
     },
     {
       "name": "lib-only-build",

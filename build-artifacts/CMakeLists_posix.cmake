@@ -21,7 +21,8 @@ option(FN_WITH_CURL           "Enable libcurl-backed HTTP/HTTPS on POSIX" ON)
 
 # Build options, used in build_profile.cpp, these need reflecting in the target_compile_definitions below
 # These can then be used as flags for the build type in cmake via CMakePresets.json
-option (FN_BUILD_ATARI        "Build for Atari SIO Legacy profile"    OFF)
+option (FN_BUILD_ATARI_SIO    "Build for Atari SIO via GPIO (ESP32)"  OFF)
+option (FN_BUILD_ATARI_PTY    "Build for Atari SIO over PTY (POSIX)"  OFF)
 option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -60,7 +61,8 @@ target_compile_definitions(fujinet-nio
     PUBLIC
         FN_PLATFORM_POSIX               # always true in this toolchain
         $<$<CONFIG:Debug>:FN_DEBUG>
-        $<$<BOOL:${FN_BUILD_ATARI}>:FN_BUILD_ATARI>
+        $<$<BOOL:${FN_BUILD_ATARI_SIO}>:FN_BUILD_ATARI_SIO>
+        $<$<BOOL:${FN_BUILD_ATARI_PTY}>:FN_BUILD_ATARI_PTY>
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
         # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
 )

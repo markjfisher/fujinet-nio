@@ -128,6 +128,10 @@ create_channel_for_profile(const build::BuildProfile& profile)
     case ChannelKind::TcpSocket:
         std::cout << "[ChannelFactory] TcpSocket channel not implemented yet.\n";
         return nullptr;
+
+    case ChannelKind::HardwareSio:
+        std::cout << "[ChannelFactory] HardwareSio not supported on POSIX (use Pty for SIO testing).\n";
+        return nullptr;
     }
 
     std::cout << "[ChannelFactory] Unknown ChannelKind.\n";

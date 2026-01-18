@@ -21,19 +21,19 @@ namespace fujinet::platform::esp32 {
 #endif
 
 #if FN_PINMAP == FN_PINMAP_BREADBOARD
-static constexpr PinMap SD_PINMAP{
+static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 7, .miso = 8, .sck = 6, .cs = 9 },
     .sio = SioPins{ .cmd = -1, .int_pin = -1, .mtr = -1, .proc = -1, .cki = -1, .cko = -1, .uart_rx = -1, .uart_tx = -1 },
 };
 
 #elif FN_PINMAP == FN_PINMAP_FREENOVA_S3
-static constexpr PinMap SD_PINMAP{
+static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 38, .miso = 40, .sck = 39, .cs = 41 },
     .sio = SioPins{ .cmd = -1, .int_pin = -1, .mtr = -1, .proc = -1, .cki = -1, .cko = -1, .uart_rx = -1, .uart_tx = -1 },
 };
 
 #elif FN_PINMAP == FN_PINMAP_FUJINET_S3_REV_A
-static constexpr PinMap SD_PINMAP{
+static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 35, .miso = 37, .sck = 36, .cs = 34 },
     .sio = SioPins{ .cmd = -1, .int_pin = -1, .mtr = -1, .proc = -1, .cki = -1, .cko = -1, .uart_rx = -1, .uart_tx = -1 },
 };
@@ -42,7 +42,7 @@ static constexpr PinMap SD_PINMAP{
 // FujiNet v1 (ESP32) pin mapping for Atari SIO
 // Based on atari-common.h: INT=26, PROC=22, CKO=32, CKI=27, MTR=36, CMD=39
 // UART2 pins: RX=33, TX=21 (from common.h)
-static constexpr PinMap SD_PINMAP{
+static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 23, .miso = 19, .sck = 18, .cs = 5 },
     .sio = SioPins{
         .cmd = 39,      // GPIO_NUM_39 (CMD line)
@@ -62,7 +62,7 @@ static constexpr PinMap SD_PINMAP{
 
 const PinMap& pinmap()
 {
-    return SD_PINMAP;
+    return BOARD_PINMAP;
 }
 
 } // namespace fujinet::platform::esp32

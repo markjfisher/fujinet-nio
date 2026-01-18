@@ -22,7 +22,8 @@ option(FN_WITH_CURL           "Enable libcurl-backed HTTP/HTTPS on POSIX" ON)
 
 # Build options, used in build_profile.cpp, these need reflecting in the target_compile_definitions below
 # These can then be used as flags for the build type in cmake via CMakePresets.json
-option (FN_BUILD_ATARI        "Build for Atari SIO Legacy profile"    OFF)
+option (FN_BUILD_ATARI_SIO    "Build for Atari SIO via GPIO (ESP32)"  OFF)
+option (FN_BUILD_ATARI_PTY    "Build for Atari SIO over PTY (POSIX)"  OFF)
 option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -61,7 +62,8 @@ target_compile_definitions(fujinet-nio
     PUBLIC
         FN_PLATFORM_POSIX               # always true in this toolchain
         $<$<CONFIG:Debug>:FN_DEBUG>
-        $<$<BOOL:${FN_BUILD_ATARI}>:FN_BUILD_ATARI>
+        $<$<BOOL:${FN_BUILD_ATARI_SIO}>:FN_BUILD_ATARI_SIO>
+        $<$<BOOL:${FN_BUILD_ATARI_PTY}>:FN_BUILD_ATARI_PTY>
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
         # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
 )
@@ -105,6 +107,13 @@ target_sources(fujinet-nio
         src/lib/routing_manager.cpp
         src/lib/storage_manager.cpp
         src/lib/tcp_network_protocol_common.cpp
+        src/lib/transport/legacy/byte_based_legacy_transport.cpp
+        src/lib/transport/legacy/iwm_traits.cpp
+        src/lib/transport/legacy/iwm_transport.cpp
+        src/lib/transport/legacy/legacy_transport.cpp
+        src/lib/transport/legacy/packet_based_legacy_transport.cpp
+        src/lib/transport/legacy/sio_traits.cpp
+        src/lib/transport/legacy/sio_transport.cpp
         src/platform/posix/channel_factory.cpp
         src/platform/posix/console_transport_default.cpp
         src/platform/posix/console_transport_pty.cpp
@@ -115,8 +124,10 @@ target_sources(fujinet-nio
         src/platform/posix/fuji_device_factory.cpp
         src/platform/posix/hardware_caps.cpp
         src/platform/posix/http_network_protocol_curl.cpp
+        src/platform/posix/iwm_bus_hardware.cpp
         src/platform/posix/logging.cpp
         src/platform/posix/network_registry.cpp
+        src/platform/posix/sio_bus_hardware.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
         src/platform/posix/tcp_socket_ops_default.cpp
         src/platform/posix/tcp_socket_ops_posix.cpp
@@ -166,16 +177,6 @@ if(FN_BUILD_POSIX_APP)
 
     set_target_properties(fujinet-nio-posix PROPERTIES
         OUTPUT_NAME "fujinet-nio"
-    )
-
-    # Copy a small runner script next to the built binary (for "reboot" restarts on EX_TEMPFAIL=75).
-    add_custom_command(TARGET fujinet-nio-posix POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/distfiles/run-fujinet-nio
-            $<TARGET_FILE_DIR:fujinet-nio-posix>/run-fujinet-nio
-        COMMAND /bin/chmod +x
-            $<TARGET_FILE_DIR:fujinet-nio-posix>/run-fujinet-nio
-        VERBATIM
     )
 endif()
 
