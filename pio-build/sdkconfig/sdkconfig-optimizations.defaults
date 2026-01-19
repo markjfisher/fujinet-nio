@@ -1,0 +1,6 @@
+###########################################################################
+# Compiler Optimizations (to reduce IRAM usage)
+# Using size optimization instead of performance to avoid -Werror issues
+###########################################################################
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_SIZE=y
