@@ -30,8 +30,10 @@ bool NetSIOProtocol::parseMessage(const std::uint8_t* data, std::size_t len)
 
     case netsio::DATA_BLOCK:
         if (len >= 2) {
-            _lastPayload.assign(data + 1, data + len);
-            FN_LOGD(TAG, "DATA_BLOCK: %zu bytes", _lastPayload.size());
+            // Old firmware skips the last byte (sequence number) - see NetSIO.cpp line 307
+            // Loop from index 1 to len-1 (exclusive of last byte)
+            _lastPayload.assign(data + 1, data + len - 1);
+            FN_LOGD(TAG, "DATA_BLOCK: %zu bytes (skipped last byte which is sequence number)", _lastPayload.size());
             return true;
         }
         break;

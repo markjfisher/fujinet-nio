@@ -76,32 +76,59 @@ bool ByteBasedLegacyTransport::receive(IORequest& outReq) {
     if (commandNeedsData(frame.comnd)) {
         _pendingFrame = frame;
         _state = State::WaitingForData;
-        // Don't convert legacy network yet - wait for data frame
-        return true;
+        // Don't return true yet - wait for data frame to be read
+        // Return false so IOService doesn't process incomplete request
+        return false;
     } else {
         _state = State::WaitingForCommand;
     }
     
     // Convert legacy network device IDs to NetworkService before returning
     // This ensures core services never see legacy device IDs
-    _networkBridge->convertRequest(outReq);
+    bool wasConverted = _networkBridge->convertRequest(outReq);
+    if (wasConverted) {
+        FN_LOGI(TAG, "receive(): Returning converted request: device=0x%02X, command=0x%02X ('%c')",
+                outReq.deviceId, outReq.command,
+                (outReq.command >= 32 && outReq.command < 127) ? static_cast<char>(outReq.command) : '?');
+    } else {
+        // If STATUS wasn't converted (no handle), we still need to process it
+        // The bridge will handle the response conversion to return "not connected" status
+        if (outReq.deviceId >= 0x71 && outReq.deviceId <= 0x78 && outReq.command == 'S') {
+            FN_LOGI(TAG, "receive(): Returning STATUS request without conversion (no handle), bridge will handle response");
+            // Still return true so it gets processed - convertResponse will create synthetic response
+        } else {
+            FN_LOGI(TAG, "receive(): Returning non-legacy request: device=0x%02X, command=0x%02X ('%c')",
+                    outReq.deviceId, outReq.command,
+                    (outReq.command >= 32 && outReq.command < 127) ? static_cast<char>(outReq.command) : '?');
+        }
+    }
     
     return true;
 }
 
 void ByteBasedLegacyTransport::send(const IOResponse& resp) {
+    FN_LOGI(TAG, "send(): Received response: id=%u, device=0x%02X, command=0x%02X, status=%d, payload_size=%zu",
+            resp.id, resp.deviceId, resp.command, static_cast<int>(resp.status), resp.payload.size());
+    
     // Convert NetworkService responses back to legacy format if needed
     // The bridge looks up the original request by response ID
     IOResponse legacyResp = resp;
-    _networkBridge->convertResponse(legacyResp);
+    bool wasConverted = _networkBridge->convertResponse(legacyResp);
+    if (wasConverted) {
+        FN_LOGI(TAG, "send(): Response was converted back to legacy format");
+    }
     
     // Byte-based protocols: ACK/NAK then COMPLETE/ERROR + data
     if (legacyResp.status == StatusCode::Ok) {
         sendComplete();
         if (!legacyResp.payload.empty()) {
+            FN_LOGI(TAG, "send(): Writing %zu bytes of payload data", legacyResp.payload.size());
             writeDataFrame(legacyResp.payload.data(), legacyResp.payload.size());
+        } else {
+            FN_LOGI(TAG, "send(): No payload data to write");
         }
     } else {
+        FN_LOGW(TAG, "send(): Response has error status=%d, sending ERROR", static_cast<int>(legacyResp.status));
         sendError();
     }
     

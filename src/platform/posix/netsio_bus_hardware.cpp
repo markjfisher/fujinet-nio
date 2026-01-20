@@ -22,6 +22,8 @@ public:
         , _netsio(std::make_unique<NetSIOProtocol>())
         , _commandAsserted(false)
         , _motorAsserted(false)
+        , _syncRequestNum(0)
+        , _commandFrameReady(false)
     {
         FN_LOGI(TAG, "NetSioBusHardware created (host=%s, port=%u)", 
                 config.host.c_str(), config.port);
@@ -51,7 +53,9 @@ public:
     }
     
     bool commandAsserted() const override {
-        return _commandAsserted;
+        // For NetSIO, also return true if we have a complete command frame ready
+        // (even though COMMAND is de-asserted, the frame is available)
+        return _commandAsserted || _commandFrameReady;
     }
     
     bool motorAsserted() const override {
@@ -82,6 +86,12 @@ public:
                 len, toRead, _netsioFifo.size());
         std::memcpy(buf, _netsioFifo.data(), toRead);
         _netsioFifo.erase(_netsioFifo.begin(), _netsioFifo.begin() + toRead);
+        
+        // Clear command frame ready flag after reading (we've consumed the frame)
+        if (_commandFrameReady && toRead >= 5) {
+            _commandFrameReady = false;
+        }
+        
         FN_LOGI(TAG, "read(): FIFO now has %zu bytes remaining", _netsioFifo.size());
         return toRead;
     }
@@ -168,6 +178,7 @@ private:
                 switch (msgType) {
                 case netsio::COMMAND_ON:
                     _commandAsserted = true;
+                    _commandFrameReady = false;
                     _netsioFifo.clear();
                     _syncRequestNum = 0;
                     FN_LOGI(TAG, "COMMAND_ON - command asserted, FIFO cleared");
@@ -175,15 +186,25 @@ private:
                     
                 case netsio::COMMAND_OFF:
                     _commandAsserted = false;
+                    _commandFrameReady = false;
                     FN_LOGI(TAG, "COMMAND_OFF - command de-asserted");
                     break;
                     
                 case netsio::COMMAND_OFF_SYNC:
+                    FN_LOGI(TAG, "COMMAND_OFF_SYNC received, payload_size=%zu, FIFO_size=%zu", payload.size(), _netsioFifo.size());
                     _commandAsserted = false;
                     if (payload.size() >= 1) {
                         _syncRequestNum = payload[0];
                     }
-                    FN_LOGI(TAG, "COMMAND_OFF_SYNC - command de-asserted, sync=%u", _syncRequestNum);
+                    // For NetSIO, command frame is complete when COMMAND_OFF_SYNC is received
+                    // and we have 5 bytes in the FIFO (the command frame)
+                    // Note: DATA_BLOCK may include extra bytes (sequence numbers), so check for >= 5
+                    if (_netsioFifo.size() >= 5) {
+                        _commandFrameReady = true;
+                        FN_LOGI(TAG, "COMMAND_OFF_SYNC - command frame ready (%zu bytes in FIFO), sync=%u", _netsioFifo.size(), _syncRequestNum);
+                    } else {
+                        FN_LOGW(TAG, "COMMAND_OFF_SYNC - FIFO has %zu bytes, expected at least 5", _netsioFifo.size());
+                    }
                     break;
                     
                 case netsio::DATA_BYTE:
@@ -291,13 +312,18 @@ private:
     fujinet::io::Channel& _channel;
     std::unique_ptr<NetSIOProtocol> _netsio;
     
-    // NetSIO FIFO buffer (accumulates bytes from NetSIO messages)
-    std::vector<std::uint8_t> _netsioFifo;
-    
-    // SIO signal state
-    bool _commandAsserted;
-    bool _motorAsserted;
-    std::uint8_t _syncRequestNum{0};
+            // NetSIO FIFO buffer (accumulates bytes from NetSIO messages)
+            std::vector<std::uint8_t> _netsioFifo;
+            
+            // SIO signal state
+            bool _commandAsserted;
+            bool _motorAsserted;
+            std::uint8_t _syncRequestNum{0};
+            
+            // NetSIO-specific: track when a complete command frame is ready
+            // (for NetSIO, command frame arrives as DATA_BLOCK after COMMAND_ON,
+            //  and is complete when COMMAND_OFF_SYNC is received with 5 bytes in FIFO)
+            bool _commandFrameReady{false};
 };
 
 // Factory function

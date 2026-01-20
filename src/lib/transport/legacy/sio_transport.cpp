@@ -111,17 +111,47 @@ void SioTransport::writeDataFrame(const std::uint8_t* buf, std::size_t len) {
 
 std::size_t SioTransport::readDataFrameWithChecksum(std::uint8_t* buf, std::size_t len) {
     // Read data frame (BusHardware handles NetSIO vs hardware differences)
-    std::size_t bytes_read = _hardware->read(buf, len);
-    if (bytes_read != len) {
+    // For NetSIO, data may arrive in multiple DATA_BLOCK messages, so we need to poll
+    // and accumulate bytes until we have the full data frame
+    std::size_t total_read = 0;
+    while (total_read < len) {
+        // Poll hardware to process incoming NetSIO messages (critical for NetSIO)
+        _hardware->poll();
+        
+        if (_hardware->available() == 0) {
+            // No data available yet, wait a bit
+            _hardware->delayMicroseconds(10);
+            continue;
+        }
+        
+        std::size_t bytes_read = _hardware->read(buf + total_read, len - total_read);
+        if (bytes_read == 0) {
+            break; // No more data available
+        }
+        total_read += bytes_read;
+    }
+    
+    if (total_read != len) {
         FN_LOGW(TAG, "Failed to read complete data frame: got %zu bytes, expected %zu",
-            bytes_read, len);
+            total_read, len);
         sendNak();
         return 0;
     }
     
-    // Wait for checksum byte
-    while (_hardware->available() == 0) {
+    // Wait for checksum byte (for NetSIO, this comes as a separate DATA_BYTE_SYNC message)
+    // Poll hardware to process incoming messages
+    std::size_t timeout_count = 0;
+    constexpr std::size_t MAX_TIMEOUT = 10000; // 100ms timeout (10000 * 10us)
+    while (_hardware->available() == 0 && timeout_count < MAX_TIMEOUT) {
+        _hardware->poll(); // Process incoming NetSIO messages
         _hardware->delayMicroseconds(10);
+        timeout_count++;
+    }
+    
+    if (_hardware->available() == 0) {
+        FN_LOGW(TAG, "Timeout waiting for checksum byte");
+        sendNak();
+        return 0;
     }
     
     std::uint8_t received_checksum = 0;
@@ -145,7 +175,7 @@ std::size_t SioTransport::readDataFrameWithChecksum(std::uint8_t* buf, std::size
     }
     
     sendAck();
-    return bytes_read;
+    return total_read;
 }
 
 void SioTransport::writeDataFrameWithChecksum(const std::uint8_t* buf, std::size_t len) {
@@ -167,7 +197,7 @@ bool SioTransport::commandNeedsData(std::uint8_t command) const {
         case 'O': // Open (network devices need URL in data frame)
         case 'W': // Write sector
         case 'P': // Put sector
-        case 'S': // Status (sometimes has data)
+        // Note: STATUS ('S') does NOT need a data frame - it returns status data in the response
         case '!': // Format
             return true;
         default:

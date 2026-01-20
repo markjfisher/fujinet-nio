@@ -94,7 +94,7 @@ bool LegacyNetworkBridge::convertResponse(IOResponse& resp)
     if (info.command == CMD_CLOSE) {
         _requestToLegacyInfo.erase(it);
     }
-    
+
     return true;
 }
 
@@ -138,8 +138,20 @@ IORequest LegacyNetworkBridge::convertOpen(const IORequest& legacyReq)
     // Header count (0 for legacy)
     netproto::write_u16le(payload, 0);
     
-    // Body length hint (0 for legacy)
-    netproto::write_u32le(payload, 0);
+    // Body length hint
+    // For POST/PUT (aux1=8, 13, or 14), set a large hint so HTTP protocol defers until WRITE completes
+    // For GET/DELETE/other methods, use 0 (no body)
+    // TODO: Legacy POST/PUT doesn't know body length upfront. We use a large value (1MB) as a workaround.
+    // The HTTP protocol will defer until write_body() accumulates data, but it won't auto-dispatch
+    // because it checks for exact match. We need to handle this properly (dispatch on READ or zero-length WRITE).
+    std::uint32_t bodyLenHint = 0;
+    if (method == 2 || method == 3) { // POST or PUT
+        // Use 1MB as a reasonable maximum for legacy POST/PUT body
+        // This allows WRITE commands to accumulate, but the request won't auto-dispatch
+        // until we implement proper "body complete" detection (e.g., on READ or zero-length WRITE)
+        bodyLenHint = 1024 * 1024; // 1MB
+    }
+    netproto::write_u32le(payload, bodyLenHint);
     
     // Response header count (0 for legacy)
     netproto::write_u16le(payload, 0);
@@ -334,17 +346,28 @@ IOResponse LegacyNetworkBridge::convertResponseInternal(const IORequest& legacyR
         if (newResp.status == StatusCode::Ok) {
             // Extract data from response
             // Response format: version(1) + flags(1) + reserved(2) + handle(2) + offset(4) + dataLen(2) + data
-            if (newResp.payload.size() >= 10) {
+            // Total header = 4 (common prefix) + 2 (handle) + 4 (offset) + 2 (dataLen) = 12 bytes
+            if (newResp.payload.size() >= 12) {
                 std::uint16_t dataLen = static_cast<std::uint16_t>(
-                    newResp.payload[8] | (newResp.payload[9] << 8)
+                    newResp.payload[10] | (newResp.payload[11] << 8)
                 );
-                if (newResp.payload.size() >= 10 + dataLen) {
+                if (newResp.payload.size() >= 12 + dataLen) {
                     legacyResp.payload.assign(
-                        newResp.payload.begin() + 10,
-                        newResp.payload.begin() + 10 + dataLen
+                        newResp.payload.begin() + 12,
+                        newResp.payload.begin() + 12 + dataLen
                     );
+                    FN_LOGI(TAG, "READ: Extracted %u bytes from response (total payload size=%zu)",
+                            dataLen, newResp.payload.size());
+                } else {
+                    FN_LOGW(TAG, "READ: Response payload too small: expected %u bytes, got %zu",
+                            12 + dataLen, newResp.payload.size());
                 }
+            } else {
+                FN_LOGW(TAG, "READ: Response payload too small: expected at least 12 bytes, got %zu",
+                        newResp.payload.size());
             }
+        } else {
+            FN_LOGW(TAG, "READ: Response has error status=%d", static_cast<int>(newResp.status));
         }
         break;
     }
@@ -364,9 +387,93 @@ IOResponse LegacyNetworkBridge::convertResponseInternal(const IORequest& legacyR
     }
 
     case CMD_STATUS: {
-        // Convert Info response to legacy status format
-        // For now, just pass through the payload (may need format conversion later)
-        legacyResp.payload = newResp.payload;
+        // If STATUS failed with InvalidRequest (no handle), create synthetic "not connected" response
+        if (newResp.status == StatusCode::InvalidRequest) {
+            FN_LOGI(TAG, "STATUS: InvalidRequest (no handle), creating synthetic 'not connected' response");
+            legacyResp.status = StatusCode::Ok; // Return Ok with "not connected" data
+            // Legacy status format: 4 bytes [bytesWaitingLow, bytesWaitingHigh, connected, error]
+            // bytesWaiting=0, connected=0, error=136 (EOF/not connected)
+            legacyResp.payload = {0x00, 0x00, 0x00, 136};
+        } else if (newResp.status == StatusCode::NotReady) {
+            // Request not ready yet (e.g., HTTP request not dispatched, or body still uploading)
+            // Return "not ready" status: 0 bytes waiting, connected=0, error=136 (EOF/not ready)
+            FN_LOGI(TAG, "STATUS: NotReady, returning 'not ready' response");
+            legacyResp.status = StatusCode::Ok;
+            legacyResp.payload = {0x00, 0x00, 0x00, 136};
+        } else if (newResp.status == StatusCode::Ok) {
+            // Convert Info response to legacy status format
+            // Info response format: version(1) + flags(1) + reserved(2) + handle(2) + httpStatus(2) + contentLength(8) + headerLen(2) + headers
+            // Legacy status format: 4 bytes [bytesWaitingLow, bytesWaitingHigh, connected, error]
+            // connected: 1 = transaction in progress (still receiving), 0 = transaction complete
+            // error: 1 = success, >1 = error code
+            if (newResp.payload.size() >= 18) {
+                // Extract httpStatus (at offset 6-7, after version(1) + flags(1) + reserved(2) + handle(2))
+                std::uint16_t httpStatus = static_cast<std::uint16_t>(newResp.payload[6]) |
+                                          (static_cast<std::uint16_t>(newResp.payload[7]) << 8);
+                
+                // Extract contentLength (bytes waiting) from Info response (at offset 8-15)
+                std::uint64_t contentLength = static_cast<std::uint64_t>(newResp.payload[8]) |
+                                             (static_cast<std::uint64_t>(newResp.payload[9]) << 8) |
+                                             (static_cast<std::uint64_t>(newResp.payload[10]) << 16) |
+                                             (static_cast<std::uint64_t>(newResp.payload[11]) << 24) |
+                                             (static_cast<std::uint64_t>(newResp.payload[12]) << 32) |
+                                             (static_cast<std::uint64_t>(newResp.payload[13]) << 40) |
+                                             (static_cast<std::uint64_t>(newResp.payload[14]) << 48) |
+                                             (static_cast<std::uint64_t>(newResp.payload[15]) << 56);
+                
+                // Clamp contentLength to 16-bit for legacy (max 65535)
+                std::uint16_t bytesWaiting = (contentLength > 65535) ? 65535 : static_cast<std::uint16_t>(contentLength);
+                
+                // For GET requests, connected=1 means transaction in progress (still receiving data)
+                // For now, assume connected=1 if we have data available (matching old firmware behavior)
+                // In old firmware, connected=1 means is_transaction_done()==false (still receiving)
+                // We'll set connected=1 if contentLength > 0 (data available to read)
+                std::uint8_t connected = (contentLength > 0) ? 1 : 0;
+                
+                // error: 1 = success (data available or transaction in progress), 136 = EOF (normal, all data read)
+                // Legacy error codes: 1=OK, 136=END_OF_FILE (normal when done), others are HTTP-specific
+                std::uint8_t error = 1; // Default to success
+                if (httpStatus == 0) {
+                    // No HTTP status yet (shouldn't happen if performed, but be defensive)
+                    error = 136; // EOF (not ready)
+                } else if (httpStatus >= 200 && httpStatus < 300) {
+                    // HTTP success: error=1 if data available, error=136 if EOF (all data read)
+                    if (contentLength == 0) {
+                        error = 136; // EOF - all data has been read
+                    } else {
+                        error = 1; // Success - data available
+                    }
+                } else if (httpStatus == 404 || httpStatus == 410) {
+                    error = 170; // FILE_NOT_FOUND
+                } else if (httpStatus == 401 || httpStatus == 403) {
+                    error = 165; // INVALID_USERNAME_OR_PASSWORD
+                } else if (httpStatus >= 400 && httpStatus < 500) {
+                    error = 144; // CLIENT_GENERAL
+                } else if (httpStatus >= 500) {
+                    error = 146; // SERVER_GENERAL
+                } else {
+                    error = 136; // EOF (for other cases)
+                }
+                
+                legacyResp.payload = {
+                    static_cast<std::uint8_t>(bytesWaiting & 0xFF),
+                    static_cast<std::uint8_t>((bytesWaiting >> 8) & 0xFF),
+                    connected,
+                    error
+                };
+                
+                FN_LOGI(TAG, "STATUS: httpStatus=%u, contentLength=%llu, bytesWaiting=%u, connected=%u, error=%u",
+                        httpStatus, static_cast<unsigned long long>(contentLength), bytesWaiting, connected, error);
+            } else {
+                // Fallback: malformed Info response
+                FN_LOGW(TAG, "STATUS: Info response too small (%zu bytes), returning fallback", newResp.payload.size());
+                legacyResp.payload = {0x00, 0x00, 0x00, 136}; // EOF
+            }
+        } else {
+            // Other error - return error status
+            FN_LOGW(TAG, "STATUS: Error status=%u, returning error response", static_cast<unsigned>(newResp.status));
+            legacyResp.payload = {0x00, 0x00, 0x00, 136}; // EOF
+        }
         break;
     }
 
@@ -416,8 +523,8 @@ std::string LegacyNetworkBridge::extractUrl(const std::vector<std::uint8_t>& pay
         url.push_back(static_cast<char>(b));
     }
 
-    // Remove "N:" prefix if present (legacy device spec format)
-    if (url.size() >= 2 && url[0] == 'N' && url[1] == ':') {
+    // Remove "N:" or "n:" prefix if present (legacy device spec format)
+    if (url.size() >= 2 && url[1] == ':' && (url[0] == 'N' || url[0] == 'n')) {
         url = url.substr(2);
     }
 
@@ -426,10 +533,15 @@ std::string LegacyNetworkBridge::extractUrl(const std::vector<std::uint8_t>& pay
 
 std::uint8_t LegacyNetworkBridge::convertMode(std::uint8_t aux1)
 {
-    // Legacy aux1 values:
-    // 4 = read (GET)
-    // 8 = write (POST/PUT)
-    // 12 = read/write (GET with body support)
+    // Legacy aux1 values (from Protocol.h):
+    // 4 = PROTOCOL_OPEN_READ (GET, with filename translation, URL encoding)
+    // 5 = PROTOCOL_OPEN_HTTP_DELETE (DELETE, no headers)
+    // 6 = PROTOCOL_OPEN_DIRECTORY (PROPFIND, WebDAV directory) - not handled here
+    // 8 = PROTOCOL_OPEN_WRITE (PUT, write data to server)
+    // 9 = PROTOCOL_OPEN_APPEND (DELETE, with headers)
+    // 12 = PROTOCOL_OPEN_READWRITE (GET, pure and unmolested)
+    // 13 = PROTOCOL_OPEN_HTTP_POST (POST, write sends post data to server)
+    // 14 = PROTOCOL_OPEN_HTTP_PUT (PUT, write sends post data to server)
     // 
     // New protocol methods:
     // 1 = GET
@@ -439,14 +551,23 @@ std::uint8_t LegacyNetworkBridge::convertMode(std::uint8_t aux1)
     // 5 = HEAD
 
     switch (aux1) {
-    case 4:
+    case 4:  // PROTOCOL_OPEN_READ
         return 1; // GET
-    case 8:
-        return 2; // POST (default for write)
-    case 12:
+    case 5:  // PROTOCOL_OPEN_HTTP_DELETE
+        return 4; // DELETE
+    case 8:  // PROTOCOL_OPEN_WRITE
+        return 3; // PUT
+    case 9:  // PROTOCOL_OPEN_APPEND
+        return 4; // DELETE
+    case 12: // PROTOCOL_OPEN_READWRITE
         return 1; // GET (read/write, default to GET)
+    case 13: // PROTOCOL_OPEN_HTTP_POST
+        return 2; // POST (write sends post data)
+    case 14: // PROTOCOL_OPEN_HTTP_PUT
+        return 3; // PUT (write sends post data)
     default:
         // Default to GET for unknown modes
+        FN_LOGW(TAG, "Unknown aux1 value: %u, defaulting to GET", aux1);
         return 1;
     }
 }

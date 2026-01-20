@@ -20,7 +20,7 @@ class LegacyTransport : public ITransport {
 public:
     explicit LegacyTransport(
         Channel& channel,
-        const BusTraits& traits
+        const BusTraits& traits  // Accept by reference, but store by value
     );
     
     virtual ~LegacyTransport() = default;
@@ -46,7 +46,7 @@ protected:
     
 protected:
     Channel& _channel;
-    const BusTraits& _traits;
+    BusTraits _traits;  // Store by value, not reference, to avoid dangling reference
     
     // State machine for legacy protocol
     enum class State {
