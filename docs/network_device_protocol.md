@@ -165,6 +165,7 @@ repeat respHeaderCount times:
 ### Open flags (u8)
 bit0 = tls
 bit1 = follow_redirects
+bit2 = body_unknown_len (NEW; v1.1)  // POST/PUT only, bodyLenHint==0
 bit3 = allow_evict (NEW; v1.0 compatible)
 
 allow_evict semantics:
@@ -504,13 +505,25 @@ For HTTP:
 ### Dispatch / commit rule (authoritative)
 
 - If `bodyLenHint == 0`:
-  - The request MUST be dispatched immediately during `Open()`.
+  - For GET/HEAD/DELETE (and POST/PUT with no body): the request MUST be dispatched immediately during `Open()`.
+  - For POST/PUT with `body_unknown_len=1`: the request MUST NOT be dispatched during `Open()`.
+    The body is streamed via `Write()` and committed by a zero-length `Write()`.
 
 - If `bodyLenHint > 0`:
   - `Open()` MUST return `needs_body_write=1` in the Open response flags.
   - The client MUST send body bytes via one or more `Write(handle, offset, bytes)` calls.
   - The request MUST be dispatched automatically once the device has received exactly `bodyLenHint` bytes total for that handle.
   - `Read()` / `Info()` before dispatch completion MUST return `NotReady` (unless an error occurs).
+
+### Unknown-length body commit (HTTP POST/PUT)
+
+If `body_unknown_len=1` and `bodyLenHint==0`:
+
+- `Open()` MUST return `needs_body_write=1`.
+- The client MUST stream body bytes via sequential `Write(handle, offset, bytes)` calls.
+- The client MUST commit the body by issuing a **zero-length** `Write(handle, finalOffset, dataLen=0)`.
+  - `finalOffset` MUST equal the next expected sequential offset.
+- `Read()` / `Info()` before commit MUST return `NotReady` (unless an error occurs).
 
 ### Write() rules for HTTP body streaming
 

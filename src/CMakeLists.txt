@@ -38,6 +38,7 @@ idf_component_register(
         lib/fujinet_init.cpp
         lib/io_device_manager.cpp
         lib/io_service.cpp
+        lib/legacy_network_adapter.cpp
         lib/modem_device.cpp
         lib/modem_device_init.cpp
         lib/network_device.cpp
@@ -50,7 +51,6 @@ idf_component_register(
         lib/transport/legacy/byte_based_legacy_transport.cpp
         lib/transport/legacy/iwm_traits.cpp
         lib/transport/legacy/iwm_transport.cpp
-        lib/transport/legacy/legacy_network_bridge.cpp
         lib/transport/legacy/legacy_transport.cpp
         lib/transport/legacy/netsio_protocol.cpp
         lib/transport/legacy/packet_based_legacy_transport.cpp

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -71,6 +72,7 @@ struct HttpNetworkProtocolEspIdfState {
     std::uint32_t expected_body_len{0};
     std::uint32_t sent_body_len{0};
     bool upload_open{false};
+    bool body_unknown_len{false};
 
     bool has_http_status{false};
     std::uint16_t http_status{0};
@@ -115,6 +117,7 @@ struct HttpNetworkProtocolEspIdfState {
         expected_body_len = 0;
         sent_body_len = 0;
         upload_open = false;
+        body_unknown_len = false;
 
         suppress_on_data = false;
     }
@@ -573,13 +576,15 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
     // Upload/body streaming setup (POST/PUT only)
     const bool is_post_or_put = (req.method == 2 || req.method == 3);
-    _s->has_request_body = is_post_or_put && (req.bodyLenHint > 0);
-    _s->expected_body_len = _s->has_request_body ? req.bodyLenHint : 0;
+    _s->body_unknown_len = is_post_or_put && (req.bodyLenHint == 0) && ((req.flags & 0x04) != 0);
+    _s->has_request_body = is_post_or_put && (req.bodyLenHint > 0 || _s->body_unknown_len);
+    _s->expected_body_len = (_s->has_request_body && !_s->body_unknown_len) ? req.bodyLenHint : 0;
     _s->sent_body_len = 0;
     _s->upload_open = false;
 
     if (_s->has_request_body) {
-        const esp_err_t e = esp_http_client_open(_s->client, static_cast<int>(_s->expected_body_len));
+        const int open_len = _s->body_unknown_len ? -1 : static_cast<int>(_s->expected_body_len);
+        const esp_err_t e = esp_http_client_open(_s->client, open_len);
         if (e != ESP_OK) {
             FN_LOGE(TAG, "open: esp_http_client_open failed err=%d", (int)e);
             esp_http_client_cleanup(_s->client);
@@ -638,11 +643,13 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
             (unsigned)offset, (unsigned)_s->sent_body_len);
         return fujinet::io::StatusCode::InvalidRequest;
     }
-    const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
-    if (end > static_cast<std::uint64_t>(_s->expected_body_len)) {
-        FN_LOGW(TAG, "write_body: overflow end=%llu expected=%u",
-            (unsigned long long)end, (unsigned)_s->expected_body_len);
-        return fujinet::io::StatusCode::InvalidRequest;
+    if (!_s->body_unknown_len) {
+        const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
+        if (end > static_cast<std::uint64_t>(_s->expected_body_len)) {
+            FN_LOGW(TAG, "write_body: overflow end=%llu expected=%u",
+                (unsigned long long)end, (unsigned)_s->expected_body_len);
+            return fujinet::io::StatusCode::InvalidRequest;
+        }
     }
     if (dataLen > 0 && !data) {
         FN_LOGE(TAG, "write_body: null data with dataLen=%u", (unsigned)dataLen);
@@ -659,50 +666,115 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
     const int64_t t_enter = esp_timer_get_time();
 
     // Stream write to esp_http_client (may accept partial); we loop internally until
-    // we send the whole chunk or we fail/abort.
+    // we send the whole piece or we fail/abort.
     std::size_t total = 0;
     int zero_writes = 0;
-    while (total < dataLen) {
-        if (_s->stop_requested) {
-            FN_LOGW(TAG, "write_body: stop_requested");
-            return fujinet::io::StatusCode::IOError;
+
+    auto write_all = [&](const std::uint8_t* p, std::size_t n) -> bool {
+        std::size_t sent_total = 0;
+        while (sent_total < n) {
+            if (_s->stop_requested) {
+                return false;
+            }
+
+            const int w = esp_http_client_write(
+                _s->client,
+                reinterpret_cast<const char*>(p + sent_total),
+                static_cast<int>(n - sent_total)
+            );
+
+            if (w < 0) {
+                return false;
+            }
+            if (w == 0) {
+                ++zero_writes;
+                vTaskDelay(pdMS_TO_TICKS(10));
+
+                const int64_t now = esp_timer_get_time();
+                const int64_t elapsed_ms = (now - t_enter) / 1000;
+                if (elapsed_ms > 2000 || zero_writes > 200) {
+                    _s->stop_requested = true;
+                    (void)esp_http_client_close(_s->client);
+                    return false;
+                }
+                continue;
+            }
+
+            sent_total += static_cast<std::size_t>(w);
         }
+        return true;
+    };
 
-        const int w = esp_http_client_write(
-            _s->client,
-            reinterpret_cast<const char*>(data + total),
-            static_cast<int>(dataLen - total)
-        );
-
-        if (w < 0) {
-            FN_LOGE(TAG, "write_body: write error ret=%d", w);
-            return fujinet::io::StatusCode::IOError;
-        }
-        if (w == 0) {
-            // Backpressure. We keep trying here to preserve "whole chunk" semantics.
-            ++zero_writes;
-            vTaskDelay(pdMS_TO_TICKS(10));
-
-            // If we've been blocked for too long, abort this session instead of wedging.
-            const int64_t now = esp_timer_get_time();
-            const int64_t elapsed_ms = (now - t_enter) / 1000;
-            if (elapsed_ms > 2000 || zero_writes > 200) {
-                FN_LOGW(TAG, "write_body: backpressure timeout (ms=%lld, zero_writes=%d); aborting",
-                        (long long)elapsed_ms, zero_writes);
-                _s->stop_requested = true;
-                (void)esp_http_client_close(_s->client);
+    if (_s->body_unknown_len) {
+        // Unknown-length body: send chunked framing. Commit is signaled by a zero-length Write().
+        if (dataLen == 0) {
+            static constexpr std::uint8_t final_chunk[] = {'0','\r','\n','\r','\n'};
+            if (!write_all(final_chunk, sizeof(final_chunk))) {
                 return fujinet::io::StatusCode::IOError;
             }
-            continue;
+        } else {
+            char hdr[16];
+            const int n = std::snprintf(hdr, sizeof(hdr), "%x\r\n", static_cast<unsigned>(dataLen));
+            if (n <= 0 || static_cast<std::size_t>(n) >= sizeof(hdr)) {
+                return fujinet::io::StatusCode::InternalError;
+            }
+            if (!write_all(reinterpret_cast<const std::uint8_t*>(hdr), static_cast<std::size_t>(n))) {
+                return fujinet::io::StatusCode::IOError;
+            }
+            if (!write_all(data, dataLen)) {
+                return fujinet::io::StatusCode::IOError;
+            }
+            static constexpr std::uint8_t crlf[] = {'\r','\n'};
+            if (!write_all(crlf, sizeof(crlf))) {
+                return fujinet::io::StatusCode::IOError;
+            }
         }
-        total += static_cast<std::size_t>(w);
+        total = dataLen;
+    } else {
+        // Known-length upload: write raw bytes.
+        while (total < dataLen) {
+            if (_s->stop_requested) {
+                FN_LOGW(TAG, "write_body: stop_requested");
+                return fujinet::io::StatusCode::IOError;
+            }
+
+            const int w = esp_http_client_write(
+                _s->client,
+                reinterpret_cast<const char*>(data + total),
+                static_cast<int>(dataLen - total)
+            );
+
+            if (w < 0) {
+                FN_LOGE(TAG, "write_body: write error ret=%d", w);
+                return fujinet::io::StatusCode::IOError;
+            }
+            if (w == 0) {
+                // Backpressure. We keep trying here to preserve "whole chunk" semantics.
+                ++zero_writes;
+                vTaskDelay(pdMS_TO_TICKS(10));
+
+                // If we've been blocked for too long, abort this session instead of wedging.
+                const int64_t now = esp_timer_get_time();
+                const int64_t elapsed_ms = (now - t_enter) / 1000;
+                if (elapsed_ms > 2000 || zero_writes > 200) {
+                    FN_LOGW(TAG, "write_body: backpressure timeout (ms=%lld, zero_writes=%d); aborting",
+                            (long long)elapsed_ms, zero_writes);
+                    _s->stop_requested = true;
+                    (void)esp_http_client_close(_s->client);
+                    return fujinet::io::StatusCode::IOError;
+                }
+                continue;
+            }
+            total += static_cast<std::size_t>(w);
+        }
     }
 
     _s->sent_body_len += static_cast<std::uint32_t>(total);
     written = static_cast<std::uint16_t>(total);
 
     // Body complete: start the "read response" task now.
-    if (_s->sent_body_len == _s->expected_body_len) {
+    if ((!_s->body_unknown_len && _s->sent_body_len == _s->expected_body_len) ||
+        (_s->body_unknown_len && dataLen == 0)) {
         FN_LOGI(TAG, "write_body: body complete, starting response task");
         // We manually read the response in http_task_entry_after_upload(),
         // so suppress event_handler's HTTP_EVENT_ON_DATA forwarding to avoid duplicates.

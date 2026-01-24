@@ -17,3 +17,12 @@ idf_component_register(
         esp_netif
         nvs_flash
 )
+
+# Feature gate for legacy transport support:
+# Only enable legacy code paths when building a legacy bus profile (SIO/NetSIO).
+#
+# ESP-IDF build profiles already define FN_BUILD_ATARI_SIO / FN_BUILD_ATARI_NETSIO at compile time.
+target_compile_definitions(${COMPONENT_LIB}
+    PUBLIC
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:FN_ENABLE_LEGACY_TRANSPORT>
+)

@@ -213,6 +213,14 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
+            
+            // Optional extension: allow POST/PUT with unknown-length bodies.
+            // This is enabled explicitly via an Open flag (bit2).
+            const bool bodyLenUnknown = methodAllowsBody && (bodyLenHint == 0) && ((flags & 0x04) != 0);
+            if ((flags & 0x04) != 0 && !methodAllowsBody) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
 
             // ---- (C) Reserve slot BEFORE proto->open() ----
             auto reserve_slot = [this]() -> Session* {
@@ -235,6 +243,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                     s.receivedBodyLen = 0;
                     s.nextBodyOffset  = 0;
                     s.awaitingBody    = false;
+                    s.bodyLenUnknown  = false;
                     if (s.proto) {
                         s.proto->close();
                         s.proto.reset();
@@ -284,11 +293,12 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             slot->proto = std::move(proto);
 
             // Body streaming state is enforced at NetworkDevice layer (cheap bookkeeping).
-            const bool needsBodyWrite = methodAllowsBody && (bodyLenHint > 0);
-            slot->expectedBodyLen = needsBodyWrite ? bodyLenHint : 0;
+            const bool needsBodyWrite = methodAllowsBody && (bodyLenHint > 0 || bodyLenUnknown);
+            slot->expectedBodyLen = (methodAllowsBody && bodyLenHint > 0) ? bodyLenHint : 0;
             slot->receivedBodyLen = 0;
             slot->nextBodyOffset  = 0;
             slot->awaitingBody    = needsBodyWrite;
+            slot->bodyLenUnknown  = bodyLenUnknown;
 
             touch(*slot);
         
@@ -505,11 +515,21 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                     return resp;
                 }
 
-                // Must not exceed expected body length.
-                const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
-                if (end > static_cast<std::uint64_t>(s->expectedBodyLen)) {
-                    resp.status = StatusCode::InvalidRequest;
-                    return resp;
+                if (!s->bodyLenUnknown) {
+                    // Known-length body: must not exceed expected length.
+                    const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
+                    if (end > static_cast<std::uint64_t>(s->expectedBodyLen)) {
+                        resp.status = StatusCode::InvalidRequest;
+                        return resp;
+                    }
+                } else {
+                    // Unknown-length body: allow any length up to a sanity cap.
+                    static constexpr std::uint32_t MAX_UNKNOWN_BODY_BYTES = 4u * 1024u * 1024u; // 4 MiB
+                    const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(dataLen);
+                    if (end > MAX_UNKNOWN_BODY_BYTES) {
+                        resp.status = StatusCode::InvalidRequest;
+                        return resp;
+                    }
                 }
             }
 
@@ -530,12 +550,17 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
 
             if (s->awaitingBody) {
-                s->receivedBodyLen += written;
-                s->nextBodyOffset  += written;
-
-                if (s->receivedBodyLen == s->expectedBodyLen) {
-                    // Body complete; request is now considered dispatched.
+                // Unknown-length body: commit is signaled by a zero-length Write.
+                if (s->bodyLenUnknown && dataLen == 0) {
                     s->awaitingBody = false;
+                } else {
+                    s->receivedBodyLen += written;
+                    s->nextBodyOffset  += written;
+
+                    if (!s->bodyLenUnknown && s->receivedBodyLen == s->expectedBodyLen) {
+                        // Body complete; request is now considered dispatched.
+                        s->awaitingBody = false;
+                    }
                 }
             }
 

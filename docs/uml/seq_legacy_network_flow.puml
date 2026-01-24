@@ -1,0 +1,106 @@
+@startuml
+' Legacy network request flow (SIO/NetSIO legacy stack)
+'
+' Shows GET/POST/PUT/DELETE, translation to NetworkDevice protocol,
+' and where state is held (legacy deviceId <-> Network handle, offsets, commit state).
+'
+' Render with plantuml or via docs tooling.
+
+hide footbox
+autonumber
+
+actor Host as host
+participant "Legacy client\n(fujinet-firmware API)\nDeviceID 0x71..0x78" as legacy
+participant "SIO/NetSIO host bus\n(serial/udp framing)" as bus
+participant "Legacy transport\nSioTransport (byte-based)" as transport
+participant "IOService\n(serviceOnce loop)" as iosvc
+participant "RoutingManager" as routing
+participant "LegacyNetworkAdapter\n(override handler)" as adapter
+participant "IODeviceManager" as devmgr
+participant "NetworkDevice\nDeviceID 0xFD" as netdev
+participant "NetworkProtocol\n(HTTP backend)" as proto
+
+== Common receive path ==
+host -> bus: legacy frame(s)\nCmdFrame + optional DataFrame
+bus -> transport: bytes
+transport -> iosvc: receive(IORequest)\n(deviceId=0x71..0x78, command='O'/'R'/'W'/'C'/'S')
+iosvc -> routing: handleRequest(IORequest)
+routing -> adapter: handleRequest(IORequest)\n(intercepts 0x71..0x78)
+
+note right of adapter
+Per-legacy-slot state (8 slots):
+- handle (NetworkDevice handle)
+- nextReadOffset / nextWriteOffset
+- awaitingCommit (POST/PUT unknown length)
+end note
+
+== OPEN (GET / DELETE) ==
+alt legacy OPEN with method GET or DELETE
+adapter -> adapter: parse URL from payload\nstrip "N:" prefix
+adapter -> netdev: Open(method, flags, url,\nbodyLenHint=0)\n(DeviceID=0xFD)
+netdev -> proto: open(req)\n(no-body methods dispatch immediately)
+proto --> netdev: Ok + response ready
+netdev --> adapter: OpenResp(handle)
+adapter -> adapter: store handle in slot\nreset offsets/awaitingCommit=false
+adapter --> routing: legacy COMPLETE (no handle)
+end
+
+== OPEN (POST / PUT) unknown-length body ==
+alt legacy OPEN with method POST or PUT
+adapter -> adapter: set flag body_unknown_len=1\nbodyLenHint=0
+adapter -> netdev: Open(method, flags|0x04, url,\nbodyLenHint=0)\n(DeviceID=0xFD)
+netdev --> adapter: OpenResp(needs_body_write=1, handle)
+adapter -> adapter: store handle\nnextWriteOffset=0\nawaitingCommit=true
+adapter --> routing: legacy COMPLETE (no handle)
+end
+
+== WRITE body data (POST/PUT) ==
+alt legacy WRITE 'W' while awaitingCommit
+adapter -> netdev: Write(handle, offset=nextWriteOffset, data)\n(DeviceID=0xFD)
+netdev -> proto: write_body(offset, data)\n(chunk accepted)
+proto --> netdev: Ok(writtenLen)
+netdev --> adapter: WriteResp(writtenLen)
+adapter -> adapter: nextWriteOffset += writtenLen
+adapter --> routing: legacy COMPLETE
+end
+
+== COMMIT (POST/PUT) ==
+alt legacy STATUS 'S' or READ 'R' triggers commit
+adapter -> netdev: Write(handle, offset=nextWriteOffset, dataLen=0)\n(commit)\n(DeviceID=0xFD)
+netdev -> proto: write_body(offset, len=0)\n(commit)
+proto --> netdev: Ok
+netdev --> adapter: WriteResp(0)
+adapter -> adapter: awaitingCommit=false
+end
+
+== STATUS (S) ==
+adapter -> netdev: Info(handle)\n(DeviceID=0xFD)
+netdev -> proto: info()
+proto --> netdev: httpStatus/contentLen/headers
+netdev --> adapter: InfoResp(...)
+adapter --> routing: legacy status bytes\n(bytesWaiting, connected, error)
+
+== READ (R) ==
+adapter -> netdev: Read(handle, offset=nextReadOffset, maxBytes)\n(DeviceID=0xFD)
+netdev -> proto: read_body(offset, maxBytes)
+proto --> netdev: Ok(data, eof)
+netdev --> adapter: ReadResp(data)
+adapter -> adapter: nextReadOffset += dataLen
+adapter --> routing: legacy COMPLETE + data frame
+
+== CLOSE (C) ==
+adapter -> netdev: Close(handle)\n(DeviceID=0xFD)
+netdev -> proto: close()
+proto --> netdev: Ok
+netdev --> adapter: CloseResp
+adapter -> adapter: clear slot handle/offsets/awaitingCommit
+adapter --> routing: legacy COMPLETE
+
+== Send path (transport) ==
+routing --> iosvc: IOResponse
+iosvc --> transport: send(IOResponse)\n(legacy deviceId/command preserved)
+transport --> bus: COMPLETE/ERROR + optional data frame
+bus --> host: bytes
+
+@enduml
+

@@ -100,6 +100,7 @@ target_sources(fujinet-nio
         src/lib/fujinet_init.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
+        src/lib/legacy_network_adapter.cpp
         src/lib/modem_device.cpp
         src/lib/modem_device_init.cpp
         src/lib/network_device.cpp
@@ -112,7 +113,6 @@ target_sources(fujinet-nio
         src/lib/transport/legacy/byte_based_legacy_transport.cpp
         src/lib/transport/legacy/iwm_traits.cpp
         src/lib/transport/legacy/iwm_transport.cpp
-        src/lib/transport/legacy/legacy_network_bridge.cpp
         src/lib/transport/legacy/legacy_transport.cpp
         src/lib/transport/legacy/netsio_protocol.cpp
         src/lib/transport/legacy/packet_based_legacy_transport.cpp

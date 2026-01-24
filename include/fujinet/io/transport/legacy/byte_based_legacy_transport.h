@@ -2,12 +2,7 @@
 
 #include "fujinet/io/transport/legacy/legacy_transport.h"
 
-#include <memory>
-
 namespace fujinet::io::transport::legacy {
-
-// Forward declaration
-class LegacyNetworkBridge;
 
 // Base class for byte-based legacy transports (SIO, IEC, etc.)
 // These protocols use control bytes (ACK/NAK/COMPLETE/ERROR) for flow control
@@ -34,10 +29,13 @@ protected:
     virtual std::size_t readDataFrame(std::uint8_t* buf, std::size_t len) = 0;
     virtual void writeDataFrame(const std::uint8_t* buf, std::size_t len) = 0;
 
-private:
-    // Internal bridge for converting legacy network device IDs (0x71-0x78) to NetworkService (0xFD)
-    // This is transport-internal and never exposed to core services
-    std::unique_ptr<LegacyNetworkBridge> _networkBridge;
+    // Determine expected data-frame length for a command that requires a data phase.
+    //
+    // IMPORTANT: byte-based buses typically require exact-length reads for data frames;
+    // reading "up to N" can wedge the protocol if the host sends fewer bytes.
+    //
+    // Default is conservative (256) to match common legacy fixed-frame usage (e.g. devicespec buffers).
+    virtual std::size_t expectedDataFrameLength(const cmdFrame_t& frame) const;
 };
 
 } // namespace fujinet::io::transport::legacy

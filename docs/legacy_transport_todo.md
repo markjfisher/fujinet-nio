@@ -14,6 +14,9 @@ This document tracks the remaining work for implementing legacy bus protocol sup
    - SioTransport implementation
    - IwmTransport implementation
    - Integration into bootstrap.cpp
+   - NetSIO protocol parsing + POSIX `NetSioBusHardware` (UDP)
+   - Routing-layer legacy network adapter (`0x71..0x78` → `0xFD`)
+   - Byte-based data-phase reads use protocol-correct expected lengths (prevents legacy WRITE hangs)
 
 ## Remaining Work
 
@@ -42,9 +45,9 @@ This document tracks the remaining work for implementing legacy bus protocol sup
   - Write data + checksum
 
 **POSIX** (`src/platform/posix/sio_bus_hardware.cpp`):
-- [ ] Integrate with NetSIO protocol:
+- [x] Integrate with NetSIO protocol (UDP):
   - Command assertion via protocol (not GPIO)
-  - Serial port or TCP socket access
+  - UDP channel + NetSIO message parsing (`src/platform/posix/netsio_bus_hardware.cpp`)
 - [ ] Or integrate with physical serial port:
   - Open serial device
   - Configure baud rate, parity, etc.

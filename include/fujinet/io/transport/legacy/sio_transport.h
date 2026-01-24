@@ -34,6 +34,7 @@ protected:
     std::size_t readDataFrame(std::uint8_t* buf, std::size_t len) override;
     void writeDataFrame(const std::uint8_t* buf, std::size_t len) override;
     bool commandNeedsData(std::uint8_t command) const override;
+    std::size_t expectedDataFrameLength(const cmdFrame_t& frame) const override;
     
 private:
     std::unique_ptr<BusHardware> _hardware;

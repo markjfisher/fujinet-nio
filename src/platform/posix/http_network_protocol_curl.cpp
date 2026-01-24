@@ -215,6 +215,7 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     _performed = false;
 
     const bool hasBody = (_req.bodyLenHint > 0);
+    const bool bodyUnknown = ((_req.flags & 0x04) != 0) && (_req.bodyLenHint == 0) && (isPost || isPut);
 
     // Configure method
     if (_req.method == 5) {
@@ -238,14 +239,15 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     // - If bodyLenHint==0, dispatch immediately with an empty body.
     // - If bodyLenHint>0, we defer until write_body() completes.
     if (isPost || isPut) {
-        if (!hasBody) {
+        if (!hasBody && !bodyUnknown) {
             curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, "");
             curl_easy_setopt(_curl, CURLOPT_POSTFIELDSIZE, 0L);
             io::StatusCode st = perform_now();
             if (st != io::StatusCode::Ok) { close(); }
             return st;
         }
-        // defer; write_body() will provide POSTFIELDS + size and then perform
+        // defer; write_body() will provide POSTFIELDS + size and then perform (known length)
+        // or will commit on a zero-length write (unknown length).
         return io::StatusCode::Ok;
     }
 
@@ -264,9 +266,13 @@ io::StatusCode HttpNetworkProtocolCurl::write_body(
 ) {
     written = 0;
 
-    // Only meaningful for POST/PUT requests that were opened with bodyLenHint > 0
     const bool isPostOrPut = (_req.method == 2 || _req.method == 3);
-    if (!isPostOrPut || _expectedRequestBodyLen == 0) {
+    const bool bodyUnknown = ((_req.flags & 0x04) != 0) && (_expectedRequestBodyLen == 0) && isPostOrPut;
+
+    // Only meaningful for POST/PUT requests that were opened for body upload:
+    // - known-length: bodyLenHint > 0
+    // - unknown-length: bodyLenHint == 0 and flag bit2 set
+    if (!isPostOrPut || (!bodyUnknown && _expectedRequestBodyLen == 0)) {
         return io::StatusCode::Unsupported;
     }
 
@@ -275,9 +281,11 @@ io::StatusCode HttpNetworkProtocolCurl::write_body(
     if (offset != _requestBody.size()) {
         return io::StatusCode::InvalidRequest;
     }
-    const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(len);
-    if (end > static_cast<std::uint64_t>(_expectedRequestBodyLen)) {
-        return io::StatusCode::InvalidRequest;
+    if (!bodyUnknown) {
+        const std::uint64_t end = static_cast<std::uint64_t>(offset) + static_cast<std::uint64_t>(len);
+        if (end > static_cast<std::uint64_t>(_expectedRequestBodyLen)) {
+            return io::StatusCode::InvalidRequest;
+        }
     }
 
     if (len > 0) {
@@ -287,8 +295,14 @@ io::StatusCode HttpNetworkProtocolCurl::write_body(
 
     written = static_cast<std::uint16_t>(len);
 
-    // If body complete, dispatch now.
-    if (_requestBody.size() == _expectedRequestBodyLen) {
+    // Dispatch rules:
+    // - known-length: dispatch once we've received exactly bodyLenHint bytes
+    // - unknown-length: dispatch on zero-length Write() (commit)
+    const bool shouldDispatch =
+        (!bodyUnknown && _requestBody.size() == _expectedRequestBodyLen) ||
+        (bodyUnknown && len == 0);
+
+    if (shouldDispatch) {
         if (!_curl) return io::StatusCode::InternalError;
 
         // Provide the final body to libcurl (valid until perform returns)

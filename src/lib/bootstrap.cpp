@@ -7,6 +7,10 @@
 // #include "fujinet/io/transport/iec_transport.h"
 // etc.
 
+#if defined(FN_ENABLE_LEGACY_TRANSPORT)
+#include "fujinet/io/legacy/legacy_network_adapter.h"
+#endif
+
 namespace fujinet::core {
 
 io::ITransport* setup_transports(FujinetCore& core,
@@ -43,6 +47,18 @@ io::ITransport* setup_transports(FujinetCore& core,
         break;
     }
     }
+
+#if defined(FN_ENABLE_LEGACY_TRANSPORT)
+    // Only install legacy routing overrides when legacy transports are in use.
+    // This keeps non-legacy builds free of legacy feature overhead.
+    if (profile.primaryTransport == TransportKind::SIO ||
+        profile.primaryTransport == TransportKind::IWM ||
+        profile.primaryTransport == TransportKind::IEC) {
+        core.routingManager().setOverrideHandler(
+            std::make_unique<fujinet::io::legacy::LegacyNetworkAdapter>(core.deviceManager())
+        );
+    }
+#endif
 
     return primary;
 }

@@ -205,4 +205,23 @@ bool SioTransport::commandNeedsData(std::uint8_t command) const {
     }
 }
 
+std::size_t SioTransport::expectedDataFrameLength(const cmdFrame_t& frame) const
+{
+    // SIO requires exact-length data frames for commands that have a data phase.
+    //
+    // Network OPEN uses a fixed devicespec buffer (legacy clients typically send 256 bytes).
+    // Many other commands encode data length in AUX1/AUX2 (little-endian).
+    if (frame.comnd == 'O') {
+        return 256;
+    }
+
+    const std::uint16_t auxLen = frame.aux12();
+    if (auxLen != 0) {
+        return static_cast<std::size_t>(auxLen);
+    }
+
+    // Fallback: legacy fixed-size transfers.
+    return 256;
+}
+
 } // namespace fujinet::io::transport::legacy

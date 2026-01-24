@@ -3,6 +3,8 @@
 #include "fujinet/io/core/request_handler.h"
 #include "fujinet/io/core/io_device_manager.h"
 
+#include <memory>
+
 namespace fujinet::io {
 
 // RoutingManager sits in front of IODeviceManager and can
@@ -23,11 +25,20 @@ public:
     //
     // In the future, this could be a CP/M handler, modem session handler, etc.
     void setOverrideHandler(IRequestHandler* handler) {
+        _overrideOwned.reset();
         _overrideHandler = handler;
+    }
+
+    // Set an override handler and transfer ownership to the RoutingManager.
+    // This is useful for feature-gated handlers whose lifetime should match the core.
+    void setOverrideHandler(std::unique_ptr<IRequestHandler> handler) {
+        _overrideOwned = std::move(handler);
+        _overrideHandler = _overrideOwned.get();
     }
 
     // Remove any global override; subsequent requests go to IODeviceManager.
     void clearOverrideHandler() {
+        _overrideOwned.reset();
         _overrideHandler = nullptr;
     }
 
@@ -49,6 +60,9 @@ private:
     // Optional high-priority handler that can "take over" routing.
     // Not owned; lifetime is managed externally.
     IRequestHandler* _overrideHandler;
+
+    // Optional owned override handler (used when installed via unique_ptr overload).
+    std::unique_ptr<IRequestHandler> _overrideOwned;
 };
 
 } // namespace fujinet::io

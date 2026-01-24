@@ -305,6 +305,49 @@ TEST_CASE("NetworkDevice v1: Write (POST) returns writtenLen via stub backend")
     }
 }
 
+TEST_CASE("NetworkDevice v1: POST unknown-length body commits on zero-length Write()")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    // Open POST with bodyLenHint==0 and the "unknown-length body" flag set (bit2).
+    const std::uint16_t handle = open_handle_stub(
+        dev,
+        deviceId,
+        "http://example.com/post",
+        /*method=*/2,
+        /*flags=*/0x04,
+        /*bodyLenHint=*/0,
+        {}
+    );
+
+    // Before commit, Info/Read are gated.
+    CHECK(info_req(dev, deviceId, handle).status == StatusCode::NotReady);
+    CHECK(read_req(dev, deviceId, handle, 0, 256).status == StatusCode::NotReady);
+
+    // Write some body bytes.
+    {
+        IOResponse w = write_req(dev, deviceId, handle, 0, "abc");
+        CHECK(w.status == StatusCode::Ok);
+    }
+
+    CHECK(info_req(dev, deviceId, handle).status == StatusCode::NotReady);
+
+    // Commit body by sending a zero-length Write at the next offset.
+    {
+        IOResponse w = write_req(dev, deviceId, handle, 3, std::string_view{});
+        CHECK(w.status == StatusCode::Ok);
+    }
+
+    // After commit, Info/Read should be available (subject to backend readiness).
+    CHECK(info_req(dev, deviceId, handle).status == StatusCode::Ok);
+    CHECK(read_req(dev, deviceId, handle, 0, 256).status == StatusCode::Ok);
+
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}
+
 // -----------------------------------------------------------------------------
 // Conformance tests (session semantics + StatusCode contract basics)
 // -----------------------------------------------------------------------------

@@ -56,6 +56,7 @@ private:
         std::uint32_t receivedBodyLen = 0;   // total bytes accepted via Write()
         std::uint32_t nextBodyOffset  = 0;   // required next Write offset (sequential)
         bool          awaitingBody    = false; // gate Info/Read until body complete
+        bool          bodyLenUnknown  = false; // unknown-length body; committed by zero-length Write()
     };
 
     std::array<Session, MAX_SESSIONS> _sessions{};

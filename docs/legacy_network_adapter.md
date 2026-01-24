@@ -19,7 +19,7 @@ New fujinet-nio uses:
 Create a `LegacyNetworkAdapter` that:
 1. Implements `IRequestHandler` interface
 2. Intercepts requests for device IDs `0x71-0x78`
-3. Maps legacy device ID + channel → handle
+3. Maps legacy device ID → NetworkDevice handle
 4. Converts legacy commands to new protocol format
 5. Converts legacy payloads to new protocol format
 6. Routes converted requests to `NetworkService` (`0xFD`)
@@ -67,6 +67,7 @@ When a legacy client reads/writes/closes device `0x71`:
   u8 version (1)
   u8 method (1 = GET, from aux1)
   u8 flags (from aux2)
+  // For legacy POST/PUT: adapter also sets NetworkDevice flag bit2 (body_unknown_len)
   u16 urlLen
   u8[] url (without "N:" prefix)
   u16 headerCount (0)
@@ -79,7 +80,7 @@ When a legacy client reads/writes/closes device `0x71`:
 - **Output**: Binary protocol format:
   ```
   u16 handle (from mapping)
-  u32 offset (0, legacy doesn't support offsets)
+  u32 offset (adapter-maintained sequential read cursor)
   u16 maxBytes (from aux1/aux2)
   ```
 
@@ -88,7 +89,7 @@ When a legacy client reads/writes/closes device `0x71`:
 - **Output**: Binary protocol format:
   ```
   u16 handle (from mapping)
-  u32 offset (0, legacy doesn't support offsets)
+  u32 offset (adapter-maintained sequential write cursor)
   u16 dataLen
   u8[] data
   ```
@@ -128,8 +129,8 @@ The adapter must convert new protocol responses back to legacy format.
 
 ## Implementation Files
 
-- `include/fujinet/io/devices/legacy_network_adapter.h`
-- `src/lib/devices/legacy_network_adapter.cpp`
+- `include/fujinet/io/legacy/legacy_network_adapter.h`
+- `src/lib/legacy_network_adapter.cpp`
 
 ## Integration
 
@@ -137,10 +138,16 @@ In `bootstrap.cpp` or `main_*.cpp`:
 ```cpp
 // After NetworkDevice is registered
 auto adapter = std::make_unique<LegacyNetworkAdapter>(core.deviceManager());
-core.routing().setOverrideHandler(adapter.get());
+core.routingManager().setOverrideHandler(adapter.get());
 // Keep adapter alive
 ```
 
 ## Status
 
-**NOT IMPLEMENTED** - This is a critical missing piece for legacy transport support.
+**IMPLEMENTED** (routing-layer override).
+
+For legacy POST/PUT where the body length is not known at OPEN time, the adapter:
+
+- Opens NetworkDevice with `bodyLenHint==0` and Open flag `body_unknown_len=1` (bit2)
+- Streams body via `Write()` calls
+- Commits the body by issuing a zero-length `Write()` at the current write offset on the first legacy `STATUS` or `READ` (matching typical legacy behavior)
