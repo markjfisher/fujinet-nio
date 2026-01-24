@@ -4,8 +4,8 @@
 
 idf_component_register(
     SRCS
-# __TARGET_SOURCES_START__
-# __TARGET_SOURCES_END__
+    # __TARGET_SOURCES_START__
+    # __TARGET_SOURCES_END__
         ../third_party/cjson/cJSON.c
     INCLUDE_DIRS
         "../include"
@@ -26,3 +26,4 @@ target_compile_definitions(${COMPONENT_LIB}
     PUBLIC
         $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:FN_ENABLE_LEGACY_TRANSPORT>
 )
+

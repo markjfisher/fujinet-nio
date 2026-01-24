@@ -5,7 +5,7 @@
 
 idf_component_register(
     SRCS
-# __TARGET_SOURCES_START__
+    # __TARGET_SOURCES_START__
         app/console_commands.cpp
         app/console_engine.cpp
         app/console_fs_shell.cpp
@@ -38,7 +38,7 @@ idf_component_register(
         lib/fujinet_init.cpp
         lib/io_device_manager.cpp
         lib/io_service.cpp
-        lib/legacy_network_adapter.cpp
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/legacy_network_adapter.cpp>
         lib/modem_device.cpp
         lib/modem_device_init.cpp
         lib/network_device.cpp
@@ -48,14 +48,14 @@ idf_component_register(
         lib/routing_manager.cpp
         lib/storage_manager.cpp
         lib/tcp_network_protocol_common.cpp
-        lib/transport/legacy/byte_based_legacy_transport.cpp
-        lib/transport/legacy/iwm_traits.cpp
-        lib/transport/legacy/iwm_transport.cpp
-        lib/transport/legacy/legacy_transport.cpp
-        lib/transport/legacy/netsio_protocol.cpp
-        lib/transport/legacy/packet_based_legacy_transport.cpp
-        lib/transport/legacy/sio_traits.cpp
-        lib/transport/legacy/sio_transport.cpp
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/byte_based_legacy_transport.cpp>
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/iwm_traits.cpp>
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/iwm_transport.cpp>
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/legacy_transport.cpp>
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/netsio_protocol.cpp>
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/packet_based_legacy_transport.cpp>
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/sio_traits.cpp>
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:lib/transport/legacy/sio_transport.cpp>
         platform/esp32/channel_factory.cpp
         platform/esp32/console_transport_default.cpp
         platform/esp32/console_transport_uart.cpp
@@ -67,11 +67,11 @@ idf_component_register(
         platform/esp32/fuji_device_factory.cpp
         platform/esp32/hardware_caps.cpp
         platform/esp32/http_network_protocol_espidf.cpp
-        platform/esp32/iwm_bus_hardware.cpp
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:platform/esp32/iwm_bus_hardware.cpp>
         platform/esp32/logging.cpp
         platform/esp32/network_registry.cpp
         platform/esp32/pinmap.cpp
-        platform/esp32/sio_bus_hardware.cpp
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:platform/esp32/sio_bus_hardware.cpp>
         platform/esp32/sntp_service.cpp
         platform/esp32/tcp_network_protocol_espidf.cpp
         platform/esp32/tcp_socket_ops_default.cpp
@@ -92,3 +92,13 @@ idf_component_register(
         esp_netif
         nvs_flash
 )
+
+# Feature gate for legacy transport support:
+# Only enable legacy code paths when building a legacy bus profile (SIO/NetSIO).
+#
+# ESP-IDF build profiles already define FN_BUILD_ATARI_SIO / FN_BUILD_ATARI_NETSIO at compile time.
+target_compile_definitions(${COMPONENT_LIB}
+    PUBLIC
+        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:FN_ENABLE_LEGACY_TRANSPORT>
+)
+

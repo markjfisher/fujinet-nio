@@ -41,6 +41,8 @@ def generate_posix_block(all_cpp):
       - include src/lib/**.cpp and src/platform/posix/**.cpp (and any other non-app, non-esp32 .cpp)
       - exclude anything under src/app/**
       - exclude anything under src/platform/esp32/**
+    Additionally:
+      - legacy transport sources are only added when FN_ENABLE_LEGACY_TRANSPORT is ON (via generator expressions).
     Returns only the file paths with proper indentation (8 spaces).
     """
     filtered = []
@@ -53,9 +55,26 @@ def generate_posix_block(all_cpp):
             continue
         filtered.append(path)
 
+    def is_legacy_source(p: str) -> bool:
+        if p.startswith("src/lib/transport/legacy/"):
+            return True
+        if p == "src/lib/legacy_network_adapter.cpp":
+            return True
+        if p in (
+            "src/platform/posix/sio_bus_hardware.cpp",
+            "src/platform/posix/iwm_bus_hardware.cpp",
+            "src/platform/posix/netsio_bus_hardware.cpp",
+            "src/platform/posix/udp_channel.cpp",
+        ):
+            return True
+        return False
+
     lines = []
-    for path in filtered:
-        lines.append(f"        {path}")
+    for p in filtered:
+        if is_legacy_source(p):
+            lines.append(f"        $<$<BOOL:${{FN_ENABLE_LEGACY_TRANSPORT}}>:{p}>")
+        else:
+            lines.append(f"        {p}")
     return "\n".join(lines) + "\n" if lines else "\n"
 
 
@@ -87,12 +106,14 @@ def generate_posix_app_block(all_cpp):
 
 def generate_esp32_block(all_cpp):
     """
-    Generate the idf_component_register() block for ESP-IDF (src/CMakeLists.txt).
+    Generate the idf_component_register() SRCS list block for ESP-IDF (src/CMakeLists.txt).
     Rules:
       - paths relative to src/ (no leading 'src/')
       - include app/main_esp32.cpp
       - exclude app/main_posix.cpp
       - exclude platform/posix/*
+    Additionally:
+      - legacy transport sources are only added when FN_ENABLE_LEGACY_TRANSPORT is ON (via generator expressions).
     """
     filtered = []
     for path in all_cpp:
@@ -107,9 +128,27 @@ def generate_esp32_block(all_cpp):
             rel = path
         filtered.append(rel)
 
+    def is_legacy_source(p: str) -> bool:
+        if p.startswith("lib/transport/legacy/"):
+            return True
+        if p == "lib/legacy_network_adapter.cpp":
+            return True
+        if p in (
+            "platform/esp32/sio_bus_hardware.cpp",
+            "platform/esp32/iwm_bus_hardware.cpp",
+        ):
+            return True
+        return False
+
     lines = []
-    for path in filtered:
-        lines.append(f"        {path}")
+    for p in filtered:
+        if is_legacy_source(p):
+            lines.append(
+                f"        $<$<OR:$<BOOL:${{FN_BUILD_ATARI_SIO}}>,"
+                f"$<BOOL:${{FN_BUILD_ATARI_NETSIO}}>>:{p}>"
+            )
+        else:
+            lines.append(f"        {p}")
     return "\n".join(lines) + "\n"
 
 
