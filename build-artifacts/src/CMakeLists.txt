@@ -4,8 +4,8 @@
 
 idf_component_register(
     SRCS
-    # __TARGET_SOURCES_START__
-    # __TARGET_SOURCES_END__
+# __TARGET_SOURCES_START__
+# __TARGET_SOURCES_END__
         ../third_party/cjson/cJSON.c
     INCLUDE_DIRS
         "../include"
@@ -18,12 +18,9 @@ idf_component_register(
         nvs_flash
 )
 
-# Feature gate for legacy transport support:
-# Only enable legacy code paths when building a legacy bus profile (SIO/NetSIO).
 #
-# ESP-IDF build profiles already define FN_BUILD_ATARI_SIO / FN_BUILD_ATARI_NETSIO at compile time.
-target_compile_definitions(${COMPONENT_LIB}
-    PUBLIC
-        $<$<OR:$<BOOL:${FN_BUILD_ATARI_SIO}>,$<BOOL:${FN_BUILD_ATARI_NETSIO}>>:FN_ENABLE_LEGACY_TRANSPORT>
-)
+# NOTE:
+# PlatformIO/ESP-IDF builds already provide transport selection via compiler flags
+# (e.g. `-DFN_BUILD_ATARI_SIO`). We deliberately do not feature-gate sources in the
+# generated `src/CMakeLists.txt`; instead, code is gated by those compiler flags.
 

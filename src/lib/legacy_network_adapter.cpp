@@ -1,7 +1,7 @@
 // This translation unit is feature-gated. In non-legacy builds we compile it to
 // a tiny no-op TU so the linker can drop it (and so it doesn't force code/data
 // into memory-constrained targets).
-#if defined(FN_ENABLE_LEGACY_TRANSPORT)
+#if defined(FN_BUILD_ATARI_SIO) || defined(FN_BUILD_ATARI_PTY) || defined(FN_BUILD_ATARI_NETSIO) || defined(FN_ENABLE_LEGACY_TRANSPORT)
 
 #include "fujinet/io/legacy/legacy_network_adapter.h"
 
