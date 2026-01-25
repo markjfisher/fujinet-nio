@@ -29,6 +29,13 @@ private:
         std::uint32_t nextReadOffset{0};
         std::uint32_t nextWriteOffset{0};
         bool awaitingCommit{false}; // for POST/PUT unknown-length bodies
+
+        // Legacy STATUS ('S') needs to expose "bytes waiting" for `network_read()`.
+        // To avoid lying (or consuming bytes invisibly), we may probe the backend
+        // with an offset read and cache any returned bytes here. A subsequent
+        // legacy READ ('R') will drain this buffer first.
+        std::vector<std::uint8_t> pendingRead{};
+        bool pendingEof{false};
     };
 
     static constexpr DeviceID LEGACY_FIRST = 0x71;

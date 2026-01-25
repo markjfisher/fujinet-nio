@@ -119,7 +119,7 @@ std::size_t HttpNetworkProtocolCurl::write_header_cb(
 }
 
 
-io::StatusCode HttpNetworkProtocolCurl::perform_now()
+io::StatusCode HttpNetworkProtocolCurl::start_async()
 {
     if (!_curl) return io::StatusCode::InternalError;
 
@@ -127,19 +127,58 @@ io::StatusCode HttpNetworkProtocolCurl::perform_now()
     _httpStatus = 0;
     _headersBlock.clear();
     _body.clear();
+    _bodyBaseOffset = 0;
+    _bodyStartIndex = 0;
 
-    CURLcode res = curl_easy_perform(_curl);
-
-    long httpCode = 0;
-    curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    _httpStatus = static_cast<std::uint16_t>(httpCode < 0 ? 0 : httpCode);
-
-    if (res != CURLE_OK) {
-        return io::StatusCode::IOError;
+    if (!_multi) {
+        _multi = curl_multi_init();
+        if (!_multi) {
+            return io::StatusCode::InternalError;
+        }
     }
 
-    _performed = true;
+    if (_inProgress) {
+        return io::StatusCode::InvalidRequest;
+    }
+
+    _performed = false;
+    _inProgress = true;
+    _finalStatus = io::StatusCode::Ok;
+
+    curl_multi_add_handle(_multi, _curl);
+    tick_async(); // initial progress (may deliver first bytes immediately)
     return io::StatusCode::Ok;
+}
+
+void HttpNetworkProtocolCurl::tick_async()
+{
+    if (!_multi || !_curl || !_inProgress) {
+        return;
+    }
+
+    int running = 0;
+    int numfds = 0;
+    // Non-blocking poll to let libcurl process socket readiness.
+    // (The caller controls timing via NetworkDevice::poll/read_body calls.)
+    (void)curl_multi_poll(_multi, nullptr, 0, 0, &numfds);
+    (void)curl_multi_perform(_multi, &running);
+
+    int msgsLeft = 0;
+    while (CURLMsg* msg = curl_multi_info_read(_multi, &msgsLeft)) {
+        if (msg->msg != CURLMSG_DONE) continue;
+        if (msg->easy_handle != _curl) continue;
+
+        _inProgress = false;
+        _performed = true;
+
+        curl_multi_remove_handle(_multi, _curl);
+
+        long httpCode = 0;
+        curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
+        _httpStatus = static_cast<std::uint16_t>(httpCode < 0 ? 0 : httpCode);
+
+        _finalStatus = (msg->data.result == CURLE_OK) ? io::StatusCode::Ok : io::StatusCode::IOError;
+    }
 }
 
 io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
@@ -213,6 +252,10 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     _requestBody.clear();
     _expectedRequestBodyLen = _req.bodyLenHint;
     _performed = false;
+    _inProgress = false;
+    _finalStatus = io::StatusCode::Ok;
+    _bodyBaseOffset = 0;
+    _bodyStartIndex = 0;
 
     const bool hasBody = (_req.bodyLenHint > 0);
     const bool bodyUnknown = ((_req.flags & 0x04) != 0) && (_req.bodyLenHint == 0) && (isPost || isPut);
@@ -242,7 +285,7 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
         if (!hasBody && !bodyUnknown) {
             curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, "");
             curl_easy_setopt(_curl, CURLOPT_POSTFIELDSIZE, 0L);
-            io::StatusCode st = perform_now();
+            io::StatusCode st = start_async();
             if (st != io::StatusCode::Ok) { close(); }
             return st;
         }
@@ -251,8 +294,8 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
         return io::StatusCode::Ok;
     }
 
-    // No-body methods dispatch immediately
-    io::StatusCode st = perform_now();
+    // No-body methods dispatch asynchronously (supports chunked/slow streaming responses).
+    io::StatusCode st = start_async();
     if (st != io::StatusCode::Ok) { close(); }
     return st;
 }
@@ -305,11 +348,12 @@ io::StatusCode HttpNetworkProtocolCurl::write_body(
     if (shouldDispatch) {
         if (!_curl) return io::StatusCode::InternalError;
 
-        // Provide the final body to libcurl (valid until perform returns)
+        // Provide the final body to libcurl.
+        // Note: _requestBody must remain valid until the transfer completes.
         curl_easy_setopt(_curl, CURLOPT_POSTFIELDS, _requestBody.data());
         curl_easy_setopt(_curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(_requestBody.size()));
 
-        io::StatusCode st = perform_now();
+        io::StatusCode st = start_async();
         if (st != io::StatusCode::Ok) {
             close();
         }
@@ -325,45 +369,87 @@ io::StatusCode HttpNetworkProtocolCurl::read_body(std::uint32_t offset,
                                                   std::uint16_t& read,
                                                   bool& eof)
 {
-    if (!_performed) {
-        read = 0;
-        eof = false;
-        return io::StatusCode::NotReady;
-    }
-
     read = 0;
     eof = false;
 
-    const std::size_t total = _body.size();
-    const std::size_t off = (offset <= total) ? static_cast<std::size_t>(offset) : total;
-    const std::size_t n = std::min<std::size_t>(outLen, total - off);
+    // Make progress if caller is polling via Read() calls.
+    tick_async();
+
+    if (offset < _bodyBaseOffset) {
+        return io::StatusCode::InvalidRequest;
+    }
+
+    const std::uint64_t rel64 = static_cast<std::uint64_t>(offset) - static_cast<std::uint64_t>(_bodyBaseOffset);
+    if (rel64 > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return io::StatusCode::InvalidRequest;
+    }
+    const std::size_t rel = static_cast<std::size_t>(rel64);
+
+    const std::size_t avail = (_body.size() >= _bodyStartIndex) ? (_body.size() - _bodyStartIndex) : 0;
+    if (rel > avail) {
+        if (_performed) {
+            eof = true;
+            return _finalStatus;
+        }
+        return io::StatusCode::NotReady;
+    }
+
+    const std::size_t n = std::min<std::size_t>(outLen, avail - rel);
+
+    // If the transfer is in-flight and we have no bytes available at the requested offset,
+    // report NotReady (do not return Ok with a 0-byte "successful" read).
+    if (n == 0 && !_performed && _inProgress && rel == avail) {
+        return io::StatusCode::NotReady;
+    }
 
     if (n > 0 && out) {
-        std::memcpy(out, _body.data() + off, n);
+        std::memcpy(out, _body.data() + _bodyStartIndex + rel, n);
         read = static_cast<std::uint16_t>(n);
     }
 
-    eof = (off + n) >= total;
+    eof = _performed && ((rel + n) >= avail);
+
+    // Retire bytes once host has consumed them (sequential offsets expected).
+    if (n > 0 && rel == 0) {
+        _bodyStartIndex += n;
+        _bodyBaseOffset += static_cast<std::uint32_t>(n);
+
+        // Compact occasionally.
+        if (_bodyStartIndex > 4096 && _bodyStartIndex * 2 > _body.size()) {
+            _body.erase(_body.begin(), _body.begin() + static_cast<std::ptrdiff_t>(_bodyStartIndex));
+            _bodyStartIndex = 0;
+        }
+    }
+
+    if (_performed && _finalStatus != io::StatusCode::Ok && eof) {
+        return _finalStatus;
+    }
     return io::StatusCode::Ok;
 }
 
 io::StatusCode HttpNetworkProtocolCurl::info(io::NetworkInfo& out)
 {
-    if (!_performed) {
-        return io::StatusCode::NotReady;
-    }
+    tick_async();
+    if (!_performed) return io::StatusCode::NotReady;
+    if (_finalStatus != io::StatusCode::Ok) return _finalStatus;
 
     out = io::NetworkInfo{};
     out.hasHttpStatus = true;
     out.httpStatus = _httpStatus;
 
     out.hasContentLength = true;
-    out.contentLength = static_cast<std::uint64_t>(_body.size());
+    // Transfer complete: total bytes received = already retired + currently buffered
+    out.contentLength = static_cast<std::uint64_t>(_bodyBaseOffset + (_body.size() - _bodyStartIndex));
 
     // headers already filtered.
     out.headersBlock = _headersBlock;
 
     return io::StatusCode::Ok;
+}
+
+void HttpNetworkProtocolCurl::poll()
+{
+    tick_async();
 }
 
 
@@ -373,14 +459,25 @@ void HttpNetworkProtocolCurl::close()
     _httpStatus = 0;
     _headersBlock.clear();
     _body.clear();
+    _bodyBaseOffset = 0;
+    _bodyStartIndex = 0;
 
     _requestBody.clear();
     _expectedRequestBodyLen = 0;
     _performed = false;
+    _inProgress = false;
+    _finalStatus = io::StatusCode::Ok;
 
     if (_curl) {
+        if (_multi) {
+            curl_multi_remove_handle(_multi, _curl);
+        }
         curl_easy_cleanup(_curl);
         _curl = nullptr;
+    }
+    if (_multi) {
+        curl_multi_cleanup(_multi);
+        _multi = nullptr;
     }
     if (_slist) {
         curl_slist_free_all(_slist);

@@ -11,8 +11,15 @@
 #include "fujinet/io/protocol/wire_device_ids.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <string_view>
+#if defined(FN_PLATFORM_POSIX)
+#include <thread>
+#elif defined(FN_PLATFORM_ESP32) || defined(FN_PLATFORM_ESP32S3)
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#endif
 
 namespace fujinet::io::legacy {
 
@@ -22,6 +29,17 @@ using fujinet::io::netproto::Reader;
 using fujinet::io::protocol::NetworkCommand;
 using fujinet::io::protocol::WireDeviceId;
 using fujinet::io::protocol::to_device_id;
+
+static void legacy_sleep_ms(std::uint32_t ms)
+{
+#if defined(FN_PLATFORM_POSIX)
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+#elif defined(FN_PLATFORM_ESP32) || defined(FN_PLATFORM_ESP32S3)
+    vTaskDelay(pdMS_TO_TICKS(ms));
+#else
+    (void)ms; // no-op fallback
+#endif
+}
 
 static std::uint8_t get_aux1(const IORequest& req, std::uint8_t def = 0) noexcept
 {
@@ -292,6 +310,8 @@ IOResponse LegacyNetworkAdapter::convert_close_resp(const IORequest& legacyReq, 
         slot.nextReadOffset = 0;
         slot.nextWriteOffset = 0;
         slot.awaitingCommit = false;
+        slot.pendingRead.clear();
+        slot.pendingEof = false;
     }
     out.payload.clear();
     return out;
@@ -409,6 +429,8 @@ IOResponse LegacyNetworkAdapter::handleRequest(const IORequest& request)
         IOResponse out = convert_open_resp(request, newResp, slot);
         if (out.status == StatusCode::Ok) {
             slot.awaitingCommit = (method == 2 || method == 3); // POST/PUT commit on first STATUS/READ
+            slot.pendingRead.clear();
+            slot.pendingEof = false;
         }
         return out;
     }
@@ -448,9 +470,91 @@ IOResponse LegacyNetworkAdapter::handleRequest(const IORequest& request)
         if (const StatusCode st = commit_if_needed(); st != StatusCode::Ok) {
             return legacy_response_like(request, st);
         }
-        IORequest newReq = make_info_req(request, slot);
-        IOResponse newResp = _deviceManager.handleRequest(newReq);
-        return convert_info_resp(request, newResp, slot);
+
+        // Legacy clients (notably fujinet-lib's `network_read`) rely on STATUS to:
+        // - keep conn=1 while the HTTP transfer is in-flight, even if bw==0
+        // - provide a non-zero bw to trigger 'R' reads when bytes are available
+        //
+        // We must NOT "fake" bw. Instead, we probe the backend using an offset read
+        // and cache any returned bytes in slot.pendingRead so the next 'R' can
+        // deliver exactly those bytes to the legacy client.
+        auto make_status = [&](std::uint16_t bytesWaiting, std::uint8_t connected, std::uint8_t error) {
+            IOResponse out = legacy_response_like(request, StatusCode::Ok);
+            out.payload = {
+                static_cast<std::uint8_t>(bytesWaiting & 0xFF),
+                static_cast<std::uint8_t>((bytesWaiting >> 8) & 0xFF),
+                connected,
+                error
+            };
+            return out;
+        };
+
+        // If we already have cached bytes waiting, report them.
+        if (!slot.pendingRead.empty()) {
+            const std::uint16_t bw = (slot.pendingRead.size() > 65535) ? 65535 : static_cast<std::uint16_t>(slot.pendingRead.size());
+            return make_status(bw, 1, 1);
+        }
+        if (slot.pendingEof) {
+            return make_status(0, 0, 136);
+        }
+
+        // Probe availability at the current cursor (does not change slot.nextReadOffset).
+        IORequest probeReq = request;
+        probeReq.deviceId = to_device_id(WireDeviceId::NetworkService);
+        probeReq.command = static_cast<std::uint16_t>(NetworkCommand::Read);
+
+        std::string pld;
+        pld.reserve(1 + 2 + 4 + 2);
+        netproto::write_u8(pld, 1);
+        netproto::write_u16le(pld, slot.handle);
+        netproto::write_u32le(pld, slot.nextReadOffset);
+        netproto::write_u16le(pld, 512); // probe up to 512 bytes currently available
+        probeReq.payload.assign(pld.begin(), pld.end());
+
+        IOResponse probeResp = _deviceManager.handleRequest(probeReq);
+        if (probeResp.status == StatusCode::NotReady) {
+            // Transfer in-flight, no bytes yet.
+            return make_status(0, 1, 1);
+        }
+        if (probeResp.status != StatusCode::Ok) {
+            // Hard error.
+            return make_status(0, 0, 136);
+        }
+
+        if (probeResp.payload.size() < 12) {
+            return make_status(0, 0, 136);
+        }
+
+        Reader r(probeResp.payload.data(), probeResp.payload.size());
+        std::uint8_t ver = 0, flags = 0;
+        std::uint16_t reserved = 0, handle = 0;
+        std::uint32_t offset = 0;
+        std::uint16_t dataLen = 0;
+        if (!r.read_u8(ver) || !r.read_u8(flags) || !r.read_u16le(reserved) ||
+            !r.read_u16le(handle) || !r.read_u32le(offset) || !r.read_u16le(dataLen)) {
+            return make_status(0, 0, 136);
+        }
+
+        const bool eof = (flags & 0x01) != 0;
+
+        const std::uint8_t* dataPtr = nullptr;
+        if (!r.read_bytes(dataPtr, dataLen)) {
+            return make_status(0, 0, 136);
+        }
+
+        if (dataLen > 0) {
+            slot.pendingRead.assign(dataPtr, dataPtr + dataLen);
+            slot.pendingEof = eof; // may be final bytes
+            return make_status(dataLen, 1, 1);
+        }
+
+        if (eof) {
+            slot.pendingEof = true;
+            return make_status(0, 0, 136);
+        }
+
+        // No bytes right now, but transfer is still in flight.
+        return make_status(0, 1, 1);
     }
 
     // Remaining commands require an open handle.
@@ -463,9 +567,124 @@ IOResponse LegacyNetworkAdapter::handleRequest(const IORequest& request)
         if (const StatusCode st = commit_if_needed(); st != StatusCode::Ok) {
             return legacy_response_like(request, st);
         }
-        IORequest newReq = make_read_req(request, slot);
-        IOResponse newResp = _deviceManager.handleRequest(newReq);
-        return convert_read_resp(request, newResp, slot);
+
+        // Legacy client behaviour expects "read" to wait for data (and often to block
+        // until the requested length is satisfied), whereas NetworkDevice may return
+        // NotReady while the HTTP transfer is still in flight.
+        //
+        // To preserve legacy semantics (and enable slow/chunked servers), we poll
+        // the underlying NetworkDevice Read until:
+        // - we have at least 1 byte (then we keep going while progress continues), or
+        // - EOF, or
+        // - idle timeout elapses without progress (return what we have; if none, Timeout).
+        const std::uint16_t wantBytes = get_aux12_le(request, 256);
+        std::vector<std::uint8_t> collected;
+        collected.reserve(std::min<std::uint16_t>(wantBytes, 1024));
+
+        // Drain any cached bytes first (populated by STATUS probing).
+        if (!slot.pendingRead.empty()) {
+            const std::size_t take = std::min<std::size_t>(wantBytes, slot.pendingRead.size());
+            collected.insert(collected.end(), slot.pendingRead.begin(), slot.pendingRead.begin() + static_cast<std::ptrdiff_t>(take));
+            slot.pendingRead.erase(slot.pendingRead.begin(), slot.pendingRead.begin() + static_cast<std::ptrdiff_t>(take));
+            slot.nextReadOffset += static_cast<std::uint32_t>(take);
+        }
+
+        const auto hardDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+        auto idleDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+
+        auto make_read_req_with_max = [&](std::uint16_t maxBytes) -> IORequest {
+            std::string payload;
+            payload.reserve(1 + 2 + 4 + 2);
+            netproto::write_u8(payload, 1);
+            netproto::write_u16le(payload, slot.handle);
+            netproto::write_u32le(payload, slot.nextReadOffset);
+            netproto::write_u16le(payload, maxBytes);
+
+            IORequest req = request;
+            req.deviceId = to_device_id(WireDeviceId::NetworkService);
+            req.command = static_cast<std::uint16_t>(NetworkCommand::Read);
+            req.payload.assign(payload.begin(), payload.end());
+            return req;
+        };
+
+        bool eof = false;
+
+        while (collected.size() < wantBytes && std::chrono::steady_clock::now() < hardDeadline) {
+            const std::uint16_t remaining = static_cast<std::uint16_t>(wantBytes - collected.size());
+            IORequest newReq = make_read_req_with_max(remaining);
+            IOResponse newResp = _deviceManager.handleRequest(newReq);
+
+            if (newResp.status == StatusCode::Ok) {
+                // Parse NetworkDevice Read response: ver, flags, reserved, handle, offsetEcho, dataLen, data
+                if (newResp.payload.size() < 12) {
+                    return legacy_response_like(request, StatusCode::InternalError);
+                }
+
+                Reader r(newResp.payload.data(), newResp.payload.size());
+                std::uint8_t ver = 0, flags = 0;
+                std::uint16_t reserved = 0, handle = 0;
+                std::uint32_t offset = 0;
+                std::uint16_t dataLen = 0;
+                if (!r.read_u8(ver) || !r.read_u8(flags) || !r.read_u16le(reserved) ||
+                    !r.read_u16le(handle) || !r.read_u32le(offset) || !r.read_u16le(dataLen)) {
+                    return legacy_response_like(request, StatusCode::InternalError);
+                }
+
+                const std::uint8_t* dataPtr = nullptr;
+                if (!r.read_bytes(dataPtr, dataLen)) {
+                    return legacy_response_like(request, StatusCode::InternalError);
+                }
+
+                eof = (flags & 0x01) != 0;
+
+                if (dataLen > 0) {
+                    collected.insert(collected.end(), dataPtr, dataPtr + dataLen);
+                    slot.nextReadOffset += dataLen;
+                    idleDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+                } else {
+                    // No bytes this iteration; if transfer is still running, we'll see NotReady next time.
+                }
+
+                if (eof) {
+                    slot.pendingEof = true;
+                    break;
+                }
+
+                // If no progress and we've exceeded idle, stop waiting.
+                if (collected.empty() && std::chrono::steady_clock::now() > idleDeadline) {
+                    break;
+                }
+                continue;
+            }
+
+            if (newResp.status == StatusCode::NotReady) {
+                if (!collected.empty()) {
+                    // Already have some data; keep going while server makes progress.
+                    if (std::chrono::steady_clock::now() > idleDeadline) {
+                        break;
+                    }
+                } else {
+                    // No data yet; still wait a bit for first bytes.
+                    if (std::chrono::steady_clock::now() > idleDeadline) {
+                        break;
+                    }
+                }
+
+                legacy_sleep_ms(10);
+                continue;
+            }
+
+            // Hard error.
+            return legacy_response_like(request, newResp.status);
+        }
+
+        if (collected.empty() && !eof) {
+            return legacy_response_like(request, StatusCode::Timeout);
+        }
+
+        IOResponse out = legacy_response_like(request, StatusCode::Ok);
+        out.payload = std::move(collected);
+        return out;
     }
 
     if (cmd == CMD_WRITE) {
