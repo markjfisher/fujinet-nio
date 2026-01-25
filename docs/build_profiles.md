@@ -440,6 +440,27 @@ That means:
 - `Debug` configuration → `FN_DEBUG` is defined  
 - `Release` / `RelWithDebInfo` / `MinSizeRel` → `FN_DEBUG` is not defined
 
+### FN_DEBUG_LOG_TS (POSIX log timestamps)
+
+On POSIX builds, you can optionally prefix each `FN_LOG*` line with a local
+timestamp (down to milliseconds).
+
+- When `FN_DEBUG_LOG_TS` is **defined**, the POSIX logger (`src/platform/posix/logging.cpp`)
+  prints:
+  - `YYYY-MM-DD HH:MM:SS.mmm [I] tag: message`
+- When it is **not defined**, output remains unchanged:
+  - `[I] tag: message`
+
+Enable it at configure time (POSIX/CMake):
+
+```bash
+# CMake option
+cmake -B build/... -DCMAKE_BUILD_TYPE=Debug -DFN_DEBUG_LOG_TS=ON
+
+# Or via env var
+FN_DEBUG_LOG_TS=1 cmake -B build/... -DCMAKE_BUILD_TYPE=Debug
+```
+
 ### How these flags are set
 
 #### POSIX (CMake)

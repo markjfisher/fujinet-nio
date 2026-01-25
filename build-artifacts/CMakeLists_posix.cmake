@@ -18,6 +18,18 @@ add_subdirectory(third_party/yaml-cpp)
 option(FN_BUILD_POSIX_APP     "Build POSIX console application"           ON)
 option(FN_BUILD_TESTS         "Build unit tests"                          ON)
 option(FN_WITH_CURL           "Enable libcurl-backed HTTP/HTTPS on POSIX" ON)
+option(FN_DEBUG_LOG_TS        "Prefix debug logs with a timestamp"        OFF)
+
+# Allow quick enablement from the environment (configure-time).
+# Examples:
+#   FN_DEBUG_LOG_TS=1 cmake --preset atari-netsio-debug
+if(DEFINED ENV{FN_DEBUG_LOG_TS})
+  if(NOT "$ENV{FN_DEBUG_LOG_TS}" STREQUAL ""
+     AND NOT "$ENV{FN_DEBUG_LOG_TS}" STREQUAL "0"
+     AND NOT "$ENV{FN_DEBUG_LOG_TS}" STREQUAL "OFF")
+    set(FN_DEBUG_LOG_TS ON CACHE BOOL "Prefix debug logs with a timestamp" FORCE)
+  endif()
+endif()
 
 # Build options, used in build_profile.cpp, these need reflecting in the target_compile_definitions below
 # These can then be used as flags for the build type in cmake via CMakePresets.json
@@ -62,6 +74,7 @@ target_compile_definitions(fujinet-nio
     PUBLIC
         FN_PLATFORM_POSIX               # always true in this toolchain
         $<$<CONFIG:Debug>:FN_DEBUG>
+        $<$<BOOL:${FN_DEBUG_LOG_TS}>:FN_DEBUG_LOG_TS>
         $<$<BOOL:${FN_BUILD_ATARI_SIO}>:FN_BUILD_ATARI_SIO>
         $<$<BOOL:${FN_BUILD_ATARI_PTY}>:FN_BUILD_ATARI_PTY>
         $<$<BOOL:${FN_BUILD_ATARI_NETSIO}>:FN_BUILD_ATARI_NETSIO>

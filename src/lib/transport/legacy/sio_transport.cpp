@@ -49,10 +49,10 @@ bool SioTransport::readCommandFrame(cmdFrame_t& frame) {
     
     // Wait for CMD pin to be asserted (works for both hardware and NetSIO)
     bool cmdAsserted = _hardware->commandAsserted();
-    FN_LOGI(TAG, "readCommandFrame(): commandAsserted=%d", cmdAsserted ? 1 : 0);
     if (!cmdAsserted) {
         return false;
     }
+    FN_LOGI(TAG, "readCommandFrame(): commandAsserted=%d", cmdAsserted ? 1 : 0);
     
     // Read 5-byte command frame (BusHardware handles NetSIO vs hardware differences)
     std::size_t bytes_read = _hardware->read(reinterpret_cast<std::uint8_t*>(&frame), sizeof(frame));

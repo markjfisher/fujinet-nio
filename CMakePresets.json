@@ -13,6 +13,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "FN_DEBUG_LOG_TS": "ON",
         "FN_BUILD_FUJIBUS_PTY": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
         "FN_BUILD_ATARI_PTY": "OFF",
@@ -43,6 +44,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "FN_DEBUG_LOG_TS": "ON",
         "FN_BUILD_ATARI_PTY": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
         "FN_BUILD_ATARI_NETSIO": "OFF",
@@ -73,6 +75,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "FN_DEBUG_LOG_TS": "ON",
         "FN_BUILD_ATARI_NETSIO": "ON",
         "FN_BUILD_ATARI_SIO": "OFF",
         "FN_BUILD_ATARI_PTY": "OFF",

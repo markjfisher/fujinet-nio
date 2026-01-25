@@ -2,6 +2,8 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <chrono>
+#include <ctime>
 
 namespace fujinet::log {
 
@@ -35,13 +37,40 @@ static const char* level_to_str(Level lvl)
     return "?";
 }
 
+#if defined(FN_DEBUG_LOG_TS)
+static void print_timestamp(FILE* out)
+{
+    using namespace std::chrono;
+
+    const auto now = system_clock::now();
+    const auto tt = system_clock::to_time_t(now);
+
+    std::tm tm{};
+    localtime_r(&tt, &tm);
+
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+
+    const auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
+    std::fprintf(out, "%s.%03ld ", buf, static_cast<long>(ms.count()));
+}
+#endif
+
+static void print_prefix(FILE* out, Level level, const char* tag)
+{
+#if defined(FN_DEBUG_LOG_TS)
+    print_timestamp(out);
+#endif
+    std::fprintf(out, "[%s] %s: ", level_to_str(level), tag ? tag : "log");
+}
+
 void vlogf(Level level, const char* tag, const char* fmt, std::va_list args)
 {
     FILE* out = (level == Level::Error || level == Level::Warn)
         ? stderr
         : stdout;
 
-    std::fprintf(out, "[%s] %s: ", level_to_str(level), tag ? tag : "log");
+    print_prefix(out, level, tag);
     std::vfprintf(out, fmt, args);
     std::fprintf(out, "\n");
 }
@@ -60,9 +89,8 @@ void log(Level level, const char* tag, std::string_view message)
         ? stderr
         : stdout;
 
-    std::fprintf(out, "[%s] %s: %.*s\n",
-                 level_to_str(level),
-                 tag ? tag : "log",
+    print_prefix(out, level, tag);
+    std::fprintf(out, "%.*s\n",
                  static_cast<int>(message.size()),
                  message.data());
 }
