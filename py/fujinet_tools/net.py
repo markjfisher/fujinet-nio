@@ -125,6 +125,7 @@ def _send_retry_not_ready(
     """
     Send a command and retry on:
       - StatusCode::NotReady (4)
+      - StatusCode::DeviceBusy (3)
       - pkt == None (no parseable response yet)
 
     Uses short per-attempt timeouts but enforces an overall wall-clock timeout.
@@ -167,7 +168,7 @@ def _send_retry_not_ready(
             continue
 
         status = _pkt_status_code(pkt)
-        if status != 4:  # NotReady
+        if status not in (3, 4):  # DeviceBusy, NotReady
             return pkt
 
         if attempt >= retries or time.monotonic() >= deadline:
@@ -374,7 +375,7 @@ def cmd_net_get(args) -> int:
         # OPEN
         open_req = np.build_open_req(
             method=1,  # GET
-            flags=args.flags,
+            flags=int(args.flags) | np.FLAG_ALLOW_EVICT,
             url=args.url,
             headers=_collect_request_headers(args),
             body_len_hint=0,
@@ -394,7 +395,7 @@ def cmd_net_get(args) -> int:
             return 2
         if not status_ok(pkt):
             code = _pkt_status_code(pkt)
-            print(f"Device status={code} ({_status_str(code)})")
+            print(f"Open failed: status={code} ({_status_str(code)})")
             return 1
 
         orr = np.parse_open_resp(pkt.payload)
@@ -514,7 +515,7 @@ def cmd_net_head(args) -> int:
 
         open_req = np.build_open_req(
             method=5,  # HEAD
-            flags=args.flags,
+            flags=int(args.flags) | np.FLAG_ALLOW_EVICT,
             url=args.url,
             headers=_collect_request_headers(args),
             body_len_hint=0,
@@ -597,12 +598,19 @@ def cmd_net_send(args) -> int:
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
+        flags = int(args.flags) | np.FLAG_ALLOW_EVICT
+        stream_body = bool(getattr(args, "stream_body", False))
+        if stream_body:
+            # Exercise the core "unknown/chunked body" path: Open(body_len_hint=0 + flag),
+            # then Write() chunks, then commit with a zero-length Write().
+            flags |= np.FLAG_BODY_IS_CHUNKED_OR_UNKNOWN
+
         open_req = np.build_open_req(
             method=args.method,
-            flags=args.flags,
+            flags=flags,
             url=args.url,
             headers=_collect_request_headers(args),
-            body_len_hint=body_len_hint if (args.method in (2, 3)) else 0,
+            body_len_hint=(0 if (stream_body and args.method in (2, 3)) else (body_len_hint if (args.method in (2, 3)) else 0)),
             response_headers=resp_headers,
         )
 
@@ -632,8 +640,26 @@ def cmd_net_send(args) -> int:
         handle = orr.handle
 
         try:
+            def _accept_write_for(want_handle: int, want_off: int):
+                def _accept(pkt):
+                    try:
+                        wr = np.parse_write_resp(pkt.payload)
+                    except Exception:
+                        return False
+                    return (wr.handle == want_handle) and (wr.offset == want_off)
+                return _accept
+
+            def _accept_read_for(want_handle: int, want_off: int):
+                def _accept(pkt):
+                    try:
+                        rr = np.parse_read_resp(pkt.payload)
+                    except Exception:
+                        return False
+                    return (rr.handle == want_handle) and (rr.offset == want_off)
+                return _accept
+
             # Optional body upload (POST/PUT only)
-            if args.method in (2, 3) and body_len_hint > 0:
+            if args.method in (2, 3) and (stream_body or body_len_hint > 0):
                 if not orr.needs_body_write:
                     print("Device did not request body write, but body_len_hint > 0 was provided")
                     return 1
@@ -650,20 +676,43 @@ def cmd_net_send(args) -> int:
                         timeout=args.timeout,
                         retries=2000,
                         sleep_s=0.001,
+                        accept=_accept_write_for(handle, offset),
                     )
                     if wpkt is None:
-                        print("No response")
+                        print(f"No response to Write(offset={offset}, len={len(chunk)})")
                         return 2
                     if not status_ok(wpkt):
                         code = _pkt_status_code(wpkt)
-                        print(f"Device status={code} ({_status_str(code)})")
+                        print(f"Write failed (offset={offset}, len={len(chunk)}): status={code} ({_status_str(code)})")
                         return 1
 
                     wr = np.parse_write_resp(wpkt.payload)
-                    if wr.written == 0:
+                    if len(chunk) > 0 and wr.written == 0:
                         print("Write returned 0 bytes written; aborting")
                         return 1
                     offset += wr.written
+
+                if stream_body:
+                    # Commit the unknown/chunked body by sending a zero-length write at the current cursor.
+                    # This is the documented "dispatch now" trigger for unknown-length bodies.
+                    wreq = np.build_write_req(handle, offset, b"")
+                    wpkt = _send_retry_not_ready(
+                        bus=bus,
+                        device=np.NETWORK_DEVICE_ID,
+                        command=np.CMD_WRITE,
+                        payload=wreq,
+                        timeout=args.timeout,
+                        retries=2000,
+                        sleep_s=0.001,
+                        accept=_accept_write_for(handle, offset),
+                    )
+                    if wpkt is None:
+                        print(f"No response to Write(commit offset={offset})")
+                        return 2
+                    if not status_ok(wpkt):
+                        code = _pkt_status_code(wpkt)
+                        print(f"Write commit failed (offset={offset}): status={code} ({_status_str(code)})")
+                        return 1
 
             # Optional INFO
             if args.show_headers:
@@ -705,6 +754,7 @@ def cmd_net_send(args) -> int:
                         timeout=args.timeout,
                         retries=20000,
                         sleep_s=0.005,
+                        accept=_accept_read_for(handle, offset),
                     )
                     if rpkt is None:
                         print("No response")
@@ -826,6 +876,11 @@ def register_subcommands(subparsers) -> None:
     pns = nsub.add_parser("send", help="Send a request (GET/POST/PUT/DELETE/HEAD) with optional body + response streaming")
     pns.add_argument("--method", type=int, required=True, help="1=GET,2=POST,3=PUT,4=DELETE,5=HEAD")
     pns.add_argument("--flags", type=int, default=0, help="bit0=tls, bit1=follow_redirects")
+    pns.add_argument(
+        "--stream-body",
+        action="store_true",
+        help="POST/PUT only: send request body using unknown-length streaming mode (Open(body_len_hint=0 + flag) + Write chunks + final zero-length Write commit)",
+    )
     pns.add_argument("--show-headers", action="store_true")
     pns.add_argument("--resp-header", action="append", default=[], help="Response header name to capture (repeatable)")
     pns.add_argument("--info-retries", type=int, default=50)

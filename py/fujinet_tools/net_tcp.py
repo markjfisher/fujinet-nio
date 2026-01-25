@@ -163,7 +163,7 @@ def tcp_open(
     info_poll_s: float,
 ) -> TcpStreamSession:
     # method is ignored by TCP backend; use GET (1) for consistency
-    open_req = np.build_open_req(method=1, flags=0, url=url, headers=[], body_len_hint=0)
+    open_req = np.build_open_req(method=1, flags=np.FLAG_ALLOW_EVICT, url=url, headers=[], body_len_hint=0)
     pkt = _send_retry(
         bus=bus,
         device=np.NETWORK_DEVICE_ID,
@@ -429,170 +429,178 @@ def cmd_net_tcp_repl(args) -> int:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         sess = None
-        if url:
-            sess = tcp_open(
-                bus=bus,
-                url=url,
-                timeout=args.timeout,
-                wait_connected=args.wait_connected,
-                info_poll_s=args.info_poll,
-            )
-            if args.show_info:
-                tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
-            print(f"[tcp] opened handle={sess.handle}")
+        try:
+            if url:
+                sess = tcp_open(
+                    bus=bus,
+                    url=url,
+                    timeout=args.timeout,
+                    wait_connected=args.wait_connected,
+                    info_poll_s=args.info_poll,
+                )
+                if args.show_info:
+                    tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
+                print(f"[tcp] opened handle={sess.handle}")
 
-        def ensure_open() -> TcpStreamSession:
-            nonlocal sess
-            if sess is None:
-                raise RuntimeError("No open session. Use: open tcp://host:port")
-            return sess
+            def ensure_open() -> TcpStreamSession:
+                nonlocal sess
+                if sess is None:
+                    raise RuntimeError("No open session. Use: open tcp://host:port")
+                return sess
 
-        print("TCP REPL. Type 'help' for commands.")
-        while True:
-            try:
-                line = input("tcp> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                line = "quit"
+            print("TCP REPL. Type 'help' for commands.")
+            while True:
+                try:
+                    line = input("tcp> ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    line = "quit"
 
-            if not line:
-                continue
-
-            parts = line.split()
-            cmd = parts[0].lower()
-            rest = line[len(parts[0]):].lstrip()
-
-            try:
-                if cmd in ("quit", "exit"):
-                    if sess is not None:
-                        try:
-                            tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
-                            print("[tcp] closed")
-                        except Exception:
-                            pass
-                    return 0
-
-                if cmd == "help":
-                    print(cmd_net_tcp_repl.__doc__ or "")
+                if not line:
                     continue
 
-                if cmd == "open":
-                    if not rest:
-                        print("usage: open tcp://host:port[?opts]")
+                parts = line.split()
+                cmd = parts[0].lower()
+                rest = line[len(parts[0]):].lstrip()
+
+                try:
+                    if cmd in ("quit", "exit"):
+                        if sess is not None:
+                            try:
+                                tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
+                                print("[tcp] closed")
+                            except Exception:
+                                pass
+                        return 0
+
+                    if cmd == "help":
+                        print(cmd_net_tcp_repl.__doc__ or "")
                         continue
-                    if sess is not None:
-                        try:
-                            tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
-                        except Exception:
-                            pass
-                    sess = tcp_open(
-                        bus=bus,
-                        url=rest,
-                        timeout=args.timeout,
-                        wait_connected=args.wait_connected,
-                        info_poll_s=args.info_poll,
-                    )
-                    print(f"[tcp] opened handle={sess.handle}")
-                    if args.show_info:
-                        tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
-                    continue
 
-                if cmd == "close":
-                    s = ensure_open()
-                    tcp_close(bus=bus, handle=s.handle, timeout=args.timeout)
-                    print("[tcp] closed")
-                    sess = None
-                    continue
-
-                if cmd == "info":
-                    s = ensure_open()
-                    tcp_info_print(bus=bus, handle=s.handle, timeout=args.timeout, max_headers=args.max_headers)
-                    continue
-
-                if cmd == "offsets":
-                    s = ensure_open()
-                    print(f"read_offset={s.read_offset} write_offset={s.write_offset}")
-                    continue
-
-                if cmd == "send":
-                    s = ensure_open()
-                    if not rest:
-                        print("usage: send <text...>")
+                    if cmd == "open":
+                        if not rest:
+                            print("usage: open tcp://host:port[?opts]")
+                            continue
+                        if sess is not None:
+                            try:
+                                tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
+                            except Exception:
+                                pass
+                        sess = tcp_open(
+                            bus=bus,
+                            url=rest,
+                            timeout=args.timeout,
+                            wait_connected=args.wait_connected,
+                            info_poll_s=args.info_poll,
+                        )
+                        print(f"[tcp] opened handle={sess.handle}")
+                        if args.show_info:
+                            tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
                         continue
-                    data = rest.encode("utf-8")
-                    n = tcp_send(bus=bus, sess=s, data=data, timeout=args.timeout, chunk=args.write_chunk)
-                    print(f"[tcp] sent {n} bytes")
-                    continue
 
-                if cmd == "sendhex":
-                    s = ensure_open()
-                    if not rest:
-                        print("usage: sendhex <aabbcc...>  (spaces ok)")
+                    if cmd == "close":
+                        s = ensure_open()
+                        tcp_close(bus=bus, handle=s.handle, timeout=args.timeout)
+                        print("[tcp] closed")
+                        sess = None
                         continue
-                    data = _parse_hex_bytes(rest)
-                    n = tcp_send(bus=bus, sess=s, data=data, timeout=args.timeout, chunk=args.write_chunk)
-                    print(f"[tcp] sent {n} bytes")
-                    continue
 
-                if cmd == "halfclose":
-                    s = ensure_open()
-                    tcp_halfclose(bus=bus, sess=s, timeout=args.timeout)
-                    print("[tcp] halfclosed (TX)")
-                    continue
+                    if cmd == "info":
+                        s = ensure_open()
+                        tcp_info_print(bus=bus, handle=s.handle, timeout=args.timeout, max_headers=args.max_headers)
+                        continue
 
-                if cmd == "recv":
-                    s = ensure_open()
-                    n = args.read_chunk
-                    if len(parts) >= 2:
-                        n = int(parts[1])
-                    data, eof = tcp_recv_some(bus=bus, sess=s, timeout=args.timeout, max_bytes=n)
-                    if data:
-                        if args.binary:
-                            # raw bytes to stdout
-                            sys.stdout.buffer.write(data)
-                            sys.stdout.buffer.flush()
-                            print("")
-                        else:
-                            print(f"[tcp] {len(data)} bytes: {data!r}")
-                            print(f"hex: {_hexdump(data)}")
-                    else:
-                        print("[tcp] (no data)")
-                    if eof:
-                        print("[tcp] EOF")
-                    continue
+                    if cmd == "offsets":
+                        s = ensure_open()
+                        print(f"read_offset={s.read_offset} write_offset={s.write_offset}")
+                        continue
 
-                if cmd == "drain":
-                    s = ensure_open()
-                    max_total = None
-                    if len(parts) >= 2:
-                        max_total = int(parts[1])
+                    if cmd == "send":
+                        s = ensure_open()
+                        if not rest:
+                            print("usage: send <text...>")
+                            continue
+                        data = rest.encode("utf-8")
+                        n = tcp_send(bus=bus, sess=s, data=data, timeout=args.timeout, chunk=args.write_chunk)
+                        print(f"[tcp] sent {n} bytes")
+                        continue
 
-                    total = 0
-                    idle_deadline = time.monotonic() + max(args.idle_timeout, 0.25)
-                    while True:
-                        data, eof = tcp_recv_some(bus=bus, sess=s, timeout=args.timeout, max_bytes=args.read_chunk)
+                    if cmd == "sendhex":
+                        s = ensure_open()
+                        if not rest:
+                            print("usage: sendhex <aabbcc...>  (spaces ok)")
+                            continue
+                        data = _parse_hex_bytes(rest)
+                        n = tcp_send(bus=bus, sess=s, data=data, timeout=args.timeout, chunk=args.write_chunk)
+                        print(f"[tcp] sent {n} bytes")
+                        continue
+
+                    if cmd == "halfclose":
+                        s = ensure_open()
+                        tcp_halfclose(bus=bus, sess=s, timeout=args.timeout)
+                        print("[tcp] halfclosed (TX)")
+                        continue
+
+                    if cmd == "recv":
+                        s = ensure_open()
+                        n = args.read_chunk
+                        if len(parts) >= 2:
+                            n = int(parts[1])
+                        data, eof = tcp_recv_some(bus=bus, sess=s, timeout=args.timeout, max_bytes=n)
                         if data:
-                            total += len(data)
-                            idle_deadline = time.monotonic() + max(args.idle_timeout, 0.25)
                             if args.binary:
+                                # raw bytes to stdout
                                 sys.stdout.buffer.write(data)
                                 sys.stdout.buffer.flush()
+                                print("")
                             else:
-                                print(data.decode("utf-8", errors="replace"), end="")
-                            if max_total is not None and total >= max_total:
-                                break
+                                print(f"[tcp] {len(data)} bytes: {data!r}")
+                                print(f"hex: {_hexdump(data)}")
+                        else:
+                            print("[tcp] (no data)")
                         if eof:
-                            print("\n[tcp] EOF")
-                            break
-                        if time.monotonic() > idle_deadline:
-                            break
-                    if not args.binary:
-                        print(f"\n[tcp] drained {total} bytes")
-                    continue
+                            print("[tcp] EOF")
+                        continue
 
-                print(f"unknown command: {cmd} (try 'help')")
+                    if cmd == "drain":
+                        s = ensure_open()
+                        max_total = None
+                        if len(parts) >= 2:
+                            max_total = int(parts[1])
 
-            except Exception as e:
-                print(f"error: {e}")
+                        total = 0
+                        idle_deadline = time.monotonic() + max(args.idle_timeout, 0.25)
+                        while True:
+                            data, eof = tcp_recv_some(bus=bus, sess=s, timeout=args.timeout, max_bytes=args.read_chunk)
+                            if data:
+                                total += len(data)
+                                idle_deadline = time.monotonic() + max(args.idle_timeout, 0.25)
+                                if args.binary:
+                                    sys.stdout.buffer.write(data)
+                                    sys.stdout.buffer.flush()
+                                else:
+                                    print(data.decode("utf-8", errors="replace"), end="")
+                                if max_total is not None and total >= max_total:
+                                    break
+                            if eof:
+                                print("\n[tcp] EOF")
+                                break
+                            if time.monotonic() > idle_deadline:
+                                break
+                        if not args.binary:
+                            print(f"\n[tcp] drained {total} bytes")
+                        continue
+
+                    print(f"unknown command: {cmd} (try 'help')")
+
+                except Exception as e:
+                    print(f"error: {e}")
+        finally:
+            # best-effort close on exit (ctrl-c, EOF, exceptions)
+            if sess is not None:
+                try:
+                    tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
+                except Exception:
+                    pass
 
     return 0
 
@@ -636,79 +644,87 @@ def cmd_net_tcp_sendrecv(args) -> int:
     with open_serial(port=args.port, baud=args.baud, timeout_s=args.timeout) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
-        # Open TCP stream and wait for connect
-        sess = tcp_open(
-            bus=bus,
-            url=args.url,
-            timeout=args.timeout,
-            wait_connected=True,
-            info_poll_s=args.info_poll,
-        )
+        sess = None
+        try:
+            # Open TCP stream and wait for connect
+            sess = tcp_open(
+                bus=bus,
+                url=args.url,
+                timeout=args.timeout,
+                wait_connected=True,
+                info_poll_s=args.info_poll,
+            )
 
-        if args.show_info:
-            # max_headers arg is legacy; tcp_info_print ignores it after your earlier update
-            tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
+            if args.show_info:
+                # max_headers arg is legacy; tcp_info_print ignores it after your earlier update
+                tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
 
-        # Send payload
-        if data:
-            tcp_send(bus=bus, sess=sess, data=data, timeout=args.timeout, chunk=args.write_chunk)
+            # Send payload
+            if data:
+                tcp_send(bus=bus, sess=sess, data=data, timeout=args.timeout, chunk=args.write_chunk)
 
-        # Halfclose TX if requested
-        if args.halfclose:
-            tcp_halfclose(bus=bus, sess=sess, timeout=args.timeout)
+            # Halfclose TX if requested
+            if args.halfclose:
+                tcp_halfclose(bus=bus, sess=sess, timeout=args.timeout)
 
-        # Receive loop:
-        # - write any received bytes
-        # - reset idle timer on progress
-        # - sleep briefly on empty reads (prevents hot-loop flakiness)
-        idle_window = max(float(args.idle_timeout), 0.25) if float(args.idle_timeout) > 0 else 0.0
-        idle_deadline = time.monotonic() + idle_window if idle_window > 0 else float("inf")
+            # Receive loop:
+            # - write any received bytes
+            # - reset idle timer on progress
+            # - sleep briefly on empty reads (prevents hot-loop flakiness)
+            idle_window = max(float(args.idle_timeout), 0.25) if float(args.idle_timeout) > 0 else 0.0
+            idle_deadline = time.monotonic() + idle_window if idle_window > 0 else float("inf")
 
-        total = 0
-        while True:
-            try:
-                chunk, eof = tcp_recv_some(bus=bus, sess=sess, timeout=args.timeout, max_bytes=args.read_chunk)
-            except RuntimeError as e:
-                # If we've already received some bytes, and the peer disappears abruptly (RST/close),
-                # the device may report IOError. Treat that as EOF once we've got data.
-                msg = str(e)
-                if ("status=5" in msg or "IOError" in msg) and total > 0:
-                    chunk = b""
-                    eof = True
-                else:
-                    raise
+            total = 0
+            while True:
+                try:
+                    chunk, eof = tcp_recv_some(bus=bus, sess=sess, timeout=args.timeout, max_bytes=args.read_chunk)
+                except RuntimeError as e:
+                    # If we've already received some bytes, and the peer disappears abruptly (RST/close),
+                    # the device may report IOError. Treat that as EOF once we've got data.
+                    msg = str(e)
+                    if ("status=5" in msg or "IOError" in msg) and total > 0:
+                        chunk = b""
+                        eof = True
+                    else:
+                        raise
 
-            if chunk:
-                total += len(chunk)
-                if idle_window > 0:
-                    idle_deadline = time.monotonic() + idle_window
+                if chunk:
+                    total += len(chunk)
+                    if idle_window > 0:
+                        idle_deadline = time.monotonic() + idle_window
 
-                if out_path:
-                    with out_path.open("ab") as f:
-                        f.write(chunk)
-                else:
-                    sys.stdout.buffer.write(chunk)
-                    sys.stdout.buffer.flush()
+                    if out_path:
+                        with out_path.open("ab") as f:
+                            f.write(chunk)
+                    else:
+                        sys.stdout.buffer.write(chunk)
+                        sys.stdout.buffer.flush()
 
+                    if eof:
+                        break
+                    continue
+
+                # No data this iteration.
                 if eof:
                     break
-                continue
 
-            # No data this iteration.
-            if eof:
-                break
+                if idle_window > 0 and time.monotonic() > idle_deadline:
+                    break
 
-            if idle_window > 0 and time.monotonic() > idle_deadline:
-                break
+                # IMPORTANT: avoid busy looping; give the system/serial/device time.
+                time.sleep(0.02)
 
-            # IMPORTANT: avoid busy looping; give the system/serial/device time.
-            time.sleep(0.02)
+            if args.verbose:
+                print(f"\nread_total={total} bytes read_offset={sess.read_offset} write_offset={sess.write_offset}")
 
-        if args.verbose:
-            print(f"\nread_total={total} bytes read_offset={sess.read_offset} write_offset={sess.write_offset}")
-
-        tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
-        return 0
+            return 0
+        finally:
+            # CLOSE best-effort even on exceptions, to avoid leaking sessions in fujinet-nio
+            if sess is not None:
+                try:
+                    tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
+                except Exception:
+                    pass
 
 
 

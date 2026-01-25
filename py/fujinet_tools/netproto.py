@@ -20,6 +20,12 @@ NETPROTO_VERSION = 1
 # Wire device id for NetworkDevice protocol service
 NETWORK_DEVICE_ID = 0xFD
 
+# Open flags (u8) - keep in sync with `docs/network_device_protocol.md`
+FLAG_TLS = 0x01
+FLAG_FOLLOW_REDIRECTS = 0x02
+FLAG_BODY_IS_CHUNKED_OR_UNKNOWN = 0x04
+FLAG_ALLOW_EVICT = 0x08
+
 # NetworkCommand (v1)
 CMD_OPEN = 0x01
 CMD_READ = 0x02

@@ -1,0 +1,54 @@
+group: Network / HTTP (streaming body)
+steps:
+  - name: "HTTP: POST /post (streaming unknown-length, small body)"
+    argv:
+      - "{CLI}"
+      - "net"
+      - "send"
+      - "--method"
+      - "2"
+      - "--stream-body"
+      - "--read-response"
+      - "--data"
+      - "hello"
+      - "{HTTP}/post"
+    expect:
+      - '"data": "hello"'
+    timeout_s: 15
+
+  - name: "HTTP: POST /post (streaming unknown-length, large body >512 bytes)"
+    argv:
+      - "{CLI}"
+      - "net"
+      - "send"
+      - "--method"
+      - "2"
+      - "--stream-body"
+      - "--read-response"
+      - "--inp"
+      - "integration-tests/data/http_large_ascii.txt"
+      - "{HTTP}/post"
+    capture:
+      mode: "file"
+    expect_file:
+      path: "{CAPTURED_OUT}"
+      contains_text:
+        - '"data": "A{768}"'
+    timeout_s: 20
+
+  - name: "HTTP: PUT /put (streaming unknown-length, empty body commits)"
+    argv:
+      - "{CLI}"
+      - "net"
+      - "send"
+      - "--method"
+      - "3"
+      - "--stream-body"
+      - "--read-response"
+      - "--data"
+      - ""
+      - "{HTTP}/put"
+    expect:
+      - '"data": ""'
+    timeout_s: 15
+
