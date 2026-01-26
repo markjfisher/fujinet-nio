@@ -32,6 +32,7 @@ public:
         _netsio->sendDeviceConnect();
         const auto& msg = _netsio->getEncodedMessage();
         _channel.write(msg.data(), msg.size());
+        _lastActivity = clock::now();
     }
     
     ~NetSioBusHardware() override {
@@ -50,6 +51,7 @@ public:
             FN_LOGI(TAG, "poll(): UDP data available, processing messages");
         }
         processNetsioMessages();
+        sendKeepAliveIfIdle();
     }
     
     bool commandAsserted() const override {
@@ -71,6 +73,7 @@ public:
         }
         const auto& msg = _netsio->getEncodedMessage();
         _channel.write(msg.data(), msg.size());
+        _lastActivity = clock::now();
     }
     
     std::size_t read(std::uint8_t* buf, std::size_t len) override {
@@ -102,6 +105,7 @@ public:
         _netsio->sendDataBlock(buf, len);
         const auto& msg = _netsio->getEncodedMessage();
         _channel.write(msg.data(), msg.size());
+        _lastActivity = clock::now();
     }
     
     void write(std::uint8_t byte) override {
@@ -110,6 +114,7 @@ public:
         _netsio->sendDataByte(byte);
         const auto& msg = _netsio->getEncodedMessage();
         _channel.write(msg.data(), msg.size());
+        _lastActivity = clock::now();
     }
     
     void flush() override {
@@ -143,12 +148,32 @@ public:
         _netsio->sendSyncResponse(_syncRequestNum, ackType, ackByte, writeSize);
         const auto& msg = _netsio->getEncodedMessage();
         _channel.write(msg.data(), msg.size());
+        _lastActivity = clock::now();
         
         _syncRequestNum = 0; // Clear after sending
         return true;
     }
 
 private:
+    using clock = std::chrono::steady_clock;
+    static constexpr auto keepalive_interval = std::chrono::seconds(10);
+
+    void sendKeepAliveIfIdle()
+    {
+        // NetSIO HUB expires UDP "devices" if it receives no packets for ~30s.
+        // Keep this logic in the NetSIO bus layer (legacy transport only), not core.
+        const auto now = clock::now();
+        if ((now - _lastActivity) < keepalive_interval) {
+            return;
+        }
+
+        _netsio->sendAliveRequest();
+        const auto& msg = _netsio->getEncodedMessage();
+        _channel.write(msg.data(), msg.size());
+        _lastActivity = now;
+        FN_LOGD(TAG, "Sent ALIVE_REQUEST keepalive");
+    }
+
     void processNetsioMessages() {
         // Read UDP datagrams and parse NetSIO messages
         std::uint8_t buffer[512];
@@ -158,6 +183,8 @@ private:
             if (len == 0) {
                 break;
             }
+
+            _lastActivity = clock::now();
             
             packetCount++;
             FN_LOGI(TAG, "processNetsioMessages(): Received UDP packet #%d, %zu bytes, msgType=0x%02X", 
@@ -246,6 +273,7 @@ private:
                     {
                         const auto& msg = _netsio->getEncodedMessage();
                         _channel.write(msg.data(), msg.size());
+                        _lastActivity = clock::now();
                     }
                     break;
                     
@@ -255,6 +283,7 @@ private:
                     {
                         const auto& msg = _netsio->getEncodedMessage();
                         _channel.write(msg.data(), msg.size());
+                        _lastActivity = clock::now();
                     }
                     break;
                     
@@ -324,6 +353,9 @@ private:
             // (for NetSIO, command frame arrives as DATA_BLOCK after COMMAND_ON,
             //  and is complete when COMMAND_OFF_SYNC is received with 5 bytes in FIFO)
             bool _commandFrameReady{false};
+
+            // Track most recent RX/TX activity to avoid NetSIO HUB idle expiry.
+            clock::time_point _lastActivity{clock::now()};
 };
 
 // Factory function
