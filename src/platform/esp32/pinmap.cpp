@@ -8,6 +8,7 @@ namespace fujinet::platform::esp32 {
 #define FN_PINMAP_FREENOVA_S3       2
 #define FN_PINMAP_FUJINET_S3_REV_A  3
 #define FN_PINMAP_ATARIV1           4
+#define FN_PINMAP_RS232             5
 // Add more here as they are used. These ensure we don't get weird macro expansions.
 
 // Ensure at least one of FN_PINMAP or FN_PINMAP_DEFAULT is defined
@@ -23,19 +24,16 @@ namespace fujinet::platform::esp32 {
 #if FN_PINMAP == FN_PINMAP_BREADBOARD
 static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 7, .miso = 8, .sck = 6, .cs = 9 },
-    .sio = SioPins{ .cmd = -1, .int_pin = -1, .mtr = -1, .proc = -1, .cki = -1, .cko = -1, .uart_rx = -1, .uart_tx = -1 },
 };
 
 #elif FN_PINMAP == FN_PINMAP_FREENOVA_S3
 static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 38, .miso = 40, .sck = 39, .cs = 41 },
-    .sio = SioPins{ .cmd = -1, .int_pin = -1, .mtr = -1, .proc = -1, .cki = -1, .cko = -1, .uart_rx = -1, .uart_tx = -1 },
 };
 
 #elif FN_PINMAP == FN_PINMAP_FUJINET_S3_REV_A
 static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 35, .miso = 37, .sck = 36, .cs = 34 },
-    .sio = SioPins{ .cmd = -1, .int_pin = -1, .mtr = -1, .proc = -1, .cki = -1, .cko = -1, .uart_rx = -1, .uart_tx = -1 },
 };
 
 #elif FN_PINMAP == FN_PINMAP_ATARIV1
@@ -53,6 +51,29 @@ static constexpr PinMap BOARD_PINMAP{
         .cko = 32,      // GPIO_NUM_32 (CKO line)
         .uart_rx = 33,  // GPIO_NUM_33 (UART2 RX)
         .uart_tx = 21,  // GPIO_NUM_21 (UART2 TX)
+    },
+};
+
+#elif FN_PINMAP == FN_PINMAP_RS232
+// FujiNet RS232 S3 pin mapping
+// Based on rs232_s3.h from fujinet-firmware
+static constexpr PinMap BOARD_PINMAP{
+    .sd = SdSpiPins{
+        .mosi = 11,     // GPIO_NUM_11 (PIN_SD_HOST_MOSI)
+        .miso = 13,     // GPIO_NUM_13 (PIN_SD_HOST_MISO)
+        .sck = 21,      // GPIO_NUM_21 (PIN_SD_HOST_SCK)
+        .cs = 10,       // GPIO_NUM_10 (PIN_SD_HOST_CS)
+    },
+    .rs232 = Rs232Pins{
+        .uart_rx = 41,  // GPIO_NUM_41 (PIN_UART1_RX)
+        .uart_tx = 42,  // GPIO_NUM_42 (PIN_UART1_TX)
+        .ri = 16,       // GPIO_NUM_16 (PIN_RS232_RI)
+        .dcd = 4,       // GPIO_NUM_4 (PIN_RS232_DCD)
+        .rts = 15,      // GPIO_NUM_15 (PIN_RS232_RTS)
+        .cts = 7,       // GPIO_NUM_7 (PIN_RS232_CTS)
+        .dtr = 6,       // GPIO_NUM_6 (PIN_RS232_DTR)
+        .dsr = 5,       // GPIO_NUM_5 (PIN_RS232_DSR)
+        .invalid = 18,  // GPIO_NUM_18 (PIN_RS232_INVALID)
     },
 };
 

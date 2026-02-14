@@ -16,7 +16,7 @@
     "mcu": "esp32s3",
     "variant": "esp32s3",
     "partitions": "pio-build/partitions/partitions_16MB.csv"
-},
+  },
   "connectivity": [
     "wifi"
   ],

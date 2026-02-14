@@ -22,6 +22,7 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
     using build::ChannelKind;
 
     switch (profile.primaryChannel) {
+
     case ChannelKind::UsbCdcDevice:
 #if CONFIG_TINYUSB_CDC_ENABLED
         FN_ELOG("Using TinyUSB CDC-ACM channel for UsbCdcDevice");

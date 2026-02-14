@@ -65,6 +65,14 @@ BuildProfile current_build_profile()
         .name             = "POSIX + FujiBus over PTY",
         .hw               = {},
     };
+#elif defined(FN_BUILD_ESP32_FUJIBUS_GPIO)
+    profile = BuildProfile{
+        .machine          = Machine::FujiNetESP32,
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::HardwareSio,
+        .name             = "S3 + FujiBus over GPIO (e.g. RS232)",
+        .hw               = {},
+    };
 #else
     // Default: POSIX-friendly profile when no explicit build profile macro is provided.
     // This keeps local/test builds working without requiring a preset.
