@@ -3,6 +3,7 @@
 #include "fujinet/platform/esp32/pinmap.h"
 
 #include <cstddef>
+#include <algorithm>
 
 extern "C" {
 #include "driver/uart.h"
@@ -57,14 +58,13 @@ bool UartChannel::initialize()
     _uart_port = UART_NUM_1;
 
     // Configure UART
-    uart_config_t uart_config = {
-        .baud_rate = UART_BAUD_RATE,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
-    };
+    uart_config_t uart_config = {};
+    uart_config.baud_rate = UART_BAUD_RATE;
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.source_clk = UART_SCLK_DEFAULT;
 
     esp_err_t err = uart_param_config(_uart_port, &uart_config);
     if (err != ESP_OK) {

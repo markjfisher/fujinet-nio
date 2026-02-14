@@ -6,6 +6,7 @@
 #include <cstdint>
 
 extern "C" {
+#include "driver/uart.h"
 struct QueueDefinition;
 typedef struct QueueDefinition* QueueHandle_t;
 }
@@ -46,8 +47,8 @@ private:
     bool initialize();
     bool _initialized{false};
     
-    // UART port number (as int for ESP-IDF API)
-    int _uart_port{0};
+    // UART port number
+    uart_port_t _uart_port{UART_NUM_1};
     
     // Event queue for UART events
     QueueHandle_t _uart_queue{nullptr};
