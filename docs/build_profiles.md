@@ -73,7 +73,7 @@ enum class ChannelKind {
     UsbCdcDevice, // USB CDC device mode (ESP32S3, Pi gadget mode later)
     TcpSocket,    // TCP/IP channel for emulators (future)
     UdpSocket,    // UDP socket (for NetSIO protocol)
-    HardwareSio,  // ESP32 GPIO-based SIO (UART + GPIO pins)
+    UartGpio,     // ESP32 GPIO-based UART (SIO, RS232, etc.)
 };
 
 struct BuildProfile {
@@ -105,7 +105,7 @@ BuildProfile current_build_profile()
     profile = BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::HardwareSio,
+        .primaryChannel   = ChannelKind::UartGpio,
         .name             = "Atari + SIO via GPIO",
         .hw               = {},
     };
@@ -280,8 +280,8 @@ create_channel_for_profile(const BuildProfile& profile)
 switch (profile.primaryChannel) {
     case ChannelKind::UsbCdcDevice:
         return std::make_unique<UsbCdcChannel>();
-    case ChannelKind::HardwareSio:
-        return std::make_unique<HardwareSioChannel>();  // TODO: implement
+    case ChannelKind::UartGpio:
+        return std::make_unique<UartChannel>();
     // future: Uart0, etc.
 }
 ```
@@ -295,7 +295,7 @@ switch (profile.primaryChannel) {
 | Concept | Meaning | Examples |
 |--------|---------|----------|
 | **Transport** | Protocol spoken over the link | FujiBus, SIO |
-| **Channel** | How raw bytes move | PTY, USB-CDC, TCP, HardwareSio |
+| **Channel** | How raw bytes move | PTY, USB-CDC, TCP, UartGpio |
 | **Hardware capabilities** | What the device *can* do | Wi-Fi? PSRAM? USB host? |
 | **Build profile** | Which combination this firmware targets | ESP32-USB, POSIX-PTY |
 
@@ -372,7 +372,7 @@ Currently supported profiles:
 - `FN_BUILD_ATARI_SIO`  
   - `machine          = Machine::Atari8Bit`  
   - `primaryTransport = TransportKind::SIO`  
-  - `primaryChannel   = ChannelKind::HardwareSio`  
+  - `primaryChannel   = ChannelKind::UartGpio`  
   - Used for ESP32 builds with GPIO-based SIO hardware
 
 - `FN_BUILD_ATARI_PTY`  

@@ -4,12 +4,13 @@
 
 namespace fujinet::platform::esp32 {
 
-/// Channel implementation for hardware SIO/UART on ESP32.
-/// Used for FujiBus over GPIO (e.g., RS232) builds.
-class HardwareSioChannel : public fujinet::io::Channel {
+/// Channel implementation for UART over GPIO on ESP32.
+/// Used for UartGpio channel kind (SIO, RS232, etc.).
+/// Pin configuration is obtained from the pinmap at construction time.
+class UartChannel : public fujinet::io::Channel {
 public:
-    HardwareSioChannel();
-    ~HardwareSioChannel() override;
+    UartChannel();
+    ~UartChannel() override;
 
     bool available() override;
     std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override;

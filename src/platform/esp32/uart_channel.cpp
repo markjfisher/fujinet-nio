@@ -1,4 +1,4 @@
-#include "fujinet/platform/esp32/hardware_sio_channel.h"
+#include "fujinet/platform/esp32/uart_channel.h"
 #include "fujinet/core/logging.h"
 #include "fujinet/platform/esp32/pinmap.h"
 
@@ -11,24 +11,24 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "hw_sio_channel";
+static const char* TAG = "uart_channel";
 
-// UART configuration for SIO/RS232
+// UART configuration
 static constexpr uart_port_t UART_PORT = UART_NUM_1;
 static constexpr int UART_BAUD_RATE = 115200;
 static constexpr int UART_RX_BUF_SIZE = 2048;
 static constexpr int UART_TX_BUF_SIZE = 2048;
 static constexpr int UART_TIMEOUT_MS = 20;
 
-HardwareSioChannel::HardwareSioChannel()
+UartChannel::UartChannel()
 {
     _initialized = initialize();
     if (!_initialized) {
-        FN_LOGE(TAG, "Failed to initialize HardwareSioChannel");
+        FN_LOGE(TAG, "Failed to initialize UartChannel");
     }
 }
 
-HardwareSioChannel::~HardwareSioChannel()
+UartChannel::~UartChannel()
 {
     if (_initialized) {
         uart_driver_delete(UART_PORT);
@@ -36,31 +36,17 @@ HardwareSioChannel::~HardwareSioChannel()
     }
 }
 
-bool HardwareSioChannel::initialize()
+bool UartChannel::initialize()
 {
-    const auto& pins = pinmap();
-
-    // Determine which pin set to use based on configuration
-    // For RS232 builds, use rs232 pins; for SIO builds, use sio pins
-    int rx_pin = -1;
-    int tx_pin = -1;
-
-    // Prefer RS232 pins if configured (for FN_BUILD_ESP32_FUJIBUS_GPIO)
-    if (pins.rs232.uart_rx >= 0 && pins.rs232.uart_tx >= 0) {
-        rx_pin = pins.rs232.uart_rx;
-        tx_pin = pins.rs232.uart_tx;
-        FN_LOGI(TAG, "Using RS232 pins: RX=%d, TX=%d", rx_pin, tx_pin);
-    }
-    // Fall back to SIO UART pins if available (for FN_BUILD_ATARI_SIO)
-    else if (pins.sio.uart_rx >= 0 && pins.sio.uart_tx >= 0) {
-        rx_pin = pins.sio.uart_rx;
-        tx_pin = pins.sio.uart_tx;
-        FN_LOGI(TAG, "Using SIO UART pins: RX=%d, TX=%d", rx_pin, tx_pin);
-    }
-    else {
+    // Get UART pins from the pinmap
+    const UartPins uart_pins = pinmap().primaryUart();
+    
+    if (uart_pins.rx < 0 || uart_pins.tx < 0) {
         FN_LOGE(TAG, "No valid UART pins configured in pinmap");
         return false;
     }
+
+    FN_LOGI(TAG, "Using UART pins: RX=%d, TX=%d", uart_pins.rx, uart_pins.tx);
 
     // Configure UART
     uart_config_t uart_config = {
@@ -79,7 +65,7 @@ bool HardwareSioChannel::initialize()
     }
 
     // Set UART pins
-    err = uart_set_pin(UART_PORT, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    err = uart_set_pin(UART_PORT, uart_pins.tx, uart_pins.rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     if (err != ESP_OK) {
         FN_LOGE(TAG, "uart_set_pin failed: %d", err);
         return false;
@@ -90,20 +76,20 @@ bool HardwareSioChannel::initialize()
         UART_PORT,
         UART_RX_BUF_SIZE,
         UART_TX_BUF_SIZE,
-        0,      // queue size
+        0,       // queue size
         nullptr, // queue handle
-        0       // intr_alloc_flags
+        0        // intr_alloc_flags
     );
     if (err != ESP_OK) {
         FN_LOGE(TAG, "uart_driver_install failed: %d", err);
         return false;
     }
 
-    FN_LOGI(TAG, "HardwareSioChannel initialized on UART%d", UART_PORT);
+    FN_LOGI(TAG, "UartChannel initialized on UART%d", UART_PORT);
     return true;
 }
 
-bool HardwareSioChannel::available()
+bool UartChannel::available()
 {
     if (!_initialized) {
         return false;
@@ -118,7 +104,7 @@ bool HardwareSioChannel::available()
     return bytes_available > 0;
 }
 
-std::size_t HardwareSioChannel::read(std::uint8_t* buffer, std::size_t maxLen)
+std::size_t UartChannel::read(std::uint8_t* buffer, std::size_t maxLen)
 {
     if (!_initialized || buffer == nullptr || maxLen == 0) {
         return 0;
@@ -139,7 +125,7 @@ std::size_t HardwareSioChannel::read(std::uint8_t* buffer, std::size_t maxLen)
     return static_cast<std::size_t>(bytes_read);
 }
 
-void HardwareSioChannel::write(const std::uint8_t* buffer, std::size_t len)
+void UartChannel::write(const std::uint8_t* buffer, std::size_t len)
 {
     if (!_initialized || buffer == nullptr || len == 0) {
         return;

@@ -49,8 +49,7 @@ static constexpr PinMap BOARD_PINMAP{
         .proc = 22,     // GPIO_NUM_22 (PROC line)
         .cki = 27,      // GPIO_NUM_27 (CKI line)
         .cko = 32,      // GPIO_NUM_32 (CKO line)
-        .uart_rx = 33,  // GPIO_NUM_33 (UART2 RX)
-        .uart_tx = 21,  // GPIO_NUM_21 (UART2 TX)
+        .uart = UartPins{ .rx = 33, .tx = 21 },  // UART2 for SIO data
     },
 };
 
@@ -65,8 +64,7 @@ static constexpr PinMap BOARD_PINMAP{
         .cs = 10,       // GPIO_NUM_10 (PIN_SD_HOST_CS)
     },
     .rs232 = Rs232Pins{
-        .uart_rx = 41,  // GPIO_NUM_41 (PIN_UART1_RX)
-        .uart_tx = 42,  // GPIO_NUM_42 (PIN_UART1_TX)
+        .uart = UartPins{ .rx = 41, .tx = 42 },  // UART1 for RS232 data
         .ri = 16,       // GPIO_NUM_16 (PIN_RS232_RI)
         .dcd = 4,       // GPIO_NUM_4 (PIN_RS232_DCD)
         .rts = 15,      // GPIO_NUM_15 (PIN_RS232_RTS)
@@ -80,6 +78,20 @@ static constexpr PinMap BOARD_PINMAP{
 #else
 #  error "Invalid FN_PINMAP value"
 #endif
+
+UartPins PinMap::primaryUart() const
+{
+    // Prefer RS232 UART if configured (for FN_BUILD_ESP32_FUJIBUS_GPIO)
+    if (rs232.uart.rx >= 0 && rs232.uart.tx >= 0) {
+        return rs232.uart;
+    }
+    // Fall back to SIO UART if configured (for FN_BUILD_ATARI_SIO)
+    if (sio.uart.rx >= 0 && sio.uart.tx >= 0) {
+        return sio.uart;
+    }
+    // No UART configured
+    return UartPins{ .rx = -1, .tx = -1 };
+}
 
 const PinMap& pinmap()
 {

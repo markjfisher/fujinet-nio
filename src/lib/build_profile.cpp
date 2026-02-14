@@ -8,7 +8,7 @@ namespace fujinet::build {
     return {
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::HardwareSio,
+        .primaryChannel   = ChannelKind::UartGpio,
         .name             = "S3 + SIO via GPIO",
     };
     
@@ -29,7 +29,7 @@ BuildProfile current_build_profile()
     profile = BuildProfile{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::HardwareSio,
+        .primaryChannel   = ChannelKind::UartGpio,
         .name             = "Atari + SIO via GPIO",
         .hw               = {},
     };
@@ -69,7 +69,7 @@ BuildProfile current_build_profile()
     profile = BuildProfile{
         .machine          = Machine::FujiNetESP32,
         .primaryTransport = TransportKind::FujiBus,
-        .primaryChannel   = ChannelKind::HardwareSio,
+        .primaryChannel   = ChannelKind::UartGpio,
         .name             = "S3 + FujiBus over GPIO (e.g. RS232)",
         .hw               = {},
     };

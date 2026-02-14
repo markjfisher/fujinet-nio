@@ -145,8 +145,8 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
         return create_udp_channel(host, port);
     }
 
-    case ChannelKind::HardwareSio:
-        std::cout << "[ChannelFactory] HardwareSio not supported on POSIX (use Pty or UdpSocket for SIO testing).\n";
+    case ChannelKind::UartGpio:
+        std::cout << "[ChannelFactory] UartGpio not supported on POSIX (use Pty or UdpSocket for SIO testing).\n";
         return nullptr;
     }
 

@@ -570,7 +570,7 @@ BuildProfile current_build_profile()
     BuildProfile p{
         .machine          = Machine::Atari8Bit,
         .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::HardwareSio,
+        .primaryChannel   = ChannelKind::UartGpio,
         .name             = "Atari + SIO via GPIO",
     };
 #elif defined(FN_BUILD_ATARI_PTY)
