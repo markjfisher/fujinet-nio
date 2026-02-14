@@ -7,6 +7,7 @@
 #include "fujinet/build/profile.h"
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/platform/esp32/usb_cdc_channel.h"
+#include "fujinet/platform/esp32/hardware_sio_channel.h"
 
 extern "C" {
 #include "sdkconfig.h"
@@ -45,8 +46,8 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
         return nullptr;
 
     case ChannelKind::HardwareSio:
-        FN_LOGE(TAG, "HardwareSio channel kind not implemented yet");
-        return nullptr;
+        FN_ELOG("Using HardwareSioChannel for HardwareSio");
+        return std::make_unique<esp32::HardwareSioChannel>();
     }
 
     FN_LOGE(TAG, "Unknown ChannelKind in create_channel_for_profile");
