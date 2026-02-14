@@ -73,6 +73,15 @@ static constexpr PinMap BOARD_PINMAP{
         .dsr = 5,       // GPIO_NUM_5 (PIN_RS232_DSR)
         .invalid = 18,  // GPIO_NUM_18 (PIN_RS232_INVALID)
     },
+    .led = LedPins{
+        .wifi = 14,     // GPIO_NUM_14 (PIN_LED_WIFI)
+        .bt = -1,       // No BT LED on RS232 board
+    },
+    .button = ButtonPins{
+        .a = -1,        // No Button A on RS232 board
+        .b = -1,        // No Button B on RS232 board
+        .c = 39,        // GPIO_NUM_39 (PIN_BUTTON_C - Safe Reset)
+    },
 };
 
 #else

@@ -56,6 +56,7 @@ idf_component_register(
         lib/transport/legacy/packet_based_legacy_transport.cpp
         lib/transport/legacy/sio_traits.cpp
         lib/transport/legacy/sio_transport.cpp
+        platform/esp32/button_manager.cpp
         platform/esp32/channel_factory.cpp
         platform/esp32/console_transport_default.cpp
         platform/esp32/console_transport_uart.cpp
@@ -68,6 +69,7 @@ idf_component_register(
         platform/esp32/hardware_caps.cpp
         platform/esp32/http_network_protocol_espidf.cpp
         platform/esp32/iwm_bus_hardware.cpp
+        platform/esp32/led_manager.cpp
         platform/esp32/logging.cpp
         platform/esp32/network_registry.cpp
         platform/esp32/pinmap.cpp

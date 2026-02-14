@@ -22,7 +22,9 @@ extern "C" {
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/net/network_link_monitor.h"
 #include "fujinet/platform/channel_factory.h"
+#include "fujinet/platform/esp32/button_manager.h"
 #include "fujinet/platform/esp32/fs_factory.h"
+#include "fujinet/platform/esp32/led_manager.h"
 #include "fujinet/platform/esp32/fs_init.h"
 #include "fujinet/platform/esp32/sntp_service.h"
 #include "fujinet/platform/esp32/wifi_link.h"
@@ -52,6 +54,12 @@ struct Esp32Services {
     // Starts SNTP when NetworkEvent::GotIp occurs.
     std::unique_ptr<fujinet::platform::esp32::SntpService> sntp;
 
+    // Button manager for physical buttons (reset, etc.)
+    std::unique_ptr<fujinet::platform::esp32::ButtonManager> buttons;
+
+    // LED manager for status LEDs
+    std::unique_ptr<fujinet::platform::esp32::LedManager> leds;
+
     bool phase1_started{false};
 
     void init_phase0(fujinet::core::FujinetCore& core)
@@ -59,6 +67,31 @@ struct Esp32Services {
         events = &core.events();
         // Construct services that subscribe to events (even if Wi-Fi may be disabled).
         sntp = std::make_unique<fujinet::platform::esp32::SntpService>(*events);
+
+        // Initialize button manager with reset callback
+        buttons = std::make_unique<fujinet::platform::esp32::ButtonManager>();
+        buttons->setCallback([](fujinet::platform::esp32::ButtonId id,
+                                fujinet::platform::esp32::ButtonEvent event) {
+            using namespace fujinet::platform::esp32;
+            if (id == ButtonId::C && event == ButtonEvent::ShortPress) {
+                FN_LOGI(TAG, "Button C: SHORT PRESS - Rebooting");
+                esp_restart();
+            }
+            // Log other button events for debugging
+            const char* buttonName = (id == ButtonId::A) ? "A" :
+                                     (id == ButtonId::B) ? "B" : "C";
+            const char* eventName = (event == ButtonEvent::ShortPress) ? "SHORT_PRESS" :
+                                    (event == ButtonEvent::LongPress) ? "LONG_PRESS" :
+                                    (event == ButtonEvent::DoubleTap) ? "DOUBLE_TAP" : "NONE";
+            FN_LOGI(TAG, "Button %s: %s", buttonName, eventName);
+        });
+        buttons->start();
+
+        // Initialize LED manager
+        leds = std::make_unique<fujinet::platform::esp32::LedManager>();
+        leds->setup();
+        // Turn on WiFi LED to indicate boot
+        leds->set(fujinet::platform::esp32::LedId::Wifi, true);
     }
 
     void start_phase1(fujinet::core::FujinetCore& core)
@@ -241,6 +274,8 @@ extern "C" void app_main(void)
     esp_log_level_set("netsio",      ESP_LOG_INFO);
     esp_log_level_set("iwm_hw",      ESP_LOG_INFO);
     esp_log_level_set("sio_hw",      ESP_LOG_INFO);
+    esp_log_level_set("button",      ESP_LOG_INFO);
+    esp_log_level_set("led",      ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init",   ESP_LOG_ERROR);

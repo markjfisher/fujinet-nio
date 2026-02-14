@@ -37,10 +37,25 @@ struct Rs232Pins {
     int invalid = -1;     // RS232 Invalid Data signal (input)
 };
 
+/// LED pins for status indication
+struct LedPins {
+    int wifi = -1;    // WiFi status LED
+    int bt = -1;      // Bluetooth status LED (-1 if not present)
+};
+
+/// Button pins for user interaction
+struct ButtonPins {
+    int a = -1;       // Button A (general purpose)
+    int b = -1;       // Button B (general purpose)
+    int c = -1;       // Button C (safe reset)
+};
+
 struct PinMap {
     SdSpiPins sd;
     SioPins sio;
     Rs232Pins rs232;
+    LedPins led;
+    ButtonPins button;
     
     /// Returns the primary UART pins for this board configuration.
     /// For RS232 boards, returns RS232 UART pins.
