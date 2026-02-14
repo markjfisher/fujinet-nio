@@ -75,10 +75,10 @@ static constexpr PinMap BOARD_PINMAP{
     },
     .led = LedPins{
         .wifi = 14,     // GPIO_NUM_14 (PIN_LED_WIFI)
-        .bt = -1,       // No BT LED on RS232 board
+        .bus = 12,      // GPIO_NUM_12 (PIN_LED_BUS)
     },
     .button = ButtonPins{
-        .a = -1,        // No Button A on RS232 board
+        .a = 0,         // GPIO_NUM_0 (PIN_BUTTON_A)
         .b = -1,        // No Button B on RS232 board
         .c = 39,        // GPIO_NUM_39 (PIN_BUTTON_C - Safe Reset)
     },

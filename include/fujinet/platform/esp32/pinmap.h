@@ -40,7 +40,7 @@ struct Rs232Pins {
 /// LED pins for status indication
 struct LedPins {
     int wifi = -1;    // WiFi status LED
-    int bt = -1;      // Bluetooth status LED (-1 if not present)
+    int bus = -1;     // Bus activity LED (-1 if not present)
 };
 
 /// Button pins for user interaction

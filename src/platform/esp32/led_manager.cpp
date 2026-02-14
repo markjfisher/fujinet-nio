@@ -19,7 +19,7 @@ LedManager::LedManager()
 
     // Initialize pin array from pinmap
     _pin[static_cast<int>(LedId::Wifi)] = pins.led.wifi;
-    _pin[static_cast<int>(LedId::Bt)] = pins.led.bt;
+    _pin[static_cast<int>(LedId::Bus)] = pins.led.bus;
 }
 
 void LedManager::setup()

@@ -7,12 +7,12 @@ namespace fujinet::platform::esp32 {
 /// LED identifiers matching the hardware LEDs
 enum class LedId {
     Wifi = 0,  ///< WiFi status LED
-    Bt = 1,    ///< Bluetooth status LED
+    Bus = 1,   ///< Bus activity LED
 };
 
 /// Manages status LEDs on the FujiNet device.
 ///
-/// This class provides simple control over the WiFi and Bluetooth LEDs.
+/// This class provides simple control over the WiFi and Bus LEDs.
 /// LEDs are active LOW (set HIGH to turn off, LOW to turn on).
 ///
 /// Usage:
