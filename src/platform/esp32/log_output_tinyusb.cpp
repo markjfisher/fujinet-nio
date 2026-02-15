@@ -84,6 +84,7 @@ extern "C" void platform_install_log_output(void)
     // Primary console is NONE, secondary is USB Serial JTAG. Logs already go to USB
     // (the port pio monitor uses). Do NOT call esp_log_set_vprintf or we redirect
     // logs to UART0 and they disappear from the port the user is watching.
+    // The CLI will also use USB Serial JTAG via console_transport_usb_serial_jtag.
     (void)0;
 #else
     // No USB Serial JTAG: install UART0 and redirect esp_log so logs appear on UART0.

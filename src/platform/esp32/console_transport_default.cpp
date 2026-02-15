@@ -15,9 +15,9 @@ static const char* TAG = "console";
 std::unique_ptr<IConsoleTransport> create_console_transport_uart0();
 #endif
 
-// Implemented in console_transport_stdio.cpp when secondary is USB Serial JTAG.
+// Implemented in console_transport_usb_serial_jtag.cpp when secondary is USB Serial JTAG.
 #if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
-std::unique_ptr<IConsoleTransport> create_console_transport_stdio();
+std::unique_ptr<IConsoleTransport> create_console_transport_usb_serial_jtag();
 #endif
 
 // Implemented in console_transport_usbcdc.cpp
@@ -43,9 +43,10 @@ std::unique_ptr<IConsoleTransport> create_default_console_transport()
 #endif
 #else
 #if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
-    // Logs go to USB Serial JTAG and we did not install UART0; use stdin/stdout for CLI.
-    return create_console_transport_stdio();
+    // Logs go to USB Serial JTAG (the /dev/ttyACMx port). Use the same port for CLI.
+    return create_console_transport_usb_serial_jtag();
 #else
+    // No USB Serial JTAG: use UART0 for CLI.
     return create_console_transport_uart0();
 #endif
 #endif

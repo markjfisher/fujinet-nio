@@ -61,6 +61,7 @@ idf_component_register(
         platform/esp32/console_transport_default.cpp
         platform/esp32/console_transport_stdio.cpp
         platform/esp32/console_transport_uart.cpp
+        platform/esp32/console_transport_usb_serial_jtag.cpp
         platform/esp32/console_transport_usbcdc.cpp
         platform/esp32/disk_registry.cpp
         platform/esp32/early_init.cpp
