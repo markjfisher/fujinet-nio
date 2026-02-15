@@ -92,6 +92,8 @@ struct Esp32Services {
         leds->setup();
         // Turn on WiFi LED to indicate boot
         leds->set(fujinet::platform::esp32::LedId::Wifi, true);
+        // Blinking blocks, but this is how you would do it:
+        // leds->blink(fujinet::platform::esp32::LedId::Bus, 100);
     }
 
     void start_phase1(fujinet::core::FujinetCore& core)

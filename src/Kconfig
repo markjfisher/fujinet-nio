@@ -34,11 +34,26 @@ menu "FujiNet-NIO"
 
     endchoice
 
+    choice FN_FUJIBUS_TRANSPORT
+        prompt "FujiBus transport"
+        default FN_FUJIBUS_TRANSPORT_USB_CDC
+        help
+            Select which transport FujiBus uses.
+
+        config FN_FUJIBUS_TRANSPORT_USB_CDC
+            bool "USB CDC (TinyUSB)"
+            depends on TINYUSB_CDC_ENABLED
+
+        config FN_FUJIBUS_TRANSPORT_UART_GPIO
+            bool "UART via GPIO pins"
+
+    endchoice
+
     config FN_FUJIBUS_USB_CDC_PORT
         int "FujiBus USB CDC ACM port index"
         range 0 1
         default 0
-        depends on TINYUSB_CDC_ENABLED
+        depends on FN_FUJIBUS_TRANSPORT_USB_CDC
         help
             Select which TinyUSB CDC ACM port is used by FujiBus (UsbCdcChannel).
             Valid values depend on CONFIG_TINYUSB_CDC_COUNT (0..count-1).

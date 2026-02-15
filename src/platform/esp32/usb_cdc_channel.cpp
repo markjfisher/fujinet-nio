@@ -12,7 +12,7 @@ extern "C" {
 }
 
 // this has to be at compiler, as the header files do the check for TINYUSB
-#if CONFIG_TINYUSB_CDC_ENABLED
+#if CONFIG_TINYUSB_CDC_ENABLED && CONFIG_FN_FUJIBUS_TRANSPORT_USB_CDC
 
 extern "C" {
 #include "tinyusb.h"

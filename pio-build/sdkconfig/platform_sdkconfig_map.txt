@@ -8,7 +8,7 @@
 fujibus-usbcdc-nosd-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2
 fujibus-usbcdc-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2
 sio-gpio-fujinet-v1-8mb=common,wifi,fatfs,fs-littlefs
-fujibus-gpio-rs232-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80
+fujibus-gpio-rs232-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc-rs232
 
 
 
@@ -16,6 +16,7 @@ fujibus-gpio-rs232-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80
 # console type settings, these are specified separately
 #################################################################
 
+consolecdc0=consolecdc,consolecdc-port0,console-no-uart-fallback
 consolecdc=consolecdc,consolecdc-port1,console-no-uart-fallback
 consoleuart=consoleuart
 noconsole=noconsole

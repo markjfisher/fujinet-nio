@@ -43,6 +43,7 @@ bool ensure_tinyusb_driver()
     }
 
     s_driver_inited = true;
+    FN_LOGI(TAG, "tinyusb_driver_install successful");
     return true;
 #endif
 }
