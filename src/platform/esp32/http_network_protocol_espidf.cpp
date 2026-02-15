@@ -529,11 +529,11 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     cfg.user_data = _s;
 
     // RX buffer (response parsing / body chunks)
-    cfg.buffer_size = 1024;
+    cfg.buffer_size = 2048;
 
     // TX buffer (request headers). ESP-IDF logs "HTTP_HEADER: Buffer length is small..."
     // if this is too small for request headers.
-    cfg.buffer_size_tx = 2048;
+    cfg.buffer_size_tx = 4096;
 
     cfg.timeout_ms = 15000;
 
@@ -1006,5 +1006,3 @@ void HttpNetworkProtocolEspIdf::close()
 
 
 } // namespace fujinet::platform::esp32
-
-

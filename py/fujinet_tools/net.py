@@ -126,10 +126,10 @@ def _send_retry_not_ready(
     Send a command and retry on:
       - StatusCode::NotReady (4)
       - StatusCode::DeviceBusy (3)
-      - pkt == None (no parseable response yet)
 
-    Uses short per-attempt timeouts but enforces an overall wall-clock timeout.
-    Applies backoff to avoid tight polling loops.
+    Sends the command ONCE with the full timeout. Only resends if the device
+    explicitly returns NotReady/DeviceBusy (which requires another request
+    to poll for completion).
 
     accept:
       Optional predicate used to choose among multiple packets that share the same
@@ -142,40 +142,54 @@ def _send_retry_not_ready(
     backoff = max(0.001, sleep_s)
     backoff_max = 0.05  # 50ms cap
 
+    # Send the command ONCE with the full timeout
+    remaining = max(0.0, deadline - time.monotonic())
+    pkt = bus.send_command_expect(
+        device=device,
+        command=command,
+        payload=payload,
+        expect_device=device,
+        expect_command=command,
+        timeout=remaining,
+        cmd_txt=_cmd_str(command),
+        accept=accept,
+    )
+
+    if pkt is None:
+        return None
+
+    # Now handle NotReady/DeviceBusy by resending (polling)
     while True:
         attempt += 1
+        status = _pkt_status_code(pkt)
+        
+        if status not in (3, 4):  # Not DeviceBusy, NotReady
+            return pkt
+
+        # Got NotReady/DeviceBusy - need to resend to poll again
+        if time.monotonic() >= deadline:
+            return pkt
+
+        time.sleep(backoff)
+        backoff = min(backoff_max, backoff * 1.5)
+
         remaining = max(0.0, deadline - time.monotonic())
         if remaining <= 0.0:
-            return None
+            return pkt
 
-        per_try_timeout = min(0.05, max(0.005, remaining))
         pkt = bus.send_command_expect(
             device=device,
             command=command,
             payload=payload,
             expect_device=device,
             expect_command=command,
-            timeout=per_try_timeout,
+            timeout=remaining,
             cmd_txt=_cmd_str(command),
-            accept=accept,  # NEW
+            accept=accept,
         )
 
         if pkt is None:
-            if attempt >= retries or time.monotonic() >= deadline:
-                return None
-            time.sleep(backoff)
-            backoff = min(backoff_max, backoff * 1.5)
-            continue
-
-        status = _pkt_status_code(pkt)
-        if status not in (3, 4):  # DeviceBusy, NotReady
             return pkt
-
-        if attempt >= retries or time.monotonic() >= deadline:
-            return pkt
-
-        time.sleep(backoff)
-        backoff = min(backoff_max, backoff * 1.5)
 
 # ----------------------------------------------------------------------
 # Commands
