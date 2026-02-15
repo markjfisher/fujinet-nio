@@ -71,6 +71,7 @@ idf_component_register(
         platform/esp32/http_network_protocol_espidf.cpp
         platform/esp32/iwm_bus_hardware.cpp
         platform/esp32/led_manager.cpp
+        platform/esp32/log_output_tinyusb.cpp
         platform/esp32/logging.cpp
         platform/esp32/network_registry.cpp
         platform/esp32/pinmap.cpp

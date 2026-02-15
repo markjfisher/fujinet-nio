@@ -255,7 +255,7 @@ extern "C" void fujinet_core_task(void* arg)
 
 extern "C" void app_main(void)
 {
-    // No logging before early_init: USB console and logging backend must be ready first.
+    // No logging before early_init: console and log backend are board-dependent (UART or USB CDC).
     fujinet::platform::early_init();
 
     // Global default: be strict

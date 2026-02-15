@@ -1,6 +1,8 @@
 ###########################################################################
-# TinyUSB CDC - RS232 board: 2 CDC ports, logs on CDC0, CLI on CDC1,
-# FujiBus on UART GPIO (no USB FujiBus).
+# TinyUSB CDC - RS232 board: 1 USB-C -> 2 CDC ports. Logs on CDC0, CLI on CDC1.
+# FujiBus on UART GPIO (UART1, pins 41/42). Do NOT set CONFIG_ESP_CONSOLE_USB_CDC
+# (ROM stack) - it conflicts with TinyUSB and breaks enumeration. We redirect
+# esp_log to TinyUSB CDC0 ourselves via platform_install_tinyusb_log_output().
 ###########################################################################
 CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_CDC_COUNT=2
@@ -13,10 +15,10 @@ CONFIG_TINYUSB_DFU_MODE_NONE=y
 CONFIG_TINYUSB_MODE_DMA=y
 CONFIG_TINYUSB_DEBUG_LEVEL=0
 
-# ESP-IDF console: stdout/esp_log -> USB CDC port 0 (no UART console).
-CONFIG_ESP_CONSOLE_USB_CDC=y
-CONFIG_ESP_CONSOLE_USB_CDC_NUM=0
+# ESP-IDF console: leave UART disabled. We send esp_log to TinyUSB CDC0 ourselves.
 CONFIG_ESP_CONSOLE_UART=n
+# CONFIG_ESP_CONSOLE_USB_CDC must not be set - incompatible with TinyUSB.
+CONFIG_FN_ESP_CONSOLE_CDC_NUM=0
 
 # FujiBus: UART GPIO (no USB CDC FujiBus).
 CONFIG_FN_FUJIBUS_TRANSPORT_UART_GPIO=y

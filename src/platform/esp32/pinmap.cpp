@@ -63,6 +63,7 @@ static constexpr PinMap BOARD_PINMAP{
         .sck = 21,      // GPIO_NUM_21 (PIN_SD_HOST_SCK)
         .cs = 10,       // GPIO_NUM_10 (PIN_SD_HOST_CS)
     },
+    .sio = {},          // RS232 board has no SIO pins
     .rs232 = Rs232Pins{
         .uart = UartPins{ .rx = 41, .tx = 42 },  // UART1 for RS232 data
         .ri = 16,       // GPIO_NUM_16 (PIN_RS232_RI)

@@ -96,23 +96,48 @@ bool ensure_tinyusb_cdc_acm(UsbCdcAcmPort port)
 #endif
 }
 
+std::size_t write_cdc_port(UsbCdcAcmPort port, const char* buf, std::size_t len)
+{
+#if !CONFIG_TINYUSB_CDC_ENABLED
+    (void)port;
+    (void)buf;
+    (void)len;
+    return 0;
+#else
+    if (!buf || len == 0 || !ensure_tinyusb_cdc_acm(port)) {
+        return 0;
+    }
+    const tinyusb_cdcacm_itf_t itf = (port == UsbCdcAcmPort::Port0)
+        ? TINYUSB_CDC_ACM_0
+        : TINYUSB_CDC_ACM_1;
+    size_t written = 0;
+    size_t n = tinyusb_cdcacm_write_queue(itf, reinterpret_cast<const std::uint8_t*>(buf), len);
+    if (n > 0) {
+        tinyusb_cdcacm_write_flush(itf, 0);
+        written = n;
+    }
+    return written;
+#endif
+}
+
 } // namespace fujinet::platform::esp32
 
 // C-linkage: no logging inside to avoid recursion during USB driver init.
+// Inits TinyUSB and the CDC port used for logs (CONFIG_FN_ESP_CONSOLE_CDC_NUM)
+// so that our custom esp_log redirect can write to it. Do NOT use
+// CONFIG_ESP_CONSOLE_USB_CDC (ROM stack) - it conflicts with TinyUSB.
 extern "C" void platform_usb_console_early_init(void)
 {
 #if !CONFIG_TINYUSB_CDC_ENABLED
     (void)0;
 #else
     (void)fujinet::platform::esp32::ensure_tinyusb_driver();
-#if defined(CONFIG_ESP_CONSOLE_USB_CDC) && CONFIG_ESP_CONSOLE_USB_CDC
     {
-        const auto port = (CONFIG_ESP_CONSOLE_USB_CDC_NUM == 0)
+        const auto port = (CONFIG_FN_ESP_CONSOLE_CDC_NUM == 0)
             ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
             : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
         (void)fujinet::platform::esp32::ensure_tinyusb_cdc_acm(port);
     }
-#endif
 #endif
 }
 

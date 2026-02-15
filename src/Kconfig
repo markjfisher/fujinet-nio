@@ -78,6 +78,20 @@ menu "FujiNet-NIO"
             When disabled, the console will be disabled instead of pulling in
             UART0 console support.
 
+    config FN_ESP_CONSOLE_CDC_NUM
+        int "CDC port for esp_log output (logs over USB)"
+        range 0 1
+        default 0
+        depends on TINYUSB_CDC_ENABLED
+        help
+            TinyUSB CDC ACM port index to which esp_log (and our redirect) sends
+            log output. Used when you have a single USB cable: this port appears
+            as e.g. ttyACM0 for logs; use a second CDC port for the diagnostic
+            CLI. Do NOT set CONFIG_ESP_CONSOLE_USB_CDC (ROM stack conflicts with
+            TinyUSB). platform_usb_console_early_init() brings this port up
+            before any logging; platform_install_tinyusb_log_output() redirects
+            esp_log here. Valid values: 0 or 1.
+
 endmenu
 
 
