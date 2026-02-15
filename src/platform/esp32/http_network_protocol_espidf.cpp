@@ -606,7 +606,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     // Task owns a reference while it runs.
     state_acquire(_s);
 
-    BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 4096, _s, 3, &_s->task);
+    BaseType_t ok = xTaskCreate(&http_task_entry, "fn_http", 8192, _s, 3, &_s->task);
     if (ok != pdPASS || !_s->task) {
         // Release task ref we just acquired.
         state_release(_s);
@@ -786,7 +786,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
         // Task owns a reference while it runs.
         state_acquire(_s);
 
-        BaseType_t ok = xTaskCreate(&http_task_entry_after_upload, "fn_http2", 4096, _s, 3, &_s->task);
+        BaseType_t ok = xTaskCreate(&http_task_entry_after_upload, "fn_http2", 8192, _s, 3, &_s->task);
         if (ok != pdPASS || !_s->task) {
             state_release(_s);
             return fujinet::io::StatusCode::InternalError;
