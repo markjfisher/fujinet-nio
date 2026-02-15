@@ -59,6 +59,7 @@ idf_component_register(
         platform/esp32/button_manager.cpp
         platform/esp32/channel_factory.cpp
         platform/esp32/console_transport_default.cpp
+        platform/esp32/console_transport_stdio.cpp
         platform/esp32/console_transport_uart.cpp
         platform/esp32/console_transport_usbcdc.cpp
         platform/esp32/disk_registry.cpp

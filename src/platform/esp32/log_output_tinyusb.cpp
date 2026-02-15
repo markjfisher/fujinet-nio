@@ -40,7 +40,9 @@ static int tinyusb_log_vprintf(const char* fmt, va_list args)
 
 #else
 
-// No TinyUSB CDC: install UART0 ourselves (rx for CLI, tx for logs) and redirect esp_log.
+// No TinyUSB CDC. When secondary console is USB Serial JTAG, the default log output
+// already goes to the USB port the user is watching; we must NOT replace it or logs vanish.
+// Only install UART0 and redirect when there is no secondary (true UART-only board).
 #include "driver/uart.h"
 
 namespace {
@@ -78,8 +80,13 @@ extern "C" void platform_install_log_output(void)
     fujinet::platform::esp32::write_cdc_port(port, banner, sizeof(banner) - 1);
     ESP_LOGI("nio", "Log output redirected to this CDC port.");
 #else
-    // Install UART0 if not already installed (we need RX buffer for CLI). If already
-    // installed (e.g. by another component), we still redirect logs to UART0 below.
+#if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
+    // Primary console is NONE, secondary is USB Serial JTAG. Logs already go to USB
+    // (the port pio monitor uses). Do NOT call esp_log_set_vprintf or we redirect
+    // logs to UART0 and they disappear from the port the user is watching.
+    (void)0;
+#else
+    // No USB Serial JTAG: install UART0 and redirect esp_log so logs appear on UART0.
     constexpr int rx_buf = 1024;
     constexpr int tx_buf = 256;
     esp_err_t err = uart_driver_install(UART_NUM_0, rx_buf, tx_buf, 0, nullptr, 0);
@@ -95,12 +102,11 @@ extern "C" void platform_install_log_output(void)
         (void)uart_set_pin(UART_NUM_0, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
                            UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     }
-    // Always redirect esp_log to UART0 so LOGI/LOGE etc appear (whether we installed
-    // the driver or it was already there). Without this, CONFIG_ESP_CONSOLE_NONE leaves
-    // no log output and all app logs disappear.
     esp_log_set_vprintf(&uart_log_vprintf);
+    esp_log_level_set("*", ESP_LOG_INFO);
     const char banner[] = "\r\n*** FujiNet logs + CLI on UART0 (type help for CLI) ***\r\n";
     (void)uart_write_bytes(UART_NUM_0, banner, sizeof(banner) - 1);
     ESP_LOGI("nio", "Log output on UART0.");
+#endif
 #endif
 }
