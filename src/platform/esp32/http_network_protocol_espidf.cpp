@@ -773,12 +773,16 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::write_body(
     written = static_cast<std::uint16_t>(total);
 
     // Body complete: start the "read response" task now.
-    if ((!_s->body_unknown_len && _s->sent_body_len == _s->expected_body_len) ||
-        (_s->body_unknown_len && dataLen == 0)) {
+    // Guard: only start if upload_open is still true (prevents multiple task creation
+    // if host sends multiple zero-length writes for unknown-length bodies).
+    if (_s->upload_open &&
+        ((!_s->body_unknown_len && _s->sent_body_len == _s->expected_body_len) ||
+         (_s->body_unknown_len && dataLen == 0))) {
         FN_LOGI(TAG, "write_body: body complete, starting response task");
         // We manually read the response in http_task_entry_after_upload(),
         // so suppress event_handler's HTTP_EVENT_ON_DATA forwarding to avoid duplicates.
         _s->suppress_on_data = true;
+        _s->upload_open = false;  // Prevent re-entry
 
         _s->task = nullptr;
         if (_s->done_sem) { (void)xSemaphoreTake(_s->done_sem, 0); }
