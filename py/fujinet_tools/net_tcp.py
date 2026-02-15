@@ -439,7 +439,7 @@ def cmd_net_tcp_repl(args) -> int:
                     info_poll_s=args.info_poll,
                 )
                 if args.show_info:
-                    tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
+                    tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
                 print(f"[tcp] opened handle={sess.handle}")
 
             def ensure_open() -> TcpStreamSession:
@@ -494,7 +494,7 @@ def cmd_net_tcp_repl(args) -> int:
                         )
                         print(f"[tcp] opened handle={sess.handle}")
                         if args.show_info:
-                            tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=args.max_headers)
+                            tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
                         continue
 
                     if cmd == "close":
@@ -506,7 +506,7 @@ def cmd_net_tcp_repl(args) -> int:
 
                     if cmd == "info":
                         s = ensure_open()
-                        tcp_info_print(bus=bus, handle=s.handle, timeout=args.timeout, max_headers=args.max_headers)
+                        tcp_info_print(bus=bus, handle=s.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
                         continue
 
                     if cmd == "offsets":
