@@ -7,7 +7,12 @@
 extern "C" {
 #include "esp_log.h"
 #include "esp_rom_sys.h"
+#include "sdkconfig.h"
 }
+
+#if CONFIG_TINYUSB_CDC_ENABLED
+#include "fujinet/platform/esp32/tinyusb_cdc.h"
+#endif
 
 namespace fujinet::log {
 
@@ -29,6 +34,15 @@ void early_logf(const char* fmt, ...)
     int n = std::vsnprintf(buf, sizeof(buf), fmt, args);
     if (n > 0) {
         esp_rom_printf("%s", buf);
+#if CONFIG_TINYUSB_CDC_ENABLED
+        // When log output is CDC, also send early lines there (port inited in early_init).
+        const auto port = (CONFIG_FN_ESP_CONSOLE_CDC_NUM == 0)
+            ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
+            : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
+        std::size_t len = static_cast<std::size_t>(n);
+        if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+        fujinet::platform::esp32::write_cdc_port(port, buf, len);
+#endif
     }
 
     va_end(args);

@@ -44,5 +44,13 @@ extern "C" void platform_install_log_output(void)
 {
 #if CONFIG_TINYUSB_CDC_ENABLED
     esp_log_set_vprintf(&tinyusb_log_vprintf);
+    // Banner so the user can identify which tty is the log port (Linux may show ACM1/2 not 0/1).
+    const auto port = (CONFIG_FN_ESP_CONSOLE_CDC_NUM == 0)
+        ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
+        : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
+    const char banner[] = "\r\n*** FujiNet logs (this port; build with FN_DEBUG for app logs) ***\r\n";
+    fujinet::platform::esp32::write_cdc_port(port, banner, sizeof(banner) - 1);
+    // One line through esp_log to confirm redirect works (tag nio so it's not filtered).
+    ESP_LOGI("nio", "Log output redirected to this CDC port.");
 #endif
 }
