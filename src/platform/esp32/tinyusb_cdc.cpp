@@ -21,7 +21,9 @@ static const char* TAG = "platform";
 #if CONFIG_TINYUSB_CDC_ENABLED
 static bool s_driver_inited = false;
 static bool s_cdc0_inited = false;
+#if CONFIG_TINYUSB_CDC_COUNT > 1
 static bool s_cdc1_inited = false;
+#endif
 #endif
 
 bool ensure_tinyusb_driver()
@@ -43,7 +45,6 @@ bool ensure_tinyusb_driver()
     }
 
     s_driver_inited = true;
-    FN_LOGI(TAG, "tinyusb_driver_install successful");
     return true;
 #endif
 }
@@ -58,8 +59,16 @@ bool ensure_tinyusb_cdc_acm(UsbCdcAcmPort port)
         return false;
     }
 
+#if CONFIG_TINYUSB_CDC_COUNT <= 1
+    if (port == UsbCdcAcmPort::Port1) {
+        return false;
+    }
+#endif
+
     if (port == UsbCdcAcmPort::Port0 && s_cdc0_inited) return true;
+#if CONFIG_TINYUSB_CDC_COUNT > 1
     if (port == UsbCdcAcmPort::Port1 && s_cdc1_inited) return true;
+#endif
 
     static auto to_itf = [](UsbCdcAcmPort p) -> tinyusb_cdcacm_itf_t {
         return (p == UsbCdcAcmPort::Port0) ? TINYUSB_CDC_ACM_0 : TINYUSB_CDC_ACM_1;
@@ -79,12 +88,32 @@ bool ensure_tinyusb_cdc_acm(UsbCdcAcmPort port)
     }
 
     if (port == UsbCdcAcmPort::Port0) s_cdc0_inited = true;
+#if CONFIG_TINYUSB_CDC_COUNT > 1
     if (port == UsbCdcAcmPort::Port1) s_cdc1_inited = true;
+#endif
 
     return true;
 #endif
 }
 
 } // namespace fujinet::platform::esp32
+
+// C-linkage: no logging inside to avoid recursion during USB driver init.
+extern "C" void platform_usb_console_early_init(void)
+{
+#if !CONFIG_TINYUSB_CDC_ENABLED
+    (void)0;
+#else
+    (void)fujinet::platform::esp32::ensure_tinyusb_driver();
+#if defined(CONFIG_ESP_CONSOLE_USB_CDC) && CONFIG_ESP_CONSOLE_USB_CDC
+    {
+        const auto port = (CONFIG_ESP_CONSOLE_USB_CDC_NUM == 0)
+            ? fujinet::platform::esp32::UsbCdcAcmPort::Port0
+            : fujinet::platform::esp32::UsbCdcAcmPort::Port1;
+        (void)fujinet::platform::esp32::ensure_tinyusb_cdc_acm(port);
+    }
+#endif
+#endif
+}
 
 

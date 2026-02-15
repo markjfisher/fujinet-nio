@@ -22,6 +22,7 @@ extern "C" {
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/net/network_link_monitor.h"
 #include "fujinet/platform/channel_factory.h"
+#include "fujinet/platform/early_init.h"
 #include "fujinet/platform/esp32/button_manager.h"
 #include "fujinet/platform/esp32/fs_factory.h"
 #include "fujinet/platform/esp32/led_manager.h"
@@ -254,6 +255,9 @@ extern "C" void fujinet_core_task(void* arg)
 
 extern "C" void app_main(void)
 {
+    // No logging before early_init: USB console and logging backend must be ready first.
+    fujinet::platform::early_init();
+
     // Global default: be strict
     esp_log_level_set("*", ESP_LOG_ERROR);
 

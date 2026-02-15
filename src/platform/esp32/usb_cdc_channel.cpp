@@ -127,11 +127,11 @@ void UsbCdcChannel::write(const std::uint8_t* buffer, std::size_t len)
 
 } // namespace fujinet::platform::esp32
 
-#else // !CONFIG_TINYUSB_CDC_ENABLED
+#else // !CONFIG_TINYUSB_CDC_ENABLED || !CONFIG_FN_FUJIBUS_TRANSPORT_USB_CDC
 
 namespace fujinet::platform::esp32 {
 
-// Stub implementation when TinyUSB CDC is disabled.
+// Stub when TinyUSB CDC is disabled or FujiBus transport is not USB CDC.
 // Keeps the type linkable but does nothing.
 
 UsbCdcChannel::UsbCdcChannel() = default;
@@ -153,4 +153,4 @@ void UsbCdcChannel::write(const std::uint8_t* /*buffer*/, std::size_t /*len*/)
 
 } // namespace fujinet::platform::esp32
 
-#endif // CONFIG_TINYUSB_CDC_ENABLED
+#endif // CONFIG_TINYUSB_CDC_ENABLED && CONFIG_FN_FUJIBUS_TRANSPORT_USB_CDC

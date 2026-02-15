@@ -25,11 +25,14 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
     switch (profile.primaryChannel) {
 
     case ChannelKind::UsbCdcDevice:
-#if CONFIG_TINYUSB_CDC_ENABLED
+#if CONFIG_TINYUSB_CDC_ENABLED && CONFIG_FN_FUJIBUS_TRANSPORT_USB_CDC
         FN_ELOG("Using TinyUSB CDC-ACM channel for UsbCdcDevice");
         return std::make_unique<esp32::UsbCdcChannel>();
-#else
+#elif !CONFIG_TINYUSB_CDC_ENABLED
         FN_LOGE(TAG, "UsbCdcDevice selected but TinyUSB CDC is disabled in sdkconfig");
+        return nullptr;
+#else
+        FN_LOGE(TAG, "UsbCdcDevice selected but FujiBus transport is not USB CDC");
         return nullptr;
 #endif
 

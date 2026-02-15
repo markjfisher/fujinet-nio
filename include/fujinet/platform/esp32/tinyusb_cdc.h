@@ -2,6 +2,17 @@
 
 #include <cstdint>
 
+// Call before any logging or task start. Installs TinyUSB driver and, if
+// CONFIG_ESP_CONSOLE_USB_CDC, initializes the console CDC ACM port so that
+// stdout/esp_log can use it. No logging inside.
+#ifdef __cplusplus
+extern "C" {
+#endif
+void platform_usb_console_early_init(void);
+#ifdef __cplusplus
+}
+#endif
+
 namespace fujinet::platform::esp32 {
 
 // Shared TinyUSB initialization helpers for ESP32 USB-OTG CDC ACM.

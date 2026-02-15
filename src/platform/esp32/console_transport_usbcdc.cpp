@@ -156,14 +156,25 @@ std::unique_ptr<IConsoleTransport> create_console_transport_usbcdc()
     // USB CDC requested but TinyUSB CDC disabled.
     return nullptr;
 #else
-    // If the build exposes only 1 CDC interface, we cannot have a dedicated console CDC port.
-    if (CONFIG_TINYUSB_CDC_COUNT < 2) {
+    // Need at least one CDC for the console.
+    if (CONFIG_TINYUSB_CDC_COUNT < 1) {
         return nullptr;
     }
 
+    // When only one CDC is exposed, console must use port 0.
+    if (CONFIG_TINYUSB_CDC_COUNT == 1 && CONFIG_FN_CONSOLE_USB_CDC_PORT != 0) {
+        return nullptr;
+    }
+
+#if CONFIG_FN_FUJIBUS_TRANSPORT_USB_CDC
+    // FujiBus and console both on USB CDC: need two ports and they must differ.
+    if (CONFIG_TINYUSB_CDC_COUNT < 2) {
+        return nullptr;
+    }
     if (CONFIG_FN_CONSOLE_USB_CDC_PORT == CONFIG_FN_FUJIBUS_USB_CDC_PORT) {
         return nullptr;
     }
+#endif
 
     const tinyusb_cdcacm_itf_t itf = to_itf_from_cfg(CONFIG_FN_CONSOLE_USB_CDC_PORT);
     return std::make_unique<Esp32UsbCdcConsoleTransport>(itf);

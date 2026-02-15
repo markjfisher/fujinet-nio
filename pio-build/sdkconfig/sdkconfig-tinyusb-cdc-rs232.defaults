@@ -1,0 +1,26 @@
+###########################################################################
+# TinyUSB CDC - RS232 board: 2 CDC ports, logs on CDC0, CLI on CDC1,
+# FujiBus on UART GPIO (no USB FujiBus).
+###########################################################################
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=2
+
+CONFIG_TINYUSB_HID_COUNT=0
+CONFIG_TINYUSB_MIDI_COUNT=0
+CONFIG_TINYUSB_NET_MODE_NONE=y
+CONFIG_TINYUSB_VENDOR_COUNT=0
+CONFIG_TINYUSB_DFU_MODE_NONE=y
+CONFIG_TINYUSB_MODE_DMA=y
+CONFIG_TINYUSB_DEBUG_LEVEL=0
+
+# ESP-IDF console: stdout/esp_log -> USB CDC port 0 (no UART console).
+CONFIG_ESP_CONSOLE_USB_CDC=y
+CONFIG_ESP_CONSOLE_USB_CDC_NUM=0
+CONFIG_ESP_CONSOLE_UART=n
+
+# FujiBus: UART GPIO (no USB CDC FujiBus).
+CONFIG_FN_FUJIBUS_TRANSPORT_UART_GPIO=y
+
+# Diagnostic console: USB CDC port 1 (CLI).
+CONFIG_FN_CONSOLE_TRANSPORT_USB_CDC=y
+CONFIG_FN_CONSOLE_USB_CDC_PORT=1
