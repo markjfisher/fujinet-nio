@@ -1,0 +1,6 @@
+###########################################################################
+# FujiBus over UART GPIO (RS232 board, etc)
+###########################################################################
+
+CONFIG_FN_FUJIBUS_TRANSPORT_UART_GPIO=y
+CONFIG_FN_FUJIBUS_TRANSPORT_USB_CDC=n

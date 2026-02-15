@@ -18,10 +18,9 @@ public:
     {
         const uart_port_t port = UART_NUM_0;
 
-        // Install driver if not already present. If it's already installed,
-        // uart_driver_install() returns ESP_FAIL; we ignore that.
-        (void)uart_driver_install(port, 1024, 0, 0, nullptr, 0);
-
+        // UART0 driver is already installed by platform_install_log_output() in
+        // early_init() when CONFIG_ESP_CONSOLE_NONE + log-uart (rx=1024 for CLI).
+        // Just ensure params and flush any stale RX so CLI sees only new input.
         uart_config_t cfg = {};
         cfg.baud_rate = 115200;
         cfg.data_bits = UART_DATA_8_BITS;
@@ -29,10 +28,10 @@ public:
         cfg.stop_bits = UART_STOP_BITS_1;
         cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
         cfg.source_clk = UART_SCLK_DEFAULT;
-
         (void)uart_param_config(port, &cfg);
         (void)uart_set_pin(port, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
                            UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+        (void)uart_flush_input(port);
     }
 
     bool read_byte(std::uint8_t& out, int timeout_ms) override

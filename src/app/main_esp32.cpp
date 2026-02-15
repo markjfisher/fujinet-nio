@@ -160,6 +160,9 @@ extern "C" void fujinet_core_task(void* arg)
         });
         console_running = true;
         consoleTransport->write_line("fujinet-nio diagnostic console (type: help)");
+#if CONFIG_FN_CONSOLE_TRANSPORT_UART0
+        FN_LOGI(TAG, "Console started (UART0)");
+#endif
     }
 #endif
 

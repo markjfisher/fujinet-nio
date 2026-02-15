@@ -28,7 +28,7 @@ CREATE_SDKCONFIG_DEFAULTS=""
 INI_FILE="${SCRIPT_DIR}/platformio.ini"
 LOCAL_PIO_INI="${SCRIPT_DIR}/platformio.local.ini"
 LOCAL_SKDCONFIG_DEFAULTS="${SCRIPT_DIR}/sdkconfig.local.defaults"
-SDKCONFIG_MAP_FILE="${SCRIPT_DIR}/pio-build/sdkconfig/platform_sdkconfig_map.txt"
+SDKCONFIG_MAP_FILE="${SCRIPT_DIR}/pio-build/sdkconfig/00_platform_sdkconfig_map.txt"
 
 function display_board_names {
   while IFS= read -r piofile; do

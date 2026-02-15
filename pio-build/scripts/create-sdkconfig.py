@@ -26,7 +26,7 @@ def read_console_type_value(ini_file):
 
 def build_sdkconfig_path(name: str) -> str:
     """Return the path to the sdkconfig defaults file for a given name."""
-    return os.path.join("pio-build", "sdkconfig", f"sdkconfig-{name}.defaults")
+    return os.path.join("pio-build", "sdkconfig", f"{name}.defaults")
 
 
 def get_names_from_map(map_file: str, build_board: str):

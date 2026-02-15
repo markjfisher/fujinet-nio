@@ -4,7 +4,7 @@
 # (ROM stack) - it conflicts with TinyUSB and breaks enumeration. We redirect
 # esp_log to TinyUSB CDC0 ourselves via platform_install_tinyusb_log_output().
 ###########################################################################
-CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_ENABLED=n
 CONFIG_TINYUSB_CDC_COUNT=2
 
 CONFIG_TINYUSB_HID_COUNT=0
@@ -15,8 +15,16 @@ CONFIG_TINYUSB_DFU_MODE_NONE=y
 CONFIG_TINYUSB_MODE_DMA=y
 CONFIG_TINYUSB_DEBUG_LEVEL=0
 
+# Force ESP-IDF console to None; we provide our own esp_log redirect to TinyUSB.
+CONFIG_ESP_CONSOLE_NONE=y
+CONFIG_ESP_CONSOLE_USB_CDC=n
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=n
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_UART_CUSTOM=n
+
 # ESP-IDF console: leave UART disabled. We send esp_log to TinyUSB CDC0 ourselves.
-CONFIG_ESP_CONSOLE_UART=n
+# CONFIG_ESP_CONSOLE_UART=n
+
 # CONFIG_ESP_CONSOLE_USB_CDC must not be set - incompatible with TinyUSB.
 CONFIG_FN_ESP_CONSOLE_CDC_NUM=0
 

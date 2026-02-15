@@ -1,0 +1,17 @@
+###########################################################################
+# Logs over UART0 (stable dev mode). We own UART0 so the CLI can read
+# input on the same port; ESP-IDF console is disabled.
+###########################################################################
+
+CONFIG_TINYUSB_ENABLED=n
+CONFIG_TINYUSB_CDC_ENABLED=n
+CONFIG_TINYUSB_CDC_COUNT=0
+
+# No ESP-IDF console: we install UART0 in early_init and use it for logs + CLI.
+CONFIG_ESP_CONSOLE_NONE=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_USB_CDC=n
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=n
+
+CONFIG_FN_CONSOLE_TRANSPORT_UART0=y
+CONFIG_FN_CONSOLE_TRANSPORT_USB_CDC=n
