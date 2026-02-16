@@ -87,12 +87,23 @@ generate_cert() {
   local cert_dir="/tmp/fujinet-https-certs"
   mkdir -p "$cert_dir"
   
+  # Use pre-generated test certificates from the repo if available
+  # These are signed by the FujiNet Test CA which is embedded in firmware
+  local repo_certs="$(dirname "$0")/../integration-tests/certs"
+  if [ -f "$repo_certs/server.crt" ] && [ -f "$repo_certs/server.key" ]; then
+    echo "Using FujiNet Test CA certificates from repo"
+    cp "$repo_certs/server.crt" "$cert_dir/"
+    cp "$repo_certs/server.key" "$cert_dir/"
+    return 0
+  fi
+  
   if [ -f "$cert_dir/server.crt" ] && [ -f "$cert_dir/server.key" ]; then
     echo "Using existing certificates in $cert_dir"
     return 0
   fi
   
   echo "Generating self-signed certificate for HTTPS testing..."
+  echo "NOTE: For proper TLS verification, use integration-tests/certs/generate_certs.sh"
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "$cert_dir/server.key" \
     -out "$cert_dir/server.crt" \

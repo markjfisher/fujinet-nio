@@ -9,6 +9,7 @@
 #include <string>
 
 #include "fujinet/core/logging.h"
+#include "fujinet/platform/esp32/test_ca_cert.h"
 
 extern "C" {
 #include "esp_timer.h"
@@ -524,11 +525,23 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     _s->err = ESP_OK;
     give_mutex(_s->meta_mutex);
 
-    // Check for insecure flag in URL (https://host:port/path?insecure=1)
-    // This skips TLS certificate verification for testing with self-signed certs
+    // Check for test CA flag in URL (https://host:port/path?testca=1)
+    // This uses the embedded FujiNet Test CA for verifying self-signed certs
+    // generated with integration-tests/certs/generate_certs.sh
+    bool use_test_ca = false;
     bool insecure = false;
     std::string url = req.url;
-    size_t queryPos = url.find("?insecure=1");
+    
+    // Check for testca flag
+    size_t queryPos = url.find("?testca=1");
+    if (queryPos != std::string::npos) {
+        use_test_ca = true;
+        url = url.substr(0, queryPos);  // Remove ?testca=1 from URL
+        FN_LOGI(TAG, "HTTPS: Using FujiNet Test CA for certificate verification");
+    }
+    
+    // Check for insecure flag (deprecated, but kept for compatibility)
+    queryPos = url.find("?insecure=1");
     if (queryPos != std::string::npos) {
         insecure = true;
         url = url.substr(0, queryPos);  // Remove ?insecure=1 from URL
@@ -549,14 +562,18 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
     cfg.timeout_ms = 15000;
 
-    // Enable TLS certificate verification for HTTPS connections using ESP-IDF's
-    // built-in certificate bundle (Mozilla root CAs compiled into firmware).
-    // For insecure mode, we still need to set crt_bundle_attach (ESP-IDF requirement),
-    // but we skip common name verification which allows self-signed certs.
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
-    if (insecure) {
-        // Skip certificate CN verification - allows self-signed certs
+    // TLS certificate verification configuration
+    if (use_test_ca) {
+        // Use embedded FujiNet Test CA for self-signed cert verification
+        cfg.cert_pem = test_ca_cert_pem;
+    } else if (insecure) {
+        // Insecure mode: use cert bundle but skip CN verification
+        // Note: This only skips CN check, NOT full chain verification
+        cfg.crt_bundle_attach = esp_crt_bundle_attach;
         cfg.skip_cert_common_name_check = true;
+    } else {
+        // Normal mode: use ESP-IDF's built-in certificate bundle (Mozilla root CAs)
+        cfg.crt_bundle_attach = esp_crt_bundle_attach;
     }
 
     const bool follow = (req.flags & 0x02) != 0;
