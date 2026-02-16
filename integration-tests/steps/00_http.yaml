@@ -70,3 +70,17 @@ steps:
       - '"args"'
       - 'utf8'
     timeout_s: 10
+
+  # HTTPS tests - use public HTTPS endpoint to verify TLS works
+  - name: "HTTPS: GET https://httpbin.org/get"
+    argv: ["{CLI}", "net", "get", "https://httpbin.org/get"]
+    expect:
+      - "url"
+      - "/get"
+    timeout_s: 15
+
+  - name: "HTTPS: GET https://example.com/"
+    argv: ["{CLI}", "net", "get", "https://example.com/"]
+    expect:
+      - "Example Domain"
+    timeout_s: 15

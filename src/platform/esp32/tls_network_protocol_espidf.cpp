@@ -114,13 +114,17 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
 
     if (ret != 1) {
         int espErr = 0;
+        int tlsFlags = 0;
         esp_tls_error_handle_t errHandle = nullptr;
-        esp_tls_get_and_clear_last_error(_tls, &espErr, &errHandle);
+        esp_tls_get_error_handle(_tls, &errHandle);
+        if (errHandle) {
+            esp_tls_get_and_clear_last_error(errHandle, &espErr, &tlsFlags);
+        }
         
         FN_LOGE(TAG, "TLS: Connection failed to %s:%u, err=%d", 
                 _host.c_str(), _port, espErr);
         
-        esp_tls_conn_delete(_tls);
+        esp_tls_conn_destroy(_tls);
         _tls = nullptr;
         return fujinet::io::StatusCode::IOError;
     }
@@ -160,8 +164,12 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::write_body(std::uint32_t offse
     
     if (ret < 0) {
         int espErr = 0;
+        int tlsFlags = 0;
         esp_tls_error_handle_t errHandle = nullptr;
-        esp_tls_get_and_clear_last_error(_tls, &espErr, &errHandle);
+        esp_tls_get_error_handle(_tls, &errHandle);
+        if (errHandle) {
+            esp_tls_get_and_clear_last_error(errHandle, &espErr, &tlsFlags);
+        }
         
         if (ret == ESP_TLS_ERR_SSL_WANT_READ || ret == ESP_TLS_ERR_SSL_WANT_WRITE) {
             // Non-blocking: would block, try again later
@@ -218,8 +226,12 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::read_body(std::uint32_t offset
         
         if (ret < 0) {
             int espErr = 0;
+            int tlsFlags = 0;
             esp_tls_error_handle_t errHandle = nullptr;
-            esp_tls_get_and_clear_last_error(_tls, &espErr, &errHandle);
+            esp_tls_get_error_handle(_tls, &errHandle);
+            if (errHandle) {
+                esp_tls_get_and_clear_last_error(errHandle, &espErr, &tlsFlags);
+            }
             
             if (ret == ESP_TLS_ERR_SSL_WANT_READ || ret == ESP_TLS_ERR_SSL_WANT_WRITE) {
                 // Non-blocking: would block, try again later
@@ -286,7 +298,7 @@ void TlsNetworkProtocolEspIdf::poll()
 void TlsNetworkProtocolEspIdf::close()
 {
     if (_tls) {
-        esp_tls_conn_delete(_tls);
+        esp_tls_conn_destroy(_tls);
         _tls = nullptr;
     }
     

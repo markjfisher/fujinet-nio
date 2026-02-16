@@ -69,6 +69,18 @@ else()
 endif()
 
 # --------------------------------------------------
+# OpenSSL (for TLS protocol)
+# --------------------------------------------------
+find_package(OpenSSL QUIET)
+if(OpenSSL_FOUND)
+  target_compile_definitions(fujinet-nio PUBLIC FN_WITH_OPENSSL=1)
+  target_link_libraries(fujinet-nio PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+else()
+  message(WARNING "OpenSSL not found; TLS protocol will not be available.")
+  target_compile_definitions(fujinet-nio PUBLIC FN_WITH_OPENSSL=0)
+endif()
+
+# --------------------------------------------------
 # Build Flags
 # --------------------------------------------------
 target_compile_definitions(fujinet-nio
@@ -153,6 +165,17 @@ target_sources(fujinet-nio
         src/platform/posix/time.cpp
         src/platform/posix/udp_channel.cpp
 # __TARGET_SOURCES_END__
+)
+
+# Conditionally add TLS protocol source (requires OpenSSL)
+if(OpenSSL_FOUND)
+    target_sources(fujinet-nio PRIVATE
+        src/platform/posix/tls_network_protocol_posix.cpp
+    )
+endif()
+
+target_sources(fujinet-nio
+    PRIVATE
         third_party/cjson/cJSON.c
 )
 
