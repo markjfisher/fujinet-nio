@@ -15,6 +15,8 @@ CMakeFiles/
 /platformio.local.ini
 /platformio.local-*.ini
 
+/plans/
+
 
 # IDE files
 .vscode/

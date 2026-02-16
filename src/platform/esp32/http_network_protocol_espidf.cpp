@@ -14,6 +14,7 @@ extern "C" {
 #include "esp_timer.h"
 #include "esp_err.h"
 #include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -536,6 +537,10 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     cfg.buffer_size_tx = 4096;
 
     cfg.timeout_ms = 15000;
+
+    // Enable TLS certificate verification for HTTPS connections using ESP-IDF's
+    // built-in certificate bundle (Mozilla root CAs compiled into firmware).
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
 
     const bool follow = (req.flags & 0x02) != 0;
     cfg.disable_auto_redirect = follow ? false : true;
