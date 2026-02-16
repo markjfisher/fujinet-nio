@@ -32,6 +32,13 @@ class CaptureConfig:
 
 
 @dataclass
+class CaptureVarConfig:
+    """Configuration for capturing a value from output using regex."""
+    name: str  # Variable name to store (e.g., "HANDLE")
+    pattern: str  # Regex pattern with one capture group (e.g., "handle=(\d+)")
+
+
+@dataclass
 class ExpectFileConfig:
     path: str  # "{CAPTURED_OUT}" or explicit path
     contains_text: List[str] = field(default_factory=list)
@@ -39,6 +46,13 @@ class ExpectFileConfig:
     sha256: Optional[str] = None
     size_min: Optional[int] = None
     size_exact: Optional[int] = None
+
+
+@dataclass
+class CaptureVarConfig:
+    """Configuration for capturing a value from output using regex."""
+    name: str  # Variable name to store (e.g., "HANDLE")
+    pattern: str  # Regex pattern with one capture group (e.g., "handle=(\d+)")
 
 
 @dataclass
@@ -53,6 +67,7 @@ class Step:
     only_mode: Optional[str] = None  # "posix" | "esp32" | None
     skip_if: str = ""  # Skip step if this variable is "true"
     capture: CaptureConfig = field(default_factory=CaptureConfig)
+    capture_var: Optional[CaptureVarConfig] = None  # Capture a value from output
     expect_file: Optional[ExpectFileConfig] = None
     setup_cmd: List[List[str]] = field(default_factory=list)
     expect_cmd: List[List[str]] = field(default_factory=list)
@@ -141,6 +156,25 @@ def _parse_expect_file_config(expect_file_dict: Optional[Dict[str, Any]]) -> Opt
     )
 
 
+def _parse_capture_var_config(capture_var_dict: Optional[Dict[str, Any]]) -> Optional[CaptureVarConfig]:
+    """Parse capture_var configuration from YAML."""
+    if capture_var_dict is None:
+        return None
+
+    if not isinstance(capture_var_dict, dict):
+        raise ValueError("'capture_var' must be a mapping (dict)")
+
+    name = capture_var_dict.get("name")
+    pattern = capture_var_dict.get("pattern")
+
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("capture_var.name must be a non-empty string")
+    if not isinstance(pattern, str) or not pattern.strip():
+        raise ValueError("capture_var.pattern must be a non-empty string")
+
+    return CaptureVarConfig(name=name.strip(), pattern=pattern)
+
+
 def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[str]) -> List[Step]:
     doc = _load_yaml_file(path)
 
@@ -181,6 +215,9 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
 
         # Parse capture config
         capture = _parse_capture_config(s.get("capture"))
+
+        # Parse capture_var config
+        capture_var = _parse_capture_var_config(s.get("capture_var"))
 
         # Parse expect_file config
         expect_file = _parse_expect_file_config(s.get("expect_file"))
@@ -224,6 +261,7 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
                 only_mode=only_mode,
                 skip_if=skip_if,
                 capture=capture,
+                capture_var=capture_var,
                 expect_file=expect_file,
                 setup_cmd=setup_cmd,
                 expect_cmd=expect_cmd,
@@ -331,8 +369,23 @@ def _validate_expect_file(
 
 
 def run_step(
-    step: Step, *, show_output_on_success: bool, keep_temp: bool = False, repo_root: Path
-) -> bool:
+    step: Step, 
+    *, 
+    show_output_on_success: bool, 
+    keep_temp: bool = False, 
+    repo_root: Path,
+    captured_vars: Optional[Dict[str, str]] = None,
+) -> Tuple[bool, Dict[str, str]]:
+    """Run a single test step.
+    
+    Returns:
+        Tuple of (success, new_captured_vars)
+    """
+    # Initialize captured vars from previous steps
+    if captured_vars is None:
+        captured_vars = {}
+    new_captured_vars = captured_vars.copy()
+    
     step_tmp = tempfile.TemporaryDirectory(prefix="fujinet-step-")
     step_tmp_path = step_tmp.name
     print(f"  -> {step.name}")
@@ -400,7 +453,7 @@ def run_step(
                 print(" FAIL: setup_cmd TIMEOUT")
                 if not keep_temp:
                     step_tmp.cleanup()
-                return False
+                return False, new_captured_vars
 
             if scp.returncode != 0:
                 print(f" FAIL: setup_cmd failed (exit {scp.returncode}): {' '.join(expanded)}")
@@ -408,7 +461,7 @@ def run_step(
                     print(scp.stdout.rstrip())
                 if not keep_temp:
                     step_tmp.cleanup()
-                return False
+                return False, new_captured_vars
 
     # Run the command
     stdout_dest = subprocess.PIPE
@@ -426,6 +479,9 @@ def run_step(
         step_argv = [a.replace("{STEP_TMP}", step_tmp_path) for a in step_argv]
         step_argv = [a.replace("{HOST_ROOT}", os.environ.get("HOST_ROOT", "")) for a in step_argv]
         step_argv = [a.replace("{MODE}", os.environ.get("MODE", "")) for a in step_argv]
+        # Expand captured variables (e.g., {HANDLE} -> 256)
+        for var_name, var_value in captured_vars.items():
+            step_argv = [a.replace("{" + var_name + "}", var_value) for a in step_argv]
         print(f"     $ {' '.join(step_argv)}")
         cp = subprocess.run(
             step_argv,
@@ -441,7 +497,7 @@ def run_step(
                 temp_file.unlink()
             except Exception:
                 pass
-        return False
+        return False, new_captured_vars
     finally:
         if stdout_file_handle:
             stdout_file_handle.close()
@@ -493,6 +549,20 @@ def run_step(
         if not file_ok:
             ok = False
             failure_msg = file_error
+
+    # Capture variable extraction
+    if ok and step.capture_var:
+        match = re.search(step.capture_var.pattern, combined_text, re.MULTILINE)
+        if match:
+            if len(match.groups()) >= 1:
+                new_captured_vars[step.capture_var.name] = match.group(1)
+                print(f"     Captured: {step.capture_var.name}={match.group(1)}")
+            else:
+                ok = False
+                failure_msg = f"capture_var pattern matched but no capture group: {step.capture_var.pattern}"
+        else:
+            ok = False
+            failure_msg = f"capture_var pattern not found: {step.capture_var.pattern}"
 
     # Follow-on commands
     if ok and step.expect_cmd:
@@ -556,7 +626,7 @@ def run_step(
         if not keep_temp:
             step_tmp.cleanup()
 
-    return ok
+    return ok, new_captured_vars
 
 
 def main() -> int:
@@ -641,12 +711,18 @@ def main() -> int:
     if args.debug:
         cli_parts += ["--debug"]
 
+    # TLS URL for raw TLS testing (defaults to same IP as HTTP, port 7778)
+    tls_host = ip
+    tls_url = f"tls://{ip}:7778"
+    
     vars = {
         "CLI": " ".join(cli_parts),  # placeholder token to detect {CLI} expansion
         "HTTP": http_base,
         "HTTPS": https_base,
         "HTTPS_SKIP": https_skip,
         "TCP": tcp_url,
+        "TLS_HOST": tls_host,
+        "TLS": tls_url,
         "FS": args.fs,
         "PORT": args.port,
         "MODE": mode,
@@ -706,16 +782,19 @@ def main() -> int:
 
     ok_all = True
     current_group = None
+    captured_vars: Dict[str, str] = {}  # Shared between steps in the same group
     for step in all_steps:
         if step.group != current_group:
             current_group = step.group
+            captured_vars = {}  # Reset captured vars for each new group
             print(f"\n=== {current_group} ===")
 
-        ok = run_step(
+        ok, captured_vars = run_step(
             step,
             show_output_on_success=args.show_output,
             keep_temp=args.keep_temp,
             repo_root=repo_root,
+            captured_vars=captured_vars,
         )
         ok_all = ok_all and ok
 

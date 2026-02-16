@@ -4,6 +4,7 @@ set -euo pipefail
 HTTP_NAME="fujinet-httpbin"
 HTTPS_NAME="fujinet-https-proxy"
 TCP_NAME="fujinet-tcp-echo"
+TLS_NAME="fujinet-tls-echo"
 
 HTTP_PORT_HOST="${HTTP_PORT_HOST:-8080}"
 HTTP_PORT_CONT="${HTTP_PORT_CONT:-80}"
@@ -13,6 +14,9 @@ HTTPS_PORT_CONT="${HTTPS_PORT_CONT:-443}"
 
 TCP_PORT_HOST="${TCP_PORT_HOST:-7777}"
 TCP_PORT_CONT="${TCP_PORT_CONT:-7777}"
+
+TLS_PORT_HOST="${TLS_PORT_HOST:-7778}"
+TLS_PORT_CONT="${TLS_PORT_CONT:-7778}"
 
 HTTP_IMAGE="${HTTP_IMAGE:-kennethreitz/httpbin}"
 TCP_IMAGE="${TCP_IMAGE:-nicolaka/netshoot}"
@@ -24,15 +28,17 @@ Usage:
   $0 http            Start httpbin on localhost:${HTTP_PORT_HOST}
   $0 https           Start httpbin + nginx HTTPS reverse proxy on localhost:${HTTPS_PORT_HOST}
   $0 tcp             Start TCP echo on localhost:${TCP_PORT_HOST} (foreground with traffic logs)
+  $0 tls             Start TLS echo on localhost:${TLS_PORT_HOST} (nginx stream proxy)
   $0 both            Start httpbin (detached) + TCP echo (foreground)
-  $0 all             Start httpbin + HTTPS proxy + TCP echo (foreground)
+  $0 all             Start httpbin + HTTPS proxy + TCP echo + TLS echo (foreground)
   $0 stop            Stop all services
   $0 status          Show container status
-  $0 logs http|https|tcp   Show logs (tcp logs are in-container stdout)
+  $0 logs http|https|tcp|tls   Show logs (tcp logs are in-container stdout)
 Options (env vars):
   HTTP_PORT_HOST=8080
   HTTPS_PORT_HOST=8443
   TCP_PORT_HOST=7777
+  TLS_PORT_HOST=7778
   HTTP_IMAGE=kennethreitz/httpbin
   TCP_IMAGE=nicolaka/netshoot
   NGINX_IMAGE=nginx:alpine
@@ -41,7 +47,13 @@ HTTPS Testing:
   After running '$0 https', test with:
     curl -k https://localhost:${HTTPS_PORT_HOST}/get
   Or with fujinet-nio-lib:
-    make TEST_URL="\"https://192.168.1.xxx:${HTTPS_PORT_HOST}/get\""
+    make TEST_URL="\"https://192.168.1.xxx:${HTTPS_PORT_HOST}/get?testca=1\""
+
+TLS Testing:
+  After running '$0 tls', test with:
+    openssl s_client -connect localhost:${TLS_PORT_HOST}
+  Or with fujinet-nio-lib:
+    Use URL: tls://192.168.1.xxx:${TLS_PORT_HOST}?testca=1
 EOF
 }
 
@@ -196,14 +208,79 @@ start_tcp() {
     socat -v -v "tcp-listen:${TCP_PORT_CONT},reuseaddr,fork" exec:cat
 }
 
+start_tls() {
+  # Start TCP echo first if not running
+  if ! is_running "$TCP_NAME"; then
+    echo "Starting TCP echo (detached) for TLS proxy..."
+    docker run -d --rm \
+      --name "$TCP_NAME" \
+      -p "${TCP_PORT_HOST}:${TCP_PORT_CONT}" \
+      "$TCP_IMAGE" \
+      socat -v -v "tcp-listen:${TCP_PORT_CONT},reuseaddr,fork" exec:cat
+    sleep 1
+  fi
+
+  if is_running "$TLS_NAME"; then
+    echo "TLS echo already running on localhost:${TLS_PORT_HOST}"
+    return 0
+  fi
+
+  generate_cert
+
+  # Get host IP for display
+  local host_ip
+  host_ip=$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' | cut -d'/' -f1)
+  
+  echo "Starting TLS echo (nginx stream proxy):"
+  echo "  Local:   tls://localhost:${TLS_PORT_HOST}"
+  echo "  Network: tls://${host_ip}:${TLS_PORT_HOST}"
+  
+  # Create nginx stream config for TLS echo
+  local config_dir="/tmp/fujinet-tls-config"
+  mkdir -p "$config_dir"
+  
+  cat > "$config_dir/nginx.conf" <<'NGINX_EOF'
+events {
+    worker_connections 1024;
+}
+
+stream {
+    server {
+        listen 7778 ssl;
+        
+        ssl_certificate /etc/nginx/ssl/server.crt;
+        ssl_certificate_key /etc/nginx/ssl/server.key;
+        
+        # Proxy to TCP echo service
+        proxy_pass fujinet-tcp-echo:7777;
+    }
+}
+NGINX_EOF
+
+  # Run nginx as TLS stream proxy
+  # Bind to all interfaces (0.0.0.0) so it's accessible from network
+  docker run -d --rm \
+    --name "$TLS_NAME" \
+    -p "0.0.0.0:${TLS_PORT_HOST}:${TLS_PORT_CONT}" \
+    -v /tmp/fujinet-https-certs:/etc/nginx/ssl:ro \
+    -v "$config_dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    --link "$TCP_NAME:fujinet-tcp-echo" \
+    "$NGINX_IMAGE" >/dev/null
+
+  echo "TLS echo started."
+  echo "Test with: openssl s_client -connect localhost:${TLS_PORT_HOST}"
+  echo "       or: use tls://${host_ip}:${TLS_PORT_HOST}?testca=1 in fujinet-nio"
+}
+
 status() {
   echo "Containers:"
-  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${TCP_NAME})" || true
+  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${TCP_NAME}|${TLS_NAME})" || true
   echo
   echo "Endpoints:"
   echo "  http:  http://localhost:${HTTP_PORT_HOST}"
   echo "  https: https://localhost:${HTTPS_PORT_HOST}"
   echo "  tcp:   tcp://127.0.0.1:${TCP_PORT_HOST}"
+  echo "  tls:   tls://127.0.0.1:${TLS_PORT_HOST}"
 }
 
 logs_cmd() {
@@ -212,7 +289,8 @@ logs_cmd() {
     http)  docker logs "$HTTP_NAME" ;;
     https) docker logs "$HTTPS_NAME" ;;
     tcp)   docker logs "$TCP_NAME" ;;
-    *) echo "logs requires: http|https|tcp" ; exit 2 ;;
+    tls)   docker logs "$TLS_NAME" ;;
+    *) echo "logs requires: http|https|tcp|tls" ; exit 2 ;;
   esac
 }
 
@@ -227,15 +305,19 @@ case "$cmd" in
   tcp)
     start_tcp
     ;;
+  tls)
+    start_tls
+    ;;
   both)
     start_http
     start_tcp
     ;;
   all)
     start_https
-    start_tcp
+    start_tls
     ;;
   stop)
+    stop_one "$TLS_NAME"
     stop_one "$TCP_NAME"
     stop_one "$HTTPS_NAME"
     stop_one "$HTTP_NAME"

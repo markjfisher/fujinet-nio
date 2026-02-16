@@ -1,0 +1,33 @@
+# TLS (raw TLS stream) integration tests
+# Tests the tls:// protocol with the FujiNet Test CA
+# Requires: ./scripts/start_test_services.sh tls
+
+group: tls
+
+steps:
+  - name: "TLS: Open connection with test CA"
+    argv: ["{CLI}", "net", "open", "tls://{TLS_HOST}:7778?testca=1"]
+    expect:
+      - "handle="
+    capture_var:
+      name: "HANDLE"
+      pattern: "handle=(\\d+)"
+    timeout_s: 10
+
+  - name: "TLS: Write data"
+    argv: ["{CLI}", "net", "write", "--data", "Hello TLS!", "{HANDLE}"]
+    expect:
+      - "written"
+    timeout_s: 5
+    
+  - name: "TLS: Read echo response"
+    argv: ["{CLI}", "net", "read", "--max-bytes", "64", "{HANDLE}"]
+    expect:
+      - "Hello TLS!"
+    timeout_s: 5
+
+  - name: "TLS: Close connection"
+    argv: ["{CLI}", "net", "close", "{HANDLE}"]
+    expect:
+      - "closed"
+    timeout_s: 5
