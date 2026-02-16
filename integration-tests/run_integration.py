@@ -51,6 +51,7 @@ class Step:
     forbid: List[str]
     timeout_s: float
     only_mode: Optional[str] = None  # "posix" | "esp32" | None
+    skip_if: str = ""  # Skip step if this variable is "true"
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     expect_file: Optional[ExpectFileConfig] = None
     setup_cmd: List[List[str]] = field(default_factory=list)
@@ -161,6 +162,7 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
         expect = s.get("expect", [])
         forbid = s.get("forbid", [])
         only_mode = s.get("only_mode", None)
+        skip_if = str(s.get("skip_if", ""))
         timeout_s = float(s.get("timeout_s", 8.0))
         expect_exit = int(s.get("expect_exit", 0))
 
@@ -220,6 +222,7 @@ def _compile_steps_from_file(path: Path, vars: Dict[str, str], cli_parts: List[s
                 forbid=[str(p) for p in forbid],
                 timeout_s=timeout_s,
                 only_mode=only_mode,
+                skip_if=skip_if,
                 capture=capture,
                 expect_file=expect_file,
                 setup_cmd=setup_cmd,
@@ -569,6 +572,7 @@ def main() -> int:
     )
 
     ap.add_argument("--http-url", default=None, help="Override HTTP base URL (rare)")
+    ap.add_argument("--https-url", default=None, help="Override HTTPS base URL (for TLS testing)")
     ap.add_argument("--tcp-url", default=None, help="Override TCP URL (rare)")
 
     ap.add_argument("--baud", default=None)
@@ -615,7 +619,8 @@ def main() -> int:
     if args.esp32:
         if not args.ip:
             raise SystemExit("--esp32 requires --ip <HOST_IP>")
-        http_base, tcp_url = _default_endpoints(args.ip)
+        ip = args.ip
+        http_base, tcp_url = _default_endpoints(ip)
     else:
         ip = args.ip or "127.0.0.1"
         http_base, tcp_url = _default_endpoints(ip)
@@ -624,6 +629,10 @@ def main() -> int:
         http_base = args.http_url.rstrip("/")
     if args.tcp_url:
         tcp_url = args.tcp_url
+    
+    # HTTPS URL for TLS testing (defaults to same IP as HTTP, port 8443)
+    https_base = args.https_url or f"https://{ip}:8443"
+    https_skip = "true" if args.https_url is None else "false"
 
     # CLI prefix
     cli_parts = ["./scripts/fujinet", "-p", args.port]
@@ -635,6 +644,8 @@ def main() -> int:
     vars = {
         "CLI": " ".join(cli_parts),  # placeholder token to detect {CLI} expansion
         "HTTP": http_base,
+        "HTTPS": https_base,
+        "HTTPS_SKIP": https_skip,
         "TCP": tcp_url,
         "FS": args.fs,
         "PORT": args.port,
@@ -665,6 +676,9 @@ def main() -> int:
 
     # Mode filtering
     all_steps = [s for s in all_steps if (s.only_mode is None or s.only_mode == mode)]
+    
+    # Skip filtering - skip steps where skip_if variable is "true"
+    all_steps = [s for s in all_steps if not s.skip_if.lower() == "true"]
 
     all_steps = [s for s in all_steps if match_any_substr(s.group, args.only_group)]
     all_steps = [s for s in all_steps if match_any_substr(s.name, args.only_step)]

@@ -524,8 +524,19 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     _s->err = ESP_OK;
     give_mutex(_s->meta_mutex);
 
+    // Check for insecure flag in URL (https://host:port/path?insecure=1)
+    // This skips TLS certificate verification for testing with self-signed certs
+    bool insecure = false;
+    std::string url = req.url;
+    size_t queryPos = url.find("?insecure=1");
+    if (queryPos != std::string::npos) {
+        insecure = true;
+        url = url.substr(0, queryPos);  // Remove ?insecure=1 from URL
+        FN_LOGW(TAG, "HTTPS: Certificate verification DISABLED (insecure mode)");
+    }
+    
     esp_http_client_config_t cfg{};
-    cfg.url = req.url.c_str();
+    cfg.url = url.c_str();
     cfg.event_handler = &event_handler;
     cfg.user_data = _s;
 
@@ -540,7 +551,13 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
 
     // Enable TLS certificate verification for HTTPS connections using ESP-IDF's
     // built-in certificate bundle (Mozilla root CAs compiled into firmware).
+    // For insecure mode, we still need to set crt_bundle_attach (ESP-IDF requirement),
+    // but we skip common name verification which allows self-signed certs.
     cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    if (insecure) {
+        // Skip certificate CN verification - allows self-signed certs
+        cfg.skip_cert_common_name_check = true;
+    }
 
     const bool follow = (req.flags & 0x02) != 0;
     cfg.disable_auto_redirect = follow ? false : true;
@@ -969,18 +986,34 @@ void HttpNetworkProtocolEspIdf::close()
     task = _s->task;
     give_mutex(_s->meta_mutex);
 
-    // If task is running, request abort of perform()/read by closing the client socket.
-    // DO NOT cleanup here (task owns cleanup).
+    // If task is running, wait for it to complete.
+    // DO NOT call esp_http_client_close() here - it can cause heap corruption
+    // if the task is in the middle of TLS setup.
     if (task) {
-        if (client) {
-            (void)esp_http_client_close(client);
+        FN_LOGW(TAG, "close: task running; waiting for task to complete");
+        
+        // Wait for task to finish (with timeout)
+        // The task will clean up the client itself
+        if (_s->done_sem) {
+            // Wait up to 2 seconds for the task to complete
+            (void)xSemaphoreTake(_s->done_sem, pdMS_TO_TICKS(2000));
         }
-        FN_LOGW(TAG, "close: task running; stop requested and client closed (task will cleanup)");
-        return;
+        
+        // Small delay to let task clean up
+        vTaskDelay(pdMS_TO_TICKS(10));
+        
+        // Task has cleaned up - re-read client pointer (should be nullptr now)
+        take_mutex(_s->meta_mutex);
+        _s->task = nullptr;
+        client = _s->client;  // Re-read after task cleanup
+        give_mutex(_s->meta_mutex);
+        
+        FN_LOGD(TAG, "close: task completed, client=%p", client);
     }
 
-    // No task => safe to clean up synchronously.
+    // Only clean up if client is still valid (task didn't clean it up)
     if (client) {
+        FN_LOGD(TAG, "close: cleaning up client");
         (void)esp_http_client_close(client);
         esp_http_client_cleanup(client);
 

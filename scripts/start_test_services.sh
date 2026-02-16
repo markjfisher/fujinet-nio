@@ -64,11 +64,19 @@ start_http() {
     return 0
   fi
 
-  echo "Starting httpbin: http://localhost:${HTTP_PORT_HOST}"
+  # Get host IP for network access
+  local host_ip
+  host_ip=$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' | cut -d'/' -f1)
+  
+  echo "Starting httpbin:"
+  echo "  Local:   http://localhost:${HTTP_PORT_HOST}"
+  echo "  Network: http://${host_ip}:${HTTP_PORT_HOST}"
+  
   # Detached so the script can continue / exit cleanly
+  # Bind to all interfaces (0.0.0.0) so it's accessible from network
   docker run -d --rm \
     --name "$HTTP_NAME" \
-    -p "${HTTP_PORT_HOST}:${HTTP_PORT_CONT}" \
+    -p "0.0.0.0:${HTTP_PORT_HOST}:${HTTP_PORT_CONT}" \
     "$HTTP_IMAGE" >/dev/null
 
   echo "httpbin started."
@@ -109,7 +117,13 @@ start_https() {
 
   generate_cert
 
-  echo "Starting nginx HTTPS reverse proxy: https://localhost:${HTTPS_PORT_HOST}"
+  # Get host IP for certificate
+  local host_ip
+  host_ip=$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' | cut -d'/' -f1)
+  
+  echo "Starting nginx HTTPS reverse proxy:"
+  echo "  Local:   https://localhost:${HTTPS_PORT_HOST}"
+  echo "  Network: https://${host_ip}:${HTTPS_PORT_HOST}"
   
   # Create nginx config
   local config_dir="/tmp/fujinet-https-config"
@@ -123,7 +137,7 @@ events {
 http {
     server {
         listen 443 ssl;
-        server_name localhost;
+        server_name _;  # Accept any hostname
 
         ssl_certificate /etc/nginx/ssl/server.crt;
         ssl_certificate_key /etc/nginx/ssl/server.key;
@@ -140,9 +154,10 @@ http {
 NGINX_EOF
 
   # Run nginx with SSL termination
+  # Bind to all interfaces (0.0.0.0) so it's accessible from network
   docker run -d --rm \
     --name "$HTTPS_NAME" \
-    -p "${HTTPS_PORT_HOST}:${HTTPS_PORT_CONT}" \
+    -p "0.0.0.0:${HTTPS_PORT_HOST}:${HTTPS_PORT_CONT}" \
     -v /tmp/fujinet-https-certs:/etc/nginx/ssl:ro \
     -v "$config_dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
     --link "$HTTP_NAME:fujinet-httpbin" \
@@ -150,6 +165,7 @@ NGINX_EOF
 
   echo "HTTPS proxy started."
   echo "Test with: curl -k https://localhost:${HTTPS_PORT_HOST}/get"
+  echo "       or: curl -k https://${host_ip}:${HTTPS_PORT_HOST}/get"
 }
 
 start_tcp() {

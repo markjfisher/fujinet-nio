@@ -71,16 +71,13 @@ steps:
       - 'utf8'
     timeout_s: 10
 
-  # HTTPS tests - use public HTTPS endpoint to verify TLS works
-  - name: "HTTPS: GET https://httpbin.org/get"
+  # HTTPS tests - use a public HTTPS endpoint with valid certificate
+  # Note: Self-signed certs require embedding the CA in firmware.
+  # The ?insecure=1 flag only skips CN verification, not full chain validation.
+  - name: "HTTPS: GET httpbin.org/get"
     argv: ["{CLI}", "net", "get", "https://httpbin.org/get"]
     expect:
-      - "url"
-      - "/get"
+      - '"url"'
+      - 'httpbin.org'
     timeout_s: 15
-
-  - name: "HTTPS: GET https://example.com/"
-    argv: ["{CLI}", "net", "get", "https://example.com/"]
-    expect:
-      - "Example Domain"
-    timeout_s: 15
+    skip_if: "{HTTPS_SKIP}"

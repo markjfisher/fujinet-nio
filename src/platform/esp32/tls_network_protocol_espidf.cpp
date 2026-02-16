@@ -94,11 +94,27 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
         return fujinet::io::StatusCode::InvalidRequest;
     }
 
-    FN_LOGI(TAG, "TLS: Connecting to %s:%u", _host.c_str(), _port);
+    // Check for insecure flag in URL (tls://host:port?insecure=1)
+    bool insecure = false;
+    size_t queryPos = _host.find('?');
+    if (queryPos != std::string::npos) {
+        std::string query = _host.substr(queryPos + 1);
+        _host = _host.substr(0, queryPos);
+        if (query.find("insecure=1") != std::string::npos) {
+            insecure = true;
+            FN_LOGW(TAG, "TLS: Certificate verification DISABLED (insecure mode)");
+        }
+    }
+
+    FN_LOGI(TAG, "TLS: Connecting to %s:%u%s", _host.c_str(), _port, 
+            insecure ? " (insecure)" : "");
 
     // Configure TLS
     esp_tls_cfg_t tls_cfg{};
-    tls_cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    if (!insecure) {
+        tls_cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    }
+    // When insecure=true and crt_bundle_attach is null, cert verification is skipped
     tls_cfg.timeout_ms = CONNECT_TIMEOUT_MS;
 
     // Create TLS connection
