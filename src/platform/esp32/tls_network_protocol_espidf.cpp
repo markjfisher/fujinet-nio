@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "fujinet/core/logging.h"
-#include "fujinet/platform/esp32/test_ca_cert.h"
+#include "fujinet/net/test_ca_cert.h"
 
 extern "C" {
 #include "esp_tls.h"
@@ -126,8 +126,8 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
     if (use_test_ca) {
         // Use embedded FujiNet Test CA for self-signed cert verification
         tls_cfg.crt_bundle_attach = nullptr;
-        tls_cfg.cacert_buf = (const unsigned char*)test_ca_cert_pem;
-        tls_cfg.cacert_bytes = sizeof(test_ca_cert_pem);
+        tls_cfg.cacert_buf = (const unsigned char*)fujinet::net::test_ca_cert_pem;
+        tls_cfg.cacert_bytes = fujinet::net::test_ca_cert_size;
     } else if (!insecure) {
         // Normal mode: use ESP-IDF's built-in certificate bundle
         tls_cfg.crt_bundle_attach = esp_crt_bundle_attach;

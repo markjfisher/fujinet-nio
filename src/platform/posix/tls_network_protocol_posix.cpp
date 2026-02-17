@@ -5,6 +5,7 @@
 #include <cerrno>
 
 #include "fujinet/core/logging.h"
+#include "fujinet/net/test_ca_cert.h"
 
 // OpenSSL headers
 #include <openssl/ssl.h>
@@ -69,6 +70,7 @@ bool TlsNetworkProtocolPosix::parse_tls_url(const std::string& url,
                                             std::uint16_t& outPort)
 {
     // Expected format: tls://host:port or tls://host (default port 443)
+    // Query string (e.g., ?testca=1) is handled separately in open()
     const std::string prefix = "tls://";
     if (url.compare(0, prefix.size(), prefix) != 0) {
         return false;
@@ -77,6 +79,12 @@ bool TlsNetworkProtocolPosix::parse_tls_url(const std::string& url,
     std::string hostPort = url.substr(prefix.size());
     if (hostPort.empty()) {
         return false;
+    }
+
+    // Strip query string if present (for initial parsing)
+    size_t queryPos = hostPort.find('?');
+    if (queryPos != std::string::npos) {
+        hostPort = hostPort.substr(0, queryPos);
     }
 
     // Find port separator
@@ -108,12 +116,29 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
 {
     close();
 
+    // Check for query string flags in the original URL before parsing
+    bool use_test_ca = false;
+    bool insecure = false;
+    size_t queryPos = req.url.find('?');
+    if (queryPos != std::string::npos) {
+        std::string query = req.url.substr(queryPos + 1);
+        if (query.find("testca=1") != std::string::npos) {
+            use_test_ca = true;
+            FN_LOGI(TAG, "TLS: Using FujiNet Test CA for certificate verification");
+        }
+        if (query.find("insecure=1") != std::string::npos) {
+            insecure = true;
+            FN_LOGW(TAG, "TLS: Certificate verification DISABLED (insecure mode)");
+        }
+    }
+
     if (!parse_tls_url(req.url, _host, _port)) {
         FN_LOGE(TAG, "TLS: Invalid URL format: %s", req.url.c_str());
         return fujinet::io::StatusCode::InvalidRequest;
     }
 
-    FN_LOGI(TAG, "TLS: Connecting to %s:%u", _host.c_str(), _port);
+    FN_LOGI(TAG, "TLS: Connecting to %s:%u%s", _host.c_str(), _port,
+            (use_test_ca ? " (test CA)" : (insecure ? " (insecure)" : "")));
 
     // Resolve host
     struct addrinfo hints{};
@@ -158,8 +183,47 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
     }
 
     // Configure certificate verification
-    SSL_CTX_set_verify(_ctx, SSL_VERIFY_PEER, nullptr);
-    SSL_CTX_set_default_verify_paths(_ctx);  // Use system CA certificates
+    if (use_test_ca) {
+        // Use embedded FujiNet Test CA for self-signed cert verification
+        SSL_CTX_set_verify(_ctx, SSL_VERIFY_PEER, nullptr);
+        
+        // Load the test CA certificate
+        BIO* bio = BIO_new_mem_buf(fujinet::net::test_ca_cert_pem, -1);
+        if (!bio) {
+            FN_LOGE(TAG, "TLS: Failed to create BIO for test CA");
+            SSL_CTX_free(_ctx);
+            _ctx = nullptr;
+            ::close(_socket);
+            _socket = -1;
+            return fujinet::io::StatusCode::InternalError;
+        }
+        
+        X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+        BIO_free(bio);
+        
+        if (!cert) {
+            FN_LOGE(TAG, "TLS: Failed to parse test CA certificate");
+            SSL_CTX_free(_ctx);
+            _ctx = nullptr;
+            ::close(_socket);
+            _socket = -1;
+            return fujinet::io::StatusCode::InternalError;
+        }
+        
+        X509_STORE* store = X509_STORE_new();
+        X509_STORE_add_cert(store, cert);
+        SSL_CTX_set_cert_store(_ctx, store);
+        X509_free(cert);
+        
+        FN_LOGI(TAG, "TLS: Loaded FujiNet Test CA certificate");
+    } else if (insecure) {
+        // Insecure mode: skip certificate verification
+        SSL_CTX_set_verify(_ctx, SSL_VERIFY_NONE, nullptr);
+    } else {
+        // Normal mode: use system CA certificates
+        SSL_CTX_set_verify(_ctx, SSL_VERIFY_PEER, nullptr);
+        SSL_CTX_set_default_verify_paths(_ctx);
+    }
 
     // Create SSL connection
     _ssl = SSL_new(_ctx);
