@@ -9,6 +9,9 @@
 #include <limits>
 #include <string>
 
+#include "fujinet/core/logging.h"
+#include "fujinet/net/test_ca_cert.h"
+
 // curl headers are only included in curl-specific files
 #include <curl/curl.h>
 
@@ -192,6 +195,56 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     ensure_curl_global_init();
     _req = req;
 
+    // Check for query string flags in the URL and process them
+    bool use_test_ca = false;
+    bool insecure = false;
+    std::string cleanUrl = _req.url;  // URL for curl (may have testca/insecure removed)
+    
+    size_t queryPos = _req.url.find('?');
+    if (queryPos != std::string::npos) {
+        std::string query = _req.url.substr(queryPos + 1);
+        if (query.find("testca=1") != std::string::npos) {
+            use_test_ca = true;
+            FN_LOGI("platform", "HTTPS: Using FujiNet Test CA for certificate verification");
+        }
+        if (query.find("insecure=1") != std::string::npos) {
+            insecure = true;
+            FN_LOGW("platform", "HTTPS: Certificate verification DISABLED (insecure mode)");
+        }
+        
+        // Only strip testca=1 and insecure=1 from query string, keep other params
+        if (use_test_ca || insecure) {
+            std::string newQuery;
+            std::string::size_type start = 0;
+            bool first = true;
+            
+            while (start < query.size()) {
+                auto ampPos = query.find('&', start);
+                std::string param = (ampPos == std::string::npos) 
+                    ? query.substr(start) 
+                    : query.substr(start, ampPos - start);
+                
+                // Keep params that are not testca=1 or insecure=1
+                if (param != "testca=1" && param != "insecure=1") {
+                    if (!first) newQuery += '&';
+                    first = false;
+                    newQuery += param;
+                }
+                
+                if (ampPos == std::string::npos) break;
+                start = ampPos + 1;
+            }
+            
+            if (newQuery.empty()) {
+                // No remaining params, strip the ? entirely
+                cleanUrl = _req.url.substr(0, queryPos);
+            } else {
+                // Rebuild URL with remaining params
+                cleanUrl = _req.url.substr(0, queryPos + 1) + newQuery;
+            }
+        }
+    }
+
     const bool isPost = (_req.method == 2);
     const bool isPut  = (_req.method == 3);
     
@@ -233,7 +286,7 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     }
 
     // Common options
-    curl_easy_setopt(_curl, CURLOPT_URL, _req.url.c_str());
+    curl_easy_setopt(_curl, CURLOPT_URL, cleanUrl.c_str());
     curl_easy_setopt(_curl, CURLOPT_WRITEFUNCTION, &HttpNetworkProtocolCurl::write_body_cb);
     curl_easy_setopt(_curl, CURLOPT_WRITEDATA, this);
 
@@ -244,9 +297,29 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     const bool follow = (_req.flags & 0x02) != 0;
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, follow ? 1L : 0L);
 
-    // TLS verification defaults (fine for now)
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    // TLS verification configuration
+    if (insecure) {
+        // Insecure mode: skip certificate verification
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    } else if (use_test_ca) {
+        // Use embedded FujiNet Test CA for self-signed cert verification
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        
+        // Create a blob with the test CA certificate
+        struct curl_blob ca_blob;
+        ca_blob.data = const_cast<char*>(fujinet::net::test_ca_cert_pem);
+        ca_blob.len = fujinet::net::test_ca_cert_size;
+        ca_blob.flags = CURL_BLOB_COPY;
+        curl_easy_setopt(_curl, CURLOPT_CAINFO_BLOB, &ca_blob);
+        
+        FN_LOGI("platform", "HTTPS: Loaded FujiNet Test CA certificate");
+    } else {
+        // Normal mode: use system CA certificates
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    }
 
     // Reset request-body state
     _requestBody.clear();
