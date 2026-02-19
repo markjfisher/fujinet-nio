@@ -16,6 +16,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <poll.h>
 
 namespace fujinet::platform::posix {
 
@@ -259,6 +260,13 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
     FN_LOGI(TAG, "TLS: Connected to %s:%u (cipher: %s)", 
             _host.c_str(), _port, SSL_get_cipher_name(_ssl));
 
+    // Set socket to non-blocking mode AFTER TLS handshake completes
+    // This allows SSL_read to return SSL_ERROR_WANT_READ instead of blocking
+    int flags = fcntl(_socket, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(_socket, F_SETFL, flags | O_NONBLOCK);
+    }
+
     reset_state();
     _state = State::Connected;
 
@@ -351,6 +359,28 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::read_body(std::uint32_t offset,
             
             if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
                 // Non-blocking: would block, try again later
+                // But first check if the underlying socket was closed by peer
+                // Use poll() to check socket state with minimal timeout
+                struct pollfd pfd;
+                pfd.fd = _socket;
+                pfd.events = POLLIN;
+                pfd.revents = 0;
+                int pollRet = ::poll(&pfd, 1, 0);  // 0ms timeout
+                
+                if (pollRet < 0) {
+                    // Poll error
+                    _peerClosed = true;
+                    _state = State::PeerClosed;
+                    eof = true;
+                    return fujinet::io::StatusCode::Ok;
+                }
+                if (pollRet > 0 && (pfd.revents & (POLLHUP | POLLERR))) {
+                    // Socket hung up or error - peer closed
+                    _peerClosed = true;
+                    _state = State::PeerClosed;
+                    eof = true;
+                    return fujinet::io::StatusCode::Ok;
+                }
                 return fujinet::io::StatusCode::NotReady;
             }
             
