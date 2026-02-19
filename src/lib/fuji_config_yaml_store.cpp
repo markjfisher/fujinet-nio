@@ -116,6 +116,12 @@ static void from_yaml(const YAML::Node& node, NetSioConfig& out)
     out.port    = static_cast<std::uint16_t>(get_or<int>(node, "port", 9997));
 }
 
+static void from_yaml(const YAML::Node& node, ClockConfig& out)
+{
+    out.timezone = get_or<std::string>(node, "timezone", "UTC");
+    out.enabled  = get_or<bool>(node, "enabled", true);
+}
+
 // Top-level FujiConfig mapper.
 static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
 {
@@ -153,6 +159,10 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
     
     if (auto n = root["netsio"]) {
         from_yaml(n, cfg.netsio);
+    }
+    
+    if (auto n = root["clock"]) {
+        from_yaml(n, cfg.clock);
     }
 }
 
@@ -225,6 +235,12 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     out << YAML::Key << "enabled" << YAML::Value << cfg.netsio.enabled;
     out << YAML::Key << "host"    << YAML::Value << cfg.netsio.host;
     out << YAML::Key << "port"    << YAML::Value << cfg.netsio.port;
+    out << YAML::EndMap;
+
+    // clock:
+    out << YAML::Key << "clock" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "timezone" << YAML::Value << cfg.clock.timezone;
+    out << YAML::Key << "enabled"  << YAML::Value << cfg.clock.enabled;
     out << YAML::EndMap;
 
     out << YAML::EndMap; // root

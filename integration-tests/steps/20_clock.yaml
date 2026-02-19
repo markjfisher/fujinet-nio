@@ -1,7 +1,49 @@
 group: Clock
 steps:
-  - name: "Clock: get"
+  - name: "Clock: get raw time"
     argv: ["{CLI}", "clock", "get"]
     expect:
       - 'device utc : \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z'
+    timeout_s: 5
+
+  - name: "Clock: get time ISO format"
+    argv: ["{CLI}", "clock", "get-format", "iso-utc"]
+    expect:
+      - '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+0000'
+    timeout_s: 5
+
+  - name: "Clock: get time simple binary"
+    argv: ["{CLI}", "clock", "get-format", "simple"]
+    expect:
+      - 'simple: [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2}'
+    timeout_s: 5
+
+  - name: "Clock: get time ProDOS binary"
+    argv: ["{CLI}", "clock", "get-format", "prodos"]
+    expect:
+      - 'prodos: [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2}'
+    timeout_s: 5
+
+  - name: "Clock: get time ApeTime binary"
+    argv: ["{CLI}", "clock", "get-format", "apetime"]
+    expect:
+      - 'apetime: [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2} [0-9A-Fa-f]{2}'
+    timeout_s: 5
+
+  - name: "Clock: get timezone"
+    argv: ["{CLI}", "clock", "get-timezone"]
+    expect:
+      - 'timezone: .+'
+    timeout_s: 5
+
+  - name: "Clock: set timezone non-persistent"
+    argv: ["{CLI}", "clock", "set-timezone", "EST5EDT,M3.2.0,M11.1.0"]
+    expect:
+      - 'ok'
+    timeout_s: 5
+
+  - name: "Clock: get time with specific timezone"
+    argv: ["{CLI}", "clock", "get-tz", "PST8PDT,M3.2.0,M11.1.0", "iso-tz"]
+    expect:
+      - '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}'
     timeout_s: 5

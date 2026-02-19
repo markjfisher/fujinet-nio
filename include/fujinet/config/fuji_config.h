@@ -68,6 +68,11 @@ struct NetSioConfig {
     std::uint16_t port{9997};
 };
 
+struct ClockConfig {
+    std::string timezone{"UTC"};  // POSIX timezone string, e.g. "UTC-8:45" or "CET-1CEST,M3.5.0,M10.5.0/3"
+    bool        enabled{true};
+};
+
 // Unified config for the whole FujiNet instance.
 struct FujiConfig {
     GeneralConfig        general;
@@ -80,6 +85,7 @@ struct FujiConfig {
     CpmConfig            cpm;
     PrinterConfig        printer;
     NetSioConfig         netsio;
+    ClockConfig          clock;
 };
 
 
