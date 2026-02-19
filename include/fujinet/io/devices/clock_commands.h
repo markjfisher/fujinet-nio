@@ -12,6 +12,7 @@ enum class ClockCommand : std::uint8_t {
     GetTimezone     = 0x04,  // Get current timezone string
     SetTimezone     = 0x05,  // Set timezone (non-persistent)
     SetTimezoneSave = 0x06,  // Set timezone and persist to config
+    SyncNetworkTime = 0x07,  // Synchronize time from network (NTP)
 };
 
 // Time format codes (must match fujinet-nio-lib FnTimeFormat enum)

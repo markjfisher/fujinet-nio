@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "esp_log.h"
+#include "esp_sntp.h"
 #include "sys/time.h"
 #include <time.h>
 
@@ -27,7 +28,7 @@ bool set_unix_time_seconds(std::uint64_t secs)
     tv.tv_sec  = static_cast<time_t>(secs);
     tv.tv_usec = 0;
 
-    // This sets the system “wall clock” used by newlib time(),
+    // This sets the system "wall clock" used by newlib time(),
     // and typically what FAT/VFS uses for timestamps.
     int rc = ::settimeofday(&tv, nullptr);
     if (rc != 0) {
@@ -43,6 +44,39 @@ bool time_is_valid()
 {
     // after start of 2020 is good enough check.
     return unix_time_seconds() >= 1577836800ULL;
+}
+
+bool sync_network_time()
+{
+    // ESP32: Trigger immediate SNTP sync
+    // This will request time from NTP servers and update system time
+    
+    // Check if SNTP is already running
+    if (!esp_sntp_enabled()) {
+        ESP_LOGW(TAG, "SNTP not enabled, cannot sync time");
+        return false;
+    }
+    
+    // Request immediate sync
+    esp_sntp_restart();
+    
+    ESP_LOGI(TAG, "SNTP time sync requested");
+    
+    // Wait a short time for sync (up to 1 second)
+    // The actual sync happens asynchronously
+    int retries = 10;
+    while (retries > 0) {
+        if (time_is_valid()) {
+            ESP_LOGI(TAG, "Time sync successful");
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+        retries--;
+    }
+    
+    // Even if we didn't get a valid time yet, the sync is in progress
+    // Return true to indicate the request was made
+    return true;
 }
 
 static bool gmtime_utc(std::uint64_t unix_seconds, tm& out_tm)

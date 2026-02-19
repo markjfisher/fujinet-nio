@@ -20,6 +20,7 @@ using fujinet::platform::unix_time_seconds;
 using fujinet::platform::set_timezone;
 using fujinet::platform::get_timezone;
 using fujinet::platform::validate_timezone;
+using fujinet::platform::sync_network_time;
 
 static const char* TAG = "clock";
 
@@ -291,6 +292,35 @@ IOResponse ClockDevice::handle(const IORequest& request)
             FN_LOGI(TAG, "Timezone set and saved: %s", tz.c_str());
             
             build_timezone_payload(resp.payload, tz);
+
+            return resp;
+        }
+
+        case ClockCommand::SyncNetworkTime: {
+            auto resp = make_success_response(request);
+
+            Reader r(request.payload.data(), request.payload.size());
+            std::uint8_t ver = 0;
+
+            // SyncNetworkTime request payload:
+            // u8  version
+            if (!r.read_u8(ver) || ver != CLOCK_PROTO_VERSION) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            // Request time sync from network
+            if (!sync_network_time()) {
+                FN_LOGW(TAG, "Failed to request network time sync");
+                resp.status = StatusCode::IOError;
+                return resp;
+            }
+
+            FN_LOGI(TAG, "Network time sync requested");
+
+            // Return the current time after sync
+            const std::uint64_t now = unix_time_seconds();
+            build_time_payload(resp.payload, now);
 
             return resp;
         }

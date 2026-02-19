@@ -137,8 +137,8 @@ std::vector<std::uint8_t> TimeFormatter::format_apple3_sos(const platform::Local
     
     std::vector<std::uint8_t> result(16);
     
-    // Format the string
-    char buffer[17];
+    // Format the string (18 chars + null = 19 bytes needed)
+    char buffer[20];
     std::snprintf(buffer, sizeof(buffer), "%04d%02d%02d0%02d%02d%02d000",
                   lt.year, lt.month, lt.day, lt.hour, lt.minute, lt.second);
     

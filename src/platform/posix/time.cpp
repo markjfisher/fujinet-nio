@@ -38,8 +38,15 @@ bool set_unix_time_seconds(std::uint64_t secs)
 
 bool time_is_valid()
 {
-    // Anything after 2020-01-01 is “valid enough”
+    // Anything after 2020-01-01 is "valid enough"
     return unix_time_seconds() >= 1577836800ULL;
+}
+
+bool sync_network_time()
+{
+    // POSIX: system time is already managed by the OS.
+    // This is a no-op but returns true since the time is assumed valid.
+    return true;
 }
 
 static bool gmtime_utc(std::uint64_t unix_seconds, tm& out_tm)
