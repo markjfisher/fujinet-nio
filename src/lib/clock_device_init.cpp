@@ -1,5 +1,6 @@
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/core/core.h"
+#include "fujinet/core/device_init.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/devices/clock_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
@@ -16,7 +17,14 @@ static const char* TAG = "core";
 
 void register_clock_device(FujinetCore& core)
 {
-    auto dev = std::make_unique<ClockDevice>();
+    register_clock_device(core, nullptr);
+}
+
+void register_clock_device(FujinetCore& core, config::FujiConfigStore* configStore)
+{
+    auto dev = configStore 
+        ? std::make_unique<ClockDevice>(configStore)
+        : std::make_unique<ClockDevice>();
     DeviceID id = to_device_id(WireDeviceId::Clock);
 
     bool ok = core.deviceManager().registerDevice(id, std::move(dev));

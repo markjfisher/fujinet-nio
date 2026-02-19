@@ -77,31 +77,6 @@ bool format_time_utc_ls(std::uint64_t unix_seconds, char* out, std::size_t out_l
 // Timezone Support
 // ============================================================================
 
-// Helper class to temporarily set a timezone and restore it after use
-class ScopedTimezone {
-    std::string old_tz_;
-    bool had_tz_;
-public:
-    explicit ScopedTimezone(const char* new_tz) {
-        const char* old = std::getenv("TZ");
-        had_tz_ = (old != nullptr);
-        if (had_tz_) {
-            old_tz_ = old;
-        }
-        ::setenv("TZ", new_tz, 1);
-        ::tzset();
-    }
-    
-    ~ScopedTimezone() {
-        if (had_tz_) {
-            ::setenv("TZ", old_tz_.c_str(), 1);
-        } else {
-            ::unsetenv("TZ");
-        }
-        ::tzset();
-    }
-};
-
 bool set_timezone(const char* posix_tz)
 {
     if (!posix_tz || posix_tz[0] == '\0') {

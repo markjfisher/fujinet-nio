@@ -23,6 +23,11 @@ using fujinet::platform::validate_timezone;
 
 static const char* TAG = "clock";
 
+ClockDevice::ClockDevice(config::FujiConfigStore* configStore)
+    : _configStore(configStore)
+{
+}
+
 // Build time payload for GetTime/SetTime responses
 // u8  version
 // u8  flags (reserved, 0 for now)
@@ -276,9 +281,13 @@ IOResponse ClockDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            // TODO: Persist to config
-            // This would require access to the config store, which should be
-            // injected into the ClockDevice. For now, just log the intent.
+            // Persist to config store
+            if (_configStore) {
+                auto cfg = _configStore->load();
+                cfg.clock.timezone = tz;
+                _configStore->save(cfg);
+            }
+            
             FN_LOGI(TAG, "Timezone set and saved: %s", tz.c_str());
             
             build_timezone_payload(resp.payload, tz);

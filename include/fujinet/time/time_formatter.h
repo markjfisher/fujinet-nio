@@ -9,6 +9,9 @@
 
 namespace fujinet::time {
 
+// Import TimeFormat from io namespace for convenience
+using fujinet::io::TimeFormat;
+
 /**
  * @brief Time formatting service for converting Unix timestamps to various formats.
  * 

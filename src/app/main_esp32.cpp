@@ -116,7 +116,8 @@ struct Esp32Services {
 
         // start all the devices that can be delayed
         // We can now check if they should be started too
-        fujinet::core::register_clock_device(core);
+        // Register clock device with config store for timezone persistence
+        fujinet::core::register_clock_device(core, fuji ? fuji->config_store() : nullptr);
         fujinet::core::register_network_device(core);
         if (cfg.modem.enabled)
             fujinet::core::register_modem_device(core);

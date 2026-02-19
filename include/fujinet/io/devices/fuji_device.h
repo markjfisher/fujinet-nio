@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/fs/storage_manager.h"
@@ -25,6 +26,9 @@ public:
     void start();
 
     const fujinet::config::FujiConfig& config() const { return _config; }
+    
+    /// Provide access to the config store for other devices that need persistence
+    config::FujiConfigStore* config_store() { return _configStore.get(); }
 
 private:
     IOResponse handle_reset(const IORequest& request);

@@ -136,6 +136,8 @@ target_sources(fujinet-nio
         src/lib/routing_manager.cpp
         src/lib/storage_manager.cpp
         src/lib/tcp_network_protocol_common.cpp
+        src/lib/time_formatter.cpp
+        src/lib/time_platform.cpp
         src/lib/transport/legacy/byte_based_legacy_transport.cpp
         src/lib/transport/legacy/iwm_traits.cpp
         src/lib/transport/legacy/iwm_transport.cpp

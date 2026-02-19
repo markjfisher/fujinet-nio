@@ -55,4 +55,26 @@ bool get_local_time(std::uint64_t unix_seconds, const char* tz, LocalTime& out);
 // Returns false if unavailable or timezone invalid.
 bool format_time_local_iso8601(std::uint64_t unix_seconds, const char* tz, char* out, std::size_t out_len);
 
+/**
+ * @brief RAII helper to temporarily set a timezone and restore it after use.
+ * 
+ * This is used internally by the timezone functions to avoid affecting
+ * the system timezone when getting/formatting time for a specific timezone.
+ */
+class ScopedTimezone {
+public:
+    explicit ScopedTimezone(const char* new_tz);
+    ~ScopedTimezone();
+    
+    // Non-copyable, non-movable
+    ScopedTimezone(const ScopedTimezone&) = delete;
+    ScopedTimezone& operator=(const ScopedTimezone&) = delete;
+    ScopedTimezone(ScopedTimezone&&) = delete;
+    ScopedTimezone& operator=(ScopedTimezone&&) = delete;
+    
+private:
+    std::string old_tz_;
+    bool had_tz_;
+};
+
 } // namespace fujinet::platform
