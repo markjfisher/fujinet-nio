@@ -79,6 +79,18 @@ Notes:
 - The HTTP `method` field is ignored for TCP.
 - `bodyLenHint` has no semantic meaning for TCP.
 
+### Protocol capability flags
+
+The Open response includes `proto_flags = 0x07` for TCP connections:
+
+| Bit | Value | Meaning |
+|----:|------:|---------|
+| 0 | 1 | `sequential_read` – reads must use sequential offsets |
+| 1 | 1 | `sequential_write` – writes must use sequential offsets |
+| 2 | 1 | `streaming` – protocol is streaming, not request/response |
+
+Hosts MUST use these flags to determine offset behavior rather than detecting URL schemes.
+
 Possible status codes:
 - `Ok` – connect started or completed
 - `NotReady` – network stack unavailable

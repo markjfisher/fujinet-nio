@@ -64,6 +64,36 @@ public:
 
     virtual void poll() = 0;
     virtual void close() = 0;
+
+    // ========================================================================
+    // Protocol Capabilities
+    // ========================================================================
+    // These methods describe protocol behavior so the server can inform
+    // clients about how to interact with the session.
+
+    /**
+     * @brief Returns true if this is a streaming protocol (no content-length).
+     * 
+     * Streaming protocols (TCP, TLS) don't have a predetermined content length.
+     * The client reads until EOF.
+     */
+    virtual bool is_streaming() const { return false; }
+
+    /**
+     * @brief Returns true if read operations must be sequential.
+     * 
+     * For streaming protocols like TCP, reads must be sequential (offset is
+     * ignored and data is consumed in order). HTTP allows random access reads.
+     */
+    virtual bool requires_sequential_read() const { return false; }
+
+    /**
+     * @brief Returns true if write operations must be sequential.
+     * 
+     * For streaming protocols like TCP, writes must be sequential. HTTP
+     * typically allows random access for body uploads.
+     */
+    virtual bool requires_sequential_write() const { return false; }
 };
 
 } // namespace fujinet::io

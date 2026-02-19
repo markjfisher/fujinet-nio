@@ -309,15 +309,30 @@ IOResponse NetworkDevice::handle(const IORequest& request)
 
             const std::uint16_t handle = make_handle(session_index(slot), slot->generation);
         
-            // Response: version, flags(bit0 accepted, bit1 needs_body_write), reserved, handle
+            // Determine protocol capability flags
+            std::uint8_t protoFlags = 0;
+            if (slot->proto) {
+                if (slot->proto->is_streaming()) {
+                    protoFlags |= 0x04;
+                }
+                if (slot->proto->requires_sequential_read()) {
+                    protoFlags |= 0x01;
+                }
+                if (slot->proto->requires_sequential_write()) {
+                    protoFlags |= 0x02;
+                }
+            }
+        
+            // Response: version, flags(bit0 accepted, bit1 needs_body_write), reserved, handle, proto_flags
             std::string out;
-            out.reserve(1 + 1 + 2 + 2);
+            out.reserve(1 + 1 + 2 + 2 + 1);
         
             std::uint8_t oflags = 0x01; // accepted
             if (needsBodyWrite) oflags |= 0x02;
         
             write_common_prefix(out, NETPROTO_VERSION, oflags);
             netproto::write_u16le(out, handle);
+            netproto::write_u8(out, protoFlags);
         
             resp.payload = to_vec(out);
             return resp;

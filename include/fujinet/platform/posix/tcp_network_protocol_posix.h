@@ -32,6 +32,11 @@ public:
     void poll() override;
     void close() override;
 
+    // Protocol capabilities - TCP is a streaming protocol
+    bool is_streaming() const override { return true; }
+    bool requires_sequential_read() const override { return true; }
+    bool requires_sequential_write() const override { return true; }
+
 private:
     fujinet::net::TcpNetworkProtocolCommon _common;
 };

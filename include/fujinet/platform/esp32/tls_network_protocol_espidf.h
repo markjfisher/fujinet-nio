@@ -34,6 +34,11 @@ public:
     void poll() override;
     void close() override;
 
+    // Protocol capabilities - TLS is a streaming protocol
+    bool is_streaming() const override { return true; }
+    bool requires_sequential_read() const override { return true; }
+    bool requires_sequential_write() const override { return true; }
+
 private:
     // Parse tls://host:port URL
     static bool parse_tls_url(const std::string& url,

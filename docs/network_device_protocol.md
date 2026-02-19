@@ -165,8 +165,8 @@ repeat respHeaderCount times:
 ### Open flags (u8)
 bit0 = tls
 bit1 = follow_redirects
-bit2 = body_unknown_len (NEW; v1.1)  // POST/PUT only, bodyLenHint==0
-bit3 = allow_evict (NEW; v1.0 compatible)
+bit2 = body_unknown_len  // POST/PUT only, bodyLenHint==0
+bit3 = allow_evict
 
 allow_evict semantics:
 - When allow_evict=0 (default), `Open` MUST return `DeviceBusy` if no free handles are available.
@@ -181,7 +181,24 @@ u8   version
 u8   flags               // bit0=accepted, bit1=needs_body_write
 u16  reserved            // = 0
 u16  handle              // LE
+u8   proto_flags         // protocol capability flags
 ```
+
+### Protocol capability flags (proto_flags)
+
+The `proto_flags` byte informs the host about the protocol's behavioral requirements:
+
+| Bit | Name | Meaning |
+|----:|------|---------|
+| 0 | `sequential_read` | Reads must use sequential offsets (streaming protocols) |
+| 1 | `sequential_write` | Writes must use sequential offsets (streaming protocols) |
+| 2 | `streaming` | Protocol is streaming (TCP, TLS) vs request/response (HTTP) |
+
+Protocol examples:
+- **HTTP/HTTPS**: `proto_flags = 0x00` (non-streaming, random-access reads)
+- **TCP/TLS**: `proto_flags = 0x07` (streaming, sequential read/write)
+
+Hosts MUST use these flags to determine offset behavior rather than detecting URL schemes.
 
 ### Status codes
 
