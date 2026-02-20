@@ -529,7 +529,6 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     // This uses the embedded FujiNet Test CA for verifying self-signed certs
     // generated with integration-tests/certs/generate_certs.sh
     bool use_test_ca = false;
-    bool insecure = false;
     std::string url = req.url;
     
     // Check for testca flag
@@ -538,14 +537,6 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
         use_test_ca = true;
         url = url.substr(0, queryPos);  // Remove ?testca=1 from URL
         FN_LOGI(TAG, "HTTPS: Using FujiNet Test CA for certificate verification");
-    }
-    
-    // Check for insecure flag (deprecated, but kept for compatibility)
-    queryPos = url.find("?insecure=1");
-    if (queryPos != std::string::npos) {
-        insecure = true;
-        url = url.substr(0, queryPos);  // Remove ?insecure=1 from URL
-        FN_LOGW(TAG, "HTTPS: Certificate verification DISABLED (insecure mode)");
     }
     
     esp_http_client_config_t cfg{};
@@ -566,11 +557,6 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     if (use_test_ca) {
         // Use embedded FujiNet Test CA for self-signed cert verification
         cfg.cert_pem = fujinet::net::test_ca_cert_pem;
-    } else if (insecure) {
-        // Insecure mode: use cert bundle but skip CN verification
-        // Note: This only skips CN check, NOT full chain verification
-        cfg.crt_bundle_attach = esp_crt_bundle_attach;
-        cfg.skip_cert_common_name_check = true;
     } else {
         // Normal mode: use ESP-IDF's built-in certificate bundle (Mozilla root CAs)
         cfg.crt_bundle_attach = esp_crt_bundle_attach;

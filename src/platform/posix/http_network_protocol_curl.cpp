@@ -195,10 +195,9 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     ensure_curl_global_init();
     _req = req;
 
-    // Check for query string flags in the URL and process them
+    // Check for test CA flag in URL (https://host:port/path?testca=1)
     bool use_test_ca = false;
-    bool insecure = false;
-    std::string cleanUrl = _req.url;  // URL for curl (may have testca/insecure removed)
+    std::string cleanUrl = _req.url;  // URL for curl (may have testca removed)
     
     size_t queryPos = _req.url.find('?');
     if (queryPos != std::string::npos) {
@@ -207,13 +206,9 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
             use_test_ca = true;
             FN_LOGI("platform", "HTTPS: Using FujiNet Test CA for certificate verification");
         }
-        if (query.find("insecure=1") != std::string::npos) {
-            insecure = true;
-            FN_LOGW("platform", "HTTPS: Certificate verification DISABLED (insecure mode)");
-        }
         
-        // Only strip testca=1 and insecure=1 from query string, keep other params
-        if (use_test_ca || insecure) {
+        // Strip testca=1 from query string, keep other params
+        if (use_test_ca) {
             std::string newQuery;
             std::string::size_type start = 0;
             bool first = true;
@@ -224,8 +219,8 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
                     ? query.substr(start) 
                     : query.substr(start, ampPos - start);
                 
-                // Keep params that are not testca=1 or insecure=1
-                if (param != "testca=1" && param != "insecure=1") {
+                // Keep params that are not testca=1
+                if (param != "testca=1") {
                     if (!first) newQuery += '&';
                     first = false;
                     newQuery += param;
@@ -298,11 +293,7 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, follow ? 1L : 0L);
 
     // TLS verification configuration
-    if (insecure) {
-        // Insecure mode: skip certificate verification
-        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    } else if (use_test_ca) {
+    if (use_test_ca) {
         // Use embedded FujiNet Test CA for self-signed cert verification
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);

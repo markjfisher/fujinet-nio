@@ -97,19 +97,14 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
 {
     close();
 
-    // Check for query string flags in the original URL before parsing
+    // Check for test CA flag in URL (tls://host:port?testca=1)
     bool use_test_ca = false;
-    bool insecure = false;
     size_t queryPos = req.url.find('?');
     if (queryPos != std::string::npos) {
         std::string query = req.url.substr(queryPos + 1);
         if (query.find("testca=1") != std::string::npos) {
             use_test_ca = true;
             FN_LOGI(TAG, "TLS: Using FujiNet Test CA for certificate verification");
-        }
-        if (query.find("insecure=1") != std::string::npos) {
-            insecure = true;
-            FN_LOGW(TAG, "TLS: Certificate verification DISABLED (insecure mode)");
         }
     }
 
@@ -119,7 +114,7 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
     }
 
     FN_LOGI(TAG, "TLS: Connecting to %s:%u%s", _host.c_str(), _port, 
-            (use_test_ca ? " (test CA)" : (insecure ? " (insecure)" : "")));
+            use_test_ca ? " (test CA)" : "");
 
     // Configure TLS
     esp_tls_cfg_t tls_cfg{};
@@ -129,11 +124,10 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
         tls_cfg.crt_bundle_attach = nullptr;
         tls_cfg.cacert_buf = (const unsigned char*)fujinet::net::test_ca_cert_pem;
         tls_cfg.cacert_bytes = sizeof(fujinet::net::test_ca_cert_pem);
-    } else if (!insecure) {
+    } else {
         // Normal mode: use ESP-IDF's built-in certificate bundle
         tls_cfg.crt_bundle_attach = esp_crt_bundle_attach;
     }
-    // When insecure=true and no CA is set, cert verification is skipped
     tls_cfg.timeout_ms = CONNECT_TIMEOUT_MS;
 
     // Create TLS connection

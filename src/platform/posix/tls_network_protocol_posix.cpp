@@ -117,19 +117,14 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
 {
     close();
 
-    // Check for query string flags in the original URL before parsing
+    // Check for test CA flag in URL (tls://host:port?testca=1)
     bool use_test_ca = false;
-    bool insecure = false;
     size_t queryPos = req.url.find('?');
     if (queryPos != std::string::npos) {
         std::string query = req.url.substr(queryPos + 1);
         if (query.find("testca=1") != std::string::npos) {
             use_test_ca = true;
             FN_LOGI(TAG, "TLS: Using FujiNet Test CA for certificate verification");
-        }
-        if (query.find("insecure=1") != std::string::npos) {
-            insecure = true;
-            FN_LOGW(TAG, "TLS: Certificate verification DISABLED (insecure mode)");
         }
     }
 
@@ -139,7 +134,7 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
     }
 
     FN_LOGI(TAG, "TLS: Connecting to %s:%u%s", _host.c_str(), _port,
-            (use_test_ca ? " (test CA)" : (insecure ? " (insecure)" : "")));
+            use_test_ca ? " (test CA)" : "");
 
     // Resolve host
     struct addrinfo hints{};
@@ -217,9 +212,6 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
         X509_free(cert);
         
         FN_LOGI(TAG, "TLS: Loaded FujiNet Test CA certificate");
-    } else if (insecure) {
-        // Insecure mode: skip certificate verification
-        SSL_CTX_set_verify(_ctx, SSL_VERIFY_NONE, nullptr);
     } else {
         // Normal mode: use system CA certificates
         SSL_CTX_set_verify(_ctx, SSL_VERIFY_PEER, nullptr);
