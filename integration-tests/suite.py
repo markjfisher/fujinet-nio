@@ -37,6 +37,7 @@ def get_default_ip() -> str:
 
 @dataclass
 class TestResult:
+    name: str
     target: str
     passed: bool
     output: str
@@ -52,7 +53,7 @@ class IntegrationSuite:
         self.suite_dir = Path(__file__).parent
         self.results: List[TestResult] = []
 
-    def run_integration(self, target: str, port: str, ip: str, 
+    def run_integration(self, name: str, target: str, port: str, ip: str, 
                         only_file: Optional[str] = None) -> TestResult:
         """Run integration tests for a specific target."""
         cmd = [
@@ -80,13 +81,13 @@ class IntegrationSuite:
             duration_ms = (time.time() - start) * 1000
             output = result.stdout + result.stderr
             passed = result.returncode == 0
-            return TestResult(target, passed, output, duration_ms)
+            return TestResult(name, target, passed, output, duration_ms)
         except subprocess.TimeoutExpired:
             duration_ms = (time.time() - start) * 1000
-            return TestResult(target, False, "TIMEOUT", duration_ms)
+            return TestResult(name, target, False, "TIMEOUT", duration_ms)
         except Exception as e:
             duration_ms = (time.time() - start) * 1000
-            return TestResult(target, False, str(e), duration_ms)
+            return TestResult(name, target, False, str(e), duration_ms)
 
     def run_target_tests(self, target: str, port: str, ip: str) -> List[TestResult]:
         """Run all integration test groups for a target."""
@@ -112,7 +113,7 @@ class IntegrationSuite:
 
         for file_name, test_name in test_groups:
             print(f"\n  [{test_name}] ", end="", flush=True)
-            result = self.run_integration(target, port, ip, only_file=file_name)
+            result = self.run_integration(test_name, target, port, ip, only_file=file_name)
             results.append(result)
 
             if result.passed:
@@ -169,7 +170,7 @@ class IntegrationSuite:
             print(f"\n{target.upper()}:")
             for r in target_results:
                 status = "✓" if r.passed else "✗"
-                print(f"  {status} ({r.duration_ms:.0f}ms)")
+                print(f"  {status} {r.name} ({r.duration_ms:.0f}ms)")
             print(f"  Total: {passed} passed, {failed} failed")
 
         print(f"\n{'='*60}")
