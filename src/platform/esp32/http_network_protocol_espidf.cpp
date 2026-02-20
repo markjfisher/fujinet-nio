@@ -9,7 +9,7 @@
 #include <string>
 
 #include "fujinet/core/logging.h"
-#include "fujinet/platform/esp32/test_ca_cert.h"
+#include "fujinet/net/test_ca_cert.h"
 
 extern "C" {
 #include "esp_timer.h"
@@ -565,7 +565,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     // TLS certificate verification configuration
     if (use_test_ca) {
         // Use embedded FujiNet Test CA for self-signed cert verification
-        cfg.cert_pem = test_ca_cert_pem;
+        cfg.cert_pem = fujinet::net::test_ca_cert_pem;
     } else if (insecure) {
         // Insecure mode: use cert bundle but skip CN verification
         // Note: This only skips CN check, NOT full chain verification
