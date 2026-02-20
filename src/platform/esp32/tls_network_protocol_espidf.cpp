@@ -125,9 +125,10 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
     esp_tls_cfg_t tls_cfg{};
     if (use_test_ca) {
         // Use embedded FujiNet Test CA for self-signed cert verification
+        // Note: ESP32 mbedtls requires the null terminator to be included in the size
         tls_cfg.crt_bundle_attach = nullptr;
         tls_cfg.cacert_buf = (const unsigned char*)fujinet::net::test_ca_cert_pem;
-        tls_cfg.cacert_bytes = fujinet::net::test_ca_cert_size;
+        tls_cfg.cacert_bytes = sizeof(fujinet::net::test_ca_cert_pem);
     } else if (!insecure) {
         // Normal mode: use ESP-IDF's built-in certificate bundle
         tls_cfg.crt_bundle_attach = esp_crt_bundle_attach;
