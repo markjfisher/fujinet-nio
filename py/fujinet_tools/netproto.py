@@ -135,6 +135,13 @@ class OpenResp:
     accepted: bool
     needs_body_write: bool
     handle: int
+    proto_flags: int  # Protocol capability flags (sequential read/write, streaming)
+
+
+# Protocol capability flag constants
+PROTO_FLAG_SEQUENTIAL_READ = 0x01
+PROTO_FLAG_SEQUENTIAL_WRITE = 0x02
+PROTO_FLAG_STREAMING = 0x04
 
 
 def parse_open_resp(payload: bytes) -> OpenResp:
@@ -142,12 +149,14 @@ def parse_open_resp(payload: bytes) -> OpenResp:
     flags, off = read_u8(payload, off)
     _reserved, off = read_u16le(payload, off)
     handle, off = read_u16le(payload, off)
+    proto_flags, off = read_u8(payload, off)
     if off != len(payload):
         raise ValueError("trailing bytes in open response")
     return OpenResp(
         accepted=bool(flags & 0x01),
         needs_body_write=bool(flags & 0x02),
         handle=handle,
+        proto_flags=proto_flags,
     )
 
 
