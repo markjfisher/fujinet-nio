@@ -5,6 +5,7 @@ HTTP_NAME="fujinet-httpbin"
 HTTPS_NAME="fujinet-https-proxy"
 TCP_NAME="fujinet-tcp-echo"
 TLS_NAME="fujinet-tls-echo"
+STREAM_NAME="fujinet-tcp-stream"
 
 HTTP_PORT_HOST="${HTTP_PORT_HOST:-8080}"
 HTTP_PORT_CONT="${HTTP_PORT_CONT:-80}"
@@ -18,6 +19,9 @@ TCP_PORT_CONT="${TCP_PORT_CONT:-7777}"
 TLS_PORT_HOST="${TLS_PORT_HOST:-7778}"
 TLS_PORT_CONT="${TLS_PORT_CONT:-7778}"
 
+STREAM_PORT_HOST="${STREAM_PORT_HOST:-7779}"
+STREAM_PORT_CONT="${STREAM_PORT_CONT:-7779}"
+
 HTTP_IMAGE="${HTTP_IMAGE:-kennethreitz/httpbin}"
 TCP_IMAGE="${TCP_IMAGE:-nicolaka/netshoot}"
 NGINX_IMAGE="${NGINX_IMAGE:-nginx:alpine}"
@@ -29,16 +33,18 @@ Usage:
   $0 https           Start httpbin + nginx HTTPS reverse proxy on localhost:${HTTPS_PORT_HOST}
   $0 tcp             Start TCP echo on localhost:${TCP_PORT_HOST} (foreground with traffic logs)
   $0 tls             Start TLS echo on localhost:${TLS_PORT_HOST} (nginx stream proxy)
+  $0 stream          Start TCP streaming server on localhost:${STREAM_PORT_HOST} (sends frames continuously)
   $0 both            Start httpbin (detached) + TCP echo (foreground)
-  $0 all             Start httpbin + HTTPS proxy + TCP echo + TLS echo (foreground)
+  $0 all             Start httpbin + HTTPS proxy + TCP echo + TLS echo + stream (foreground)
   $0 stop            Stop all services
   $0 status          Show container status
-  $0 logs http|https|tcp|tls   Show logs (tcp logs are in-container stdout)
+  $0 logs http|https|tcp|tls|stream   Show logs (tcp logs are in-container stdout)
 Options (env vars):
   HTTP_PORT_HOST=8080
   HTTPS_PORT_HOST=8443
   TCP_PORT_HOST=7777
   TLS_PORT_HOST=7778
+  STREAM_PORT_HOST=7779
   HTTP_IMAGE=kennethreitz/httpbin
   TCP_IMAGE=nicolaka/netshoot
   NGINX_IMAGE=nginx:alpine
@@ -54,6 +60,12 @@ TLS Testing:
     openssl s_client -connect localhost:${TLS_PORT_HOST}
   Or with fujinet-nio-lib:
     Use URL: tls://192.168.1.xxx:${TLS_PORT_HOST}?testca=1
+
+Stream Testing:
+  After running '$0 stream', test with:
+    nc localhost ${STREAM_PORT_HOST}
+  Or with fujinet-nio-lib tcp_stream example:
+    FN_TCP_HOST=127.0.0.1 FN_TCP_PORT=${STREAM_PORT_HOST} ./bin/linux/tcp_stream
 EOF
 }
 
@@ -272,25 +284,56 @@ NGINX_EOF
   echo "       or: use tls://${host_ip}:${TLS_PORT_HOST}?testca=1 in fujinet-nio"
 }
 
+start_stream() {
+  if is_running "$STREAM_NAME"; then
+    echo "TCP stream already running on localhost:${STREAM_PORT_HOST}"
+    echo "Run: $0 stop   (then restart)"
+    return 0
+  fi
+
+  # Get host IP for display
+  local host_ip
+  host_ip=$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' | cut -d'/' -f1)
+  
+  echo "Starting TCP streaming server (foreground) on localhost:${STREAM_PORT_HOST}"
+  echo "This server continuously sends frames of data for testing non-blocking reads."
+  echo "Press Ctrl-C to stop (or run: $0 stop from another shell)"
+  echo ""
+  echo "Test with: nc localhost ${STREAM_PORT_HOST}"
+  echo "       or: FN_TCP_HOST=127.0.0.1 FN_TCP_PORT=${STREAM_PORT_HOST} ./bin/linux/tcp_stream"
+  
+  # Create a streaming server using socat
+  # The SYSTEM option runs a command with stdin/stdout connected to the socket
+  # Each frame is: "FRAME <number>: <timestamp>\n"
+  # Note: Using a heredoc to avoid quoting issues with bash -c
+  docker run --rm -it \
+    --name "$STREAM_NAME" \
+    -p "${STREAM_PORT_HOST}:${STREAM_PORT_CONT}" \
+    "$TCP_IMAGE" \
+    bash -c 'socat -v TCP-LISTEN:7779,reuseaddr,fork SYSTEM:"bash -c '\''frame=0; while true; do printf \"FRAME %d: %s\n\" \$frame \"\$(date +%H:%M:%S.%3N)\"; frame=\$((frame + 1)); sleep 0.1; done'\''"'
+}
+
 status() {
   echo "Containers:"
-  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${TCP_NAME}|${TLS_NAME})" || true
+  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${TCP_NAME}|${TLS_NAME}|${STREAM_NAME})" || true
   echo
   echo "Endpoints:"
-  echo "  http:  http://localhost:${HTTP_PORT_HOST}"
-  echo "  https: https://localhost:${HTTPS_PORT_HOST}"
-  echo "  tcp:   tcp://127.0.0.1:${TCP_PORT_HOST}"
-  echo "  tls:   tls://127.0.0.1:${TLS_PORT_HOST}"
+  echo "  http:   http://localhost:${HTTP_PORT_HOST}"
+  echo "  https:  https://localhost:${HTTPS_PORT_HOST}"
+  echo "  tcp:    tcp://127.0.0.1:${TCP_PORT_HOST}"
+  echo "  tls:    tls://127.0.0.1:${TLS_PORT_HOST}"
+  echo "  stream: tcp://127.0.0.1:${STREAM_PORT_HOST}"
 }
 
 logs_cmd() {
   local which="${1:-}"
   case "$which" in
-    http)  docker logs "$HTTP_NAME" ;;
-    https) docker logs "$HTTPS_NAME" ;;
-    tcp)   docker logs "$TCP_NAME" ;;
-    tls)   docker logs "$TLS_NAME" ;;
-    *) echo "logs requires: http|https|tcp|tls" ; exit 2 ;;
+    http)   docker logs "$HTTP_NAME" ;;
+    https)  docker logs "$HTTPS_NAME" ;;
+    tcp)    docker logs "$TCP_NAME" ;;
+    tls)    docker logs "$TLS_NAME" ;;
+    stream) docker logs "$STREAM_NAME" ;;
+    *) echo "logs requires: http|https|tcp|tls|stream" ; exit 2 ;;
   esac
 }
 
@@ -308,6 +351,9 @@ case "$cmd" in
   tls)
     start_tls
     ;;
+  stream)
+    start_stream
+    ;;
   both)
     start_http
     start_tcp
@@ -315,8 +361,10 @@ case "$cmd" in
   all)
     start_https
     start_tls
+    start_stream
     ;;
   stop)
+    stop_one "$STREAM_NAME"
     stop_one "$TLS_NAME"
     stop_one "$TCP_NAME"
     stop_one "$HTTPS_NAME"
