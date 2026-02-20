@@ -68,6 +68,23 @@ else()
 endif()
 
 # --------------------------------------------------
+# OpenSSL (for TLS protocol)
+# --------------------------------------------------
+option(FN_WITH_OPENSSL "Enable OpenSSL-backed TLS on POSIX" ON)
+if(FN_WITH_OPENSSL)
+  find_package(OpenSSL QUIET)
+  if(OpenSSL_FOUND)
+    target_compile_definitions(fujinet-nio PUBLIC FN_WITH_OPENSSL=1)
+    target_link_libraries(fujinet-nio PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+  else()
+    message(WARNING "FN_WITH_OPENSSL=ON but OpenSSL not found; disabling TLS backend.")
+    target_compile_definitions(fujinet-nio PUBLIC FN_WITH_OPENSSL=0)
+  endif()
+else()
+  target_compile_definitions(fujinet-nio PUBLIC FN_WITH_OPENSSL=0)
+endif()
+
+# --------------------------------------------------
 # Build Flags
 # --------------------------------------------------
 target_compile_definitions(fujinet-nio
