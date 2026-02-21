@@ -223,6 +223,11 @@ extern "C" void fujinet_core_task(void* arg)
     // If we load config at this point to find out if the services should be enabled or not, it adds 80ms before the main loop starts
     fujinet::core::register_file_device(core);
     fujinet::core::register_disk_device(core);
+    
+    // Register host device for host slot configuration (shares config with FujiDevice)
+    if (services.fuji) {
+        fujinet::core::register_host_device(core, services.fuji->config_mut());
+    }
 
     const std::uint64_t phase1_at = core.tick_count() + 100;
     

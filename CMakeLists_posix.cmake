@@ -129,6 +129,8 @@ target_sources(fujinet-nio
         src/lib/fujibus_transport.cpp
         src/lib/fujinet_core.cpp
         src/lib/fujinet_init.cpp
+        src/lib/host_device.cpp
+        src/lib/host_device_init.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
         src/lib/legacy_network_adapter.cpp

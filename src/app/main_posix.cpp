@@ -164,6 +164,9 @@ int main()
     fujinet::core::register_disk_device(core);
     fujinet::core::register_network_device(core);
     fujinet::core::register_modem_device(core);
+    
+    // Register host device for host slot configuration (shares config with FujiDevice)
+    fujinet::core::register_host_device(core, fujiConcrete->config_mut());
 
     // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).
     // and set up transports based on profile.

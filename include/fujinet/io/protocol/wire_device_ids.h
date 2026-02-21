@@ -34,6 +34,7 @@ enum class WireDeviceId : std::uint8_t {
     DiskService  = 0xFC,
     NetworkService = 0xFD,
     FileService  = 0xFE,
+    HostService  = 0xF0,
 #endif
 };
 

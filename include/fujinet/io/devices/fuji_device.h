@@ -27,6 +27,9 @@ public:
 
     const fujinet::config::FujiConfig& config() const { return _config; }
     
+    /// Provide mutable access to config for devices that need to modify it (e.g., HostDevice)
+    fujinet::config::FujiConfig& config_mut() { return _config; }
+    
     /// Provide access to the config store for other devices that need persistence
     config::FujiConfigStore* config_store() { return _configStore.get(); }
 
