@@ -23,11 +23,16 @@ UriParts parse_uri(const std::string& uri)
                 parts.path = "/";
             }
         } else {
-            // No authority, just path
-            if (scheme_end + 1 < uri.size() && uri[scheme_end + 1] == '/') {
-                parts.path = uri.substr(scheme_end + 1);
+            // No authority, check if there's a path
+            if (scheme_end + 1 < uri.size()) {
+                if (uri[scheme_end + 1] == '/') {
+                    parts.path = uri.substr(scheme_end + 1);
+                } else {
+                    parts.path = "/" + uri.substr(scheme_end + 1);
+                }
             } else {
-                parts.path = "/" + uri.substr(scheme_end + 1);
+                // No path, leave it empty
+                parts.path = "";
             }
         }
     } else {

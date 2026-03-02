@@ -151,6 +151,7 @@ target_sources(fujinet-nio
         src/lib/transport/legacy/packet_based_legacy_transport.cpp
         src/lib/transport/legacy/sio_traits.cpp
         src/lib/transport/legacy/sio_transport.cpp
+        src/lib/uri_parser.cpp
         src/platform/posix/channel_factory.cpp
         src/platform/posix/console_transport_default.cpp
         src/platform/posix/console_transport_pty.cpp

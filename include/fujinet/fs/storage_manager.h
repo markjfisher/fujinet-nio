@@ -6,16 +6,9 @@
 #include <vector>
 
 #include "fujinet/fs/filesystem.h"
+#include "fujinet/fs/uri_parser.h"
 
 namespace fujinet::fs {
-
-struct UriParts {
-    std::string scheme;
-    std::string authority;
-    std::string path;
-};
-
-UriParts parse_uri(const std::string& uri);
 
 // Simple name-based registry for filesystems.
 class StorageManager {

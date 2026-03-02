@@ -58,6 +58,7 @@ idf_component_register(
         lib/transport/legacy/packet_based_legacy_transport.cpp
         lib/transport/legacy/sio_traits.cpp
         lib/transport/legacy/sio_transport.cpp
+        lib/uri_parser.cpp
         platform/esp32/button_manager.cpp
         platform/esp32/channel_factory.cpp
         platform/esp32/console_transport_default.cpp
