@@ -36,6 +36,8 @@ public:
 private:
     IOResponse handle_reset(const IORequest& request);
     IOResponse handle_unknown(const IORequest& request);
+    IOResponse handle_get_mounts(const IORequest& request);
+    IOResponse handle_set_mount(const IORequest& request);
 
     void load_config();
     void save_config();

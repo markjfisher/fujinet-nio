@@ -9,6 +9,14 @@
 
 namespace fujinet::fs {
 
+struct UriParts {
+    std::string scheme;
+    std::string authority;
+    std::string path;
+};
+
+UriParts parse_uri(const std::string& uri);
+
 // Simple name-based registry for filesystems.
 class StorageManager {
 public:
@@ -31,6 +39,13 @@ public:
 
     // Optional helpers for enumeration.
     std::vector<std::string> listNames() const;
+
+    // Lookup by URI scheme
+    IFileSystem*       getByScheme(const std::string& scheme);
+    const IFileSystem* getByScheme(const std::string& scheme) const;
+
+    // Parse URI and get filesystem and path
+    std::pair<IFileSystem*, std::string> resolveUri(const std::string& uri);
 
 private:
     std::unordered_map<std::string, std::unique_ptr<IFileSystem>> _fileSystems;
