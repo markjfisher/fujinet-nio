@@ -69,14 +69,24 @@ def build_mount_req(
 
     flags = 0x01 if readonly else 0x00
 
+    # Construct URI from fs and path
+    if fs == "host":
+        # For host filesystem, use path directly (already absolute)
+        uri = path
+    else:
+        # For other filesystems, construct URI like "fs://path" or "fs:/path"
+        if path.startswith("/"):
+            uri = f"{fs}:{path}"
+        else:
+            uri = f"{fs}:/{path}"
+
     out = bytearray()
     out.append(DISKPROTO_VERSION)
     out.append(slot & 0xFF)
     out.append(flags & 0xFF)
     out.append(type_override & 0xFF)
     out += u16le(sector_size_hint)
-    out += _lp_u16(fs)
-    out += _lp_u16(path)
+    out += _lp_u16(uri)
     return bytes(out)
 
 
@@ -142,14 +152,25 @@ def build_create_req(
     if not (1 <= sector_count <= 0xFFFFFFFF):
         raise ValueError("sector_count must fit u32 and be >0")
     flags = 0x01 if overwrite else 0x00
+    
+    # Construct URI from fs and path
+    if fs == "host":
+        # For host filesystem, use path directly (already absolute)
+        uri = path
+    else:
+        # For other filesystems, construct URI like "fs://path" or "fs:/path"
+        if path.startswith("/"):
+            uri = f"{fs}:{path}"
+        else:
+            uri = f"{fs}:/{path}"
+            
     out = bytearray()
     out.append(DISKPROTO_VERSION)
     out.append(flags & 0xFF)
     out.append(img_type & 0xFF)
     out += u16le(sector_size)
     out += u32le(sector_count)
-    out += _lp_u16(fs)
-    out += _lp_u16(path)
+    out += _lp_u16(uri)
     return bytes(out)
 
 

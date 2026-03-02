@@ -59,10 +59,21 @@ const IFileSystem* StorageManager::getByScheme(const std::string& scheme) const
 std::pair<IFileSystem*, std::string> StorageManager::resolveUri(const std::string& uri)
 {
     auto parts = parse_uri(uri);
-    auto fs = getByScheme(parts.scheme);
-    if (fs) {
-        return {fs, parts.path};
+    
+    // If scheme is provided, try to find a filesystem with that scheme
+    if (!parts.scheme.empty()) {
+        auto fs = getByScheme(parts.scheme);
+        if (fs) {
+            return {fs, parts.path};
+        }
+    } else {
+        // No scheme, treat as host filesystem path
+        auto fs = get("host");
+        if (fs) {
+            return {fs, parts.path};
+        }
     }
+    
     return {nullptr, ""};
 }
 

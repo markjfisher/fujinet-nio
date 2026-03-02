@@ -50,7 +50,8 @@ static bool parse_slot_1based(std::uint8_t slot1, std::size_t& outIdx) noexcept
 }
 
 DiskDevice::DiskDevice(fs::StorageManager& storage, disk::ImageRegistry registry)
-    : _svc(storage, std::move(registry))
+    : _storage(storage)
+    , _svc(storage, std::move(registry))
 {
 }
 
@@ -91,42 +92,15 @@ IOResponse DiskDevice::handle(const IORequest& request)
             opts.typeOverride = static_cast<ImageType>(typeRaw);
             opts.sectorSizeHint = sectorHint;
 
-            // Parse URI into fsName and path
+            // Parse URI using StorageManager
             std::string uriStr(uri);
-            std::string fsName;
-            std::string path;
+            auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
             
-            // Find scheme separator
-            auto schemeEnd = uriStr.find("://");
-            if (schemeEnd != std::string::npos) {
-                // URI with authority (e.g., tnfs://server/path)
-                fsName = uriStr.substr(0, schemeEnd);
-                auto pathStart = uriStr.find("/", schemeEnd + 3);
-                if (pathStart != std::string::npos) {
-                    path = uriStr.substr(pathStart);
-                }
-            } else {
-                // URI without authority (e.g., sd:/path)
-                auto pathStart = uriStr.find(":");
-                if (pathStart != std::string::npos) {
-                    fsName = uriStr.substr(0, pathStart);
-                    if (uriStr.size() > pathStart + 1) {
-                        path = uriStr.substr(pathStart + 1);
-                    }
-                }
-            }
-
-            // Validate parsed components
-            if (fsName.empty() || path.empty()) {
+            if (!fs || resolvedPath.empty()) {
                 return make_base_response(request, StatusCode::InvalidRequest);
             }
 
-            // Ensure path starts with /
-            if (path[0] != '/') {
-                path = "/" + path;
-            }
-
-            DiskResult dr = _svc.mount(idx, fsName, path, opts);
+            DiskResult dr = _svc.mount(idx, fs->name(), resolvedPath, opts);
             IOResponse resp = make_base_response(request, map_disk_error(dr.error));
             if (resp.status != StatusCode::Ok) return resp;
 
@@ -337,42 +311,15 @@ IOResponse DiskDevice::handle(const IORequest& request)
             const bool overwrite = (flags & 0x01) != 0;
             const auto type = static_cast<ImageType>(typeRaw);
 
-            // Parse URI into fsName and path
+            // Parse URI using StorageManager
             std::string uriStr(uri);
-            std::string fsName;
-            std::string path;
+            auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
             
-            // Find scheme separator
-            auto schemeEnd = uriStr.find("://");
-            if (schemeEnd != std::string::npos) {
-                // URI with authority (e.g., tnfs://server/path)
-                fsName = uriStr.substr(0, schemeEnd);
-                auto pathStart = uriStr.find("/", schemeEnd + 3);
-                if (pathStart != std::string::npos) {
-                    path = uriStr.substr(pathStart);
-                }
-            } else {
-                // URI without authority (e.g., sd:/path)
-                auto pathStart = uriStr.find(":");
-                if (pathStart != std::string::npos) {
-                    fsName = uriStr.substr(0, pathStart);
-                    if (uriStr.size() > pathStart + 1) {
-                        path = uriStr.substr(pathStart + 1);
-                    }
-                }
-            }
-
-            // Validate parsed components
-            if (fsName.empty() || path.empty()) {
+            if (!fs || resolvedPath.empty()) {
                 return make_base_response(request, StatusCode::InvalidRequest);
             }
 
-            // Ensure path starts with /
-            if (path[0] != '/') {
-                path = "/" + path;
-            }
-
-            DiskResult dr = _svc.create_image(std::string(fsName), std::string(path), type, sectorSize, sectorCount, overwrite);
+            DiskResult dr = _svc.create_image(std::string(fs->name()), std::string(resolvedPath), type, sectorSize, sectorCount, overwrite);
             IOResponse resp = make_base_response(request, map_disk_error(dr.error));
             if (resp.status != StatusCode::Ok) return resp;
 

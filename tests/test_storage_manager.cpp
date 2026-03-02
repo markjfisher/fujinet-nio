@@ -139,7 +139,9 @@ TEST_CASE("StorageManager: resolveUri with no scheme")
     // Register host filesystem
     CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("host")));
     
-    // Should still return null for no scheme (not implemented yet)
+    // Should now resolve to host filesystem
     auto [fs2, path2] = manager.resolveUri("/absolute/path");
-    CHECK(fs2 == nullptr);
+    CHECK(fs2 != nullptr);
+    CHECK(fs2->name() == "host");
+    CHECK(path2 == "/absolute/path");
 }

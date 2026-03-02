@@ -26,6 +26,7 @@ private:
 
     static constexpr std::uint8_t DISKPROTO_VERSION = 1;
 
+    fs::StorageManager& _storage;
     disk::DiskService _svc;
 };
 
