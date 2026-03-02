@@ -21,8 +21,4 @@ void register_network_device(FujinetCore& core, io::ProtocolRegistry registry);
 void register_disk_device(FujinetCore& core);
 void register_modem_device(FujinetCore& core);
 
-/// Register host device for host slot configuration
-/// @param config Reference to FujiConfig (owned by FujiDevice)
-void register_host_device(FujinetCore& core, config::FujiConfig& config);
-
 } // namespace fujinet::core

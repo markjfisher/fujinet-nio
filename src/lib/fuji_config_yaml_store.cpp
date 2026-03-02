@@ -39,23 +39,6 @@ static std::string boot_mode_to_string(BootMode m)
     }
 }
 
-static HostType parse_host_type(const std::string& s)
-{
-    if (s == "sd" || s == "SD")   return HostType::Sd;
-    if (s == "tnfs" || s == "TNFS") return HostType::Tnfs;
-    // others to go here, https? smb?
-    return HostType::Unknown;
-}
-
-static std::string host_type_to_string(HostType t)
-{
-    switch (t) {
-    case HostType::Sd:    return "SD";
-    case HostType::Tnfs:  return "TNFS";
-    default:              return "Unknown";
-    }
-}
-
 // ---------- from_yaml helpers ----------
 
 static void from_yaml(const YAML::Node& node, GeneralConfig& out)
@@ -73,23 +56,11 @@ static void from_yaml(const YAML::Node& node, WifiConfig& out)
     out.passphrase = get_or<std::string>(node, "passphrase", "");
 }
 
-static void from_yaml(const YAML::Node& node, HostConfig& out)
-{
-    out.id      = get_or<int>(node, "id", 0);
-    out.name    = get_or<std::string>(node, "name", "");
-    out.address = get_or<std::string>(node, "address", "");
-    out.enabled = get_or<bool>(node, "enabled", true);
-
-    auto typeStr = get_or<std::string>(node, "type", "Unknown");
-    out.type     = parse_host_type(typeStr);
-}
-
 static void from_yaml(const YAML::Node& node, MountConfig& out)
 {
-    out.id     = get_or<int>(node, "id", 0);
-    out.hostId = get_or<int>(node, "host_id", 0);
-    out.path   = get_or<std::string>(node, "path", "");
-    out.mode   = get_or<std::string>(node, "mode", "r");
+    out.id  = get_or<int>(node, "id", 0);
+    out.uri = get_or<std::string>(node, "uri", "");
+    out.mode = get_or<std::string>(node, "mode", "r");
 }
 
 static void from_yaml(const YAML::Node& node, ModemConfig& out)
@@ -131,15 +102,6 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
 
     if (auto n = root["wifi"]) {
         from_yaml(n, cfg.wifi);
-    }
-
-    if (auto hosts = root["hosts"]; hosts && hosts.IsSequence()) {
-        cfg.hosts.clear();
-        for (const auto& hn : hosts) {
-            HostConfig hc{};
-            from_yaml(hn, hc);
-            cfg.hosts.push_back(std::move(hc));
-        }
     }
 
     if (auto mounts = root["mounts"]; mounts && mounts.IsSequence()) {
@@ -186,26 +148,12 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     out << YAML::Key << "passphrase" << YAML::Value << cfg.wifi.passphrase;
     out << YAML::EndMap;
 
-    // hosts:
-    out << YAML::Key << "hosts" << YAML::Value << YAML::BeginSeq;
-    for (const auto& h : cfg.hosts) {
-        out << YAML::BeginMap;
-        out << YAML::Key << "id"      << YAML::Value << h.id;
-        out << YAML::Key << "name"    << YAML::Value << h.name;
-        out << YAML::Key << "address" << YAML::Value << h.address;
-        out << YAML::Key << "enabled" << YAML::Value << h.enabled;
-        out << YAML::Key << "type"    << YAML::Value << host_type_to_string(h.type);
-        out << YAML::EndMap;
-    }
-    out << YAML::EndSeq;
-
     // mounts:
     out << YAML::Key << "mounts" << YAML::Value << YAML::BeginSeq;
     for (const auto& m : cfg.mounts) {
         out << YAML::BeginMap;
         out << YAML::Key << "id"      << YAML::Value << m.id;
-        out << YAML::Key << "host_id" << YAML::Value << m.hostId;
-        out << YAML::Key << "path"    << YAML::Value << m.path;
+        out << YAML::Key << "uri"     << YAML::Value << m.uri;
         out << YAML::Key << "mode"    << YAML::Value << m.mode;
         out << YAML::EndMap;
     }

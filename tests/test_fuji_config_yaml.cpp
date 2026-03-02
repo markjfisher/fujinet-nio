@@ -11,8 +11,6 @@
 
 using fujinet::config::BootMode;
 using fujinet::config::FujiConfig;
-using fujinet::config::HostConfig;
-using fujinet::config::HostType;
 using fujinet::config::MountConfig;
 using fujinet::config::YamlFujiConfigStoreFs;
 
@@ -51,20 +49,10 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.wifi.ssid != b.wifi.ssid) return false;
     if (a.wifi.passphrase != b.wifi.passphrase) return false;
 
-    if (a.hosts.size() != b.hosts.size()) return false;
-    for (std::size_t i = 0; i < a.hosts.size(); ++i) {
-        if (a.hosts[i].id != b.hosts[i].id) return false;
-        if (a.hosts[i].type != b.hosts[i].type) return false;
-        if (a.hosts[i].name != b.hosts[i].name) return false;
-        if (a.hosts[i].address != b.hosts[i].address) return false;
-        if (a.hosts[i].enabled != b.hosts[i].enabled) return false;
-    }
-
     if (a.mounts.size() != b.mounts.size()) return false;
     for (std::size_t i = 0; i < a.mounts.size(); ++i) {
         if (a.mounts[i].id != b.mounts[i].id) return false;
-        if (a.mounts[i].hostId != b.mounts[i].hostId) return false;
-        if (a.mounts[i].path != b.mounts[i].path) return false;
+        if (a.mounts[i].uri != b.mounts[i].uri) return false;
         if (a.mounts[i].mode != b.mounts[i].mode) return false;
     }
 
@@ -95,7 +83,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-hosts: []
 mounts: []
 devices:
   modem:
@@ -117,7 +104,6 @@ devices:
     CHECK(cfg.general.bootMode == BootMode::Normal);
     CHECK(cfg.general.altConfigFile == "");
     CHECK(cfg.wifi.enabled == false);
-    CHECK(cfg.hosts.empty());
     CHECK(cfg.mounts.empty());
 }
 
@@ -135,30 +121,12 @@ wifi:
   enabled: true
   ssid: "MyWiFi"
   passphrase: "secret123"
-hosts:
-  - id: 1
-    name: "SD Card"
-    address: "/sd"
-    enabled: true
-    type: "SD"
-  - id: 2
-    name: "TNFS Server"
-    address: "fujinet.online"
-    enabled: true
-    type: "TNFS"
-  - id: 3
-    name: "Disabled Host"
-    address: "example.com"
-    enabled: false
-    type: "TNFS"
 mounts:
   - id: 1
-    host_id: 1
-    path: "/disks"
+    uri: "sd:/disks"
     mode: "rw"
   - id: 2
-    host_id: 2
-    path: "/atari"
+    uri: "tnfs://fujinet.online/atari"
     mode: "r"
 devices:
   modem:
@@ -184,32 +152,13 @@ devices:
     CHECK(cfg.wifi.ssid == "MyWiFi");
     CHECK(cfg.wifi.passphrase == "secret123");
 
-    REQUIRE(cfg.hosts.size() == 3);
-    CHECK(cfg.hosts[0].id == 1);
-    CHECK(cfg.hosts[0].name == "SD Card");
-    CHECK(cfg.hosts[0].address == "/sd");
-    CHECK(cfg.hosts[0].enabled == true);
-    CHECK(cfg.hosts[0].type == HostType::Sd);
-
-    CHECK(cfg.hosts[1].id == 2);
-    CHECK(cfg.hosts[1].name == "TNFS Server");
-    CHECK(cfg.hosts[1].address == "fujinet.online");
-    CHECK(cfg.hosts[1].enabled == true);
-    CHECK(cfg.hosts[1].type == HostType::Tnfs);
-
-    CHECK(cfg.hosts[2].id == 3);
-    CHECK(cfg.hosts[2].enabled == false);
-    CHECK(cfg.hosts[2].type == HostType::Tnfs);
-
     REQUIRE(cfg.mounts.size() == 2);
     CHECK(cfg.mounts[0].id == 1);
-    CHECK(cfg.mounts[0].hostId == 1);
-    CHECK(cfg.mounts[0].path == "/disks");
+    CHECK(cfg.mounts[0].uri == "sd:/disks");
     CHECK(cfg.mounts[0].mode == "rw");
 
     CHECK(cfg.mounts[1].id == 2);
-    CHECK(cfg.mounts[1].hostId == 2);
-    CHECK(cfg.mounts[1].path == "/atari");
+    CHECK(cfg.mounts[1].uri == "tnfs://fujinet.online/atari");
     CHECK(cfg.mounts[1].mode == "r");
 
     CHECK(cfg.modem.enabled == true);
@@ -235,7 +184,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-hosts: []
 mounts: []
 devices:
   modem:
@@ -277,7 +225,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-hosts: []
 mounts: []
 devices:
   modem:
@@ -312,7 +259,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Load defaults when both missing")
     CHECK(cfg.general.deviceName == ""); // empty string default
     CHECK(cfg.general.bootMode == BootMode::Config); // struct default
     CHECK(cfg.wifi.enabled == false);
-    CHECK(cfg.hosts.empty());
     CHECK(cfg.mounts.empty());
 
     // Should have written defaults to primary
@@ -336,18 +282,9 @@ TEST_CASE("YamlFujiConfigStoreFs: Save to primary only")
     cfg.wifi.ssid = "TestSSID";
     cfg.wifi.passphrase = "password";
 
-    HostConfig host1{};
-    host1.id = 1;
-    host1.type = HostType::Sd;
-    host1.name = "SD";
-    host1.address = "/sd";
-    host1.enabled = true;
-    cfg.hosts.push_back(host1);
-
     MountConfig mount1{};
     mount1.id = 1;
-    mount1.hostId = 1;
-    mount1.path = "/disks";
+    mount1.uri = "sd:/disks";
     mount1.mode = "rw";
     cfg.mounts.push_back(mount1);
 
@@ -404,33 +341,15 @@ TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load")
     original.wifi.ssid = "RoundTripWiFi";
     original.wifi.passphrase = "secretpass";
 
-    HostConfig h1{};
-    h1.id = 1;
-    h1.type = HostType::Sd;
-    h1.name = "SD Card";
-    h1.address = "/sd";
-    h1.enabled = true;
-    original.hosts.push_back(h1);
-
-    HostConfig h2{};
-    h2.id = 2;
-    h2.type = HostType::Tnfs;
-    h2.name = "TNFS";
-    h2.address = "server.example.com";
-    h2.enabled = true;
-    original.hosts.push_back(h2);
-
     MountConfig m1{};
     m1.id = 1;
-    m1.hostId = 1;
-    m1.path = "/disks";
+    m1.uri = "sd:/disks";
     m1.mode = "rw";
     original.mounts.push_back(m1);
 
     MountConfig m2{};
     m2.id = 2;
-    m2.hostId = 2;
-    m2.path = "/atari";
+    m2.uri = "tnfs://server.example.com/atari";
     m2.mode = "r";
     original.mounts.push_back(m2);
 
@@ -474,11 +393,6 @@ fujinet:
 wifi:
   enabled: true
   ssid: "MySSID"
-hosts:
-  - id: 1
-    name: "SD"
-    type: "SD"
-    address: "/sd"
 )";
 
     create_file(*primary, "/fujinet.yaml", yaml);
@@ -493,12 +407,6 @@ hosts:
     CHECK(cfg.wifi.enabled == true);
     CHECK(cfg.wifi.ssid == "MySSID");
     CHECK(cfg.wifi.passphrase == ""); // default
-
-    REQUIRE(cfg.hosts.size() == 1);
-    CHECK(cfg.hosts[0].id == 1);
-    CHECK(cfg.hosts[0].name == "SD");
-    CHECK(cfg.hosts[0].type == HostType::Sd);
-    CHECK(cfg.hosts[0].enabled == true); // default
 
     CHECK(cfg.mounts.empty()); // default
     CHECK(cfg.modem.enabled == false); // default
@@ -517,7 +425,6 @@ fujinet:
   boot_mode: "normal"
 wifi:
   enabled: false
-hosts: []
 mounts: []
 devices:
   modem:
@@ -541,7 +448,6 @@ fujinet:
   boot_mode: "config"
 wifi:
   enabled: false
-hosts: []
 mounts: []
 devices:
   modem:
@@ -565,7 +471,6 @@ fujinet:
   boot_mode: "cpm"
 wifi:
   enabled: false
-hosts: []
 mounts: []
 devices:
   modem:
@@ -584,58 +489,7 @@ devices:
     CHECK(cfg3.general.bootMode == BootMode::Cpm);
 }
 
-TEST_CASE("YamlFujiConfigStoreFs: Host type parsing")
-{
-    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
-
-    const std::string yaml = R"(
-fujinet:
-  device_name: "test"
-  boot_mode: "normal"
-wifi:
-  enabled: false
-hosts:
-  - id: 1
-    name: "SD"
-    type: "SD"
-    address: "/sd"
-  - id: 2
-    name: "TNFS"
-    type: "TNFS"
-    address: "server.com"
-  - id: 3
-    name: "sd"
-    type: "sd"
-    address: "/sd2"
-  - id: 4
-    name: "tnfs"
-    type: "tnfs"
-    address: "server2.com"
-mounts: []
-devices:
-  modem:
-    enabled: false
-    sniffer_enabled: false
-  cpm:
-    enabled: false
-    ccp_image: ""
-  printer:
-    enabled: false
-)";
-
-    create_file(*primary, "/fujinet.yaml", yaml);
-
-    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
-    FujiConfig cfg = store.load();
-
-    REQUIRE(cfg.hosts.size() == 4);
-    CHECK(cfg.hosts[0].type == HostType::Sd);
-    CHECK(cfg.hosts[1].type == HostType::Tnfs);
-    CHECK(cfg.hosts[2].type == HostType::Sd); // lowercase
-    CHECK(cfg.hosts[3].type == HostType::Tnfs); // lowercase
-}
-
-TEST_CASE("YamlFujiConfigStoreFs: Multiple hosts and mounts")
+TEST_CASE("YamlFujiConfigStoreFs: Multiple mounts")
 {
     auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
 
@@ -645,34 +499,15 @@ fujinet:
   boot_mode: "normal"
 wifi:
   enabled: false
-hosts:
-  - id: 1
-    name: "Host1"
-    type: "SD"
-    address: "/sd1"
-    enabled: true
-  - id: 2
-    name: "Host2"
-    type: "TNFS"
-    address: "host2.com"
-    enabled: true
-  - id: 3
-    name: "Host3"
-    type: "TNFS"
-    address: "host3.com"
-    enabled: false
 mounts:
   - id: 1
-    host_id: 1
-    path: "/disks1"
+    uri: "sd:/disks1"
     mode: "rw"
   - id: 2
-    host_id: 2
-    path: "/atari2"
+    uri: "tnfs://host2.com/atari2"
     mode: "r"
   - id: 3
-    host_id: 2
-    path: "/atari3"
+    uri: "tnfs://host2.com/atari3"
     mode: "rw"
 devices:
   modem:
@@ -690,10 +525,17 @@ devices:
     YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg = store.load();
 
-    REQUIRE(cfg.hosts.size() == 3);
     REQUIRE(cfg.mounts.size() == 3);
 
-    CHECK(cfg.mounts[0].hostId == 1);
-    CHECK(cfg.mounts[1].hostId == 2);
-    CHECK(cfg.mounts[2].hostId == 2); // multiple mounts on same host
+    CHECK(cfg.mounts[0].id == 1);
+    CHECK(cfg.mounts[0].uri == "sd:/disks1");
+    CHECK(cfg.mounts[0].mode == "rw");
+
+    CHECK(cfg.mounts[1].id == 2);
+    CHECK(cfg.mounts[1].uri == "tnfs://host2.com/atari2");
+    CHECK(cfg.mounts[1].mode == "r");
+
+    CHECK(cfg.mounts[2].id == 3);
+    CHECK(cfg.mounts[2].uri == "tnfs://host2.com/atari3");
+    CHECK(cfg.mounts[2].mode == "rw");
 }

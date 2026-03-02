@@ -25,26 +25,10 @@ struct WifiConfig {
     std::string passphrase;
 };
 
-enum class HostType {
-    Sd,
-    Tnfs,
-    // ... smb? http?
-    Unknown,
-};
-
-struct HostConfig {
-    int         id{0};           // stable logical id
-    HostType    type{HostType::Unknown};
-    std::string name;            // e.g. "SD", "fujinet.online"
-    std::string address;         // TNFS hostname, path, etc.
-    bool        enabled{true};
-};
-
 struct MountConfig {
     int         id{0};
-    int         hostId{0};       // matches HostConfig.id
-    std::string path;
-    std::string mode{"r"};       // "r", "rw", etc.
+    std::string uri;            // URI of the resource to mount (e.g., "sd:/disks/img.ssd", "tnfs://server/dir/img.atr")
+    std::string mode{"r"};      // "r", "rw", etc.
 };
 
 struct ModemConfig {
@@ -78,8 +62,7 @@ struct FujiConfig {
     GeneralConfig        general;
     WifiConfig           wifi;
 
-    std::vector<HostConfig>  hosts;
-    std::vector<MountConfig> mounts;
+    std::vector<MountConfig> mounts;  // Mounted resources (URI-based)
 
     ModemConfig          modem;
     CpmConfig            cpm;

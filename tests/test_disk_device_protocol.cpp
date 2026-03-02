@@ -99,8 +99,7 @@ TEST_CASE("DiskDevice v1: Mount -> Info -> ReadSector -> WriteSector -> Close")
         diskproto::write_u8(p, 0); // flags (rw requested)
         diskproto::write_u8(p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw)); // override raw
         diskproto::write_u16le(p, 256); // sectorSizeHint
-        diskproto::write_lp_u16_string(p, "mem");
-        diskproto::write_lp_u16_string(p, path);
+        diskproto::write_lp_u16_string(p, "mem://" + path);
 
         IORequest req{};
         req.id = 1;
@@ -299,8 +298,7 @@ TEST_CASE("DiskDevice v1: Create raw image then mount and read/write")
         diskproto::write_u8(p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
         diskproto::write_u16le(p, 256);
         diskproto::write_u32le(p, 4);
-        diskproto::write_lp_u16_string(p, "mem");
-        diskproto::write_lp_u16_string(p, "/created.img");
+        diskproto::write_lp_u16_string(p, "mem:///created.img");
 
         IORequest req{};
         req.id = 10;
@@ -320,8 +318,7 @@ TEST_CASE("DiskDevice v1: Create raw image then mount and read/write")
         diskproto::write_u8(p, 0); // rw
         diskproto::write_u8(p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
         diskproto::write_u16le(p, 256);
-        diskproto::write_lp_u16_string(p, "mem");
-        diskproto::write_lp_u16_string(p, "/created.img");
+        diskproto::write_lp_u16_string(p, "mem:///created.img");
 
         IORequest req{};
         req.id = 11;
