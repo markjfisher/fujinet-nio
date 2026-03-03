@@ -94,8 +94,6 @@ public:
 };
 
 std::unique_ptr<IFileSystem> make_tnfs_filesystem();
-std::unique_ptr<IFileSystem> make_sd_filesystem();
 std::unique_ptr<IFileSystem> make_http_filesystem();
-std::unique_ptr<IFileSystem> make_flash_filesystem();
 
 } // namespace fujinet::fs

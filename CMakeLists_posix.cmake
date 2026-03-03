@@ -122,9 +122,7 @@ target_sources(fujinet-nio
         src/lib/disk_device_init.cpp
         src/lib/file_device.cpp
         src/lib/file_device_init.cpp
-        src/lib/fs/flash_filesystem.cpp
         src/lib/fs/http_filesystem.cpp
-        src/lib/fs/sd_filesystem.cpp
         src/lib/fs/tnfs_filesystem.cpp
         src/lib/fs_stdio.cpp
         src/lib/fuji_bus_packet.cpp
