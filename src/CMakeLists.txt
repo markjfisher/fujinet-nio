@@ -29,6 +29,10 @@ idf_component_register(
         lib/disk_device_init.cpp
         lib/file_device.cpp
         lib/file_device_init.cpp
+        lib/fs/flash_filesystem.cpp
+        lib/fs/http_filesystem.cpp
+        lib/fs/sd_filesystem.cpp
+        lib/fs/tnfs_filesystem.cpp
         lib/fs_stdio.cpp
         lib/fuji_bus_packet.cpp
         lib/fuji_config_yaml_store.cpp

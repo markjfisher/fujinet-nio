@@ -89,7 +89,7 @@ int main()
     auto profile_name = profile.name;
     FN_LOGI(TAG, "Build profile: %.*s", static_cast<int>(profile_name.size()), profile.name.data());
 
-    // Register a host filesystem rooted at ./fujinet-root
+    // Register filesystem providers
     {
         auto hostFs = fujinet::platform::posix::create_host_filesystem("./fujinet-data");
 
@@ -104,6 +104,38 @@ int main()
         }
 
         FN_LOGI(TAG, "Host filesystem registered as 'host'");
+
+        // Register TNFS filesystem provider
+        auto tnfsFs = fujinet::fs::make_tnfs_filesystem();
+        if (!core.storageManager().registerFileSystem(std::move(tnfsFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'tnfs' filesystem");
+            return 1;
+        }
+        FN_LOGI(TAG, "TNFS filesystem registered as 'tnfs'");
+
+        // Register SD card filesystem provider (placeholder)
+        auto sdFs = fujinet::fs::make_sd_filesystem();
+        if (!core.storageManager().registerFileSystem(std::move(sdFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'sd' filesystem");
+            return 1;
+        }
+        FN_LOGI(TAG, "SD card filesystem registered as 'sd'");
+
+        // Register HTTP filesystem provider (placeholder)
+        auto httpFs = fujinet::fs::make_http_filesystem();
+        if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
+            return 1;
+        }
+        FN_LOGI(TAG, "HTTP filesystem registered as 'http'");
+
+        // Register Flash filesystem provider (placeholder)
+        auto flashFs = fujinet::fs::make_flash_filesystem();
+        if (!core.storageManager().registerFileSystem(std::move(flashFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'flash' filesystem");
+            return 1;
+        }
+        FN_LOGI(TAG, "Flash filesystem registered as 'flash'");
     }
 
     // Reset hook:
