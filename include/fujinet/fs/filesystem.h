@@ -94,6 +94,12 @@ public:
 };
 
 std::unique_ptr<IFileSystem> make_tnfs_filesystem();
+std::unique_ptr<IFileSystem> make_tnfs_filesystem(
+    const std::string& host,
+    std::uint16_t port = 16384,
+    const std::string& mountPath = "/",
+    const std::string& user = "",
+    const std::string& password = "");
 std::unique_ptr<IFileSystem> make_http_filesystem();
 
 } // namespace fujinet::fs
