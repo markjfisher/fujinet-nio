@@ -1,4 +1,4 @@
-#include "fujinet/fs/path_resolver_utils.h"
+#include "fujinet/fs/path_resolvers/path_resolver_utils.h"
 
 #include <vector>
 

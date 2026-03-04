@@ -1,6 +1,6 @@
-#include "fujinet/fs/tnfs_uri_resolver.h"
+#include "fujinet/fs/path_resolvers/tnfs_uri_resolver.h"
 
-#include "fujinet/fs/tnfs_path_utils.h"
+#include "fujinet/fs/path_resolvers/tnfs_path_utils.h"
 
 namespace fujinet::fs {
 

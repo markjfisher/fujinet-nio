@@ -1,6 +1,6 @@
-#include "fujinet/fs/fs_prefix_resolver.h"
+#include "fujinet/fs/path_resolvers/fs_prefix_resolver.h"
 
-#include "fujinet/fs/path_resolver_utils.h"
+#include "fujinet/fs/path_resolvers/path_resolver_utils.h"
 
 namespace fujinet::fs {
 

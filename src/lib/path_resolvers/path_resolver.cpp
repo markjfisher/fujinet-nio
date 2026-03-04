@@ -1,10 +1,10 @@
-#include "fujinet/fs/path_resolver.h"
+#include "fujinet/fs/path_resolvers/path_resolver.h"
 
-#include "fujinet/fs/fs_prefix_resolver.h"
-#include "fujinet/fs/relative_path_resolver.h"
-#include "fujinet/fs/tnfs_prefix_resolver.h"
-#include "fujinet/fs/tnfs_relative_resolver.h"
-#include "fujinet/fs/tnfs_uri_resolver.h"
+#include "fujinet/fs/path_resolvers/fs_prefix_resolver.h"
+#include "fujinet/fs/path_resolvers/relative_path_resolver.h"
+#include "fujinet/fs/path_resolvers/tnfs_prefix_resolver.h"
+#include "fujinet/fs/path_resolvers/tnfs_relative_resolver.h"
+#include "fujinet/fs/path_resolvers/tnfs_uri_resolver.h"
 
 #include <utility>
 

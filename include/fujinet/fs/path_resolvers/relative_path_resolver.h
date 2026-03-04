@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fujinet/fs/path_resolver.h"
+#include "fujinet/fs/path_resolvers/path_resolver.h"
 
 namespace fujinet::fs {
 
