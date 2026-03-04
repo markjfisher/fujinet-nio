@@ -4,6 +4,8 @@
 #include <string_view>
 #include <vector>
 
+#include "fujinet/fs/path_resolver.h"
+
 namespace fujinet::fs {
 class StorageManager;
 }
@@ -39,6 +41,7 @@ private:
     bool cmd_mv(IConsoleTransport& io, const std::vector<std::string_view>& argv);
 
     fujinet::fs::StorageManager& _storage;
+    fujinet::fs::PathResolver _pathResolver;
     std::string _cwd_fs;
     std::string _cwd_path{"/"};
 };

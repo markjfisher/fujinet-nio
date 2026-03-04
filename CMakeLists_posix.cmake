@@ -124,6 +124,7 @@ target_sources(fujinet-nio
         src/lib/file_device_init.cpp
         src/lib/fs/http_filesystem.cpp
         src/lib/fs/tnfs_filesystem.cpp
+        src/lib/fs_prefix_resolver.cpp
         src/lib/fs_stdio.cpp
         src/lib/fuji_bus_packet.cpp
         src/lib/fuji_config_yaml_store.cpp
@@ -140,6 +141,9 @@ target_sources(fujinet-nio
         src/lib/network_device_init.cpp
         src/lib/network_protocol_registry.cpp
         src/lib/network_protocol_stub.cpp
+        src/lib/path_resolver.cpp
+        src/lib/path_resolver_utils.cpp
+        src/lib/relative_path_resolver.cpp
         src/lib/routing_manager.cpp
         src/lib/storage_manager.cpp
         src/lib/tcp_channel.cpp
@@ -148,6 +152,10 @@ target_sources(fujinet-nio
         src/lib/time_platform.cpp
         src/lib/tnfs/tnfs_tcp_client.cpp
         src/lib/tnfs/tnfs_udp_client.cpp
+        src/lib/tnfs_path_utils.cpp
+        src/lib/tnfs_prefix_resolver.cpp
+        src/lib/tnfs_relative_resolver.cpp
+        src/lib/tnfs_uri_resolver.cpp
         src/lib/transport/legacy/byte_based_legacy_transport.cpp
         src/lib/transport/legacy/iwm_traits.cpp
         src/lib/transport/legacy/iwm_transport.cpp

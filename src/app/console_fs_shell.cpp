@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace fujinet::console {
@@ -144,167 +145,10 @@ static std::string pad_left(std::string_view s, std::size_t width)
     return out;
 }
 
-static std::string fs_join(std::string_view base, std::string_view rel)
-{
-    if (base.empty()) return std::string(rel);
-    if (base.back() == '/') {
-        if (!rel.empty() && rel.front() == '/') {
-            return std::string(base) + std::string(rel.substr(1));
-        }
-        return std::string(base) + std::string(rel);
-    }
-    if (!rel.empty() && rel.front() == '/') {
-        return std::string(base) + std::string(rel);
-    }
-    std::string out(base);
-    out.push_back('/');
-    out.append(rel.data(), rel.size());
-    return out;
-}
-
-static std::string fs_norm(std::string_view in)
-{
-    // Normalize to absolute POSIX-like path.
-    std::vector<std::string_view> parts;
-    std::string_view s = in;
-
-    // split on '/'
-    std::size_t i = 0;
-    while (i < s.size()) {
-        while (i < s.size() && s[i] == '/') ++i;
-        const std::size_t start = i;
-        while (i < s.size() && s[i] != '/') ++i;
-        if (i == start) break;
-        parts.push_back(s.substr(start, i - start));
-    }
-
-    std::vector<std::string_view> stack;
-    for (auto p : parts) {
-        if (p == "." || p.empty()) continue;
-        if (p == "..") {
-            if (!stack.empty()) stack.pop_back();
-            continue;
-        }
-        stack.push_back(p);
-    }
-
-    std::string out;
-    out.push_back('/');
-    for (std::size_t k = 0; k < stack.size(); ++k) {
-        if (k != 0) out.push_back('/');
-        out.append(stack[k].data(), stack[k].size());
-    }
-    return out;
-}
-
 struct FsPath {
     std::string fs;
     std::string path; // absolute within fs
 };
-
-static bool is_tnfs_endpoint_path(std::string_view p)
-{
-    return p.rfind("//", 0) == 0 ||
-           p.rfind("tnfs://", 0) == 0 ||
-           p.rfind("tnfs+tcp://", 0) == 0 ||
-           p.rfind("tnfstcp://", 0) == 0 ||
-           p.rfind("tnfs-tcp://", 0) == 0;
-}
-
-static std::string tnfs_join_relative(std::string_view base, std::string_view rel)
-{
-    // If base is tnfs://host[:port]/path, join relative onto the path segment
-    // while preserving scheme and authority.
-    std::size_t scheme_pos = base.find("://");
-    if (scheme_pos != std::string_view::npos) {
-        std::size_t authority_start = scheme_pos + 3;
-        std::size_t path_start = base.find('/', authority_start);
-        if (path_start == std::string_view::npos) {
-            std::string out(base);
-            out.push_back('/');
-            out.append(rel.data(), rel.size());
-            return out;
-        }
-        std::string prefix(base.substr(0, path_start));
-        std::string path = fs_norm(fs_join(base.substr(path_start), rel));
-        return prefix + path;
-    }
-
-    // If base is //host[:port]/path, preserve endpoint authority and join onto path.
-    if (base.rfind("//", 0) == 0) {
-        std::size_t path_start = base.find('/', 2);
-        if (path_start == std::string_view::npos) {
-            std::string out(base);
-            out.push_back('/');
-            out.append(rel.data(), rel.size());
-            return out;
-        }
-        std::string prefix(base.substr(0, path_start));
-        std::string path = fs_norm(fs_join(base.substr(path_start), rel));
-        return prefix + path;
-    }
-
-    return fs_norm(fs_join(base, rel));
-}
-
-static bool parse_fs_path(
-    std::string_view spec,
-    std::string_view cur_fs,
-    std::string_view cur_path,
-    FsPath& out)
-{
-    // Supports:
-    // - "sd0:/dir"
-    // - "sd0:" (meaning "/")
-    // - "/dir" absolute in current fs
-    // - "dir" relative in current fs
-    // URI form without explicit "<fs>:" prefix. Route TNFS URI schemes to fs="tnfs".
-    if (spec.rfind("tnfs://", 0) == 0 ||
-        spec.rfind("tnfs+tcp://", 0) == 0 ||
-        spec.rfind("tnfstcp://", 0) == 0 ||
-        spec.rfind("tnfs-tcp://", 0) == 0) {
-        out.fs = "tnfs";
-        out.path = std::string(spec);
-        return true;
-    }
-
-    const std::size_t colon = spec.find(':');
-    if (colon != std::string_view::npos) {
-        out.fs = std::string(spec.substr(0, colon));
-        std::string_view p = spec.substr(colon + 1);
-        if (p.empty()) p = "/";
-        if (out.fs == "tnfs" && is_tnfs_endpoint_path(p)) {
-            // Preserve TNFS endpoint-style paths (//host:port/...).
-            out.path = std::string(p);
-        } else if (!p.empty() && p.front() != '/') {
-            std::string tmp("/");
-            tmp.append(p.data(), p.size());
-            out.path = fs_norm(tmp);
-        } else {
-            out.path = fs_norm(p);
-        }
-        return true;
-    }
-
-    if (cur_fs.empty()) {
-        return false;
-    }
-    out.fs = std::string(cur_fs);
-    if (!spec.empty() && spec.front() == '/') {
-        if (out.fs == "tnfs" && is_tnfs_endpoint_path(spec)) {
-            out.path = std::string(spec);
-        } else {
-            out.path = fs_norm(spec);
-        }
-        return true;
-    }
-    if (out.fs == "tnfs" && is_tnfs_endpoint_path(cur_path)) {
-        out.path = tnfs_join_relative(cur_path, spec);
-    } else {
-        out.path = fs_norm(fs_join(cur_path, spec));
-    }
-    return true;
-}
 
 struct RmFlags {
     bool force{false};     // -f
@@ -383,25 +227,41 @@ static bool delete_tree(
     return true;
 }
 
-static void fs_resolve_target(
+static fujinet::fs::PathContext make_path_context(std::string_view cwd_fs, std::string_view cwd_path)
+{
+    return fujinet::fs::PathContext{std::string(cwd_fs), std::string(cwd_path)};
+}
+
+static bool parse_fs_path(
+    const fujinet::fs::PathResolver& resolver,
+    std::string_view spec,
+    std::string_view cur_fs,
+    std::string_view cur_path,
+    FsPath& out)
+{
+    fujinet::fs::ResolvedTarget resolved;
+    if (!resolver.resolve(spec, make_path_context(cur_fs, cur_path), resolved)) {
+        return false;
+    }
+    out.fs = std::move(resolved.fs_name);
+    out.path = std::move(resolved.fs_path);
+    return true;
+}
+
+static bool fs_resolve_target(
+    const fujinet::fs::PathResolver& resolver,
     const std::vector<std::string_view>& argv,
     std::string_view cwd_fs,
     std::string_view cwd_path,
-    FsPath& out,
-    bool& ok
-)
+    FsPath& out)
 {
-    ok = false;
-    if (argv.size() >= 2) {
-        ok = parse_fs_path(argv[1], cwd_fs, cwd_path, out);
-        return;
+    fujinet::fs::ResolvedTarget resolved;
+    if (!resolver.resolveOrCwd(argv, make_path_context(cwd_fs, cwd_path), resolved)) {
+        return false;
     }
-    if (cwd_fs.empty()) {
-        return;
-    }
-    out.fs = std::string(cwd_fs);
-    out.path = std::string(cwd_path);
-    ok = true;
+    out.fs = std::move(resolved.fs_name);
+    out.path = std::move(resolved.fs_path);
+    return true;
 }
 
 } // namespace
@@ -472,7 +332,7 @@ bool FsShell::cmd_cd(IConsoleTransport& io, const std::vector<std::string_view>&
     }
 
     FsPath target;
-    if (!parse_fs_path(argv[1], _cwd_fs, _cwd_path, target)) {
+    if (!parse_fs_path(_pathResolver, argv[1], _cwd_fs, _cwd_path, target)) {
         io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
         return true;
     }
@@ -495,9 +355,7 @@ bool FsShell::cmd_cd(IConsoleTransport& io, const std::vector<std::string_view>&
 bool FsShell::cmd_ls(IConsoleTransport& io, const std::vector<std::string_view>& argv)
 {
     FsPath target;
-    bool ok = false;
-    fs_resolve_target(argv, _cwd_fs, _cwd_path, target, ok);
-    if (!ok) {
+    if (!fs_resolve_target(_pathResolver, argv, _cwd_fs, _cwd_path, target)) {
         io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
         return true;
     }
@@ -596,9 +454,7 @@ bool FsShell::cmd_ls(IConsoleTransport& io, const std::vector<std::string_view>&
 bool FsShell::cmd_mkdir(IConsoleTransport& io, const std::vector<std::string_view>& argv)
 {
     FsPath target;
-    bool ok = false;
-    fs_resolve_target(argv, _cwd_fs, _cwd_path, target, ok);
-    if (!ok) {
+    if (!fs_resolve_target(_pathResolver, argv, _cwd_fs, _cwd_path, target)) {
         io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
         return true;
     }
@@ -636,7 +492,7 @@ bool FsShell::cmd_rm(IConsoleTransport& io, const std::vector<std::string_view>&
     bool all_ok = true;
     for (; idx < argv.size(); ++idx) {
         FsPath target;
-        if (!parse_fs_path(argv[idx], _cwd_fs, _cwd_path, target)) {
+        if (!parse_fs_path(_pathResolver, argv[idx], _cwd_fs, _cwd_path, target)) {
             if (!flags.force) io.write_line("error: bad path");
             all_ok = false;
             continue;
@@ -701,7 +557,7 @@ bool FsShell::cmd_rmdir(IConsoleTransport& io, const std::vector<std::string_vie
 
     // Only operate on the first path (like current shell behavior).
     FsPath target;
-    if (!parse_fs_path(argv[idx], _cwd_fs, _cwd_path, target)) {
+    if (!parse_fs_path(_pathResolver, argv[idx], _cwd_fs, _cwd_path, target)) {
         io.write_line("error: bad path");
         return true;
     }
@@ -726,8 +582,8 @@ bool FsShell::cmd_mv(IConsoleTransport& io, const std::vector<std::string_view>&
 
     FsPath from;
     FsPath to;
-    if (!parse_fs_path(argv[1], _cwd_fs, _cwd_path, from) ||
-        !parse_fs_path(argv[2], _cwd_fs, _cwd_path, to)) {
+    if (!parse_fs_path(_pathResolver, argv[1], _cwd_fs, _cwd_path, from) ||
+        !parse_fs_path(_pathResolver, argv[2], _cwd_fs, _cwd_path, to)) {
         io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
         return true;
     }
