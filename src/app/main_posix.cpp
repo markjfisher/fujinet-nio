@@ -18,6 +18,8 @@
 #include "fujinet/diag/diagnostic_provider.h"
 #include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/filesystem.h"
+#include "fujinet/fs/tnfs_filesystem.h"
+#include "fujinet/fs/http_filesystem.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/fuji_device.h"

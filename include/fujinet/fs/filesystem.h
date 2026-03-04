@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <cstdint>
@@ -5,6 +6,10 @@
 #include <vector>
 #include <chrono>
 #include <memory>
+
+namespace fujinet::tnfs {
+class ITnfsClient;
+}
 
 namespace fujinet::fs {
 
@@ -93,13 +98,6 @@ public:
     ) = 0;
 };
 
-std::unique_ptr<IFileSystem> make_tnfs_filesystem();
-std::unique_ptr<IFileSystem> make_tnfs_filesystem(
-    const std::string& host,
-    std::uint16_t port = 16384,
-    const std::string& mountPath = "/",
-    const std::string& user = "",
-    const std::string& password = "");
-std::unique_ptr<IFileSystem> make_http_filesystem();
+
 
 } // namespace fujinet::fs

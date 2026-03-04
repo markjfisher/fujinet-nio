@@ -1,24 +1,18 @@
-#include "fujinet/platform/channel_factory.h"
 
-#include <memory>
-#include <cstdio>
-#include <string>
-#include <cstring>
-#include <cerrno>
-
-#include "fujinet/io/core/channel.h"
-#include "fujinet/build/profile.h"
+#include "fujinet/platform/posix/udp_channel.h"
 #include "fujinet/core/logging.h"
 
-#if !defined(_WIN32)
-
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <netdb.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <poll.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
+
+#include <cstdint>
+#include <cstring>
+#include <memory>
 
 namespace fujinet::platform {
 
@@ -47,151 +41,165 @@ static void format_hex_prefix(const std::uint8_t* buffer, std::size_t len, char*
     }
 }
 
-// Forward declaration for factory function
-std::unique_ptr<fujinet::io::Channel> create_udp_channel(const std::string& host, std::uint16_t port);
+class UdpChannel final : public fujinet::io::Channel {
+ public:
+  explicit UdpChannel(const std::string& host, uint16_t port) : host_(host), port_(port), socket_fd_(-1), connected_(false) {
+    socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
+    if (socket_fd_ < 0) {
+      FN_LOGE(TAG, "Failed to create UDP socket: %s", std::strerror(errno));
+      return;
+    }
 
-class UdpChannel : public fujinet::io::Channel {
-public:
-    UdpChannel(const std::string& host, std::uint16_t port)
-        : _host(host)
-        , _port(port)
-        , _socketFd(-1)
-        , _connected(false)
+    // Set socket to non-blocking
+    int flags = fcntl(socket_fd_, F_GETFL, 0);
+    if (flags < 0) {
+      FN_LOGE(TAG, "Failed to get socket flags: %s", std::strerror(errno));
+      close(socket_fd_);
+      socket_fd_ = -1;
+      return;
+    }
+    if (fcntl(socket_fd_, F_SETFL, flags | O_NONBLOCK) < 0) {
+      FN_LOGE(TAG, "Failed to set socket to non-blocking: %s", std::strerror(errno));
+      close(socket_fd_);
+      socket_fd_ = -1;
+      return;
+    }
+
+    // Resolve hostname
+    struct hostent* he = gethostbyname(host_.c_str());
+    if (!he) {
+      FN_LOGE(TAG, "Failed to resolve hostname: %s", host_.c_str());
+      close(socket_fd_);
+      socket_fd_ = -1;
+      return;
+    }
+
+    memset(&server_addr_, 0, sizeof(server_addr_));
+    server_addr_.sin_family = AF_INET;
+    server_addr_.sin_port = htons(port_);
+    std::memcpy(&server_addr_.sin_addr, he->h_addr_list[0], he->h_length);
+
+    // Connect to the server so we can use send/recv instead of sendto/recvfrom
+    if (connect(socket_fd_, reinterpret_cast<const sockaddr*>(&server_addr_), sizeof(server_addr_)) < 0) {
+      FN_LOGE(TAG, "Failed to connect UDP socket: %s", std::strerror(errno));
+      close(socket_fd_);
+      socket_fd_ = -1;
+      return;
+    }
+
+    connected_ = true;
+    FN_LOGI(TAG, "Connected to %s:%u", host_.c_str(), static_cast<unsigned>(port_));
+  }
+
+  ~UdpChannel() override {
+    if (socket_fd_ >= 0) {
+      close(socket_fd_);
+    }
+  }
+
+  bool available() override {
+    if (socket_fd_ < 0 || !connected_) {
+      return false;
+    }
+
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(socket_fd_, &read_fds);
+
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 0;
+
+    int result = select(socket_fd_ + 1, &read_fds, nullptr, nullptr, &timeout);
+    if (result < 0) {
+      FN_LOGE(TAG, "Select failed: %s", std::strerror(errno));
+      return false;
+    }
+
+    return FD_ISSET(socket_fd_, &read_fds);
+  }
+
+  std::size_t read(std::uint8_t* buffer, std::size_t max_len) override {
+    if (socket_fd_ < 0 || !connected_ || !buffer) {
+      return 0;
+    }
+
+    ssize_t bytes_read = recv(socket_fd_, buffer, max_len, 0);
+    if (bytes_read < 0) {
+      // If we would block, return 0 bytes read instead of error
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return 0;
+      }
+      // For other errors, treat as a closed channel
+      FN_LOGE(TAG, "Read failed: %s", std::strerror(errno));
+      close(socket_fd_);
+      socket_fd_ = -1;
+      connected_ = false;
+      return 0;
+    }
+
+    // Debug: log received UDP packet (prefix only, to avoid spam)
     {
-        _socketFd = ::socket(AF_INET, SOCK_DGRAM, 0);
-        if (_socketFd < 0) {
-            FN_LOGE(TAG, "Failed to create UDP socket: %s", std::strerror(errno));
-            return;
-        }
-
-        // Set non-blocking
-        int flags = ::fcntl(_socketFd, F_GETFL, 0);
-        if (flags >= 0) {
-            ::fcntl(_socketFd, F_SETFL, flags | O_NONBLOCK);
-        }
-
-        // Resolve hostname
-        struct hostent* he = ::gethostbyname(_host.c_str());
-        if (!he) {
-            FN_LOGE(TAG, "Failed to resolve hostname: %s", _host.c_str());
-            ::close(_socketFd);
-            _socketFd = -1;
-            return;
-        }
-
-        // Setup remote address
-        std::memset(&_remoteAddr, 0, sizeof(_remoteAddr));
-        _remoteAddr.sin_family = AF_INET;
-        _remoteAddr.sin_port = htons(_port);
-        std::memcpy(&_remoteAddr.sin_addr, he->h_addr_list[0], he->h_length);
-
-        // Connect UDP socket (sets default destination)
-        if (::connect(_socketFd, reinterpret_cast<struct sockaddr*>(&_remoteAddr), sizeof(_remoteAddr)) < 0) {
-            FN_LOGE(TAG, "Failed to connect UDP socket: %s", std::strerror(errno));
-            ::close(_socketFd);
-            _socketFd = -1;
-            return;
-        }
-
-        _connected = true;
-        FN_LOGI(TAG, "Connected to %s:%u", _host.c_str(), static_cast<unsigned>(_port));
+      char hex[3 * 16 + 1];
+      format_hex_prefix(buffer, static_cast<std::size_t>(bytes_read), hex, sizeof(hex));
+      if (bytes_read > 16) {
+        FN_LOGD(TAG, "Received %zd bytes: %s ...", bytes_read, hex);
+      } else {
+        FN_LOGD(TAG, "Received %zd bytes: %s", bytes_read, hex);
+      }
     }
 
-    ~UdpChannel() override {
-        if (_socketFd >= 0) {
-            ::close(_socketFd);
-        }
+    return static_cast<std::size_t>(bytes_read);
+  }
+
+  void write(const std::uint8_t* buffer, std::size_t len) override {
+    if (socket_fd_ < 0 || !connected_ || !buffer) {
+      return;
     }
 
-    bool available() override {
-        if (_socketFd < 0 || !_connected) {
-            return false;
-        }
-
-        struct pollfd pfd;
-        pfd.fd = _socketFd;
-        pfd.events = POLLIN;
-        pfd.revents = 0;
-
-        int ret = ::poll(&pfd, 1, 0);
-        if (ret <= 0) {
-            return false;
-        }
-        return (pfd.revents & POLLIN) != 0;
+    // Debug: log sent UDP packet (prefix only, to avoid spam)
+    {
+      char hex[3 * 16 + 1];
+      format_hex_prefix(buffer, len, hex, sizeof(hex));
+      if (len > 16) {
+        FN_LOGD(TAG, "Sending %zu bytes: %s ...", len, hex);
+      } else {
+        FN_LOGD(TAG, "Sending %zu bytes: %s", len, hex);
+      }
     }
 
-    std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override {
-        if (_socketFd < 0 || !_connected) {
-            return 0;
-        }
+    const std::uint8_t* ptr = buffer;
+    std::size_t remaining = len;
 
-        ssize_t n = ::recv(_socketFd, buffer, maxLen, 0);
-        if (n <= 0) {
-            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                FN_LOGE(TAG, "Read error: %s", std::strerror(errno));
-            }
-            return 0;
+    while (remaining > 0) {
+      ssize_t bytes_sent = send(socket_fd_, ptr, remaining, 0);
+      if (bytes_sent < 0) {
+        // If we would block, treat as a closed channel
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          FN_LOGE(TAG, "Write would block: %s", std::strerror(errno));
+          close(socket_fd_);
+          socket_fd_ = -1;
+          connected_ = false;
+        } else {
+          FN_LOGE(TAG, "Write failed: %s", std::strerror(errno));
         }
-        
-        // Debug: log received UDP packet (prefix only, to avoid spam)
-        {
-            char hex[3 * 16 + 1];
-            format_hex_prefix(buffer, static_cast<std::size_t>(n), hex, sizeof(hex));
-            if (n > 16) {
-                FN_LOGD(TAG, "Received %zd bytes: %s ...", n, hex);
-            } else {
-                FN_LOGD(TAG, "Received %zd bytes: %s", n, hex);
-            }
-        }
-        
-        return static_cast<std::size_t>(n);
+        break;
+      }
+      remaining -= static_cast<std::size_t>(bytes_sent);
+      ptr += bytes_sent;
     }
+  }
 
-    void write(const std::uint8_t* buffer, std::size_t len) override {
-        if (_socketFd < 0 || !_connected) {
-            return;
-        }
-
-        // Debug: log sent UDP packet (prefix only, to avoid spam)
-        {
-            char hex[3 * 16 + 1];
-            format_hex_prefix(buffer, len, hex, sizeof(hex));
-            if (len > 16) {
-                FN_LOGD(TAG, "Sending %zu bytes: %s ...", len, hex);
-            } else {
-                FN_LOGD(TAG, "Sending %zu bytes: %s", len, hex);
-            }
-        }
-
-        const std::uint8_t* ptr = buffer;
-        std::size_t remaining = len;
-
-        while (remaining > 0) {
-            ssize_t n = ::send(_socketFd, ptr, remaining, 0);
-            if (n <= 0) {
-                if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                    FN_LOGE(TAG, "Write error: %s", std::strerror(errno));
-                }
-                break;
-            }
-            remaining -= static_cast<std::size_t>(n);
-            ptr += n;
-        }
-    }
-
-private:
-    std::string _host;
-    std::uint16_t _port;
-    int _socketFd;
-    bool _connected;
-    struct sockaddr_in _remoteAddr;
+ private:
+  std::string host_;
+  uint16_t port_;
+  int socket_fd_;
+  bool connected_;
+  struct sockaddr_in server_addr_;
 };
 
-std::unique_ptr<fujinet::io::Channel> create_udp_channel(const std::string& host, std::uint16_t port)
-{
-    return std::make_unique<UdpChannel>(host, port);
+std::unique_ptr<fujinet::io::Channel> create_udp_channel(const std::string& host, uint16_t port) {
+  return std::make_unique<UdpChannel>(host, port);
 }
 
-} // namespace fujinet::platform
-
-#endif // !_WIN32
+}  // namespace fujinet::platform

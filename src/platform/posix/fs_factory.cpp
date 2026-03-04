@@ -1,6 +1,10 @@
+
 #include "fujinet/platform/posix/fs_factory.h"
 #include "fujinet/fs/fs_stdio.h"
+#include "fujinet/fs/tnfs_filesystem.h"
 #include "fujinet/core/logging.h"
+#include "fujinet/platform/posix/udp_channel.h"
+#include "fujinet/tnfs/tnfs_protocol.h"
 
 #include <filesystem>
 #include <system_error>
@@ -39,5 +43,18 @@ create_host_filesystem(const std::string& rootDir)
         FileSystemKind::HostPosix
     );
 }
+
+std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password) {
+    auto channel = fujinet::platform::create_udp_channel(host, port);
+    auto client = fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
+
+    if (!client->mount(mountPath, user, password)) {
+        return nullptr;
+    }
+
+    return fujinet::fs::make_tnfs_filesystem(std::move(client));
+}
+
+
 
 } // namespace fujinet::platform::posix

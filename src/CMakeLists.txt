@@ -52,6 +52,7 @@ idf_component_register(
         lib/tcp_network_protocol_common.cpp
         lib/time_formatter.cpp
         lib/time_platform.cpp
+        lib/tnfs/tnfs_udp_client.cpp
         lib/transport/legacy/byte_based_legacy_transport.cpp
         lib/transport/legacy/iwm_traits.cpp
         lib/transport/legacy/iwm_transport.cpp
