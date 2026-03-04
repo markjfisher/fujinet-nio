@@ -25,6 +25,8 @@ STREAM_PORT_CONT="${STREAM_PORT_CONT:-7779}"
 
 TNFS_PORT_HOST="${TNFS_PORT_HOST:-16384}"
 TNFS_PORT_CONT="${TNFS_PORT_CONT:-16384}"
+TNFS_UID="${TNFS_UID:-$(id -u)}"
+TNFS_GID="${TNFS_GID:-$(id -g)}"
 
 HTTP_IMAGE="${HTTP_IMAGE:-kennethreitz/httpbin}"
 TCP_IMAGE="${TCP_IMAGE:-nicolaka/netshoot}"
@@ -319,7 +321,9 @@ start_tnfs() {
   # Bind to all interfaces (0.0.0.0) so it's accessible from network
   docker run -d --rm \
     --name "$TNFS_NAME" \
+    --user "${TNFS_UID}:${TNFS_GID}" \
     -p "0.0.0.0:${TNFS_PORT_HOST}:${TNFS_PORT_CONT}/udp" \
+    -p "0.0.0.0:${TNFS_PORT_HOST}:${TNFS_PORT_CONT}/tcp" \
     -v "$tnfs_dir:/data" \
     "$TNFS_IMAGE" >/dev/null
 

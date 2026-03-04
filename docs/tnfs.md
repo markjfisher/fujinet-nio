@@ -41,18 +41,22 @@ The `TnfsFile` class (defined in `src/lib/fs/tnfs_filesystem.cpp`) implements th
 
 When using FileDevice commands, pass the filesystem name as `tnfs`, and pass endpoint/path in URI-style path form:
 
-- Preferred:
+- UDP (default):
   - `list tnfs //localhost:16384/`
   - `stat tnfs //localhost:16384/test.txt`
-- Also accepted:
+- Also accepted UDP URI:
   - `tnfs://localhost:16384/test.txt`
+- TCP URI forms:
+  - `tnfs+tcp://localhost:16384/test.txt`
+  - `tnfstcp://localhost:16384/test.txt`
+  - `tnfs-tcp://localhost:16384/test.txt`
 
 Using `tnfs` as both fs name and URI scheme can produce display output like `tnfs:tnfs://...` in CLI output. This is only formatting from the helper script, not a protocol issue.
 
 ## Platform Support
 
 - POSIX uses dynamic TNFS filesystem factory and supports UDP (default) and TCP TNFS clients.
-- ESP32 uses the same dynamic TNFS filesystem model and currently uses UDP TNFS client creation in the platform factory.
+- ESP32 uses the same dynamic TNFS filesystem model and supports UDP and TCP TNFS clients.
 - Core TNFS protocol behavior (including STAT decoding and tell/lseek logic) is shared via `CommonTnfsClient`, so protocol fixes apply to both platforms.
 
 ## Testing
@@ -64,7 +68,11 @@ Current integration tests cover:
 - read from subdirectory
 - write file and read it back
 
-See `integration-tests/steps/35_tnfs.yaml`.
+See:
+- `integration-tests/steps/35_tnfs.yaml` (UDP)
+- `integration-tests/steps/36_tnfs_tcp.yaml` (TCP)
+
+For local test services, ensure TNFS is published on both UDP and TCP port `16384` when TCP tests are enabled.
 
 ## Notes
 

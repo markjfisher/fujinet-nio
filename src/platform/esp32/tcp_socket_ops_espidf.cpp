@@ -97,14 +97,17 @@ public:
     bool poll_connect_complete(int fd) override
     {
         fd_set wfds;
+        fd_set efds;
         FD_ZERO(&wfds);
+        FD_ZERO(&efds);
         FD_SET(fd, &wfds);
+        FD_SET(fd, &efds);
 
         timeval tv {};
         tv.tv_sec = 0;
         tv.tv_usec = 0;
 
-        const int sr = lwip_select(fd + 1, nullptr, &wfds, nullptr, &tv);
+        const int sr = lwip_select(fd + 1, nullptr, &wfds, &efds, &tv);
         if (sr < 0) {
             return false; // error, errno set
         }

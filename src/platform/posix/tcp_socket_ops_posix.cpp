@@ -101,7 +101,7 @@ public:
     {
         struct pollfd pfd {};
         pfd.fd = fd;
-        pfd.events = POLLOUT;
+        pfd.events = POLLOUT | POLLERR | POLLHUP;
 
         const int pr = ::poll(&pfd, 1, 0);
         if (pr < 0) {

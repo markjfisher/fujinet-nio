@@ -2,7 +2,9 @@
 #include "fujinet/core/logging.h"
 #include "fujinet/core/utils.h"
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 namespace fujinet::net {
 
@@ -15,6 +17,8 @@ TcpChannel::TcpChannel(ITcpSocketOps& socket_ops, const std::string& host, uint1
     , socket_fd_(-1)
     , connected_(false)
 {
+    int last_connect_error = socket_ops_.err_timed_out();
+
     const void* hints = socket_ops_.tcp_stream_addrinfo_hints();
     AddrInfo* res = nullptr;
     const std::string port_str = std::to_string(port_);
@@ -48,6 +52,7 @@ TcpChannel::TcpChannel(ITcpSocketOps& socket_ops, const std::string& host, uint1
         }
         
         const int connect_err = socket_ops_.last_errno();
+        last_connect_error = connect_err;
         if (connect_result < 0 && socket_ops_.is_in_progress(connect_err)) {
             // Wait for connection to complete
             bool connect_complete = false;
@@ -57,15 +62,12 @@ TcpChannel::TcpChannel(ITcpSocketOps& socket_ops, const std::string& host, uint1
                     break;
                 }
                 
-                // Sleep for 100ms
-                struct timeval tv;
-                tv.tv_sec = 0;
-                tv.tv_usec = 100000;
-                select(0, nullptr, nullptr, nullptr, &tv);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             
             if (connect_complete) {
                 const int so_error = socket_ops_.get_so_error(socket_fd_);
+                last_connect_error = so_error;
                 if (so_error == 0) {
                     connected_ = true;
                     break;
@@ -83,7 +85,7 @@ TcpChannel::TcpChannel(ITcpSocketOps& socket_ops, const std::string& host, uint1
         socket_ops_.apply_stream_socket_options(socket_fd_, true, false);
         FN_LOGI(TAG, "Connected to %s:%u", host_.c_str(), static_cast<unsigned>(port_));
     } else {
-        FN_LOGE(TAG, "Failed to connect TCP socket: %s", socket_ops_.err_string(socket_ops_.last_errno()));
+        FN_LOGE(TAG, "Failed to connect TCP socket: %s", socket_ops_.err_string(last_connect_error));
     }
 }
 
