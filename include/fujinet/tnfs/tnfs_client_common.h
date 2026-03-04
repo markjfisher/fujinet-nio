@@ -12,13 +12,15 @@
 
 namespace fujinet::tnfs {
 
+static constexpr const char* TAG = "tnfs";
+
 class CommonTnfsClient : public ITnfsClient {
 public:
     CommonTnfsClient(std::unique_ptr<fujinet::io::Channel> channel, const char* transportName)
         : _channel(std::move(channel))
         , _transportName(transportName)
     {
-        FN_LOGI("tnfs", "%s TNFS client created", _transportName);
+        FN_LOGI(TAG, "%s TNFS client created", _transportName);
     }
 
     ~CommonTnfsClient() override
@@ -40,22 +42,22 @@ public:
         if (!append_cstring(pkt.payload, sizeof(pkt.payload), offset, mountPath) ||
             !append_cstring(pkt.payload, sizeof(pkt.payload), offset, user) ||
             !append_cstring(pkt.payload, sizeof(pkt.payload), offset, password)) {
-            FN_LOGE("tnfs", "Mount payload too large");
+            FN_LOGE(TAG, "Mount payload too large");
             return false;
         }
 
         if (!send_and_receive(pkt, offset)) {
-            FN_LOGE("tnfs", "Mount failed: no response");
+            FN_LOGE(TAG, "Mount failed: no response");
             return false;
         }
 
         if (pkt.payload[0] != RESULT_SUCCESS) {
-            FN_LOGE("tnfs", "Mount failed: %u", static_cast<unsigned>(pkt.payload[0]));
+            FN_LOGE(TAG, "Mount failed: %u", static_cast<unsigned>(pkt.payload[0]));
             return false;
         }
 
         _sessionId = read_u16le(pkt.sessionIdL, pkt.sessionIdH);
-        FN_LOGI("tnfs", "Mounted %s session 0x%04X", _transportName, static_cast<unsigned>(_sessionId));
+        FN_LOGI(TAG, "Mounted %s session 0x%04X", _transportName, static_cast<unsigned>(_sessionId));
         return true;
     }
 
@@ -432,7 +434,7 @@ private:
             }
         }
 
-        FN_LOGE("tnfs", "%s TNFS timeout for command 0x%02X", _transportName, static_cast<unsigned>(pkt.command));
+        FN_LOGE(TAG, "%s TNFS timeout for command 0x%02X", _transportName, static_cast<unsigned>(pkt.command));
         return false;
     }
 

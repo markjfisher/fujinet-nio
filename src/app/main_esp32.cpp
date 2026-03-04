@@ -285,7 +285,9 @@ extern "C" void app_main(void)
     esp_log_level_set("iwm_hw",      ESP_LOG_INFO);
     esp_log_level_set("sio_hw",      ESP_LOG_INFO);
     esp_log_level_set("button",      ESP_LOG_INFO);
-    esp_log_level_set("led",      ESP_LOG_INFO);
+    esp_log_level_set("led",         ESP_LOG_INFO);
+    esp_log_level_set("tnfs",        ESP_LOG_INFO);
+    esp_log_level_set("tnfs_fs",     ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init",   ESP_LOG_ERROR);
