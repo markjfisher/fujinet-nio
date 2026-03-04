@@ -170,11 +170,28 @@ extern "C" void fujinet_core_task(void* arg)
     services.init_phase0(core);
     
     if (auto flashFs = platform::esp32::create_flash_filesystem()) {
-        core.storageManager().registerFileSystem(std::move(flashFs));
+        if (!core.storageManager().registerFileSystem(std::move(flashFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'flash' filesystem");
+        } else {
+            FN_LOGI(TAG, "Flash filesystem registered as 'flash'");
+        }
     }
 
     if (auto sdFs = platform::esp32::create_sdcard_filesystem()) {
-        core.storageManager().registerFileSystem(std::move(sdFs));
+        if (!core.storageManager().registerFileSystem(std::move(sdFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'sd0' filesystem");
+        } else {
+            FN_LOGI(TAG, "SD filesystem registered as 'sd0'");
+        }
+    }
+
+    // Register TNFS filesystem provider. Endpoint/transport are resolved from URI at access time.
+    if (auto tnfsFs = platform::esp32::create_tnfs_filesystem()) {
+        if (!core.storageManager().registerFileSystem(std::move(tnfsFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'tnfs' filesystem");
+        } else {
+            FN_LOGI(TAG, "TNFS filesystem registered as 'tnfs' (dynamic URI endpoints)");
+        }
     }
 
     auto profile = build::current_build_profile();
