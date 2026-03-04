@@ -46,6 +46,8 @@ create_host_filesystem(const std::string& rootDir)
 }
 
 std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password, bool useTcp) {
+    FN_LOGD(TAG, "Creating TNFS filesystem with host: %s, port: %u, mountPath: %s", host.c_str(), static_cast<unsigned>(port), mountPath.c_str());
+    
     std::unique_ptr<fujinet::io::Channel> channel;
     std::unique_ptr<fujinet::tnfs::ITnfsClient> client;
 

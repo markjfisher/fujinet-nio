@@ -38,8 +38,14 @@ public:
     // Send data (nonblocking). Returns bytes sent (>0), -1 on error (errno set).
     virtual SSize send(int fd, const void* buf, std::size_t len) = 0;
 
+    // Send data to specific address (nonblocking). Returns bytes sent (>0), -1 on error (errno set).
+    virtual SSize sendto(int fd, const void* buf, std::size_t len, const struct sockaddr* addr, SockLen addrlen) = 0;
+
     // Receive data (nonblocking). Returns bytes received (>0), -1 on error (errno set).
     virtual SSize recv(int fd, void* buf, std::size_t len) = 0;
+
+    // Receive data from specific address (nonblocking). Returns bytes received (>0), -1 on error (errno set).
+    virtual SSize recvfrom(int fd, void* buf, std::size_t len, struct sockaddr* addr, SockLen* addrlen) = 0;
 
     // Poll for readable data. Returns true if data is available to read.
     virtual bool poll_readable(int fd) = 0;

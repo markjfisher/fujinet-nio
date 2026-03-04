@@ -5,6 +5,9 @@
 
 #include <string>
 #include <memory>
+#include <cstddef>
+#include <cstring>
+#include <sys/socket.h>
 
 namespace fujinet::net {
 
@@ -24,6 +27,8 @@ private:
     uint16_t port_;
     int socket_fd_;
     bool connected_;
+    struct sockaddr_storage peer_addr_;
+    socklen_t peer_addr_len_;
 };
 
 } // namespace fujinet::net

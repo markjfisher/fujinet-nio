@@ -41,8 +41,16 @@ public:
         return ::send(fd, buf, len, 0);
     }
 
+    SSize sendto(int fd, const void* buf, std::size_t len, const struct sockaddr* addr, SockLen addrlen) override {
+        return ::sendto(fd, buf, len, 0, addr, static_cast<socklen_t>(addrlen));
+    }
+
     SSize recv(int fd, void* buf, std::size_t len) override {
         return ::recv(fd, buf, len, 0);
+    }
+
+    SSize recvfrom(int fd, void* buf, std::size_t len, struct sockaddr* addr, SockLen* addrlen) override {
+        return ::recvfrom(fd, buf, len, 0, addr, reinterpret_cast<socklen_t*>(addrlen));
     }
 
     bool poll_readable(int fd) override {

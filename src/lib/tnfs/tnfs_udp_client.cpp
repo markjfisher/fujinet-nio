@@ -33,6 +33,8 @@ public:
     }
 
     bool mount(const std::string& mountPath, const std::string& user, const std::string& password) override {
+        FN_LOGI(TAG, "Attempting to mount path: '%s', user: '%s', password: '%s'", mountPath.c_str(), user.c_str(), password.c_str());
+        
         TnfsPacket pkt = {};
         pkt.command = CMD_MOUNT;
         pkt.sequenceNum = _sequenceNum++;
@@ -66,6 +68,16 @@ public:
         } else {
             pkt.payload[offset++] = '\0';
         }
+
+        FN_LOGD(TAG, "Mount packet size: %zu bytes", 4 + offset);
+        // Log packet in hex (simpler approach without using format_hex_prefix)
+        char hex_str[256] = {0};
+        char* ptr = hex_str;
+        const uint8_t* data = reinterpret_cast<const uint8_t*>(&pkt);
+        for (size_t i = 0; i < 4 + offset && ptr < hex_str + sizeof(hex_str) - 3; ++i) {
+            ptr += snprintf(ptr, sizeof(hex_str) - (ptr - hex_str), "%02x ", data[i]);
+        }
+        FN_LOGD(TAG, "Mount packet: %s", hex_str);
 
         if (!sendAndReceive(pkt, offset)) {
             FN_LOGE(TAG, "Mount failed: no response");
@@ -540,34 +552,30 @@ private:
         std::memcpy(buffer.data(), &pkt, 4 + payloadSize);
         _channel->write(buffer.data(), 4 + payloadSize);
 
-        // Wait for response
-        static constexpr int timeoutMs = 2000;
-        static constexpr int retryCount = 5;
+        // Wait for response with longer timeout
+        static constexpr int timeoutMs = 5000;
+        static constexpr int retryCount = 2;
 
         for (int i = 0; i < retryCount; ++i) {
-            if (!_channel->available()) {
-                // Add delay between retries (400ms)
-                usleep(400 * 1000);
-                continue;
-            }
+            const auto startTime = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() - startTime < std::chrono::milliseconds(timeoutMs)) {
+                std::size_t bytesRead = _channel->read(reinterpret_cast<uint8_t*>(&pkt), PACKET_SIZE);
+                if (bytesRead >= 5) {
+                    if (pkt.sequenceNum != _sequenceNum - 1) {
+                        continue;
+                    }
 
-            std::size_t bytesRead = _channel->read(reinterpret_cast<uint8_t*>(&pkt), PACKET_SIZE);
-            if (bytesRead < 5) {
-                continue;
-            }
+                    if (_sessionId != 0) {
+                        uint16_t responseSessionId = (static_cast<uint16_t>(pkt.sessionIdH) << 8) | pkt.sessionIdL;
+                        if (responseSessionId != _sessionId) {
+                            continue;
+                        }
+                    }
 
-            if (pkt.sequenceNum != _sequenceNum - 1) {
-                continue;
-            }
-
-            if (_sessionId != 0) {
-                uint16_t responseSessionId = (static_cast<uint16_t>(pkt.sessionIdH) << 8) | pkt.sessionIdL;
-                if (responseSessionId != _sessionId) {
-                    continue;
+                    return true;
                 }
+                usleep(200 * 1000); // 200ms delay between read attempts
             }
-
-            return true;
         }
 
         return false;
