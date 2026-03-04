@@ -1,27 +1,46 @@
-group: TNFS
+group: TNFS / UDP
 steps:
-  - name: "TNFS: list (root directory)"
-    argv: ["{CLI}", "list", "tnfs", "tnfs://localhost:16384/"]
+  - name: "TNFS UDP: list (root directory)"
+    argv: ["{CLI}", "list", "tnfs", "{TNFS_UDP}"]
     expect:
       - "test.txt"
       - "subdir"
     timeout_s: 10
 
-  - name: "TNFS: stat test.txt"
-    argv: ["{CLI}", "stat", "tnfs", "tnfs://localhost:16384/test.txt"]
+  - name: "TNFS UDP: stat test.txt"
+    argv: ["{CLI}", "stat", "tnfs", "{TNFS_UDP}test.txt"]
     expect:
       - "exists: True"
       - "dir:    False"
     timeout_s: 10
 
-  - name: "TNFS: read test.txt content"
-    argv: ["{CLI}", "read-all", "tnfs", "tnfs://localhost:16384/test.txt"]
+  - name: "TNFS UDP: read test.txt content"
+    argv: ["{CLI}", "read-all", "tnfs", "{TNFS_UDP}test.txt"]
     expect:
       - "Test file content"
     timeout_s: 10
 
-  - name: "TNFS: read subdir/subfile.txt"
-    argv: ["{CLI}", "read-all", "tnfs", "tnfs://localhost:16384/subdir/subfile.txt"]
+  - name: "TNFS UDP: read subdir/subfile.txt"
+    argv: ["{CLI}", "read-all", "tnfs", "{TNFS_UDP}subdir/subfile.txt"]
     expect:
       - "Subdirectory file content"
     timeout_s: 10
+
+  - name: "TNFS UDP: write file"
+    argv: ["{CLI}", "write", "tnfs", "{TNFS_UDP}tnfs-write-udp.txt", "integration-tests/data/fs_utf8.txt"]
+    timeout_s: 15
+
+  - name: "TNFS UDP: stat written file"
+    argv: ["{CLI}", "stat", "tnfs", "{TNFS_UDP}tnfs-write-udp.txt"]
+    expect:
+      - "exists: True"
+      - "dir:    False"
+    timeout_s: 10
+
+  - name: "TNFS UDP: read written file"
+    argv: ["{CLI}", "read-all", "tnfs", "{TNFS_UDP}tnfs-write-udp.txt"]
+    expect:
+      - "héllö"
+      - "こんにちは"
+      - "🌍"
+    timeout_s: 15

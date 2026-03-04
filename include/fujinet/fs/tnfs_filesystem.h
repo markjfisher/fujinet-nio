@@ -14,6 +14,7 @@ struct TnfsEndpoint {
     std::string mountPath{"/"};
     std::string user;
     std::string password;
+    bool useTcp{false};
 };
 
 using TnfsClientFactory = std::function<std::unique_ptr<tnfs::ITnfsClient>(const TnfsEndpoint&)>;

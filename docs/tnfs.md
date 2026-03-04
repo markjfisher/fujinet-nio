@@ -3,75 +3,72 @@
 
 ## Overview
 
-This document describes the TNFS (Tiny Network File System) implementation for fujinet-nio. TNFS is a lightweight network file system protocol designed for 8-bit computers and other resource-constrained devices.
+This document describes the TNFS (Tiny Network File System) implementation in `fujinet-nio`.
+TNFS is integrated as a dynamic filesystem provider, so endpoints are resolved from URI/path at file-operation time rather than being hardcoded at startup.
 
 ## Implementation Architecture
 
-The TNFS implementation consists of several key components:
+The TNFS implementation consists of these key components:
 
-### 1. ITnfsClient Interface
+### 1. `ITnfsClient` Interface
 
-The `tnfs::ITnfsClient` interface (defined in `include/fujinet/tnfs/tnfs_protocol.h`) provides the core API for interacting with a TNFS server. This interface abstracts the underlying communication protocol (UDP), allowing for potential future implementations using other transport mechanisms.
+The `tnfs::ITnfsClient` interface (in `include/fujinet/tnfs/tnfs_protocol.h`) provides the core TNFS API used by the filesystem adapter.
 
-### 2. UdpTnfsClient
+### 2. Common TNFS Client Logic (`CommonTnfsClient`)
 
-The `UdpTnfsClient` class (defined in `src/lib/tnfs/tnfs_udp_client.cpp`) implements the `ITnfsClient` interface using UDP as the transport. It provides methods for:
-- Mounting and unmounting filesystems
-- Directory operations (list, create, remove)
-- File operations (open, close, read, write, seek, tell)
-- Stat operations (check if path exists, is directory, get file info)
+`src/lib/tnfs/tnfs_client_common.h` implements shared protocol behavior used by both UDP and TCP TNFS clients:
+- mount/unmount
+- stat/exists/isDirectory
+- directory operations (opendir/readdir/closedir)
+- file operations (open/close/read/write/lseek/tell)
 
-### 3. TnfsFileSystem
+`src/lib/tnfs/tnfs_udp_client.cpp` and `src/lib/tnfs/tnfs_tcp_client.cpp` are thin wrappers that provide transport-specific channels and reuse the common logic.
+
+### 3. `TnfsFileSystem`
 
 The `TnfsFileSystem` class (defined in `src/lib/fs/tnfs_filesystem.cpp`) adapts the `ITnfsClient` interface to the `IFileSystem` interface used by the fujinet-nio core. This allows TNFS servers to be treated as standard filesystems within the fujinet-nio ecosystem.
 
-### 4. TnfsFile
+Important behavior:
+- Endpoints are parsed from the request path/URI (`host`, `port`, `mountPath`, optional credentials).
+- TNFS sessions are cached and reused per endpoint.
+- The filesystem mounts on demand when first used, not at app startup.
+
+### 4. `TnfsFile`
 
 The `TnfsFile` class (defined in `src/lib/fs/tnfs_filesystem.cpp`) implements the `IFile` interface for TNFS files. It provides streaming read and write operations, seek and tell functionality, and flush support.
 
-## UDP Channel
+## URI And Path Format
 
-The UDP channel implementation (defined in `src/platform/posix/udp_channel.cpp`) provides a platform-specific implementation of the `Channel` interface for UDP communication. It supports:
-- Non-blocking socket operations
-- Available check for incoming data
-- Reading from and writing to the socket
+When using FileDevice commands, pass the filesystem name as `tnfs`, and pass endpoint/path in URI-style path form:
 
-The UDP channel is used by the `UdpTnfsClient` to communicate with the TNFS server.
+- Preferred:
+  - `list tnfs //localhost:16384/`
+  - `stat tnfs //localhost:16384/test.txt`
+- Also accepted:
+  - `tnfs://localhost:16384/test.txt`
 
-## Usage
-
-To use the TNFS filesystem, you first need to create an instance of a TNFS client. For UDP communication, you would use:
-
-```cpp
-auto udpChannel = fujinet::platform::create_udp_channel("example.com", 16384);
-auto tnfsClient = fujinet::tnfs::make_udp_tnfs_client(std::move(udpChannel));
-
-if (tnfsClient->mount("/")) {
-    auto filesystem = fujinet::fs::make_tnfs_filesystem(std::move(tnfsClient));
-    // Use the filesystem for file operations
-}
-```
-
-Alternatively, you can use the convenience function:
-
-```cpp
-auto filesystem = fujinet::fs::make_tnfs_filesystem("example.com", 16384, "/", "user", "password");
-```
+Using `tnfs` as both fs name and URI scheme can produce display output like `tnfs:tnfs://...` in CLI output. This is only formatting from the helper script, not a protocol issue.
 
 ## Platform Support
 
-Currently, the TNFS implementation supports:
-- POSIX platforms (Linux, macOS, etc.) with UDP communication
-- The implementation is designed to be platform-agnostic, with platform-specific code isolated in the `platform` directory
+- POSIX uses dynamic TNFS filesystem factory and supports UDP (default) and TCP TNFS clients.
+- ESP32 uses the same dynamic TNFS filesystem model and currently uses UDP TNFS client creation in the platform factory.
+- Core TNFS protocol behavior (including STAT decoding and tell/lseek logic) is shared via `CommonTnfsClient`, so protocol fixes apply to both platforms.
 
 ## Testing
 
-The TNFS implementation is currently in a preliminary state and has not been tested with a real TNFS server. The implementation needs more work before it can be properly tested.
+Current integration tests cover:
+- list root directory
+- stat file metadata
+- read file content
+- read from subdirectory
+- write file and read it back
 
-## Future Enhancements
+See `integration-tests/steps/35_tnfs.yaml`.
 
-Potential future enhancements include:
-- Support for other transport mechanisms (e.g., TCP)
-- Caching for improved performance
-- Error recovery and retrying
-- Additional directory and file operations
+## Notes
+
+- UDP endpoint resolution prefers IPv4 addresses when available (important for localhost TNFS daemons bound only to IPv4).
+- TNFS STAT parsing follows wire layout:
+  - `status, mode, uid, gid, size, atime, mtime, ctime`
+  - directory detection is derived from `mode` type bits.

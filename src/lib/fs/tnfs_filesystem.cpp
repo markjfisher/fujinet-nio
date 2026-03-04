@@ -241,11 +241,12 @@ private:
         std::string mountPath;
         std::string user;
         std::string password;
+        bool useTcp{false};
 
         bool operator<(const SessionKey& other) const
         {
-            return std::tie(host, port, mountPath, user, password) <
-                   std::tie(other.host, other.port, other.mountPath, other.user, other.password);
+            return std::tie(host, port, mountPath, user, password, useTcp) <
+                   std::tie(other.host, other.port, other.mountPath, other.user, other.password, other.useTcp);
         }
     };
 
@@ -371,6 +372,27 @@ private:
             return true;
         }
 
+        // TCP TNFS form: tnfs+tcp://host[:port]/path (aliases: tnfstcp://, tnfs-tcp://)
+        if (rawPath.rfind("tnfs+tcp://", 0) == 0 ||
+            rawPath.rfind("tnfstcp://", 0) == 0 ||
+            rawPath.rfind("tnfs-tcp://", 0) == 0) {
+            UriParts parts = parse_uri(rawPath);
+            if (parts.scheme != "tnfs+tcp" &&
+                parts.scheme != "tnfstcp" &&
+                parts.scheme != "tnfs-tcp") {
+                return false;
+            }
+
+            if (!parse_host_port(parts.authority, endpoint.host, endpoint.port)) {
+                FN_LOGE(TAG, "Invalid TNFS authority in URI: %s", rawPath.c_str());
+                return false;
+            }
+
+            endpoint.useTcp = true;
+            outPath = ensure_abs_path(parts.path);
+            return true;
+        }
+
         // Backward-compatible form: //host[:port]/path
         if (rawPath.rfind("//", 0) == 0) {
             std::size_t slash = rawPath.find('/', 2);
@@ -409,7 +431,7 @@ private:
 
     std::shared_ptr<tnfs::ITnfsClient> get_or_create_session(const TnfsEndpoint& endpoint)
     {
-        SessionKey key{endpoint.host, endpoint.port, endpoint.mountPath, endpoint.user, endpoint.password};
+        SessionKey key{endpoint.host, endpoint.port, endpoint.mountPath, endpoint.user, endpoint.password, endpoint.useTcp};
         auto existing = _sessions.find(key);
         if (existing != _sessions.end()) {
             return existing->second.client;

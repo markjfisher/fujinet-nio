@@ -14,6 +14,7 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_flash_filesystem();
 std::unique_ptr<fujinet::fs::IFileSystem> create_sdcard_filesystem();
 
 // Creates a TNFS filesystem provider. Endpoint is resolved from tnfs:// URI at access time.
-std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem();
+// If useTcp is true, TCP transport is forced unless URI explicitly selects UDP.
+std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(bool useTcp = false);
 
 } // namespace fujinet::platform::esp32

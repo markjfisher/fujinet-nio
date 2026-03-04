@@ -1,0 +1,46 @@
+group: TNFS / TCP
+steps:
+  - name: "TNFS TCP: list (root directory)"
+    argv: ["{CLI}", "list", "tnfs", "{TNFS_TCP}"]
+    expect:
+      - "test.txt"
+      - "subdir"
+    timeout_s: 10
+
+  - name: "TNFS TCP: stat test.txt"
+    argv: ["{CLI}", "stat", "tnfs", "{TNFS_TCP}test.txt"]
+    expect:
+      - "exists: True"
+      - "dir:    False"
+    timeout_s: 10
+
+  - name: "TNFS TCP: read test.txt content"
+    argv: ["{CLI}", "read-all", "tnfs", "{TNFS_TCP}test.txt"]
+    expect:
+      - "Test file content"
+    timeout_s: 10
+
+  - name: "TNFS TCP: read subdir/subfile.txt"
+    argv: ["{CLI}", "read-all", "tnfs", "{TNFS_TCP}subdir/subfile.txt"]
+    expect:
+      - "Subdirectory file content"
+    timeout_s: 10
+
+  - name: "TNFS TCP: write file"
+    argv: ["{CLI}", "write", "tnfs", "{TNFS_TCP}tnfs-write-tcp.txt", "integration-tests/data/fs_utf8.txt"]
+    timeout_s: 15
+
+  - name: "TNFS TCP: stat written file"
+    argv: ["{CLI}", "stat", "tnfs", "{TNFS_TCP}tnfs-write-tcp.txt"]
+    expect:
+      - "exists: True"
+      - "dir:    False"
+    timeout_s: 10
+
+  - name: "TNFS TCP: read written file"
+    argv: ["{CLI}", "read-all", "tnfs", "{TNFS_TCP}tnfs-write-tcp.txt"]
+    expect:
+      - "héllö"
+      - "こんにちは"
+      - "🌍"
+    timeout_s: 15

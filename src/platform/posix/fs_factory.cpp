@@ -51,8 +51,9 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(bool useTcp) {
     fujinet::fs::TnfsClientFactory factory = [useTcp](const fujinet::fs::TnfsEndpoint& endpoint)
         -> std::unique_ptr<fujinet::tnfs::ITnfsClient>
     {
+        const bool useTcpForEndpoint = endpoint.useTcp || useTcp;
         std::unique_ptr<fujinet::io::Channel> channel;
-        if (useTcp) {
+        if (useTcpForEndpoint) {
             channel = fujinet::platform::create_tcp_channel(endpoint.host, endpoint.port);
             return fujinet::tnfs::make_tcp_tnfs_client(std::move(channel));
         }

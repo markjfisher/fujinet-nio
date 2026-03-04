@@ -4,6 +4,7 @@
 #include "fujinet/fs/tnfs_filesystem.h"
 #include "fujinet/core/logging.h"
 #include "fujinet/platform/esp32/udp_channel.h"
+#include "fujinet/platform/esp32/tcp_channel.h"
 #include "fujinet/tnfs/tnfs_protocol.h"
 
 namespace fujinet::platform::esp32 {
@@ -32,10 +33,16 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_sdcard_filesystem()
     );
 }
 
-std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem() {
-    fujinet::fs::TnfsClientFactory factory = [](const fujinet::fs::TnfsEndpoint& endpoint)
+std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(bool useTcp) {
+    fujinet::fs::TnfsClientFactory factory = [useTcp](const fujinet::fs::TnfsEndpoint& endpoint)
         -> std::unique_ptr<fujinet::tnfs::ITnfsClient>
     {
+        const bool useTcpForEndpoint = endpoint.useTcp || useTcp;
+        if (useTcpForEndpoint) {
+            auto channel = fujinet::platform::create_tcp_channel(endpoint.host, endpoint.port);
+            return fujinet::tnfs::make_tcp_tnfs_client(std::move(channel));
+        }
+
         auto channel = fujinet::platform::create_udp_channel(endpoint.host, endpoint.port);
         return fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
     };

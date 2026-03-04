@@ -714,6 +714,10 @@ def main() -> int:
     # TLS URL for raw TLS testing (defaults to same IP as HTTP, port 7778)
     tls_host = ip
     tls_url = f"tls://{ip}:7778"
+    tnfs_host = ip
+    tnfs_port = "16384"
+    tnfs_udp = f"//{tnfs_host}:{tnfs_port}/"
+    tnfs_tcp = f"tnfs+tcp://{tnfs_host}:{tnfs_port}/"
     
     vars = {
         "CLI": " ".join(cli_parts),  # placeholder token to detect {CLI} expansion
@@ -723,6 +727,10 @@ def main() -> int:
         "TCP": tcp_url,
         "TLS_HOST": tls_host,
         "TLS": tls_url,
+        "TNFS_HOST": tnfs_host,
+        "TNFS_PORT": tnfs_port,
+        "TNFS_UDP": tnfs_udp,
+        "TNFS_TCP": tnfs_tcp,
         "FS": args.fs,
         "PORT": args.port,
         "MODE": mode,
