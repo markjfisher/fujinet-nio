@@ -31,7 +31,6 @@ idf_component_register(
         lib/file_device_init.cpp
         lib/fs/http_filesystem.cpp
         lib/fs/tnfs_filesystem.cpp
-        lib/fs_prefix_resolver.cpp
         lib/fs_stdio.cpp
         lib/fuji_bus_packet.cpp
         lib/fuji_config_yaml_store.cpp
@@ -48,9 +47,14 @@ idf_component_register(
         lib/network_device_init.cpp
         lib/network_protocol_registry.cpp
         lib/network_protocol_stub.cpp
-        lib/path_resolver.cpp
-        lib/path_resolver_utils.cpp
-        lib/relative_path_resolver.cpp
+        lib/path_resolvers/fs_prefix_resolver.cpp
+        lib/path_resolvers/path_resolver.cpp
+        lib/path_resolvers/path_resolver_utils.cpp
+        lib/path_resolvers/relative_path_resolver.cpp
+        lib/path_resolvers/tnfs_path_utils.cpp
+        lib/path_resolvers/tnfs_prefix_resolver.cpp
+        lib/path_resolvers/tnfs_relative_resolver.cpp
+        lib/path_resolvers/tnfs_uri_resolver.cpp
         lib/routing_manager.cpp
         lib/storage_manager.cpp
         lib/tcp_channel.cpp
@@ -59,10 +63,6 @@ idf_component_register(
         lib/time_platform.cpp
         lib/tnfs/tnfs_tcp_client.cpp
         lib/tnfs/tnfs_udp_client.cpp
-        lib/tnfs_path_utils.cpp
-        lib/tnfs_prefix_resolver.cpp
-        lib/tnfs_relative_resolver.cpp
-        lib/tnfs_uri_resolver.cpp
         lib/transport/legacy/byte_based_legacy_transport.cpp
         lib/transport/legacy/iwm_traits.cpp
         lib/transport/legacy/iwm_transport.cpp
