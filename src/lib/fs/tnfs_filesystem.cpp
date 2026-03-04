@@ -157,7 +157,8 @@ public:
             return nullptr;
         }
         uint16_t openMode = 0;
-        uint16_t createPerms = 0;
+        // Default perms for newly created files (rw-r--r--).
+        uint16_t createPerms = 0644;
 
         if (std::strchr(mode, 'r') != nullptr) {
             openMode |= tnfs::OPENMODE_READ;
