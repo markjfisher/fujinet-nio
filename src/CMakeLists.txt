@@ -49,6 +49,7 @@ idf_component_register(
         lib/network_protocol_stub.cpp
         lib/routing_manager.cpp
         lib/storage_manager.cpp
+        lib/tcp_channel.cpp
         lib/tcp_network_protocol_common.cpp
         lib/time_formatter.cpp
         lib/time_platform.cpp
@@ -62,7 +63,9 @@ idf_component_register(
         lib/transport/legacy/packet_based_legacy_transport.cpp
         lib/transport/legacy/sio_traits.cpp
         lib/transport/legacy/sio_transport.cpp
+        lib/udp_channel.cpp
         lib/uri_parser.cpp
+        lib/utils.cpp
         platform/esp32/button_manager.cpp
         platform/esp32/channel_factory.cpp
         platform/esp32/console_transport_default.cpp
@@ -94,6 +97,8 @@ idf_component_register(
         platform/esp32/tls_network_protocol_espidf.cpp
         platform/esp32/uart_channel.cpp
         platform/esp32/udp_channel.cpp
+        platform/esp32/udp_socket_ops_default.cpp
+        platform/esp32/udp_socket_ops_espidf.cpp
         platform/esp32/usb_cdc_channel.cpp
         platform/esp32/wifi_link.cpp
 # __TARGET_SOURCES_END__

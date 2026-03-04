@@ -142,6 +142,7 @@ target_sources(fujinet-nio
         src/lib/network_protocol_stub.cpp
         src/lib/routing_manager.cpp
         src/lib/storage_manager.cpp
+        src/lib/tcp_channel.cpp
         src/lib/tcp_network_protocol_common.cpp
         src/lib/time_formatter.cpp
         src/lib/time_platform.cpp
@@ -155,7 +156,9 @@ target_sources(fujinet-nio
         src/lib/transport/legacy/packet_based_legacy_transport.cpp
         src/lib/transport/legacy/sio_traits.cpp
         src/lib/transport/legacy/sio_transport.cpp
+        src/lib/udp_channel.cpp
         src/lib/uri_parser.cpp
+        src/lib/utils.cpp
         src/platform/posix/channel_factory.cpp
         src/platform/posix/console_transport_default.cpp
         src/platform/posix/console_transport_pty.cpp
@@ -178,6 +181,8 @@ target_sources(fujinet-nio
         src/platform/posix/time.cpp
         src/platform/posix/tls_network_protocol_posix.cpp
         src/platform/posix/udp_channel.cpp
+        src/platform/posix/udp_socket_ops_default.cpp
+        src/platform/posix/udp_socket_ops_posix.cpp
 # __TARGET_SOURCES_END__
         third_party/cjson/cJSON.c
 )

@@ -108,7 +108,7 @@ int main()
         FN_LOGI(TAG, "Host filesystem registered as 'host'");
 
         // Register TNFS filesystem provider
-        auto tnfsFs = fujinet::fs::make_tnfs_filesystem();
+        auto tnfsFs = fujinet::platform::posix::create_tnfs_filesystem("localhost", 16384);
         if (!core.storageManager().registerFileSystem(std::move(tnfsFs))) {
             FN_LOGE(TAG, "StorageManager refused to register 'tnfs' filesystem");
             return 1;

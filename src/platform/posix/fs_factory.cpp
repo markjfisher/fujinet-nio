@@ -57,10 +57,7 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(const std::stri
         client = fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
     }
 
-    if (!client->mount(mountPath, user, password)) {
-        return nullptr;
-    }
-
+    // Don't attempt to mount immediately - mount should happen when first used
     return fujinet::fs::make_tnfs_filesystem(std::move(client));
 }
 

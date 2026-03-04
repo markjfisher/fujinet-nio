@@ -6,6 +6,7 @@ HTTPS_NAME="fujinet-https-proxy"
 TCP_NAME="fujinet-tcp-echo"
 TLS_NAME="fujinet-tls-echo"
 STREAM_NAME="fujinet-tcp-stream"
+TNFS_NAME="fujinet-tnfs"
 
 HTTP_PORT_HOST="${HTTP_PORT_HOST:-8080}"
 HTTP_PORT_CONT="${HTTP_PORT_CONT:-80}"
@@ -22,9 +23,13 @@ TLS_PORT_CONT="${TLS_PORT_CONT:-7778}"
 STREAM_PORT_HOST="${STREAM_PORT_HOST:-7779}"
 STREAM_PORT_CONT="${STREAM_PORT_CONT:-7779}"
 
+TNFS_PORT_HOST="${TNFS_PORT_HOST:-16384}"
+TNFS_PORT_CONT="${TNFS_PORT_CONT:-16384}"
+
 HTTP_IMAGE="${HTTP_IMAGE:-kennethreitz/httpbin}"
 TCP_IMAGE="${TCP_IMAGE:-nicolaka/netshoot}"
 NGINX_IMAGE="${NGINX_IMAGE:-nginx:alpine}"
+TNFS_IMAGE="${TNFS_IMAGE:-zaqu/tnfsd}"
 
 usage() {
   cat <<EOF
@@ -34,20 +39,23 @@ Usage:
   $0 tcp             Start TCP echo on localhost:${TCP_PORT_HOST} (foreground with traffic logs)
   $0 tls             Start TLS echo on localhost:${TLS_PORT_HOST} (nginx stream proxy)
   $0 stream          Start TCP streaming server on localhost:${STREAM_PORT_HOST} (sends frames continuously)
+  $0 tnfs            Start TNFS daemon on localhost:${TNFS_PORT_HOST} (detached)
   $0 both            Start httpbin (detached) + TCP echo (foreground)
-  $0 all             Start httpbin + HTTPS proxy + TCP echo + TLS echo + stream (foreground)
+  $0 all             Start httpbin + HTTPS proxy + TCP echo + TLS echo + stream + tnfs (foreground)
   $0 stop            Stop all services
   $0 status          Show container status
-  $0 logs http|https|tcp|tls|stream   Show logs (tcp logs are in-container stdout)
+  $0 logs http|https|tcp|tls|stream|tnfs   Show logs (tcp logs are in-container stdout)
 Options (env vars):
   HTTP_PORT_HOST=8080
   HTTPS_PORT_HOST=8443
   TCP_PORT_HOST=7777
   TLS_PORT_HOST=7778
   STREAM_PORT_HOST=7779
+  TNFS_PORT_HOST=16384
   HTTP_IMAGE=kennethreitz/httpbin
   TCP_IMAGE=nicolaka/netshoot
   NGINX_IMAGE=nginx:alpine
+  TNFS_IMAGE=zaqu/tnfsd
 
 HTTPS Testing:
   After running '$0 https', test with:
@@ -284,6 +292,42 @@ NGINX_EOF
   echo "       or: use tls://${host_ip}:${TLS_PORT_HOST}?testca=1 in fujinet-nio"
 }
 
+start_tnfs() {
+  if is_running "$TNFS_NAME"; then
+    echo "TNFS already running on localhost:${TNFS_PORT_HOST}"
+    return 0
+  fi
+
+  # Create a test directory for TNFS
+  local tnfs_dir="/tmp/fujinet-tnfs"
+  mkdir -p "$tnfs_dir"
+  
+  # Create some test files for TNFS
+  echo "Test file content" > "$tnfs_dir/test.txt"
+  mkdir -p "$tnfs_dir/subdir"
+  echo "Subdirectory file content" > "$tnfs_dir/subdir/subfile.txt"
+
+  # Get host IP for display
+  local host_ip
+  host_ip=$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' | cut -d'/' -f1)
+  
+  echo "Starting TNFS daemon:"
+  echo "  Local:   tnfs://localhost:${TNFS_PORT_HOST}"
+  echo "  Network: tnfs://${host_ip}:${TNFS_PORT_HOST}"
+  
+  # Run TNFS daemon in detached mode
+  # Bind to all interfaces (0.0.0.0) so it's accessible from network
+  docker run -d --rm \
+    --name "$TNFS_NAME" \
+    -p "0.0.0.0:${TNFS_PORT_HOST}:${TNFS_PORT_CONT}/udp" \
+    -v "$tnfs_dir:/data" \
+    "$TNFS_IMAGE" >/dev/null
+
+  echo "TNFS daemon started."
+  echo "Test directory: $tnfs_dir"
+  echo "Test with: tnfs://${host_ip}:${TNFS_PORT_HOST}/test.txt"
+}
+
 start_stream() {
   if is_running "$STREAM_NAME"; then
     echo "TCP stream already running on localhost:${STREAM_PORT_HOST}"
@@ -315,7 +359,7 @@ start_stream() {
 
 status() {
   echo "Containers:"
-  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${TCP_NAME}|${TLS_NAME}|${STREAM_NAME})" || true
+  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${TCP_NAME}|${TLS_NAME}|${STREAM_NAME}|${TNFS_NAME})" || true
   echo
   echo "Endpoints:"
   echo "  http:   http://localhost:${HTTP_PORT_HOST}"
@@ -323,6 +367,7 @@ status() {
   echo "  tcp:    tcp://127.0.0.1:${TCP_PORT_HOST}"
   echo "  tls:    tls://127.0.0.1:${TLS_PORT_HOST}"
   echo "  stream: tcp://127.0.0.1:${STREAM_PORT_HOST}"
+  echo "  tnfs:   tnfs://127.0.0.1:${TNFS_PORT_HOST}"
 }
 
 logs_cmd() {
@@ -333,7 +378,8 @@ logs_cmd() {
     tcp)    docker logs "$TCP_NAME" ;;
     tls)    docker logs "$TLS_NAME" ;;
     stream) docker logs "$STREAM_NAME" ;;
-    *) echo "logs requires: http|https|tcp|tls|stream" ; exit 2 ;;
+    tnfs)   docker logs "$TNFS_NAME" ;;
+    *) echo "logs requires: http|https|tcp|tls|stream|tnfs" ; exit 2 ;;
   esac
 }
 
@@ -354,6 +400,9 @@ case "$cmd" in
   stream)
     start_stream
     ;;
+  tnfs)
+    start_tnfs
+    ;;
   both)
     start_http
     start_tcp
@@ -362,6 +411,7 @@ case "$cmd" in
     start_https
     start_tls
     start_stream
+    start_tnfs
     ;;
   stop)
     stop_one "$STREAM_NAME"
@@ -369,6 +419,7 @@ case "$cmd" in
     stop_one "$TCP_NAME"
     stop_one "$HTTPS_NAME"
     stop_one "$HTTP_NAME"
+    stop_one "$TNFS_NAME"
     echo "Stopped."
     ;;
   status)

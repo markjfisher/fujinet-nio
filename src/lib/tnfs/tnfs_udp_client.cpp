@@ -6,6 +6,7 @@
 #include <cstring>
 #include <vector>
 #include <memory>
+#include <unistd.h>
 
 namespace fujinet::tnfs {
 
@@ -545,7 +546,8 @@ private:
 
         for (int i = 0; i < retryCount; ++i) {
             if (!_channel->available()) {
-                // TODO: Implement sleep
+                // Add delay between retries (400ms)
+                usleep(400 * 1000);
                 continue;
             }
 

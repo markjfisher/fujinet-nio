@@ -70,6 +70,7 @@ class TnfsFileSystem final : public IFileSystem {
 public:
     explicit TnfsFileSystem(std::shared_ptr<tnfs::ITnfsClient> client)
         : _client(std::move(client))
+        , _mounted(false)
     {
         FN_LOGI("tnfs_fs", "TNFS filesystem created");
     }
@@ -86,38 +87,95 @@ public:
         return "tnfs";
     }
 
+    bool _ensureMounted() {
+        if (_mounted) {
+            return true;
+        }
+
+        if (_client->mount("/", "", "")) {
+            _mounted = true;
+            FN_LOGI("tnfs_fs", "TNFS filesystem mounted");
+            return true;
+        }
+
+        FN_LOGE("tnfs_fs", "TNFS filesystem mount failed");
+        return false;
+    }
+
+    std::string _normalize_path(const std::string& path) {
+        // Handle URI-style paths like //localhost/test -> /test
+        if (path.size() >= 2 && path[0] == '/' && path[1] == '/') {
+            // Find the next '/'
+            auto next_slash = path.find('/', 2);
+            if (next_slash != std::string::npos) {
+                return path.substr(next_slash);
+            }
+            return "/";
+        }
+        return path;
+    }
+
     bool exists(const std::string& path) override {
-        FN_LOGD("tnfs_fs", "Checking if path exists: %s", path.c_str());
-        return _client->exists(path);
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Checking if path exists: %s", normalized.c_str());
+        return _client->exists(normalized);
     }
 
     bool isDirectory(const std::string& path) override {
-        FN_LOGD("tnfs_fs", "Checking if path is directory: %s", path.c_str());
-        return _client->isDirectory(path);
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Checking if path is directory: %s", normalized.c_str());
+        return _client->isDirectory(normalized);
     }
 
     bool createDirectory(const std::string& path) override {
-        FN_LOGD("tnfs_fs", "Creating directory: %s", path.c_str());
-        return _client->createDirectory(path);
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Creating directory: %s", normalized.c_str());
+        return _client->createDirectory(normalized);
     }
 
     bool removeFile(const std::string& path) override {
-        FN_LOGD("tnfs_fs", "Removing file: %s", path.c_str());
-        return _client->removeFile(path);
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Removing file: %s", normalized.c_str());
+        return _client->removeFile(normalized);
     }
 
     bool removeDirectory(const std::string& path) override {
-        FN_LOGD("tnfs_fs", "Removing directory: %s", path.c_str());
-        return _client->removeDirectory(path);
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Removing directory: %s", normalized.c_str());
+        return _client->removeDirectory(normalized);
     }
 
     bool rename(const std::string& from, const std::string& to) override {
-        FN_LOGD("tnfs_fs", "Renaming %s to %s", from.c_str(), to.c_str());
-        return _client->rename(from, to);
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized_from = _normalize_path(from);
+        auto normalized_to = _normalize_path(to);
+        FN_LOGD("tnfs_fs", "Renaming %s to %s", normalized_from.c_str(), normalized_to.c_str());
+        return _client->rename(normalized_from, normalized_to);
     }
 
     std::unique_ptr<IFile> open(const std::string& path, const char* mode) override {
-        FN_LOGD("tnfs_fs", "Opening file: %s, mode: %s", path.c_str(), mode);
+        if (!_ensureMounted()) {
+            return nullptr;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Opening file: %s, mode: %s", normalized.c_str(), mode);
 
         uint16_t openMode = 0;
         uint16_t createPerms = 0;
@@ -145,10 +203,14 @@ public:
     }
 
     bool stat(const std::string& path, FileInfo& outInfo) override {
-        FN_LOGD("tnfs_fs", "Statting file: %s", path.c_str());
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Statting file: %s", normalized.c_str());
 
         tnfs::TnfsStat stat;
-        if (!_client->stat(path, stat)) {
+        if (!_client->stat(normalized, stat)) {
             return false;
         }
 
@@ -161,7 +223,11 @@ public:
     }
 
     bool listDirectory(const std::string& path, std::vector<FileInfo>& outEntries) override {
-        FN_LOGD("tnfs_fs", "Listing directory: %s", path.c_str());
+        if (!_ensureMounted()) {
+            return false;
+        }
+        auto normalized = _normalize_path(path);
+        FN_LOGD("tnfs_fs", "Listing directory: %s", normalized.c_str());
 
         std::vector<std::string> entries = _client->listDirectory(path);
         if (entries.empty()) {
@@ -182,6 +248,7 @@ public:
 
 private:
     std::shared_ptr<tnfs::ITnfsClient> _client;
+    bool _mounted;
 };
 
 std::unique_ptr<IFileSystem> make_tnfs_filesystem(std::shared_ptr<tnfs::ITnfsClient> client) {
