@@ -4,6 +4,7 @@
 #include "fujinet/fs/tnfs_filesystem.h"
 #include "fujinet/core/logging.h"
 #include "fujinet/platform/posix/udp_channel.h"
+#include "fujinet/platform/posix/tcp_channel.h"
 #include "fujinet/tnfs/tnfs_protocol.h"
 
 #include <filesystem>
@@ -44,15 +45,27 @@ create_host_filesystem(const std::string& rootDir)
     );
 }
 
-std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password) {
-    auto channel = fujinet::platform::create_udp_channel(host, port);
-    auto client = fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
+std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password, bool useTcp) {
+    std::unique_ptr<fujinet::io::Channel> channel;
+    std::unique_ptr<fujinet::tnfs::ITnfsClient> client;
+
+    if (useTcp) {
+        channel = fujinet::platform::create_tcp_channel(host, port);
+        client = fujinet::tnfs::make_tcp_tnfs_client(std::move(channel));
+    } else {
+        channel = fujinet::platform::create_udp_channel(host, port);
+        client = fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
+    }
 
     if (!client->mount(mountPath, user, password)) {
         return nullptr;
     }
 
     return fujinet::fs::make_tnfs_filesystem(std::move(client));
+}
+
+std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_tcp_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password) {
+    return create_tnfs_filesystem(host, port, mountPath, user, password, true);
 }
 
 

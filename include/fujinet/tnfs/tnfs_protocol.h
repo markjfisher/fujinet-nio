@@ -131,6 +131,6 @@ public:
 };
 
 std::unique_ptr<ITnfsClient> make_udp_tnfs_client(std::unique_ptr<fujinet::io::Channel> channel);
-
+std::unique_ptr<ITnfsClient> make_tcp_tnfs_client(std::unique_ptr<fujinet::io::Channel> channel);
 
 } // namespace fujinet::tnfs

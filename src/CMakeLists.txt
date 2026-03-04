@@ -52,6 +52,7 @@ idf_component_register(
         lib/tcp_network_protocol_common.cpp
         lib/time_formatter.cpp
         lib/time_platform.cpp
+        lib/tnfs/tnfs_tcp_client.cpp
         lib/tnfs/tnfs_udp_client.cpp
         lib/transport/legacy/byte_based_legacy_transport.cpp
         lib/transport/legacy/iwm_traits.cpp
@@ -84,6 +85,7 @@ idf_component_register(
         platform/esp32/pinmap.cpp
         platform/esp32/sio_bus_hardware.cpp
         platform/esp32/sntp_service.cpp
+        platform/esp32/tcp_channel.cpp
         platform/esp32/tcp_network_protocol_espidf.cpp
         platform/esp32/tcp_socket_ops_default.cpp
         platform/esp32/tcp_socket_ops_espidf.cpp
@@ -91,6 +93,7 @@ idf_component_register(
         platform/esp32/tinyusb_cdc.cpp
         platform/esp32/tls_network_protocol_espidf.cpp
         platform/esp32/uart_channel.cpp
+        platform/esp32/udp_channel.cpp
         platform/esp32/usb_cdc_channel.cpp
         platform/esp32/wifi_link.cpp
 # __TARGET_SOURCES_END__

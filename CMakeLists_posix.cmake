@@ -145,6 +145,7 @@ target_sources(fujinet-nio
         src/lib/tcp_network_protocol_common.cpp
         src/lib/time_formatter.cpp
         src/lib/time_platform.cpp
+        src/lib/tnfs/tnfs_tcp_client.cpp
         src/lib/tnfs/tnfs_udp_client.cpp
         src/lib/transport/legacy/byte_based_legacy_transport.cpp
         src/lib/transport/legacy/iwm_traits.cpp
@@ -170,6 +171,7 @@ target_sources(fujinet-nio
         src/platform/posix/netsio_bus_hardware.cpp
         src/platform/posix/network_registry.cpp
         src/platform/posix/sio_bus_hardware.cpp
+        src/platform/posix/tcp_channel.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
         src/platform/posix/tcp_socket_ops_default.cpp
         src/platform/posix/tcp_socket_ops_posix.cpp
