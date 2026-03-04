@@ -202,6 +202,51 @@ struct FsPath {
     std::string path; // absolute within fs
 };
 
+static bool is_tnfs_endpoint_path(std::string_view p)
+{
+    return p.rfind("//", 0) == 0 ||
+           p.rfind("tnfs://", 0) == 0 ||
+           p.rfind("tnfs+tcp://", 0) == 0 ||
+           p.rfind("tnfstcp://", 0) == 0 ||
+           p.rfind("tnfs-tcp://", 0) == 0;
+}
+
+static std::string tnfs_join_relative(std::string_view base, std::string_view rel)
+{
+    // If base is tnfs://host[:port]/path, join relative onto the path segment
+    // while preserving scheme and authority.
+    std::size_t scheme_pos = base.find("://");
+    if (scheme_pos != std::string_view::npos) {
+        std::size_t authority_start = scheme_pos + 3;
+        std::size_t path_start = base.find('/', authority_start);
+        if (path_start == std::string_view::npos) {
+            std::string out(base);
+            out.push_back('/');
+            out.append(rel.data(), rel.size());
+            return out;
+        }
+        std::string prefix(base.substr(0, path_start));
+        std::string path = fs_norm(fs_join(base.substr(path_start), rel));
+        return prefix + path;
+    }
+
+    // If base is //host[:port]/path, preserve endpoint authority and join onto path.
+    if (base.rfind("//", 0) == 0) {
+        std::size_t path_start = base.find('/', 2);
+        if (path_start == std::string_view::npos) {
+            std::string out(base);
+            out.push_back('/');
+            out.append(rel.data(), rel.size());
+            return out;
+        }
+        std::string prefix(base.substr(0, path_start));
+        std::string path = fs_norm(fs_join(base.substr(path_start), rel));
+        return prefix + path;
+    }
+
+    return fs_norm(fs_join(base, rel));
+}
+
 static bool parse_fs_path(
     std::string_view spec,
     std::string_view cur_fs,
@@ -213,12 +258,25 @@ static bool parse_fs_path(
     // - "sd0:" (meaning "/")
     // - "/dir" absolute in current fs
     // - "dir" relative in current fs
+    // URI form without explicit "<fs>:" prefix. Route TNFS URI schemes to fs="tnfs".
+    if (spec.rfind("tnfs://", 0) == 0 ||
+        spec.rfind("tnfs+tcp://", 0) == 0 ||
+        spec.rfind("tnfstcp://", 0) == 0 ||
+        spec.rfind("tnfs-tcp://", 0) == 0) {
+        out.fs = "tnfs";
+        out.path = std::string(spec);
+        return true;
+    }
+
     const std::size_t colon = spec.find(':');
     if (colon != std::string_view::npos) {
         out.fs = std::string(spec.substr(0, colon));
         std::string_view p = spec.substr(colon + 1);
         if (p.empty()) p = "/";
-        if (!p.empty() && p.front() != '/') {
+        if (out.fs == "tnfs" && is_tnfs_endpoint_path(p)) {
+            // Preserve TNFS endpoint-style paths (//host:port/...).
+            out.path = std::string(p);
+        } else if (!p.empty() && p.front() != '/') {
             std::string tmp("/");
             tmp.append(p.data(), p.size());
             out.path = fs_norm(tmp);
@@ -233,10 +291,18 @@ static bool parse_fs_path(
     }
     out.fs = std::string(cur_fs);
     if (!spec.empty() && spec.front() == '/') {
-        out.path = fs_norm(spec);
+        if (out.fs == "tnfs" && is_tnfs_endpoint_path(spec)) {
+            out.path = std::string(spec);
+        } else {
+            out.path = fs_norm(spec);
+        }
         return true;
     }
-    out.path = fs_norm(fs_join(cur_path, spec));
+    if (out.fs == "tnfs" && is_tnfs_endpoint_path(cur_path)) {
+        out.path = tnfs_join_relative(cur_path, spec);
+    } else {
+        out.path = fs_norm(fs_join(cur_path, spec));
+    }
     return true;
 }
 
