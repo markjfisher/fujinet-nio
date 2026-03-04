@@ -9,18 +9,6 @@ std::unique_ptr<fujinet::fs::IFileSystem>
 create_host_filesystem(const std::string& rootDir);
 
 std::unique_ptr<fujinet::fs::IFileSystem>
-create_tnfs_filesystem(const std::string& host,
-                       uint16_t port,
-                       const std::string& mountPath = "/",
-                       const std::string& user = "",
-                       const std::string& password = "",
-                       bool useTcp = false);
-
-std::unique_ptr<fujinet::fs::IFileSystem>
-create_tnfs_tcp_filesystem(const std::string& host,
-                          uint16_t port,
-                          const std::string& mountPath = "/",
-                          const std::string& user = "",
-                          const std::string& password = "");
+create_tnfs_filesystem(bool useTcp = false);
 
 } // namespace fujinet::platform::posix

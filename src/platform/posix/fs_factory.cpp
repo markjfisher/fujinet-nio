@@ -45,28 +45,21 @@ create_host_filesystem(const std::string& rootDir)
     );
 }
 
-std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password, bool useTcp) {
-    FN_LOGD(TAG, "Creating TNFS filesystem with host: %s, port: %u, mountPath: %s", host.c_str(), static_cast<unsigned>(port), mountPath.c_str());
-    
-    std::unique_ptr<fujinet::io::Channel> channel;
-    std::unique_ptr<fujinet::tnfs::ITnfsClient> client;
+std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(bool useTcp) {
+    FN_LOGI(TAG, "Registering TNFS filesystem provider (dynamic endpoints)");
 
-    if (useTcp) {
-        channel = fujinet::platform::create_tcp_channel(host, port);
-        client = fujinet::tnfs::make_tcp_tnfs_client(std::move(channel));
-    } else {
-        channel = fujinet::platform::create_udp_channel(host, port);
-        client = fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
-    }
+    fujinet::fs::TnfsClientFactory factory = [useTcp](const fujinet::fs::TnfsEndpoint& endpoint)
+        -> std::unique_ptr<fujinet::tnfs::ITnfsClient>
+    {
+        std::unique_ptr<fujinet::io::Channel> channel;
+        if (useTcp) {
+            channel = fujinet::platform::create_tcp_channel(endpoint.host, endpoint.port);
+            return fujinet::tnfs::make_tcp_tnfs_client(std::move(channel));
+        }
+        channel = fujinet::platform::create_udp_channel(endpoint.host, endpoint.port);
+        return fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
+    };
 
-    // Don't attempt to mount immediately - mount should happen when first used
-    return fujinet::fs::make_tnfs_filesystem(std::move(client));
+    return fujinet::fs::make_tnfs_filesystem(std::move(factory));
 }
-
-std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_tcp_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password) {
-    return create_tnfs_filesystem(host, port, mountPath, user, password, true);
-}
-
-
-
 } // namespace fujinet::platform::posix

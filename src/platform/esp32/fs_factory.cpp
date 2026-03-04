@@ -32,16 +32,15 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_sdcard_filesystem()
     );
 }
 
-std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(const std::string& host, uint16_t port, const std::string& mountPath, const std::string& user, const std::string& password) {
-    auto channel = fujinet::platform::create_udp_channel(host, port);
-    auto client = fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
+std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem() {
+    fujinet::fs::TnfsClientFactory factory = [](const fujinet::fs::TnfsEndpoint& endpoint)
+        -> std::unique_ptr<fujinet::tnfs::ITnfsClient>
+    {
+        auto channel = fujinet::platform::create_udp_channel(endpoint.host, endpoint.port);
+        return fujinet::tnfs::make_udp_tnfs_client(std::move(channel));
+    };
 
-    if (!client->mount(mountPath, user, password)) {
-        FN_LOGE(TAG, "Failed to mount TNFS filesystem");
-        return nullptr;
-    }
-
-    return fujinet::fs::make_tnfs_filesystem(std::move(client));
+    return fujinet::fs::make_tnfs_filesystem(std::move(factory));
 }
 
 } // namespace fujinet::platform::esp32

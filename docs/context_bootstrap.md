@@ -89,3 +89,20 @@ I’m working on `fujinet-nio` (multi-platform: POSIX + ESP32). Please follow th
 - Use `VirtualDevice` + binary little-endian payloads; map failures to `StatusCode`.
 - Add doctest unit tests + (when applicable) Python integration tests.
 - Update docs and link from `docs/architecture.md` when adding a new subsystem.
+
+## How to run a build
+
+Ensure cmake is updated:
+```
+./scripts/update_cmake_sources.py
+```
+
+To compile for Posix:
+```
+./build.sh -cp fujibus-pty-debug
+```
+
+To compile for esp32:
+```
+./build.sh -b
+```

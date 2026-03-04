@@ -107,13 +107,13 @@ int main()
 
         FN_LOGI(TAG, "Host filesystem registered as 'host'");
 
-        // Register TNFS filesystem provider
-        auto tnfsFs = fujinet::platform::posix::create_tnfs_filesystem("localhost", 16384);
+        // Register TNFS filesystem provider. Host/port are resolved per URI at access time.
+        auto tnfsFs = fujinet::platform::posix::create_tnfs_filesystem();
         if (!core.storageManager().registerFileSystem(std::move(tnfsFs))) {
             FN_LOGE(TAG, "StorageManager refused to register 'tnfs' filesystem");
             return 1;
         }
-        FN_LOGI(TAG, "TNFS filesystem registered as 'tnfs'");
+        FN_LOGI(TAG, "TNFS filesystem registered as 'tnfs' (dynamic URI endpoints)");
 
         // Register HTTP filesystem provider (placeholder)
         auto httpFs = fujinet::fs::make_http_filesystem();

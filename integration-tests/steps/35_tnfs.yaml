@@ -1,27 +1,27 @@
 group: TNFS
 steps:
   - name: "TNFS: list (root directory)"
-    argv: ["{CLI}", "list", "tnfs", "//localhost/test"]
+    argv: ["{CLI}", "list", "tnfs", "tnfs://localhost:16384/"]
     expect:
       - "test.txt"
       - "subdir"
     timeout_s: 10
 
   - name: "TNFS: stat test.txt"
-    argv: ["{CLI}", "stat", "tnfs", "//localhost/test/test.txt"]
+    argv: ["{CLI}", "stat", "tnfs", "tnfs://localhost:16384/test.txt"]
     expect:
       - "exists: True"
       - "dir:    False"
     timeout_s: 10
 
   - name: "TNFS: read test.txt content"
-    argv: ["{CLI}", "read-all", "tnfs", "//localhost/test/test.txt"]
+    argv: ["{CLI}", "read-all", "tnfs", "tnfs://localhost:16384/test.txt"]
     expect:
       - "Test file content"
     timeout_s: 10
 
   - name: "TNFS: read subdir/subfile.txt"
-    argv: ["{CLI}", "read-all", "tnfs", "//localhost/test/subdir/subfile.txt"]
+    argv: ["{CLI}", "read-all", "tnfs", "tnfs://localhost:16384/subdir/subfile.txt"]
     expect:
       - "Subdirectory file content"
     timeout_s: 10
