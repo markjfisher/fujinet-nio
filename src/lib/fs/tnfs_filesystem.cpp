@@ -218,11 +218,17 @@ public:
         std::vector<std::string> entries = resolved.client->listDirectory(resolved.path);
         for (const auto& entryName : entries) {
             std::string entryPath = join_path(resolved.path, entryName);
-            FileInfo info;
-            if (!stat(entryPath, info)) {
+            tnfs::TnfsStat st{};
+            if (!resolved.client->stat(entryPath, st)) {
                 continue;
             }
-            outEntries.push_back(info);
+
+            FileInfo info{};
+            info.path = entryPath;
+            info.isDirectory = st.isDir;
+            info.sizeBytes = st.filesize;
+            info.modifiedTime = std::chrono::system_clock::from_time_t(st.mTime);
+            outEntries.push_back(std::move(info));
         }
 
         return true;

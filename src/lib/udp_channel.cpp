@@ -26,18 +26,33 @@ UdpChannel::UdpChannel(IUdpSocketOps& socket_ops, const std::string& host, uint1
         return;
     }
 
-    // Copy the sockaddr structure for later use
-    sockaddr_storage temp_addr{};
-    SockLen addrlen = 0;
-    const struct sockaddr* addr = socket_ops_.addrinfo_addr(res, &addrlen);
-    if (addrlen <= sizeof(temp_addr)) {
-        std::memcpy(&peer_addr_, addr, addrlen);
-        peer_addr_len_ = addrlen;
+    // Prefer IPv4 first for localhost-style endpoints because many TNFS daemons
+    // are bound only on IPv4. Fallback to the first usable address.
+    AddrInfo* chosen = nullptr;
+    for (AddrInfo* ai = res; ai; ai = socket_ops_.addrinfo_next(ai)) {
+        if (socket_ops_.addrinfo_family(ai) == AF_INET) {
+            chosen = ai;
+            break;
+        }
+    }
+    if (!chosen) {
+        chosen = res;
     }
 
-    socket_fd_ = socket_ops_.socket(socket_ops_.addrinfo_family(res),
-                                   socket_ops_.addrinfo_socktype(res),
-                                   socket_ops_.addrinfo_protocol(res));
+    sockaddr_storage temp_addr{};
+    SockLen addrlen = 0;
+    const struct sockaddr* addr = socket_ops_.addrinfo_addr(chosen, &addrlen);
+    if (!addr || addrlen > sizeof(temp_addr)) {
+        FN_LOGE(TAG, "Failed to get UDP peer address for %s", host_.c_str());
+        socket_ops_.freeaddrinfo(res);
+        return;
+    }
+    std::memcpy(&peer_addr_, addr, addrlen);
+    peer_addr_len_ = addrlen;
+
+    socket_fd_ = socket_ops_.socket(socket_ops_.addrinfo_family(chosen),
+                                   socket_ops_.addrinfo_socktype(chosen),
+                                   socket_ops_.addrinfo_protocol(chosen));
     if (socket_fd_ < 0) {
         FN_LOGE(TAG, "Failed to create socket: %s", socket_ops_.err_string(socket_ops_.last_errno()));
         socket_ops_.freeaddrinfo(res);
