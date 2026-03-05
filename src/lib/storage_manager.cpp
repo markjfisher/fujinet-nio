@@ -66,26 +66,32 @@ const IFileSystem* StorageManager::getByScheme(const std::string& scheme) const
 
 std::pair<IFileSystem*, std::string> StorageManager::resolveUri(const std::string& uri)
 {
-    // First, parse the URI to understand its structure
+    // Parse the URI first to understand its structure
     auto parts = parse_uri(uri);
     
-    // Use the PathResolver to handle URI/path patterns
-    // This delegates to registered handlers (TnfsUriResolver, FsPrefixResolver, etc.)
-    PathContext ctx;  // Empty context - no cwd for now
+    // Use the PathResolver to handle all URI/path patterns
+    PathContext ctx;
     ResolvedTarget target;
     
     if (getPathResolver().resolve(uri, ctx, target)) {
-        // Found a handler that can resolve this URI
         auto fs = get(target.fs_name);
         if (fs) {
-            // If the original URI had authority (e.g., scheme://authority/path),
-            // we need to preserve the full URI in the path for filesystems that need it (TNFS, HTTP, etc.)
-            // The handler may have stripped the scheme, so reconstruct if needed
-            if (!parts.scheme.empty() && !parts.authority.empty()) {
+            // If handler already returned something with "://" in it, use it as-is
+            // (this means handler preserved the full URI)
+            if (target.fs_path.find("://") != std::string::npos) {
+                return {fs, target.fs_path};
+            }
+            
+            // Handler returned a simple path - check if we need to reconstruct
+            // This is needed when the original URI had scheme+authority but handler stripped it
+            // We detect this by checking if the returned path starts with "/" while original had "://"
+            if (!parts.scheme.empty() && !parts.authority.empty() && 
+                !target.fs_path.empty() && target.fs_path[0] == '/') {
                 // Reconstruct: scheme://authority/path
                 std::string fullPath = parts.scheme + "://" + parts.authority + parts.path;
                 return {fs, fullPath};
             }
+            
             return {fs, target.fs_path};
         }
     }
@@ -93,7 +99,6 @@ std::pair<IFileSystem*, std::string> StorageManager::resolveUri(const std::strin
     // Fallback: try host filesystem for plain paths
     auto fs = get("host");
     if (fs) {
-        // Ensure path starts with /
         std::string path = uri;
         if (!path.empty() && path[0] != '/') {
             path = "/" + path;

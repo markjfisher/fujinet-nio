@@ -24,8 +24,9 @@ bool TnfsPrefixResolver::resolve(std::string_view spec, const PathContext& /*ctx
     }
 
     out.fs_name = "tnfs";
-    out.fs_path = std::string(p);
-    out.display_path = out.fs_name + ":" + out.fs_path;
+    // Preserve full URI: "tnfs:" + "//host:port/path" -> "tnfs://host:port/path"
+    out.fs_path = "tnfs:" + std::string(p);
+    out.display_path = out.fs_path;
     return true;
 }
 
