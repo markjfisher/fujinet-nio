@@ -1,8 +1,16 @@
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/fs/filesystem.h"
+#include "fujinet/fs/path_resolvers/path_resolver.h"
 #include "fujinet/fs/uri_parser.h"
 
 namespace fujinet::fs {
+
+// Singleton path resolver instance - handlers are registered in constructor
+static PathResolver& getPathResolver()
+{
+    static PathResolver resolver;
+    return resolver;
+}
 
 bool StorageManager::registerFileSystem(std::unique_ptr<IFileSystem> fs)
 {
@@ -46,50 +54,51 @@ std::vector<std::string> StorageManager::listNames() const
 
 IFileSystem* StorageManager::getByScheme(const std::string& scheme)
 {
-    // For now, we assume scheme is the same as filesystem name
+    // Default: scheme is the same as filesystem name
     return get(scheme);
 }
 
 const IFileSystem* StorageManager::getByScheme(const std::string& scheme) const
 {
-    // For now, we assume scheme is the same as filesystem name
+    // Default: scheme is the same as filesystem name
     return get(scheme);
 }
 
 std::pair<IFileSystem*, std::string> StorageManager::resolveUri(const std::string& uri)
 {
+    // First, parse the URI to understand its structure
     auto parts = parse_uri(uri);
     
-    // If scheme is provided, try to find a filesystem with that scheme
-    if (!parts.scheme.empty()) {
-        auto fs = getByScheme(parts.scheme);
+    // Use the PathResolver to handle URI/path patterns
+    // This delegates to registered handlers (TnfsUriResolver, FsPrefixResolver, etc.)
+    PathContext ctx;  // Empty context - no cwd for now
+    ResolvedTarget target;
+    
+    if (getPathResolver().resolve(uri, ctx, target)) {
+        // Found a handler that can resolve this URI
+        auto fs = get(target.fs_name);
         if (fs) {
-            // For schemes with authority (e.g., tnfs://host:port/path, http://host/path),
-            // reconstruct the full URI with authority preserved.
-            // This is important for TNFS which needs host:port to connect.
-            if (!parts.authority.empty()) {
+            // If the original URI had authority (e.g., scheme://authority/path),
+            // we need to preserve the full URI in the path for filesystems that need it (TNFS, HTTP, etc.)
+            // The handler may have stripped the scheme, so reconstruct if needed
+            if (!parts.scheme.empty() && !parts.authority.empty()) {
                 // Reconstruct: scheme://authority/path
                 std::string fullPath = parts.scheme + "://" + parts.authority + parts.path;
                 return {fs, fullPath};
             }
-            return {fs, parts.path};
+            return {fs, target.fs_path};
         }
-    } else {
-        // No scheme - check if it's a TNFS endpoint path (//host:port/path)
-        // This is important for backward compatibility with old-style TNFS paths
-        if (uri.size() >= 2 && uri[0] == '/' && uri[1] == '/') {
-            auto fs = getByScheme("tnfs");
-            if (fs) {
-                // Treat as TNFS endpoint - pass the full path as-is
-                return {fs, uri};
-            }
+    }
+    
+    // Fallback: try host filesystem for plain paths
+    auto fs = get("host");
+    if (fs) {
+        // Ensure path starts with /
+        std::string path = uri;
+        if (!path.empty() && path[0] != '/') {
+            path = "/" + path;
         }
-        
-        // No scheme, treat as host filesystem path
-        auto fs = get("host");
-        if (fs) {
-            return {fs, parts.path};
-        }
+        return {fs, path};
     }
     
     return {nullptr, ""};
