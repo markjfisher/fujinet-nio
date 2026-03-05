@@ -151,9 +151,9 @@ cmake >= 3.20
 gcc/g++ (C++20)
 python3
 ```
-### Installing Prequisites
+### Installing Prerequisites
 
-Install prerquisites from packages:
+Install prerequisites from packages:
 
 > **_NOTE:_** PlatformIO Core can be installed from packages but they may be old versions.  Using the VSCode extension will install the current version.
 
@@ -181,7 +181,7 @@ Build:
 ./build.sh -c -p fujibus-pty-debug
 
 # Args can be combined:
-./build.sh -cp fujibut-pty-debug
+./build.sh -cp fujibus-pty-debug
 ```
 
 Run the posix build via the runner script if you want reboot behaviour to restart the application automatically:
@@ -257,7 +257,7 @@ On ESP32-S3, communication is handled through **TinyUSB CDC-ACM**:
 
 # 5. Console interaction
 
-The diagnostics framework is described in (diagnostis.md)[diagnostics.md]
+The diagnostics framework is described in [diagnostics.md](diagnostics.md)
 
 If you build the application with a console (on posix this is automatic, on esp32 you must build a board with it enabled on a particular channel, e.g. uart or cdc)
 then you can interact with the running fujinet via the console.
@@ -288,14 +288,35 @@ fujinet-nio diagnostic console (type: help)
 # Build and run the esp32 instance, with monitoring
 # Assumption, you are using the `fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8` board where the console is CDC.
 # You can also use UART with "consoleuart" board, and commands are then in the pio MONITOR, or via uart port of the esp32
-❯ ./build.ch -cbu
+❯ ./build.sh -cbu
 ❯ picocom -q /dev/fujinet-console    # or use /dev/ttyACM2 if you haven't setup udev rules. The exact port can be tricky, hence why udev rules are much nicer
 >
 ```
 
-For infomation on setting up /dev/fujinet-console as a symlink to the CDC port when you plug in the 2nd usb cable to the S3, see
-the (diagnostis.md)[diagnostics.md] documentation for setting up udev rules.
+For information on setting up `/dev/fujinet-console` as a symlink to the CDC port when you plug in the 2nd USB cable to the S3, see
+the [diagnostics.md](diagnostics.md) documentation for setting up udev rules.
 As mentioned above, you can directly use `/dev/ttyACM<N>` if you know exactly which port is correct, usually ttyACM2.
+
+## Filesystem/TNFS quick checklist
+
+If you are working on filesystem routing, URI parsing, or TNFS:
+
+```sh
+# Refresh generated source lists after adding/moving files
+./scripts/update_cmake_sources.py
+
+# POSIX build + unit tests
+./build.sh -cp fujibus-pty-debug
+
+# ESP32 build
+./build.sh -b
+```
+
+Key docs for this area:
+
+- [filesystem.md](filesystem.md) (filesystem abstraction, URI usage, resolver architecture)
+- [tnfs.md](tnfs.md) (TNFS URI forms, transport behavior, integration expectations)
+- [context_bootstrap.md](context_bootstrap.md) (clean-session bootstrap commands)
 
 ## Running commands in the console
 

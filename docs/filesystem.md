@@ -190,7 +190,7 @@ This allows:
 
 - Core code to remain unaware of how many FS exist.
 - Platforms to register whatever file systems they need.
-- Users to choose FS via name ("flash", "sd0", "host", "tnfs0", etc.)
+- Users to choose FS via name ("flash", "sd0", "host", "tnfs", etc.)
 
 Example:
 
@@ -200,9 +200,59 @@ auto* flash = sm.get("flash");
 auto* sd    = sm.get("sd0");
 ```
 
+`StorageManager` also provides URI-oriented helpers:
+
+```cpp
+IFileSystem* getByScheme(const std::string& scheme);
+std::pair<IFileSystem*, std::string> resolveUri(const std::string& uri);
+```
+
+These are useful when a caller has a full URI (for example `http://...`), while normal `FileDevice` style commands still use explicit filesystem name + path (`<fs> <path>`).
+
 ---
 
-## 6. How Core is Platform-Agnostic
+## 6. URI Paths And Path Resolver Layer
+
+Path parsing and normalization for console-style filesystem commands is now centralized in a dedicated resolver subsystem:
+
+```
+include/fujinet/fs/path_resolvers/
+src/lib/path_resolvers/
+```
+
+The resolver is intentionally extensible:
+
+- `PathResolver` is the orchestrator (ordered handler registry).
+- `IPathHandler` defines the extension point for scheme/path families.
+- each protocol/path family provides its own handler classes in separate files.
+
+Current handlers include:
+
+- TNFS URI resolver (`tnfs://`, `tnfs+tcp://`, `tnfstcp://`, `tnfs-tcp://`)
+- TNFS prefixed resolver (`tnfs://...` passed as `tnfs:<endpoint/path>`)
+- TNFS relative resolver (joining relative paths while preserving endpoint authority)
+- generic `<fs>:` prefixed resolver
+- generic relative/absolute resolver
+
+### Why this matters
+
+- Console parsing is no longer hardcoded in `console_fs_shell.cpp`.
+- Adding new schemes (for example SMB) is a new handler file + registration, not a large parser edit.
+- Behavior is shared and testable through resolver unit tests (`tests/test_path_resolver.cpp`).
+
+### Console integration behavior
+
+`FsShell` now delegates path parsing to `PathResolver` and only performs command semantics.
+
+Examples:
+
+- `cd tnfs://192.168.1.101/` -> resolved to `fs_name=tnfs`, `fs_path=tnfs://192.168.1.101/`
+- `cd tnfs+tcp://192.168.1.101/` -> resolved to `fs_name=tnfs` with TCP scheme preserved in `fs_path`
+- `cd subdir` while in TNFS endpoint cwd -> endpoint authority is preserved by TNFS-specific relative join logic
+
+---
+
+## 7. How Core is Platform-Agnostic
 
 Core code **never checks**:
 
@@ -234,7 +284,7 @@ No platform #ifdefs, ever.
 
 ---
 
-## 7. Configuration Storage (`YamlFujiConfigStoreFs`)
+## 8. Configuration Storage (`YamlFujiConfigStoreFs`)
 
 The new config store no longer relies on std::fstream.  
 Instead it uses the **filesystem abstraction**, allowing config files to live on:
@@ -282,7 +332,7 @@ This reproduces the FujiNet firmware behavior:
 
 ---
 
-## 8. Directory Behavior
+## 9. Directory Behavior
 
 Because `IFileSystem` only exposes:
 
@@ -300,7 +350,7 @@ This keeps the interface *minimal* but extensible.
 
 ---
 
-## 9. Summary Diagram
+## 10. Summary Diagram
 
 ```
 +------------------------+        +-----------------------+
@@ -328,7 +378,7 @@ This keeps the interface *minimal* but extensible.
 
 ---
 
-## 10. Key Takeaways
+## 11. Key Takeaways
 
 - **One unified filesystem interface**, implemented differently per platform.
 - **POSIX-style FS implementation is shared** by both ESP32 and desktop.
@@ -336,5 +386,32 @@ This keeps the interface *minimal* but extensible.
 - ESP-IDF VFS makes the ESP32 behave like a minimal POSIX system — enabling the shared implementation.
 - `StorageManager` cleanly manages multiple filesystems.
 - Config storage now operates through filesystem abstraction, not std::fstream.
+- URI parsing for console paths is centralized in `path_resolvers`, not embedded in shell command code.
+- Protocol-specific URI behavior (TNFS today, more later) is implemented in protocol-specific resolver handlers.
+
+---
+
+## 12. Session Handover Checklist
+
+Use this quick list at the start/end of a filesystem-related session:
+
+1. Refresh generated source lists:
+   - `./scripts/update_cmake_sources.py`
+2. Validate POSIX build + unit tests:
+   - `./build.sh -cp fujibus-pty-debug`
+3. Validate ESP32 build:
+   - `./build.sh -b`
+4. If touching path parsing, run/extend:
+   - `tests/test_path_resolver.cpp`
+5. If touching TNFS path behavior, verify both:
+   - `integration-tests/steps/35_tnfs.yaml` (UDP)
+   - `integration-tests/steps/36_tnfs_tcp.yaml` (TCP)
+
+When adding a new URI family (for example SMB), prefer:
+
+- new handler class under `include/fujinet/fs/path_resolvers/`
+- matching implementation under `src/lib/path_resolvers/`
+- resolver registration in `PathResolver`
+- table-style tests in `tests/test_path_resolver.cpp`
 
 ---
