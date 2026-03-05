@@ -463,6 +463,56 @@ The `apply_config_mounts()` function in `fujinet/fs/mount_applier.h` iterates th
 
 This runs during app startup after DiskDevice registration in both POSIX and ESP32 entry points.
 
+### Disk Image Types and Lazy Loading
+
+The lazy loading mechanism is **orthogonal to file type** - it works for any resource, not just disk images. Here's how different file types integrate:
+
+**Architecture layers:**
+```
+DiskService (lazy mount handling)
+    │
+    ├─ read_sector() / write_sector()
+    │   │
+    │   ├─ Check pending mount → resolve URI → StorageManager
+    │   │                                      │
+    │   │                                      ▼
+    │   │                               IFileSystem (TNFS/SD/HTTP/...)
+    │   │                                      │
+    │   │                                      ▼
+    │   │                               IFile (opened file)
+    │   │
+    │   └─ If no image: ImageRegistry.create() → IDiskImage (ATR, SSD, XEX, ...)
+              │
+              ▼
+         DiskService::mount() called internally
+```
+
+**How it works:**
+1. **Lazy activation is transparent to file type** - The `StorageManager::resolveUri()` opens the file regardless of what it is
+2. **`ImageRegistry` handles format detection** - Given a file path + optional type hint, it creates the appropriate `IDiskImage`
+3. **`IDiskImage` abstracts the format** - Whether it's ATR, SSD, DSD, or XEX:
+   - `mount()`: Open file, parse header, set geometry
+   - `read_sector()`: Return sector data
+   - `write_sector()`: Save changes back
+
+**Future: XEX Boot Images (Atari)**
+
+To support Atari XEX boot images (like the legacy `MediaTypeXex` in FujiNet firmware):
+
+1. Create `XexDiskImage` implementing `IDiskImage`:
+   - `mount()`: Load picoboot.bin (small boot loader), wrap XEX content in fake disk geometry
+   - `read_sector(lba)`: Return picoboot for sectors 0-1, delegate XEX read for others
+   - `write_sector()`: Not supported (XEX typically read-only)
+
+2. Register in `ImageRegistry`:
+   ```cpp
+   registry.register(ImageType::Xex, make_xex_disk_image);
+   ```
+
+3. **Lazy loading just works** - TNFS opens the file on first access, ImageRegistry creates the appropriate image type
+
+**Key insight:** The lazy loading mechanism doesn't care what the file contains - it ensures the file is opened when first accessed, then delegates format handling to the appropriate `IDiskImage` implementation.
+
 ---
 
 ## 13. Session Handover Checklist
