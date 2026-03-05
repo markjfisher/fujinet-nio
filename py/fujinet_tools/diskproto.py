@@ -69,8 +69,20 @@ def build_mount_req(
 
     flags = 0x01 if readonly else 0x00
 
-    # Construct URI from fs and path
-    if fs == "host":
+    # Check if fs already contains a full URI (contains "://")
+    if "://" in fs:
+        # fs is already a complete URI, use it directly
+        if fs.endswith("/"):
+            # URI ends with /, append path (minus its leading / if present)
+            path_to_append = path.lstrip("/")
+            uri = fs + path_to_append
+        else:
+            # URI doesn't end with /, check if path needs leading /
+            if path.startswith("/"):
+                uri = fs + path
+            else:
+                uri = fs + "/" + path
+    elif fs == "host":
         # For host filesystem, use path directly (already absolute)
         uri = path
     else:
@@ -153,8 +165,18 @@ def build_create_req(
         raise ValueError("sector_count must fit u32 and be >0")
     flags = 0x01 if overwrite else 0x00
     
-    # Construct URI from fs and path
-    if fs == "host":
+    # Check if fs already contains a full URI (contains "://")
+    if "://" in fs:
+        # fs is already a complete URI, use it directly
+        if fs.endswith("/"):
+            path_to_append = path.lstrip("/")
+            uri = fs + path_to_append
+        else:
+            if path.startswith("/"):
+                uri = fs + path
+            else:
+                uri = fs + "/" + path
+    elif fs == "host":
         # For host filesystem, use path directly (already absolute)
         uri = path
     else:

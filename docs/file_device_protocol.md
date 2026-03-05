@@ -17,7 +17,7 @@ This protocol sits **above** the filesystem abstraction (`IFileSystem`/`IFile`) 
 
 - **Host**: the remote client sending requests (modern Python tooling, emulator, or 8-bit machine).
 - **Device**: `FileDevice` in fujinet-nio.
-- **FS name**: a string key in `StorageManager` (e.g. `"sd0"`, `"flash"`, `"host"`, `"tnfs0"`).
+- **FS name**: a string key in `StorageManager` (e.g. `"sd0"`, `"flash"`, `"host"`, `"tnfs"`).
 - **Path**: POSIX-style path within the selected filesystem (e.g. `"/"`, `"/FOO/BAR.TXT"`).
 - **LE**: little-endian.
 - **Chunking**: host requests file data in blocks using `offset` + `maxBytes`.
@@ -103,8 +103,31 @@ u8[] path               // length pathLen
 
 Validation:
 - If `fsNameLen` or `pathLen` exceeds remaining payload size → `InvalidRequest`
-- `fsNameLen==0` → `InvalidRequest`
-- `pathLen==0`   → `InvalidRequest`
+- `pathLen==0` → `InvalidRequest`
+- `fsNameLen==0` → use full URI mode (see below)
+
+### Full URI Mode (v1.1+)
+
+When `fsNameLen==0`, the `path` field is treated as a **full URI** instead of a path within a named filesystem. This allows clients to specify URIs like `tnfs://host:port/path` directly without requiring a separate filesystem registration step.
+
+The server parses the URI using `StorageManager::resolveUri()`, which:
+- Extracts the scheme (e.g., `tnfs`, `http`, `file`)
+- Preserves authority (host:port) for schemes that need it
+- Returns the resolved filesystem and path components
+
+Example - listing a TNFS directory:
+```
+// Request (fsNameLen=0 indicates URI mode)
+u8   version = 1
+u8   fsNameLen = 0
+// path contains full URI:
+u16  pathLen = 27  // len("tnfs://192.168.1.100:16384/")
+u8[] path = "tnfs://192.168.1.100:16384/"
+u16  startIndex
+u16  maxEntries
+```
+
+If the URI cannot be resolved (e.g., unknown scheme or connection failed), respond `DeviceNotFound`.
 
 If the filesystem name does not exist in `StorageManager`, respond `DeviceNotFound`.
 

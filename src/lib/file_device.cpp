@@ -41,6 +41,23 @@ struct CommonPrefix {
     std::string path;
 };
 
+// Resolve fs+path to filesystem and path, supporting full URIs.
+// If p.fs is empty, p.path is treated as a full URI.
+static IFileSystem* resolve_filesystem(StorageManager& storage, CommonPrefix& p) {
+    if (p.fs.empty()) {
+        // URI mode - p.path contains full URI
+        auto [fs, resolvedPath] = storage.resolveUri(p.path);
+        if (fs) {
+            p.path = resolvedPath;  // Update path with resolved version
+            return fs;
+        }
+        return nullptr;
+    } else {
+        // Legacy mode - p.fs is filesystem name
+        return storage.get(p.fs);
+    }
+}
+
 static bool parse_common_prefix(Reader& r, CommonPrefix& out)
 {
     std::uint8_t ver = 0;
@@ -62,7 +79,23 @@ static bool parse_common_prefix(Reader& r, CommonPrefix& out)
     if (!r.read_bytes(pathPtr, pathLen)) return false;
     out.path.assign(reinterpret_cast<const char*>(pathPtr), pathLen);
 
-    if (out.fs.empty() || out.path.empty()) return false;
+    // Allow empty fs if path contains full URI (after reconstruction above)
+    if (out.path.empty()) return false;
+
+    // NEW: Support full URIs - if fs contains "://", treat fs+path as a full URI
+    // This allows clients to send "tnfs://host:port/" instead of separate fs + path
+    if (out.fs.find("://") != std::string::npos) {
+        // fs is actually the full URI, reconstruct it
+        // If path doesn't start with /, we need to add it
+        std::string fullUri = out.fs;
+        if (!out.path.empty() && out.path[0] != '/') {
+            fullUri += "/";
+        }
+        fullUri += out.path;
+        out.fs = "";  // Mark as URI mode
+        out.path = fullUri;
+    }
+
     return true;
 }
 
@@ -150,7 +183,7 @@ IOResponse FileDevice::handle_stat(const IORequest& request)
         return resp;
     }
 
-    auto* fs = _storage.get(p.fs);
+    auto* fs = resolve_filesystem(_storage, p);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
@@ -208,7 +241,7 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         return resp;
     }
 
-    auto* fs = _storage.get(p.fs);
+    auto* fs = resolve_filesystem(_storage, p);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
@@ -290,7 +323,7 @@ IOResponse FileDevice::handle_read_file(const IORequest& request)
         return resp;
     }
 
-    auto* fs = _storage.get(p.fs);
+    auto* fs = resolve_filesystem(_storage, p);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
@@ -375,7 +408,7 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
         return resp;
     }
 
-    auto* fs = _storage.get(p.fs);
+    auto* fs = resolve_filesystem(_storage, p);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
@@ -445,7 +478,7 @@ IOResponse FileDevice::handle_make_directory(const IORequest& request)
     const bool parents = (flags & 0x01) != 0;
     const bool existOk = (flags & 0x02) != 0;
 
-    auto* fs = _storage.get(p.fs);
+    auto* fs = resolve_filesystem(_storage, p);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;

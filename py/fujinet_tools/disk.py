@@ -225,8 +225,10 @@ def register_subcommands(subparsers) -> None:
 
     pm = sd.add_parser("mount", help="Mount an image into a slot")
     pm.add_argument("--slot", type=int, required=True)
-    pm.add_argument("--fs", required=True)
-    pm.add_argument("--path", required=True)
+    pm.add_argument("--fs", required=True,
+                    help="Filesystem name (e.g., 'sd0', 'host') OR full URI (e.g., 'tnfs://192.168.1.101:16384/')")
+    pm.add_argument("--path", required=True,
+                    help="Path within filesystem, or appended to URI if --fs is a full URI")
     pm.add_argument("--ro", action="store_true", help="Request readonly")
     pm.add_argument("--type", default="auto", help="auto|atr|ssd|dsd|raw")
     pm.add_argument("--sector-size", type=int, default=256, help="Sector size hint (used for raw)")

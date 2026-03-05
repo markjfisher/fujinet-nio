@@ -50,16 +50,17 @@ This avoids platform `#ifdef`s inside shared/core code and allows each platform/
 
 ---
 
-## Addressing disk images: `(fs_name, path)`
+## Addressing disk images: full URI
 
-Disk images are addressed by:
+Disk images are now addressed by a **full URI** that fujinet-nio parses internally:
 
-- `fs_name`: selects a filesystem via `fs::StorageManager::get(name)`
-  - examples: `"flash"`, `"sd0"`, `"host"`, future `"tnfs0"`, `"smb0"`, …
-- `path`: the path within that filesystem
-  - examples: `"/disks/game.atr"`, `"/images/work.ssd"`
+- `tnfs://192.168.1.100:16384/disks/game.atr` - TNFS with host:port
+- `sd0:/disks/game.atr` - SD card filesystem
+- `host:/images/work.ssd` - Host POSIX filesystem
 
-This keeps the disk subsystem independent of how filesystems are provided (POSIX, ESP32 LittleFS, SD card, TNFS, etc.).
+This keeps the disk subsystem independent of how filesystems are provided (POSIX, ESP32 LittleFS, SD card, TNFS, etc.) and **shifts URI parsing to fujinet-nio**, not the 8-bit host.
+
+The `StorageManager::resolveUri()` function handles scheme parsing and authority preservation (e.g., preserving `host:port` for TNFS).
 
 ---
 
@@ -233,7 +234,7 @@ If slot is out of range, respond with `StatusCode::InvalidRequest`.
 
 ## Command: Mount (0x01)
 
-Mount an image into a slot using `(fs_name, path)`.
+Mount an image into a slot using a **full URI**. The fujinet-nio parses the URI to extract the filesystem and path.
 
 ### Request
 
@@ -243,11 +244,14 @@ u8  slot
 u8  flags            // bit0 = readonly_requested
 u8  typeOverride     // 0=Auto, 1=ATR, 2=SSD, 3=DSD, 4=Raw
 u16 sectorSizeHint   // for Raw; otherwise 0
-u16 fsLen            // LE
-u8[] fsName          // length fsLen
-u16 pathLen          // LE
-u8[] path            // length pathLen
+u16 uriLen           // LE
+u8[] uri             // length uriLen - e.g., "tnfs://192.168.1.101:16384/disk.atr" or "sd0:/games.atr"
 ```
+
+Examples:
+- `tnfs://192.168.1.101:16384/some/path/disk.atr` - TNFS with host:port and path
+- `sd0:/disks/game.atr` - SD card filesystem
+- `host:/images/test.ssd` - Host POSIX filesystem
 
 ### Response payload (on `StatusCode::Ok`)
 
@@ -406,7 +410,7 @@ General mapping:
 
 ## Command: Create (0x07)
 
-Create a new image file on a named filesystem. This command does **not** mount the created image.
+Create a new image file on a named filesystem using a **full URI**. This command does **not** mount the created image.
 
 ### Request
 
@@ -416,8 +420,8 @@ u8  flags            // bit0 = overwrite
 u8  type             // 1=ATR, 2=SSD, 3=DSD, 4=Raw (0=Auto invalid)
 u16 sectorSize       // LE
 u32 sectorCount      // LE
-u16 fsLen + fs bytes
-u16 pathLen + path bytes
+u16 uriLen           // LE
+u8[] uri             // length uriLen - e.g., "sd0:/newdisk.atr"
 ```
 
 ### Response payload (on `Ok`)
