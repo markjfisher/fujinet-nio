@@ -716,7 +716,7 @@ def main() -> int:
     tls_url = f"tls://{ip}:7778"
     tnfs_host = ip
     tnfs_port = "16384"
-    tnfs_udp = f"//{tnfs_host}:{tnfs_port}/"
+    tnfs_udp = f"tnfs://{tnfs_host}:{tnfs_port}/"
     tnfs_tcp = f"tnfs+tcp://{tnfs_host}:{tnfs_port}/"
     
     vars = {

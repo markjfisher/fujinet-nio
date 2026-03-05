@@ -35,10 +35,7 @@ steps:
       - "mount"
       - "--slot"
       - "1"
-      - "--fs"
-      - "{FS}"
-      - "--path"
-      - "/test.ssd"
+      - "host:/test.ssd"
       - "--type"
       - "auto"
     expect:

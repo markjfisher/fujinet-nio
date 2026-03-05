@@ -75,6 +75,16 @@ std::pair<IFileSystem*, std::string> StorageManager::resolveUri(const std::strin
             return {fs, parts.path};
         }
     } else {
+        // No scheme - check if it's a TNFS endpoint path (//host:port/path)
+        // This is important for backward compatibility with old-style TNFS paths
+        if (uri.size() >= 2 && uri[0] == '/' && uri[1] == '/') {
+            auto fs = getByScheme("tnfs");
+            if (fs) {
+                // Treat as TNFS endpoint - pass the full path as-is
+                return {fs, uri};
+            }
+        }
+        
         // No scheme, treat as host filesystem path
         auto fs = get("host");
         if (fs) {

@@ -1,6 +1,6 @@
 group: Disk / SSD
 steps:
-  - name: "Disk SSD: setup 40-track image + upload to {FS}"
+  - name: "Disk SSD: setup 40-track image + upload to host"
     only_mode: "esp32"
     setup_cmd:
       - argv:
@@ -11,8 +11,7 @@ steps:
       - "write"
       - "--chunk"
       - "2048"
-      - "{FS}"
-      - "/test.ssd"
+      - "host:/test.ssd"
       - "{STEP_TMP}/test.ssd"
     timeout_s: 20
 
@@ -24,10 +23,7 @@ steps:
       - "mount"
       - "--slot"
       - "1"
-      - "--fs"
-      - "{FS}"
-      - "--path"
-      - "/test.ssd"
+      - "host:/test.ssd"
       - "--type"
       - "auto"
     expect:

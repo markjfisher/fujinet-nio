@@ -1,6 +1,6 @@
 group: Disk / Raw
 steps:
-  - name: "Disk RAW: setup image + upload to {FS}"
+  - name: "Disk RAW: setup image + upload to host"
     setup_cmd:
       - argv:
           - "python3"
@@ -10,8 +10,7 @@ steps:
       - "write"
       - "--chunk"
       - "2048"
-      - "{FS}"
-      - "/raw_test.img"
+      - "host:/raw_test.img"
       - "{STEP_TMP}/raw_test.img"
     timeout_s: 15
 
@@ -22,10 +21,7 @@ steps:
       - "mount"
       - "--slot"
       - "1"
-      - "--fs"
-      - "{FS}"
-      - "--path"
-      - "/raw_test.img"
+      - "host:/raw_test.img"
       - "--type"
       - "auto"
       - "--sector-size"
