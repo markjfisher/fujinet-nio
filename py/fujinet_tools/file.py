@@ -3,41 +3,12 @@ from pathlib import Path
 
 from .fujibus import FujiBusSession
 from . import fileproto as fp
-from .common import open_serial, status_ok
+from .common import open_serial, status_ok, build_uri
 
 
 # ----------------------------------------------------------------------
 # Commands
 # ----------------------------------------------------------------------
-
-def _build_uri(fs: str, path: str) -> str:
-    """
-    Build a full URI from fs and path components.
-    
-    Handles:
-    - Full URIs in fs (e.g., "tnfs://host:port/")
-    - Named filesystems (e.g., "sd0", "host")
-    """
-    # Check if fs already contains a full URI
-    if "://" in fs:
-        # fs is already a complete URI
-        if fs.endswith("/"):
-            return fs + path.lstrip("/")
-        else:
-            if path.startswith("/"):
-                return fs + path
-            else:
-                return fs + "/" + path
-    elif fs == "host":
-        # For host filesystem, path is already absolute
-        return path
-    else:
-        # Construct URI from fs and path
-        if path.startswith("/"):
-            return f"{fs}:{path}"
-        else:
-            return f"{fs}:/{path}"
-
 
 def _join_dest_path(dest_path: str, src_file: str) -> str:
     # If user gives a directory path (ends with '/'), append basename of src_file.
@@ -83,7 +54,7 @@ def _mkdir_p(*, args, bus: FujiBusSession, uri: str) -> bool:
     return True
 
 def cmd_list(args) -> int:
-    uri = _build_uri(args.fs, args.path)
+    uri = build_uri(args.fs, args.path)
     req = fp.build_list_req(uri, args.start, args.max)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -118,7 +89,7 @@ def cmd_list(args) -> int:
 
 
 def cmd_stat(args) -> int:
-    uri = _build_uri(args.fs, args.path)
+    uri = build_uri(args.fs, args.path)
     req = fp.build_stat_req(uri)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -153,7 +124,7 @@ def cmd_stat(args) -> int:
 
 def cmd_read(args) -> int:
     # One-shot read (single request)
-    uri = _build_uri(args.fs, args.path)
+    uri = build_uri(args.fs, args.path)
     req = fp.build_read_req(uri, args.offset, args.max_bytes)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -191,7 +162,7 @@ def cmd_read(args) -> int:
 
 
 def cmd_read_all(args) -> int:
-    uri = _build_uri(args.fs, args.path)
+    uri = build_uri(args.fs, args.path)
     out_path = Path(args.out) if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -255,9 +226,9 @@ def cmd_read_all(args) -> int:
 
 
 def cmd_write(args) -> int:
-    uri = _build_uri(args.fs, args.path)
+    uri = build_uri(args.fs, args.path)
     dst_path = _join_dest_path(args.path, args.inp)
-    dst_uri = _build_uri(args.fs, dst_path)
+    dst_uri = build_uri(args.fs, dst_path)
 
     data = Path(args.inp).read_bytes()
 
@@ -268,7 +239,7 @@ def cmd_write(args) -> int:
         if args.mkdirs:
             parent = _parent_dir(dst_path)
             if parent and parent != "/":
-                parent_uri = _build_uri(args.fs, parent)
+                parent_uri = build_uri(args.fs, parent)
                 if not _mkdir_p(args=args, bus=bus, uri=parent_uri):
                     return 1
 

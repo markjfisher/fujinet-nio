@@ -33,3 +33,36 @@ def status_ok(pkt: Optional[FujiPacket]) -> bool:
     """
     return bool(pkt and pkt.params and pkt.params[0] == 0)
 
+
+def build_uri(fs: str, path: str) -> str:
+    """
+    Build a full URI from fs and path components.
+    
+    Handles:
+    - Full URIs in fs (e.g., "tnfs://host:port/")
+    - Named filesystems (e.g., "sd0", "host")
+    
+    Examples:
+        build_uri("tnfs://192.168.1.100:16384/", "/dir") -> "tnfs://192.168.1.100:16384/dir"
+        build_uri("sd0", "/foo/bar") -> "sd0:/foo/bar"
+        build_uri("host", "/foo/bar") -> "/foo/bar"
+    """
+    # Check if fs already contains a full URI
+    if "://" in fs:
+        # fs is already a complete URI
+        if fs.endswith("/"):
+            return fs + path.lstrip("/")
+        else:
+            if path.startswith("/"):
+                return fs + path
+            else:
+                return fs + "/" + path
+    elif fs == "host":
+        # For host filesystem, path is already absolute
+        return path
+    else:
+        # Construct URI from fs and path
+        if path.startswith("/"):
+            return f"{fs}:{path}"
+        else:
+            return f"{fs}:/{path}"

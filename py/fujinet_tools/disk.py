@@ -70,25 +70,8 @@ def _send_expect(*, args, command: int, payload: bytes, cmd_txt: str):
 
 
 def cmd_mount(args) -> int:
-    # Build full URI from fs + path
-    if "://" in args.fs:
-        # fs is already a full URI
-        if args.fs.endswith("/"):
-            uri = args.fs + args.path.lstrip("/")
-        else:
-            if args.path.startswith("/"):
-                uri = args.fs + args.path
-            else:
-                uri = args.fs + "/" + args.path
-    elif args.fs == "host":
-        # For host filesystem, path is already absolute
-        uri = args.path
-    else:
-        # Construct URI from fs and path
-        if args.path.startswith("/"):
-            uri = f"{args.fs}:{args.path}"
-        else:
-            uri = f"{args.fs}:/{args.path}"
+    # Build full URI from fs + path using shared helper
+    uri = build_uri(args.fs, args.path)
 
     req = dp.build_mount_req(
         slot=args.slot,
@@ -215,25 +198,8 @@ def cmd_write_sector(args) -> int:
 
 
 def cmd_create(args) -> int:
-    # Build full URI from fs + path
-    if "://" in args.fs:
-        # fs is already a full URI
-        if args.fs.endswith("/"):
-            uri = args.fs + args.path.lstrip("/")
-        else:
-            if args.path.startswith("/"):
-                uri = args.fs + args.path
-            else:
-                uri = args.fs + "/" + args.path
-    elif args.fs == "host":
-        # For host filesystem, path is already absolute
-        uri = args.path
-    else:
-        # Construct URI from fs and path
-        if args.path.startswith("/"):
-            uri = f"{args.fs}:{args.path}"
-        else:
-            uri = f"{args.fs}:/{args.path}"
+    # Build full URI from fs + path using shared helper
+    uri = build_uri(args.fs, args.path)
 
     req = dp.build_create_req(
         uri=uri,
