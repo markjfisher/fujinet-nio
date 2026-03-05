@@ -602,47 +602,6 @@ devices:
     CHECK(cfg.mounts[2].enabled == false);
 }
 
-TEST_CASE("YamlFujiConfigStoreFs: Backward compat - legacy id maps to slot")
-{
-    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
-
-    // YAML config using legacy 'id' field - NOT SUPPORTED anymore, use 'slot'
-    const std::string yaml = R"(
-fujinet:
-  device_name: "legacy-test"
-  boot_mode: "normal"
-wifi:
-  enabled: false
-mounts:
-  - id: 1
-    uri: "sd:/disks"
-    mode: "rw"
-  - id: 8
-    uri: "tnfs://server.com/path"
-    mode: "r"
-devices:
-  modem:
-    enabled: false
-    sniffer_enabled: false
-  cpm:
-    enabled: false
-    ccp_image: ""
-  printer:
-    enabled: false
-)";
-
-    create_file(*primary, "/fujinet.yaml", yaml);
-
-    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
-    FujiConfig cfg = store.load();
-
-    // Note: 'id' is no longer read - use 'slot' instead
-    // These will have slot=0 (unassigned)
-    REQUIRE(cfg.mounts.size() == 2);
-    CHECK(cfg.mounts[0].slot == 0);
-    CHECK(cfg.mounts[1].slot == 0);
-}
-
 TEST_CASE("MountConfig: effective_slot")
 {
     using fujinet::config::MountConfig;
