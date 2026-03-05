@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "fujinet/disk/disk_types.h"
@@ -10,6 +11,16 @@
 #include "fujinet/fs/storage_manager.h"
 
 namespace fujinet::disk {
+
+// Public struct for pending mount information (exposed via public API).
+struct PendingMountInfo {
+    std::string uri;       // Original URI from config
+    std::string mode;     // Requested mode (r, rw)
+    bool enabled;         // Whether this mount is active
+};
+
+// Forward declaration
+struct PendingMountInfo;
 
 class DiskService {
 public:
@@ -46,6 +57,17 @@ public:
 
     void clear_changed(std::size_t slotIndex);
 
+    // Set a pending (lazy) mount for a slot. The mount will be activated
+    // on first access (read/write). This allows config-defined mounts without
+    // immediate I/O at startup.
+    void set_pending_mount(std::size_t slotIndex, const std::string& uri, const std::string& mode, bool enabled);
+
+    // Get the pending mount config for a slot (if any).
+    std::optional<PendingMountInfo> get_pending_mount(std::size_t slotIndex) const;
+
+    // Clear the pending mount for a slot.
+    void clear_pending_mount(std::size_t slotIndex);
+
 private:
     struct Slot {
         bool inserted{false};
@@ -59,6 +81,11 @@ private:
 
         std::string fsName;
         std::string path;
+
+        // Lazy-mount support: stores pending mount config until first access.
+        // When non-empty, indicates a config-defined mount that hasn't been
+        // activated yet. This allows startup without immediate network/file I/O.
+        std::optional<PendingMountInfo> pendingMount;
 
         std::unique_ptr<IDiskImage> image;
     };

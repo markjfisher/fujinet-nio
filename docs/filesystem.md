@@ -413,6 +413,21 @@ struct MountConfig {
 - Internally converted to 0-7 indices for `DiskService`
 - `effective_slot()` method returns 0-based index or -1 if unassigned
 
+### Lazy Mounting
+
+Config-defined mounts use **lazy activation** - the mount is stored but not activated until first disk access (read or write). This is critical for network-based filesystems like TNFS:
+
+- **TNFS servers don't need to be available at startup** - no blocking or delays
+- **Network connections are created only when needed** - saves resources
+- **Startup time is predictable** regardless of network availability
+
+When a slot has a pending mount:
+1. First read/write operation triggers mount activation
+2. URI is resolved to filesystem + path
+3. Image is opened and becomes available
+
+The pending mount info is stored in `DiskService::Slot::pendingMount` and activated automatically in `read_sector()` and `write_sector()` if needed.
+
 ### YAML Format
 
 ```yaml

@@ -46,7 +46,7 @@ std::size_t apply_config_mounts(
             continue;
         }
 
-        // Resolve URI to filesystem and path
+        // Validate that the URI can be resolved to a filesystem (but don't mount yet)
         auto [fs, resolvedPath] = storage.resolveUri(mount.uri);
         if (!fs) {
             FN_LOGW(TAG, "Could not resolve filesystem for URI '%s' at slot %d", 
@@ -60,25 +60,24 @@ std::size_t apply_config_mounts(
             continue;
         }
 
-        // Build mount options
-        disk::MountOptions opts{};
-        opts.readOnlyRequested = (mount.mode.find('w') == std::string::npos);
+        // Store the mount config as pending - this is LAZY, not eager!
+        // The actual mount will happen on first read/write access.
+        // This allows TNFS servers to be unavailable at startup without blocking.
+        FN_LOGI(TAG, "Setting pending mount: slot %d, uri='%s', mode='%s', enabled=%d",
+                slotIndex, mount.uri.c_str(), mount.mode.c_str(), mount.enabled);
 
-        // Attempt to mount
-        FN_LOGI(TAG, "Applying config mount: slot %d, fs='%s', path='%s', mode='%s'",
-                slotIndex, fs->name().c_str(), resolvedPath.c_str(), mount.mode.c_str());
+        diskService.set_pending_mount(
+            static_cast<std::size_t>(slotIndex), 
+            mount.uri, 
+            mount.mode, 
+            mount.enabled
+        );
 
-        auto result = diskService.mount(static_cast<std::size_t>(slotIndex), fs->name(), resolvedPath, opts);
-        
-        if (result.ok()) {
-            applied++;
-            FN_LOGI(TAG, "Successfully mounted slot %d", slotIndex);
-        } else {
-            FN_LOGW(TAG, "Failed to mount slot %d: error=%d", slotIndex, static_cast<int>(result.error));
-        }
+        applied++;
+        FN_LOGI(TAG, "Configured pending mount for slot %d (lazy activation)", slotIndex);
     }
 
-    FN_LOGI(TAG, "Applied %zu/%zu config mounts", applied, mounts.size());
+    FN_LOGI(TAG, "Configured %zu/%zu config mounts as pending (lazy)", applied, mounts.size());
     return applied;
 }
 

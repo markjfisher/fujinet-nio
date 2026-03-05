@@ -158,6 +158,25 @@ DiskResult DiskService::read_sector(std::size_t slotIndex, std::uint32_t lba, st
 {
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
+
+    // Lazy mount: if there's a pending mount but no image, activate it now
+    if (!s->image && s->pendingMount) {
+        // Resolve the pending mount
+        auto [fs, resolvedPath] = _storage.resolveUri(s->pendingMount->uri);
+        if (!fs) {
+            return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
+        }
+
+        MountOptions opts{};
+        opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
+
+        // Attempt to mount
+        auto mountResult = mount(slotIndex, fs->name(), resolvedPath, opts);
+        if (!mountResult.ok()) {
+            return mountResult;
+        }
+    }
+
     if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
 
     DiskResult r = s->image->read_sector(lba, dst, dstBytes);
@@ -169,6 +188,25 @@ DiskResult DiskService::write_sector(std::size_t slotIndex, std::uint32_t lba, c
 {
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
+
+    // Lazy mount: if there's a pending mount but no image, activate it now
+    if (!s->image && s->pendingMount) {
+        // Resolve the pending mount
+        auto [fs, resolvedPath] = _storage.resolveUri(s->pendingMount->uri);
+        if (!fs) {
+            return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
+        }
+
+        MountOptions opts{};
+        opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
+
+        // Attempt to mount
+        auto mountResult = mount(slotIndex, fs->name(), resolvedPath, opts);
+        if (!mountResult.ok()) {
+            return mountResult;
+        }
+    }
+
     if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
 
     DiskResult r = s->image->write_sector(lba, src, srcBytes);
@@ -206,6 +244,42 @@ void DiskService::clear_changed(std::size_t slotIndex)
     if (auto* s = slot_ptr(slotIndex)) {
         s->changed = false;
     }
+}
+
+void DiskService::set_pending_mount(std::size_t slotIndex, const std::string& uri, const std::string& mode, bool enabled)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return;
+    
+    s->pendingMount = PendingMountInfo{uri, mode, enabled};
+    
+    // Also store fsName and path for display purposes (will be updated on actual mount)
+    // Parse the URI to extract filesystem name
+    auto slashPos = uri.find('/');
+    if (slashPos != std::string::npos) {
+        s->fsName = uri.substr(0, slashPos);
+        s->path = uri;
+    } else {
+        s->fsName = uri;
+        s->path = uri;
+    }
+    
+    // Mark as changed so the UI knows there's a pending mount
+    s->changed = true;
+}
+
+std::optional<PendingMountInfo> DiskService::get_pending_mount(std::size_t slotIndex) const
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return std::nullopt;
+    return s->pendingMount;
+}
+
+void DiskService::clear_pending_mount(std::size_t slotIndex)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return;
+    s->pendingMount.reset();
 }
 
 } // namespace fujinet::disk

@@ -114,7 +114,7 @@ For ESP32 integration runs, use a reachable service IP (not localhost), e.g.:
   - directory detection is derived from `mode` type bits.
 - default TNFS file creation permissions are set to `0644` to avoid unreadable `000` files in test workflows.
 - test service startup runs TNFS container with host UID/GID to avoid root-owned artifacts in shared host test dirs.
-- **Config-driven TNFS mounts**: TNFS URIs in YAML config mounts (e.g., `tnfs://192.168.1.100:16384/atari/disk.atr`) are automatically applied to disk slots at startup. The `StorageManager::resolveUri()` preserves the full URI including authority (host:port), allowing TNFS to connect to the correct endpoint.
+- **Config-driven TNFS mounts**: TNFS URIs in YAML config mounts (e.g., `tnfs://192.168.1.100:16384/atari/disk.atr`) are stored as pending mounts in disk slots at startup. Mount activation is **lazy** - the TNFS connection is only established when the slot is first accessed (read/write), so TNFS servers don't need to be available at startup.
 
 ## Session Handover Checklist
 
