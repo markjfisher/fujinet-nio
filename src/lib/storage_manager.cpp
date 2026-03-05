@@ -64,6 +64,14 @@ std::pair<IFileSystem*, std::string> StorageManager::resolveUri(const std::strin
     if (!parts.scheme.empty()) {
         auto fs = getByScheme(parts.scheme);
         if (fs) {
+            // For schemes with authority (e.g., tnfs://host:port/path, http://host/path),
+            // reconstruct the full URI with authority preserved.
+            // This is important for TNFS which needs host:port to connect.
+            if (!parts.authority.empty()) {
+                // Reconstruct: scheme://authority/path
+                std::string fullPath = parts.scheme + "://" + parts.authority + parts.path;
+                return {fs, fullPath};
+            }
             return {fs, parts.path};
         }
     } else {

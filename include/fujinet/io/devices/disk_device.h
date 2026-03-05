@@ -20,6 +20,10 @@ public:
     IOResponse handle(const IORequest& request) override;
     void poll() override {}
 
+    // Access to the underlying DiskService for config mount application
+    disk::DiskService& disk_service() { return _svc; }
+    const disk::DiskService& disk_service() const { return _svc; }
+
 private:
     // Allow out-of-band diagnostics (console) without polluting the on-wire API surface.
     friend struct DiskDeviceDiagnosticsAccessor;

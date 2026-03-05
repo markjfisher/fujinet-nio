@@ -17,6 +17,8 @@ CMakeFiles/
 
 /plans/
 
+# a file for dumping ideas and thoughts that shouldn't go into repo
+/docs/todo.txt
 
 # IDE files
 .vscode/

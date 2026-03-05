@@ -21,8 +21,10 @@
 #include "fujinet/fs/tnfs_filesystem.h"
 #include "fujinet/fs/http_filesystem.h"
 #include "fujinet/fs/storage_manager.h"
+#include "fujinet/fs/mount_applier.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/fuji_device.h"
+#include "fujinet/io/devices/disk_device.h"
 #include "fujinet/io/devices/virtual_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
@@ -180,6 +182,24 @@ int main()
     fujinet::core::register_clock_device(core, fujiConcrete->config_store());
     
     fujinet::core::register_disk_device(core);
+
+    // Apply persisted config mounts to disk slots (equivalent to legacy mount_all)
+    // This must happen after DiskDevice is registered so we have access to DiskService
+    {
+        fujinet::io::DeviceID diskDeviceId = fujinet::io::protocol::to_device_id(fujinet::io::protocol::WireDeviceId::DiskService);
+        auto* diskDev = dynamic_cast<fujinet::io::DiskDevice*>(
+            core.deviceManager().getDevice(diskDeviceId));
+        if (diskDev) {
+            std::size_t applied = fujinet::apply_config_mounts(
+                diskDev->disk_service(),
+                core.storageManager(),
+                config.mounts);
+            FN_LOGI(TAG, "Applied %zu config mounts to disk slots", applied);
+        } else {
+            FN_LOGW(TAG, "Could not get DiskDevice to apply config mounts");
+        }
+    }
+
     fujinet::core::register_network_device(core);
     fujinet::core::register_modem_device(core);
 

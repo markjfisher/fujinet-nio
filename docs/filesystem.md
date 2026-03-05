@@ -391,7 +391,80 @@ This keeps the interface *minimal* but extensible.
 
 ---
 
-## 12. Session Handover Checklist
+## 12. Config-Driven Mounts
+
+Fujinet-nio supports **config-driven mounts** that are applied to disk runtime slots at startup, similar to the legacy `mount_all()` behavior in FujiNet firmware.
+
+### Mount Configuration Model
+
+The `MountConfig` struct in `fujinet/config/fuji_config.h` defines a mount entry:
+
+```cpp
+struct MountConfig {
+    int         slot;     // Slot number (1-8). If not specified, falls back to legacy `id`.
+    std::string uri;      // URI of the resource (e.g., "sd:/disks/img.atr", "tnfs://server/dir/img.atr")
+    std::string mode;    // "r", "rw", etc.
+    bool        enabled;  // Whether this mount is active
+    int         id;       // Legacy field for backward compatibility
+};
+```
+
+**Slot semantics**:
+- Slots are numbered 1-8 in config (matching user-facing Atari disk slots)
+- Internally converted to 0-7 indices for `DiskService`
+- Legacy `id` field (1-8) maps to slot indices for backward compatibility
+- `effective_slot()` method returns 0-based index or -1 if unassigned
+
+### YAML Format
+
+**New format (preferred)**:
+```yaml
+mounts:
+  - slot: 1
+    uri: "sd:/disks/boot.atr"
+    mode: "rw"
+    enabled: true
+  - slot: 2
+    uri: "tnfs://192.168.1.100:16384/atari/games.atr"
+    mode: "r"
+    enabled: true
+```
+
+**Legacy format (still supported)**:
+```yaml
+mounts:
+  - id: 1
+    uri: "sd:/disks/boot.atr"
+    mode: "rw"
+  - id: 2
+    uri: "tnfs://server.com/atari"
+    mode: "r"
+```
+
+### URI Resolution and Authority Preservation
+
+`StorageManager::resolveUri()` now preserves authority (host:port) for schemes like TNFS and HTTP:
+
+- Input: `tnfs://192.168.1.100:16384/atari/disk.atr`
+- Output: filesystem=`tnfs`, path=`tnfs://192.168.1.100:16384/atari/disk.atr`
+
+This ensures the TNFS filesystem can connect to the correct host and port.
+
+### Applying Config Mounts
+
+The `apply_config_mounts()` function in `fujinet/fs/mount_applier.h` iterates through config mounts and mounts each to the corresponding disk slot:
+
+1. Skips disabled mounts (`enabled: false`)
+2. Skips empty URIs
+3. Uses `effective_slot()` to resolve slot index
+4. Resolves URI via `StorageManager::resolveUri()`
+5. Calls `DiskService::mount()` with resolved filesystem and path
+
+This runs during app startup after DiskDevice registration in both POSIX and ESP32 entry points.
+
+---
+
+## 13. Session Handover Checklist
 
 Use this quick list at the start/end of a filesystem-related session:
 
@@ -406,6 +479,9 @@ Use this quick list at the start/end of a filesystem-related session:
 5. If touching TNFS path behavior, verify both:
    - `integration-tests/steps/35_tnfs.yaml` (UDP)
    - `integration-tests/steps/36_tnfs_tcp.yaml` (TCP)
+6. If adding/modifying config mount behavior, verify:
+   - `tests/test_fuji_config_yaml.cpp`
+   - `tests/test_storage_manager.cpp`
 
 When adding a new URI family (for example SMB), prefer:
 

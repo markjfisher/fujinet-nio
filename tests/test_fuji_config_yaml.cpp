@@ -51,9 +51,11 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
 
     if (a.mounts.size() != b.mounts.size()) return false;
     for (std::size_t i = 0; i < a.mounts.size(); ++i) {
+        if (a.mounts[i].slot != b.mounts[i].slot) return false;
         if (a.mounts[i].id != b.mounts[i].id) return false;
         if (a.mounts[i].uri != b.mounts[i].uri) return false;
         if (a.mounts[i].mode != b.mounts[i].mode) return false;
+        if (a.mounts[i].enabled != b.mounts[i].enabled) return false;
     }
 
     if (a.modem.enabled != b.modem.enabled) return false;
@@ -538,4 +540,138 @@ devices:
     CHECK(cfg.mounts[2].id == 3);
     CHECK(cfg.mounts[2].uri == "tnfs://host2.com/atari3");
     CHECK(cfg.mounts[2].mode == "rw");
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Load config with new slot field")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    // YAML config using new 'slot' field instead of legacy 'id'
+    const std::string yaml = R"(
+fujinet:
+  device_name: "slot-test"
+  boot_mode: "normal"
+wifi:
+  enabled: false
+mounts:
+  - slot: 1
+    uri: "sd:/disks/boot.atr"
+    mode: "rw"
+    enabled: true
+  - slot: 2
+    uri: "tnfs://192.168.1.100:16384/atari/games.atr"
+    mode: "r"
+    enabled: true
+  - slot: 3
+    uri: "host:/images/data.atr"
+    mode: "rw"
+    enabled: false
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    REQUIRE(cfg.mounts.size() == 3);
+
+    // Check slot field
+    CHECK(cfg.mounts[0].slot == 1);
+    CHECK(cfg.mounts[0].uri == "sd:/disks/boot.atr");
+    CHECK(cfg.mounts[0].mode == "rw");
+    CHECK(cfg.mounts[0].enabled == true);
+
+    CHECK(cfg.mounts[1].slot == 2);
+    CHECK(cfg.mounts[1].uri == "tnfs://192.168.1.100:16384/atari/games.atr");
+    CHECK(cfg.mounts[1].mode == "r");
+    CHECK(cfg.mounts[1].enabled == true);
+
+    CHECK(cfg.mounts[2].slot == 3);
+    CHECK(cfg.mounts[2].uri == "host:/images/data.atr");
+    CHECK(cfg.mounts[2].mode == "rw");
+    CHECK(cfg.mounts[2].enabled == false);
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Backward compat - legacy id maps to slot")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    // YAML config using legacy 'id' field
+    const std::string yaml = R"(
+fujinet:
+  device_name: "legacy-test"
+  boot_mode: "normal"
+wifi:
+  enabled: false
+mounts:
+  - id: 1
+    uri: "sd:/disks"
+    mode: "rw"
+  - id: 8
+    uri: "tnfs://server.com/path"
+    mode: "r"
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    REQUIRE(cfg.mounts.size() == 2);
+
+    // Legacy 'id' should be preserved
+    CHECK(cfg.mounts[0].id == 1);
+    CHECK(cfg.mounts[0].slot == 0);  // New slot field is default
+    CHECK(cfg.mounts[0].effective_slot() == 0);  // Should map id 1 -> slot 0
+
+    CHECK(cfg.mounts[1].id == 8);
+    CHECK(cfg.mounts[1].slot == 0);  // New slot field is default
+    CHECK(cfg.mounts[1].effective_slot() == 7);  // Should map id 8 -> slot 7
+}
+
+TEST_CASE("MountConfig: effective_slot")
+{
+    using fujinet::config::MountConfig;
+
+    // Test explicit slot takes precedence
+    MountConfig m1;
+    m1.slot = 3;
+    m1.id = 1;
+    CHECK(m1.effective_slot() == 2);  // slot 3 -> index 2
+
+    // Test fallback to legacy id
+    MountConfig m2;
+    m2.slot = 0;
+    m2.id = 5;
+    CHECK(m2.effective_slot() == 4);  // id 5 -> index 4
+
+    // Test neither set
+    MountConfig m3;
+    m3.slot = 0;
+    m3.id = 0;
+    CHECK(m3.effective_slot() == -1);  // Unassigned
+
+    // Test both set (slot takes precedence)
+    MountConfig m4;
+    m4.slot = 7;
+    m4.id = 1;
+    CHECK(m4.effective_slot() == 6);  // slot 7 -> index 6
 }

@@ -43,6 +43,7 @@ idf_component_register(
         lib/legacy_network_adapter.cpp
         lib/modem_device.cpp
         lib/modem_device_init.cpp
+        lib/mount_applier.cpp
         lib/network_device.cpp
         lib/network_device_init.cpp
         lib/network_protocol_registry.cpp

@@ -136,6 +136,7 @@ target_sources(fujinet-nio
         src/lib/legacy_network_adapter.cpp
         src/lib/modem_device.cpp
         src/lib/modem_device_init.cpp
+        src/lib/mount_applier.cpp
         src/lib/network_device.cpp
         src/lib/network_device_init.cpp
         src/lib/network_protocol_registry.cpp

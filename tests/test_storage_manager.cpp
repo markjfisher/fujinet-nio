@@ -104,23 +104,25 @@ TEST_CASE("StorageManager: resolveUri")
     CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("tnfs")));
     CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("http")));
     
-    // Test sd: scheme
+    // Test sd: scheme (no authority, just path)
     auto [sdFs, sdPath] = manager.resolveUri("sd:/path/to/file.ssd");
     CHECK(sdFs != nullptr);
     CHECK(sdFs->name() == "sd");
     CHECK(sdPath == "/path/to/file.ssd");
     
-    // Test tnfs: scheme
+    // Test tnfs: scheme with authority - path includes authority
     auto [tnfsFs, tnfsPath] = manager.resolveUri("tnfs://server/path/to/image.atr");
     CHECK(tnfsFs != nullptr);
     CHECK(tnfsFs->name() == "tnfs");
-    CHECK(tnfsPath == "/path/to/image.atr");
+    // Authority should be preserved in path for TNFS
+    CHECK(tnfsPath == "tnfs://server/path/to/image.atr");
     
-    // Test http: scheme
+    // Test http: scheme with authority - path includes authority
     auto [httpFs, httpPath] = manager.resolveUri("http://example.com/files/disk.dsk");
     CHECK(httpFs != nullptr);
     CHECK(httpFs->name() == "http");
-    CHECK(httpPath == "/files/disk.dsk");
+    // Authority should be preserved in path for HTTP
+    CHECK(httpPath == "http://example.com/files/disk.dsk");
     
     // Test unknown scheme
     auto [unknownFs, unknownPath] = manager.resolveUri("unknown:/path/to/file");
@@ -144,4 +146,32 @@ TEST_CASE("StorageManager: resolveUri with no scheme")
     CHECK(fs2 != nullptr);
     CHECK(fs2->name() == "host");
     CHECK(path2 == "/absolute/path");
+}
+
+TEST_CASE("StorageManager: resolveUri preserves authority for TNFS")
+{
+    StorageManager manager;
+    
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("tnfs")));
+    
+    // TNFS with authority should preserve full URI including host:port
+    auto [fs, path] = manager.resolveUri("tnfs://192.168.1.100:16384/atari/disk.atr");
+    CHECK(fs != nullptr);
+    CHECK(fs->name() == "tnfs");
+    // Should preserve authority in the path
+    CHECK(path == "tnfs://192.168.1.100:16384/atari/disk.atr");
+}
+
+TEST_CASE("StorageManager: resolveUri preserves authority for HTTP")
+{
+    StorageManager manager;
+    
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("http")));
+    
+    // HTTP with authority should preserve full URI
+    auto [fs, path] = manager.resolveUri("http://example.com:8080/disks/image.dsk");
+    CHECK(fs != nullptr);
+    CHECK(fs->name() == "http");
+    // Should preserve authority in the path
+    CHECK(path == "http://example.com:8080/disks/image.dsk");
 }
