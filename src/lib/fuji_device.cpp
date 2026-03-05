@@ -61,8 +61,8 @@ IOResponse FujiDevice::handle_get_mounts(const IORequest& request)
     payload.push_back(static_cast<std::uint8_t>(_config.mounts.size()));
 
     for (const auto& mount : _config.mounts) {
-        // Write id
-        payload.push_back(static_cast<std::uint8_t>(mount.id));
+        // Write slot (1-based for protocol)
+        payload.push_back(static_cast<std::uint8_t>(mount.slot));
 
         // Write URI
         payload.push_back(static_cast<std::uint8_t>(mount.uri.size()));
@@ -103,7 +103,7 @@ IOResponse FujiDevice::handle_set_mount(const IORequest& request)
 
     // Find or create mount
     auto it = std::find_if(_config.mounts.begin(), _config.mounts.end(),
-        [id](const fujinet::config::MountConfig& m) { return m.id == id; });
+        [id](const fujinet::config::MountConfig& m) { return m.slot == id; });
 
     if (it != _config.mounts.end()) {
         // Update existing mount
@@ -112,7 +112,7 @@ IOResponse FujiDevice::handle_set_mount(const IORequest& request)
     } else {
         // Create new mount
         fujinet::config::MountConfig new_mount;
-        new_mount.id = id;
+        new_mount.slot = id;
         new_mount.uri = std::move(uri);
         new_mount.mode = std::move(mode);
         _config.mounts.push_back(std::move(new_mount));

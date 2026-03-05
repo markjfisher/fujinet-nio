@@ -52,7 +52,6 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.mounts.size() != b.mounts.size()) return false;
     for (std::size_t i = 0; i < a.mounts.size(); ++i) {
         if (a.mounts[i].slot != b.mounts[i].slot) return false;
-        if (a.mounts[i].id != b.mounts[i].id) return false;
         if (a.mounts[i].uri != b.mounts[i].uri) return false;
         if (a.mounts[i].mode != b.mounts[i].mode) return false;
         if (a.mounts[i].enabled != b.mounts[i].enabled) return false;
@@ -124,10 +123,10 @@ wifi:
   ssid: "MyWiFi"
   passphrase: "secret123"
 mounts:
-  - id: 1
+  - slot: 1
     uri: "sd:/disks"
     mode: "rw"
-  - id: 2
+  - slot: 2
     uri: "tnfs://fujinet.online/atari"
     mode: "r"
 devices:
@@ -155,11 +154,11 @@ devices:
     CHECK(cfg.wifi.passphrase == "secret123");
 
     REQUIRE(cfg.mounts.size() == 2);
-    CHECK(cfg.mounts[0].id == 1);
+    CHECK(cfg.mounts[0].slot == 1);
     CHECK(cfg.mounts[0].uri == "sd:/disks");
     CHECK(cfg.mounts[0].mode == "rw");
 
-    CHECK(cfg.mounts[1].id == 2);
+    CHECK(cfg.mounts[1].slot == 2);
     CHECK(cfg.mounts[1].uri == "tnfs://fujinet.online/atari");
     CHECK(cfg.mounts[1].mode == "r");
 
@@ -285,7 +284,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Save to primary only")
     cfg.wifi.passphrase = "password";
 
     MountConfig mount1{};
-    mount1.id = 1;
+    mount1.slot = 1;
     mount1.uri = "sd:/disks";
     mount1.mode = "rw";
     cfg.mounts.push_back(mount1);
@@ -344,13 +343,13 @@ TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load")
     original.wifi.passphrase = "secretpass";
 
     MountConfig m1{};
-    m1.id = 1;
+    m1.slot = 1;
     m1.uri = "sd:/disks";
     m1.mode = "rw";
     original.mounts.push_back(m1);
 
     MountConfig m2{};
-    m2.id = 2;
+    m2.slot = 2;
     m2.uri = "tnfs://server.example.com/atari";
     m2.mode = "r";
     original.mounts.push_back(m2);
@@ -529,15 +528,17 @@ devices:
 
     REQUIRE(cfg.mounts.size() == 3);
 
-    CHECK(cfg.mounts[0].id == 1);
+    // Note: 'id' is no longer read from YAML, so slot will be 0 (unassigned)
+    // This test documents that 'id' in YAML is NOT supported - use 'slot' instead
+    CHECK(cfg.mounts[0].slot == 0);
     CHECK(cfg.mounts[0].uri == "sd:/disks1");
     CHECK(cfg.mounts[0].mode == "rw");
 
-    CHECK(cfg.mounts[1].id == 2);
+    CHECK(cfg.mounts[1].slot == 0);
     CHECK(cfg.mounts[1].uri == "tnfs://host2.com/atari2");
     CHECK(cfg.mounts[1].mode == "r");
 
-    CHECK(cfg.mounts[2].id == 3);
+    CHECK(cfg.mounts[2].slot == 0);
     CHECK(cfg.mounts[2].uri == "tnfs://host2.com/atari3");
     CHECK(cfg.mounts[2].mode == "rw");
 }
@@ -605,7 +606,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Backward compat - legacy id maps to slot")
 {
     auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
 
-    // YAML config using legacy 'id' field
+    // YAML config using legacy 'id' field - NOT SUPPORTED anymore, use 'slot'
     const std::string yaml = R"(
 fujinet:
   device_name: "legacy-test"
@@ -635,43 +636,34 @@ devices:
     YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg = store.load();
 
+    // Note: 'id' is no longer read - use 'slot' instead
+    // These will have slot=0 (unassigned)
     REQUIRE(cfg.mounts.size() == 2);
-
-    // Legacy 'id' should be preserved
-    CHECK(cfg.mounts[0].id == 1);
-    CHECK(cfg.mounts[0].slot == 0);  // New slot field is default
-    CHECK(cfg.mounts[0].effective_slot() == 0);  // Should map id 1 -> slot 0
-
-    CHECK(cfg.mounts[1].id == 8);
-    CHECK(cfg.mounts[1].slot == 0);  // New slot field is default
-    CHECK(cfg.mounts[1].effective_slot() == 7);  // Should map id 8 -> slot 7
+    CHECK(cfg.mounts[0].slot == 0);
+    CHECK(cfg.mounts[1].slot == 0);
 }
 
 TEST_CASE("MountConfig: effective_slot")
 {
     using fujinet::config::MountConfig;
 
-    // Test explicit slot takes precedence
+    // Test explicit slot
     MountConfig m1;
     m1.slot = 3;
-    m1.id = 1;
     CHECK(m1.effective_slot() == 2);  // slot 3 -> index 2
 
-    // Test fallback to legacy id
+    // Test slot 1
     MountConfig m2;
-    m2.slot = 0;
-    m2.id = 5;
-    CHECK(m2.effective_slot() == 4);  // id 5 -> index 4
+    m2.slot = 1;
+    CHECK(m2.effective_slot() == 0);  // slot 1 -> index 0
 
-    // Test neither set
+    // Test slot 8
     MountConfig m3;
-    m3.slot = 0;
-    m3.id = 0;
-    CHECK(m3.effective_slot() == -1);  // Unassigned
+    m3.slot = 8;
+    CHECK(m3.effective_slot() == 7);  // slot 8 -> index 7
 
-    // Test both set (slot takes precedence)
+    // Test unassigned
     MountConfig m4;
-    m4.slot = 7;
-    m4.id = 1;
-    CHECK(m4.effective_slot() == 6);  // slot 7 -> index 6
+    m4.slot = 0;
+    CHECK(m4.effective_slot() == -1);  // Unassigned
 }

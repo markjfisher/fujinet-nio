@@ -58,13 +58,10 @@ static void from_yaml(const YAML::Node& node, WifiConfig& out)
 
 static void from_yaml(const YAML::Node& node, MountConfig& out)
 {
-    // New fields (preferred)
     out.slot    = get_or<int>(node, "slot", 0);
     out.uri     = get_or<std::string>(node, "uri", "");
     out.mode    = get_or<std::string>(node, "mode", "r");
     out.enabled = get_or<bool>(node, "enabled", true);
-    // Legacy field for backward compatibility
-    out.id      = get_or<int>(node, "id", 0);
 }
 
 static void from_yaml(const YAML::Node& node, ModemConfig& out)
@@ -156,12 +153,8 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     out << YAML::Key << "mounts" << YAML::Value << YAML::BeginSeq;
     for (const auto& m : cfg.mounts) {
         out << YAML::BeginMap;
-        // Write new slot field if explicitly set (1-8), otherwise preserve legacy id for backward compat
         if (m.slot >= 1 && m.slot <= 8) {
             out << YAML::Key << "slot" << YAML::Value << m.slot;
-        } else if (m.id >= 1 && m.id <= 8) {
-            // Legacy: write id if slot not set
-            out << YAML::Key << "id" << YAML::Value << m.id;
         }
         out << YAML::Key << "uri"     << YAML::Value << m.uri;
         out << YAML::Key << "mode"    << YAML::Value << m.mode;

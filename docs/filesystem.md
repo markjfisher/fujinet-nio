@@ -401,23 +401,20 @@ The `MountConfig` struct in `fujinet/config/fuji_config.h` defines a mount entry
 
 ```cpp
 struct MountConfig {
-    int         slot;     // Slot number (1-8). If not specified, falls back to legacy `id`.
+    int         slot;     // Slot number (1-8). 0 means unassigned.
     std::string uri;      // URI of the resource (e.g., "sd:/disks/img.atr", "tnfs://server/dir/img.atr")
     std::string mode;    // "r", "rw", etc.
     bool        enabled;  // Whether this mount is active
-    int         id;       // Legacy field for backward compatibility
 };
 ```
 
 **Slot semantics**:
 - Slots are numbered 1-8 in config (matching user-facing Atari disk slots)
 - Internally converted to 0-7 indices for `DiskService`
-- Legacy `id` field (1-8) maps to slot indices for backward compatibility
 - `effective_slot()` method returns 0-based index or -1 if unassigned
 
 ### YAML Format
 
-**New format (preferred)**:
 ```yaml
 mounts:
   - slot: 1
@@ -428,17 +425,6 @@ mounts:
     uri: "tnfs://192.168.1.100:16384/atari/games.atr"
     mode: "r"
     enabled: true
-```
-
-**Legacy format (still supported)**:
-```yaml
-mounts:
-  - id: 1
-    uri: "sd:/disks/boot.atr"
-    mode: "rw"
-  - id: 2
-    uri: "tnfs://server.com/atari"
-    mode: "r"
 ```
 
 ### URI Resolution and Authority Preservation

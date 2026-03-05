@@ -26,20 +26,15 @@ struct WifiConfig {
 };
 
 struct MountConfig {
-    int         slot{0};            // Slot number (1-8). If not specified, falls back to legacy `id`.
+    int         slot{0};            // Slot number (1-8). 0 means unassigned.
     std::string uri;              // URI of the resource to mount (e.g., "sd:/disks/img.ssd", "tnfs://server/dir/img.atr")
     std::string mode{"r"};       // "r", "rw", etc.
     bool        enabled{true};    // Whether this mount is active
-    int         id{0};            // Legacy field for backward compatibility with old YAML configs
 
-    // Backward compatibility: get effective slot (prefer explicit slot, fallback to legacy id)
-    // Returns 0-based slot index, or -1 if unassigned
+    // Get effective slot index (0-7) or -1 if unassigned
     int effective_slot() const {
         if (slot >= 1 && slot <= 8) {
             return slot - 1;  // Convert 1-8 to 0-7
-        }
-        if (id >= 1 && id <= 8) {
-            return id - 1;  // Convert legacy id 1-8 to 0-7
         }
         return -1;  // Unassigned
     }
