@@ -54,43 +54,31 @@ def _check_version(payload: bytes, off: int = 0) -> int:
 def build_mount_req(
     *,
     slot: int,
-    fs: str,
-    path: str,
+    uri: str,
     readonly: bool = False,
     type_override: int = TYPE_AUTO,
     sector_size_hint: int = 256,
 ) -> bytes:
+    """
+    Build a mount request.
+
+    Args:
+        slot: Slot number (1-255)
+        uri: Full URI (e.g., "tnfs://192.168.1.100:16384/path", "sd0:/path", "host:/path")
+        readonly: Mount read-only
+        type_override: Image type override (default TYPE_AUTO)
+        sector_size_hint: Sector size hint for image files
+    """
     if not (1 <= slot <= 255):
         raise ValueError("slot must be 1..255")
     if not (0 <= type_override <= 255):
         raise ValueError("type_override must fit u8")
     if not (0 <= sector_size_hint <= 0xFFFF):
         raise ValueError("sector_size_hint must fit u16")
+    if not uri:
+        raise ValueError("uri must not be empty")
 
     flags = 0x01 if readonly else 0x00
-
-    # Check if fs already contains a full URI (contains "://")
-    if "://" in fs:
-        # fs is already a complete URI, use it directly
-        if fs.endswith("/"):
-            # URI ends with /, append path (minus its leading / if present)
-            path_to_append = path.lstrip("/")
-            uri = fs + path_to_append
-        else:
-            # URI doesn't end with /, check if path needs leading /
-            if path.startswith("/"):
-                uri = fs + path
-            else:
-                uri = fs + "/" + path
-    elif fs == "host":
-        # For host filesystem, use path directly (already absolute)
-        uri = path
-    else:
-        # For other filesystems, construct URI like "fs://path" or "fs:/path"
-        if path.startswith("/"):
-            uri = f"{fs}:{path}"
-        else:
-            uri = f"{fs}:/{path}"
 
     out = bytearray()
     out.append(DISKPROTO_VERSION)
@@ -146,46 +134,36 @@ def build_write_sector_req(*, slot: int, lba: int, data: bytes) -> bytes:
 # u8 type
 # u16 sectorSize
 # u32 sectorCount
-# lp_u16 fs
-# lp_u16 path
+# lp_u16 uri
 def build_create_req(
     *,
-    fs: str,
-    path: str,
+    uri: str,
     img_type: int,
     sector_size: int,
     sector_count: int,
     overwrite: bool = False,
 ) -> bytes:
+    """
+    Build a create request.
+
+    Args:
+        uri: Full URI for the new image (e.g., "sd0:/images/disk.atr")
+        img_type: Image type (TYPE_ATR, TYPE_SSD, etc.)
+        sector_size: Sector size in bytes
+        sector_count: Number of sectors
+        overwrite: Allow overwriting existing file
+    """
     if not (0 <= img_type <= 255):
         raise ValueError("img_type must fit u8")
     if not (1 <= sector_size <= 0xFFFF):
         raise ValueError("sector_size must fit u16 and be >0")
     if not (1 <= sector_count <= 0xFFFFFFFF):
         raise ValueError("sector_count must fit u32 and be >0")
+    if not uri:
+        raise ValueError("uri must not be empty")
+
     flags = 0x01 if overwrite else 0x00
-    
-    # Check if fs already contains a full URI (contains "://")
-    if "://" in fs:
-        # fs is already a complete URI, use it directly
-        if fs.endswith("/"):
-            path_to_append = path.lstrip("/")
-            uri = fs + path_to_append
-        else:
-            if path.startswith("/"):
-                uri = fs + path
-            else:
-                uri = fs + "/" + path
-    elif fs == "host":
-        # For host filesystem, use path directly (already absolute)
-        uri = path
-    else:
-        # For other filesystems, construct URI like "fs://path" or "fs:/path"
-        if path.startswith("/"):
-            uri = f"{fs}:{path}"
-        else:
-            uri = f"{fs}:/{path}"
-            
+
     out = bytearray()
     out.append(DISKPROTO_VERSION)
     out.append(flags & 0xFF)
@@ -326,5 +304,3 @@ def parse_create_resp(payload: bytes) -> CreateResp:
     sector_size, off = read_u16le(payload, off)
     sector_count, off = read_u32le(payload, off)
     return CreateResp(img_type=img_type, sector_size=sector_size, sector_count=sector_count)
-
-

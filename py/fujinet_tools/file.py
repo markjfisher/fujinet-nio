@@ -10,6 +10,35 @@ from .common import open_serial, status_ok
 # Commands
 # ----------------------------------------------------------------------
 
+def _build_uri(fs: str, path: str) -> str:
+    """
+    Build a full URI from fs and path components.
+    
+    Handles:
+    - Full URIs in fs (e.g., "tnfs://host:port/")
+    - Named filesystems (e.g., "sd0", "host")
+    """
+    # Check if fs already contains a full URI
+    if "://" in fs:
+        # fs is already a complete URI
+        if fs.endswith("/"):
+            return fs + path.lstrip("/")
+        else:
+            if path.startswith("/"):
+                return fs + path
+            else:
+                return fs + "/" + path
+    elif fs == "host":
+        # For host filesystem, path is already absolute
+        return path
+    else:
+        # Construct URI from fs and path
+        if path.startswith("/"):
+            return f"{fs}:{path}"
+        else:
+            return f"{fs}:/{path}"
+
+
 def _join_dest_path(dest_path: str, src_file: str) -> str:
     # If user gives a directory path (ends with '/'), append basename of src_file.
     if dest_path.endswith("/"):
@@ -33,8 +62,8 @@ def _parent_dir(path: str) -> str:
     return p[:i]
 
 
-def _mkdir_p(*, args, bus: FujiBusSession, fs: str, path: str) -> bool:
-    req = fp.build_mkdir_req(fs=fs, path=path, parents=True, exist_ok=True)
+def _mkdir_p(*, args, bus: FujiBusSession, uri: str) -> bool:
+    req = fp.build_mkdir_req(uri=uri, parents=True, exist_ok=True)
     pkt = bus.send_command_expect(
         device=fp.FILE_DEVICE_ID,
         command=fp.CMD_MKDIR,
@@ -54,7 +83,8 @@ def _mkdir_p(*, args, bus: FujiBusSession, fs: str, path: str) -> bool:
     return True
 
 def cmd_list(args) -> int:
-    req = fp.build_list_req(args.fs, args.path, args.start, args.max)
+    uri = _build_uri(args.fs, args.path)
+    req = fp.build_list_req(uri, args.start, args.max)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
@@ -88,7 +118,8 @@ def cmd_list(args) -> int:
 
 
 def cmd_stat(args) -> int:
-    req = fp.build_stat_req(args.fs, args.path)
+    uri = _build_uri(args.fs, args.path)
+    req = fp.build_stat_req(uri)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
@@ -122,7 +153,8 @@ def cmd_stat(args) -> int:
 
 def cmd_read(args) -> int:
     # One-shot read (single request)
-    req = fp.build_read_req(args.fs, args.path, args.offset, args.max_bytes)
+    uri = _build_uri(args.fs, args.path)
+    req = fp.build_read_req(uri, args.offset, args.max_bytes)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
@@ -159,6 +191,7 @@ def cmd_read(args) -> int:
 
 
 def cmd_read_all(args) -> int:
+    uri = _build_uri(args.fs, args.path)
     out_path = Path(args.out) if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,7 +203,7 @@ def cmd_read_all(args) -> int:
         total = 0
 
         while True:
-            req = fp.build_read_req(args.fs, args.path, offset, args.chunk)
+            req = fp.build_read_req(uri, offset, args.chunk)
             pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
                 command=fp.CMD_READ,
@@ -222,8 +255,11 @@ def cmd_read_all(args) -> int:
 
 
 def cmd_write(args) -> int:
-    data = Path(args.inp).read_bytes()
+    uri = _build_uri(args.fs, args.path)
     dst_path = _join_dest_path(args.path, args.inp)
+    dst_uri = _build_uri(args.fs, dst_path)
+
+    data = Path(args.inp).read_bytes()
 
     # Reuse one Serial for the whole transfer (robust for CDC + faster).
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -232,7 +268,8 @@ def cmd_write(args) -> int:
         if args.mkdirs:
             parent = _parent_dir(dst_path)
             if parent and parent != "/":
-                if not _mkdir_p(args=args, bus=bus, fs=args.fs, path=parent):
+                parent_uri = _build_uri(args.fs, parent)
+                if not _mkdir_p(args=args, bus=bus, uri=parent_uri):
                     return 1
 
         offset = args.offset
@@ -241,7 +278,7 @@ def cmd_write(args) -> int:
 
         while idx < len(data):
             chunk = data[idx : idx + args.chunk]
-            req = fp.build_write_req(args.fs, dst_path, offset, chunk)
+            req = fp.build_write_req(dst_uri, offset, chunk)
 
             pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
@@ -325,5 +362,3 @@ def register_subcommands(subparsers) -> None:
     pw.add_argument("path")
     pw.add_argument("inp", help="Local input file")
     pw.set_defaults(fn=cmd_write)
-
-

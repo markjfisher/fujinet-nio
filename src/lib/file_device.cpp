@@ -32,31 +32,11 @@ static constexpr std::uint8_t FILEPROTO_VERSION = 1;
 
 // Common request prefix:
 // u8 version
-// u8 fsNameLen
-// u8[] fsName
-// u16 pathLen (LE)
-// u8[] path
+// u16 uriLen (LE)
+// u8[] uri   - full URI (e.g., "tnfs://host:port/path" or "sd0:/path")
 struct CommonPrefix {
-    std::string fs;
-    std::string path;
+    std::string uri;
 };
-
-// Resolve fs+path to filesystem and path, supporting full URIs.
-// If p.fs is empty, p.path is treated as a full URI.
-static IFileSystem* resolve_filesystem(StorageManager& storage, CommonPrefix& p) {
-    if (p.fs.empty()) {
-        // URI mode - p.path contains full URI
-        auto [fs, resolvedPath] = storage.resolveUri(p.path);
-        if (fs) {
-            p.path = resolvedPath;  // Update path with resolved version
-            return fs;
-        }
-        return nullptr;
-    } else {
-        // Legacy mode - p.fs is filesystem name
-        return storage.get(p.fs);
-    }
-}
 
 static bool parse_common_prefix(Reader& r, CommonPrefix& out)
 {
@@ -65,36 +45,14 @@ static bool parse_common_prefix(Reader& r, CommonPrefix& out)
         return false;
     }
 
-    std::uint8_t fsLen = 0;
-    if (!r.read_u8(fsLen)) return false;
+    std::uint16_t uriLen = 0;
+    if (!r.read_u16le(uriLen)) return false;
 
-    const std::uint8_t* fsPtr = nullptr;
-    if (!r.read_bytes(fsPtr, fsLen)) return false;
-    out.fs.assign(reinterpret_cast<const char*>(fsPtr), fsLen);
+    const std::uint8_t* uriPtr = nullptr;
+    if (!r.read_bytes(uriPtr, uriLen)) return false;
+    out.uri.assign(reinterpret_cast<const char*>(uriPtr), uriLen);
 
-    std::uint16_t pathLen = 0;
-    if (!r.read_u16le(pathLen)) return false;
-
-    const std::uint8_t* pathPtr = nullptr;
-    if (!r.read_bytes(pathPtr, pathLen)) return false;
-    out.path.assign(reinterpret_cast<const char*>(pathPtr), pathLen);
-
-    // Allow empty fs if path contains full URI (after reconstruction above)
-    if (out.path.empty()) return false;
-
-    // NEW: Support full URIs - if fs contains "://", treat fs+path as a full URI
-    // This allows clients to send "tnfs://host:port/" instead of separate fs + path
-    if (out.fs.find("://") != std::string::npos) {
-        // fs is actually the full URI, reconstruct it
-        // If path doesn't start with /, we need to add it
-        std::string fullUri = out.fs;
-        if (!out.path.empty() && out.path[0] != '/') {
-            fullUri += "/";
-        }
-        fullUri += out.path;
-        out.fs = "";  // Mark as URI mode
-        out.path = fullUri;
-    }
+    if (out.uri.empty()) return false;
 
     return true;
 }
@@ -183,14 +141,14 @@ IOResponse FileDevice::handle_stat(const IORequest& request)
         return resp;
     }
 
-    auto* fs = resolve_filesystem(_storage, p);
+    auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     FileInfo info{};
-    const bool exists = fs->stat(p.path, info);
+    const bool exists = fs->stat(resolvedPath, info);
 
     std::uint8_t flags = 0;
     if (exists) {
@@ -241,14 +199,14 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         return resp;
     }
 
-    auto* fs = resolve_filesystem(_storage, p);
+    auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     std::vector<FileInfo> entries;
-    if (!fs->listDirectory(p.path, entries)) {
+    if (!fs->listDirectory(resolvedPath, entries)) {
         resp.status = StatusCode::IOError;
         return resp;
     }
@@ -323,13 +281,13 @@ IOResponse FileDevice::handle_read_file(const IORequest& request)
         return resp;
     }
 
-    auto* fs = resolve_filesystem(_storage, p);
+    auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
-    auto file = fs->open(p.path, "rb");
+    auto file = fs->open(resolvedPath, "rb");
     if (!file) {
         resp.status = StatusCode::IOError;
         return resp;
@@ -408,7 +366,7 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
         return resp;
     }
 
-    auto* fs = resolve_filesystem(_storage, p);
+    auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
@@ -418,10 +376,10 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
     // offset==0 => create/truncate
     // offset>0  => open existing read/write (best effort)
     const char* mode = (offset == 0) ? "wb" : "r+b";
-    auto file = fs->open(p.path, mode);
+    auto file = fs->open(resolvedPath, mode);
     if (!file && offset > 0) {
         // If file didn't exist, allow creation when offset>0 too.
-        file = fs->open(p.path, "wb");
+        file = fs->open(resolvedPath, "wb");
     }
     if (!file) {
         resp.status = StatusCode::IOError;
@@ -478,13 +436,13 @@ IOResponse FileDevice::handle_make_directory(const IORequest& request)
     const bool parents = (flags & 0x01) != 0;
     const bool existOk = (flags & 0x02) != 0;
 
-    auto* fs = resolve_filesystem(_storage, p);
+    auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
-    const std::string dirPath = normalize_dir_path(p.path);
+    const std::string dirPath = normalize_dir_path(resolvedPath);
 
     bool ok = false;
     if (parents) {

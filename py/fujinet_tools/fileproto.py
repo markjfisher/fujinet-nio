@@ -28,55 +28,105 @@ CMD_WRITE = 0x04
 CMD_MKDIR = 0x05
 
 
-def build_common_prefix(fs: str, path: str) -> bytes:
-    fs_b = fs.encode("utf-8")
-    path_b = path.encode("utf-8")
+def _lp_u16(s: str) -> bytes:
+    """Length-prefixed u16 string (for URIs)."""
+    b = s.encode("utf-8")
+    if len(b) > 0xFFFF:
+        raise ValueError("string too long for lp_u16")
+    return u16le(len(b)) + b
 
-    if not (1 <= len(fs_b) <= 255):
-        raise ValueError("fs name must be 1..255 bytes")
-    if not (1 <= len(path_b) <= 65535):
-        raise ValueError("path must be 1..65535 bytes")
 
-    return bytes([FILEPROTO_VERSION, len(fs_b)]) + fs_b + u16le(len(path_b)) + path_b
+def build_uri_request(uri: str) -> bytes:
+    """
+    Build the common request prefix for FileDevice v2+.
+    
+    New format (single URI):
+    - u8 version
+    - u16 uriLen (LE)
+    - u8[] uri (full URI like "tnfs://host:port/path")
+    """
+    uri_b = uri.encode("utf-8")
+    if not (1 <= len(uri_b) <= 65535):
+        raise ValueError("uri must be 1..65535 bytes")
+    
+    return bytes([FILEPROTO_VERSION]) + _lp_u16(uri)
 
 
 # -------- Requests --------
 
-def build_stat_req(fs: str, path: str) -> bytes:
-    return build_common_prefix(fs, path)
+def build_stat_req(uri: str) -> bytes:
+    """
+    Build a stat request.
+    
+    Args:
+        uri: Full URI (e.g., "tnfs://192.168.1.100:16384/file.txt", "sd0:/path/file")
+    """
+    return build_uri_request(uri)
 
 
-def build_list_req(fs: str, path: str, start: int, max_entries: int) -> bytes:
+def build_list_req(uri: str, start: int, max_entries: int) -> bytes:
+    """
+    Build a list directory request.
+    
+    Args:
+        uri: Full URI for directory
+        start: Starting index
+        max_entries: Maximum entries to return
+    """
     if not (0 <= start <= 0xFFFF):
         raise ValueError("start must fit u16")
     if not (1 <= max_entries <= 0xFFFF):
         raise ValueError("max_entries must fit u16 and be >0")
-    return build_common_prefix(fs, path) + u16le(start) + u16le(max_entries)
+    return build_uri_request(uri) + u16le(start) + u16le(max_entries)
 
 
-def build_read_req(fs: str, path: str, offset: int, max_bytes: int) -> bytes:
+def build_read_req(uri: str, offset: int, max_bytes: int) -> bytes:
+    """
+    Build a read file request.
+    
+    Args:
+        uri: Full URI for file
+        offset: Byte offset to read from
+        max_bytes: Maximum bytes to read
+    """
     if not (0 <= offset <= 0xFFFFFFFF):
         raise ValueError("offset must fit u32")
     if not (1 <= max_bytes <= 0xFFFF):
         raise ValueError("max_bytes must fit u16 and be >0")
-    return build_common_prefix(fs, path) + u32le(offset) + u16le(max_bytes)
+    return build_uri_request(uri) + u32le(offset) + u16le(max_bytes)
 
 
-def build_write_req(fs: str, path: str, offset: int, data: bytes) -> bytes:
+def build_write_req(uri: str, offset: int, data: bytes) -> bytes:
+    """
+    Build a write file request.
+    
+    Args:
+        uri: Full URI for file
+        offset: Byte offset to write at
+        data: Data to write
+    """
     if not (0 <= offset <= 0xFFFFFFFF):
         raise ValueError("offset must fit u32")
     if len(data) > 0xFFFF:
         raise ValueError("data chunk too large for u16 length; split it")
-    return build_common_prefix(fs, path) + u32le(offset) + u16le(len(data)) + data
+    return build_uri_request(uri) + u32le(offset) + u16le(len(data)) + data
 
 
-def build_mkdir_req(*, fs: str, path: str, parents: bool = True, exist_ok: bool = True) -> bytes:
+def build_mkdir_req(*, uri: str, parents: bool = True, exist_ok: bool = True) -> bytes:
+    """
+    Build a make directory request.
+    
+    Args:
+        uri: Full URI for directory
+        parents: Create parent directories
+        exist_ok: Don't error if directory exists
+    """
     flags = 0
     if parents:
         flags |= 0x01
     if exist_ok:
         flags |= 0x02
-    return build_common_prefix(fs, path) + bytes([flags & 0xFF])
+    return build_uri_request(uri) + bytes([flags & 0xFF])
 
 
 def parse_mkdir_resp(payload: bytes) -> None:
