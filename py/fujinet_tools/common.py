@@ -34,6 +34,7 @@ def status_ok(pkt: Optional[FujiPacket]) -> bool:
     return bool(pkt and pkt.params and pkt.params[0] == 0)
 
 
+# legacy code, not needed any more, but kept around in case we revert or need it again.
 def build_uri(fs: str, path: str) -> str:
     """
     Build a full URI from fs and path components.

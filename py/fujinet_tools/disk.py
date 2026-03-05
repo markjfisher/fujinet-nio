@@ -70,8 +70,8 @@ def _send_expect(*, args, command: int, payload: bytes, cmd_txt: str):
 
 
 def cmd_mount(args) -> int:
-    # Build full URI from fs + path using shared helper
-    uri = build_uri(args.fs, args.path)
+    # Single URI argument - could be "tnfs://host:port/path", "sd0:/path", or "/path"
+    uri = args.uri
 
     req = dp.build_mount_req(
         slot=args.slot,
@@ -122,7 +122,6 @@ def cmd_info(args) -> int:
         st = int(pkt.params[0]) if pkt.params else -1
         print(f"status={st} ({_status_str(st)})", file=sys.stderr)
         return 1
-
     ir = dp.parse_info_resp(pkt.payload)
     print(
         "inserted=%d readonly=%d dirty=%d changed=%d slot=%d type=%s sector_size=%d sector_count=%d last_error=%d"
@@ -151,7 +150,7 @@ def cmd_clear_changed(args) -> int:
         st = int(pkt.params[0]) if pkt.params else -1
         print(f"status={st} ({_status_str(st)})", file=sys.stderr)
         return 1
-    print(f"changed_cleared=1 slot={args.slot}")
+    print(f"cleared=1 slot={args.slot}")
     return 0
 
 
@@ -171,18 +170,13 @@ def cmd_read_sector(args) -> int:
         Path(args.out).write_bytes(rr.data)
     else:
         sys.stdout.buffer.write(rr.data)
-
-    if args.verbose:
-        print(
-            f"\n(slot={rr.slot} lba={rr.lba} len={len(rr.data)} truncated={1 if rr.truncated else 0})"
-        )
+    print(f"read_len={len(rr.data)} slot={rr.slot} lba={rr.lba}", file=sys.stderr)
     return 0
 
 
 def cmd_write_sector(args) -> int:
     data = Path(args.inp).read_bytes()
     req = dp.build_write_sector_req(slot=args.slot, lba=args.lba, data=data)
-
     pkt = _send_expect(args=args, command=dp.CMD_WRITE_SECTOR, payload=req, cmd_txt="DISK_WRITE_SECTOR")
     if pkt is None:
         print("No response", file=sys.stderr)
@@ -198,8 +192,8 @@ def cmd_write_sector(args) -> int:
 
 
 def cmd_create(args) -> int:
-    # Build full URI from fs + path using shared helper
-    uri = build_uri(args.fs, args.path)
+    # Single URI argument - could be "tnfs://host:port/path", "sd0:/path", or "/path"
+    uri = args.uri
 
     req = dp.build_create_req(
         uri=uri,
@@ -229,10 +223,7 @@ def register_subcommands(subparsers) -> None:
 
     pm = sd.add_parser("mount", help="Mount an image into a slot")
     pm.add_argument("--slot", type=int, required=True)
-    pm.add_argument("--fs", required=True,
-                    help="Filesystem name (e.g., 'sd0', 'host') OR full URI (e.g., 'tnfs://192.168.1.101:16384/')")
-    pm.add_argument("--path", required=True,
-                    help="Path within filesystem, or appended to URI if --fs is a full URI")
+    pm.add_argument("uri", help="URI (e.g., tnfs://192.168.1.101:16384/path, sd0:/path, /path)")
     pm.add_argument("--ro", action="store_true", help="Request readonly")
     pm.add_argument("--type", default="auto", help="auto|atr|ssd|dsd|raw")
     pm.add_argument("--sector-size", type=int, default=256, help="Sector size hint (used for raw)")
@@ -264,12 +255,9 @@ def register_subcommands(subparsers) -> None:
     pw.set_defaults(fn=cmd_write_sector)
 
     pc = sd.add_parser("create", help="Create a new disk image file (raw/ssd/atr)")
-    pc.add_argument("--fs", required=True)
-    pc.add_argument("--path", required=True)
+    pc.add_argument("uri", help="URI (e.g., sd0:/path/image.atr, /path/image.atr)")
     pc.add_argument("--type", required=True, help="raw|ssd|atr (or auto but will fail)")
     pc.add_argument("--sector-size", type=int, required=True)
     pc.add_argument("--sector-count", type=int, required=True)
-    pc.add_argument("--force", action="store_true", help="Overwrite if exists")
+    pc.add_argument("--force", action="store_true", help="Overwrite existing file")
     pc.set_defaults(fn=cmd_create)
-
-

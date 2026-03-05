@@ -1,36 +1,29 @@
 from __future__ import annotations
 from pathlib import Path
+import sys
 
 from .fujibus import FujiBusSession
 from . import fileproto as fp
-from .common import open_serial, status_ok, build_uri
+from .common import open_serial, status_ok
 
 
 # ----------------------------------------------------------------------
 # Commands
 # ----------------------------------------------------------------------
 
-def _join_dest_path(dest_path: str, src_file: str) -> str:
-    # If user gives a directory path (ends with '/'), append basename of src_file.
-    if dest_path.endswith("/"):
-        name = Path(src_file).name
-        if dest_path == "/":
-            return "/" + name
-        return dest_path + name
-    return dest_path
-
-
-def _parent_dir(path: str) -> str:
-    # Return parent directory for a filesystem path.
-    # "/a/b/c.bin" -> "/a/b"
-    # "/c.bin" -> "/"
-    p = path.rstrip("/")
-    if p == "":
-        return "/"
-    i = p.rfind("/")
-    if i <= 0:
-        return "/"
-    return p[:i]
+def _parse_uri(arg: str) -> str:
+    """
+    Parse a single URI argument.
+    
+    If the argument contains "://" or starts with "/", it's already a URI.
+    Otherwise, treat it as a path on the "host" filesystem.
+    """
+    if "://" in arg or arg.startswith("/"):
+        # Already a URI or absolute path
+        return arg
+    else:
+        # Treat as path on host filesystem
+        return arg
 
 
 def _mkdir_p(*, args, bus: FujiBusSession, uri: str) -> bool:
@@ -53,8 +46,9 @@ def _mkdir_p(*, args, bus: FujiBusSession, uri: str) -> bool:
     fp.parse_mkdir_resp(pkt.payload)
     return True
 
+
 def cmd_list(args) -> int:
-    uri = build_uri(args.fs, args.path)
+    uri = _parse_uri(args.uri)
     req = fp.build_list_req(uri, args.start, args.max)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -70,17 +64,17 @@ def cmd_list(args) -> int:
             cmd_txt="LIST",
         )
         if pkt is None:
-            print("No response")
+            print("No response", file=sys.stderr)
             return 2
 
         # FujiBus convention: status is param[0] on responses
         if not status_ok(pkt):
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
             return 1
 
         lr = fp.parse_list_resp(pkt.payload)
 
-        print(f"{args.fs}:{args.path} (more={lr.more}, count={len(lr.entries)})")
+        print(f"{args.uri} (more={lr.more}, count={len(lr.entries)})")
         for e in lr.entries:
             kind = "DIR " if e.is_dir else "FILE"
             print(f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}")
@@ -89,7 +83,7 @@ def cmd_list(args) -> int:
 
 
 def cmd_stat(args) -> int:
-    uri = build_uri(args.fs, args.path)
+    uri = _parse_uri(args.uri)
     req = fp.build_stat_req(uri)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -105,16 +99,16 @@ def cmd_stat(args) -> int:
             cmd_txt="STAT",
         )
         if pkt is None:
-            print("No response")
+            print("No response", file=sys.stderr)
             return 2
 
         # FujiBus convention: status is param[0] on responses
         if not status_ok(pkt):
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
             return 1
 
         st = fp.parse_stat_resp(pkt.payload)
-        print(f"{args.fs}:{args.path}")
+        print(f"{args.uri}")
         print(f"  exists: {st.exists}")
         print(f"  dir:    {st.is_dir}")
         print(f"  size:   {st.size_bytes}")
@@ -124,7 +118,7 @@ def cmd_stat(args) -> int:
 
 def cmd_read(args) -> int:
     # One-shot read (single request)
-    uri = build_uri(args.fs, args.path)
+    uri = _parse_uri(args.uri)
     req = fp.build_read_req(uri, args.offset, args.max_bytes)
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -140,10 +134,10 @@ def cmd_read(args) -> int:
             cmd_txt="READ",
         )
         if pkt is None:
-            print("No response")
+            print("No response", file=sys.stderr)
             return 2
         if not status_ok(pkt):
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+            print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
             return 1
 
         rr = fp.parse_read_resp(pkt.payload)
@@ -152,8 +146,6 @@ def cmd_read(args) -> int:
             Path(args.out).write_bytes(rr.data)
         else:
             # default: write to stdout as raw bytes
-            import sys
-
             sys.stdout.buffer.write(rr.data)
 
         if args.verbose:
@@ -162,7 +154,7 @@ def cmd_read(args) -> int:
 
 
 def cmd_read_all(args) -> int:
-    uri = build_uri(args.fs, args.path)
+    uri = _parse_uri(args.uri)
     out_path = Path(args.out) if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,16 +178,16 @@ def cmd_read_all(args) -> int:
             )
 
             if pkt is None:
-                print("No response")
+                print("No response", file=sys.stderr)
                 return 2
 
             if not status_ok(pkt):
-                print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+                print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
                 return 1
 
             rr = fp.parse_read_resp(pkt.payload)
             if rr.offset != offset:
-                print(f"Offset echo mismatch: expected {offset}, got {rr.offset}")
+                print(f"Offset echo mismatch: expected {offset}, got {rr.offset}", file=sys.stderr)
                 return 1
 
             if out_path:
@@ -215,7 +207,6 @@ def cmd_read_all(args) -> int:
                 break
 
         if not out_path:
-            import sys
             sys.stdout.buffer.write(b"".join(chunks))
 
         if args.verbose:
@@ -224,23 +215,35 @@ def cmd_read_all(args) -> int:
     return 0
 
 
+def _parent_dir(path: str) -> str:
+    """Return parent directory for a path."""
+    p = path.rstrip("/")
+    if p == "":
+        return "/"
+    i = p.rfind("/")
+    if i <= 0:
+        return "/"
+    return p[:i]
+
 
 def cmd_write(args) -> int:
-    uri = build_uri(args.fs, args.path)
-    dst_path = _join_dest_path(args.path, args.inp)
-    dst_uri = build_uri(args.fs, dst_path)
+    uri = _parse_uri(args.uri)
+    src_path = Path(args.inp)
+    
+    # If uri is a directory (ends with /), append the source filename
+    if uri.endswith("/"):
+        uri = uri + src_path.name
 
-    data = Path(args.inp).read_bytes()
+    data = src_path.read_bytes()
 
     # Reuse one Serial for the whole transfer (robust for CDC + faster).
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         if args.mkdirs:
-            parent = _parent_dir(dst_path)
+            parent = _parent_dir(uri)
             if parent and parent != "/":
-                parent_uri = build_uri(args.fs, parent)
-                if not _mkdir_p(args=args, bus=bus, uri=parent_uri):
+                if not _mkdir_p(args=args, bus=bus, uri=parent):
                     return 1
 
         offset = args.offset
@@ -249,7 +252,7 @@ def cmd_write(args) -> int:
 
         while idx < len(data):
             chunk = data[idx : idx + args.chunk]
-            req = fp.build_write_req(dst_uri, offset, chunk)
+            req = fp.build_write_req(uri, offset, chunk)
 
             pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
@@ -262,17 +265,17 @@ def cmd_write(args) -> int:
             )
 
             if pkt is None:
-                print("No response")
+                print("No response", file=sys.stderr)
                 return 2
 
             # FujiBus convention: status is param[0] on responses
             if not status_ok(pkt):
-                print(f"Device status={pkt.params[0] if pkt.params else '??'}")
+                print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
                 return 1
 
             wr = fp.parse_write_resp(pkt.payload)
             if wr.offset != offset:
-                print(f"Offset echo mismatch: expected {offset}, got {wr.offset}")
+                print(f"Offset echo mismatch: expected {offset}, got {wr.offset}", file=sys.stderr)
                 return 1
 
             wrote = int(wr.written)
@@ -287,7 +290,7 @@ def cmd_write(args) -> int:
             idx += wrote
 
             if wrote == 0:
-                print("write stalled (0 bytes written), stopping")
+                print("write stalled (0 bytes written), stopping", file=sys.stderr)
                 break
 
         if args.verbose:
@@ -301,35 +304,30 @@ def register_subcommands(subparsers) -> None:
     pl = subparsers.add_parser("list", help="List directory entries via FileDevice")
     pl.add_argument("--start", type=int, default=0)
     pl.add_argument("--max", type=int, default=64)
-    pl.add_argument("fs")
-    pl.add_argument("path")
+    pl.add_argument("uri", help="URI (e.g., tnfs://host:port/, /path, sd0:/path)")
     pl.set_defaults(fn=cmd_list)
 
     ps = subparsers.add_parser("stat", help="Stat a file/dir via FileDevice")
-    ps.add_argument("fs")
-    ps.add_argument("path")
+    ps.add_argument("uri", help="URI (e.g., tnfs://host:port/file, /path, sd0:/path)")
     ps.set_defaults(fn=cmd_stat)
 
     pr = subparsers.add_parser("read", help="Read a single chunk")
     pr.add_argument("--offset", type=int, default=0)
     pr.add_argument("--max-bytes", type=int, default=512)
     pr.add_argument("--out", help="Write chunk to this file (else stdout)")
-    pr.add_argument("fs")
-    pr.add_argument("path")
+    pr.add_argument("uri", help="URI (e.g., tnfs://host:port/file, /path, sd0:/path)")
     pr.set_defaults(fn=cmd_read)
 
     pra = subparsers.add_parser("read-all", help="Read whole file in chunks")
     pra.add_argument("--chunk", type=int, default=512)
     pra.add_argument("--out", help="Write to this file (else stdout)")
-    pra.add_argument("fs")
-    pra.add_argument("path")
+    pra.add_argument("uri", help="URI (e.g., tnfs://host:port/file, /path, sd0:/path)")
     pra.set_defaults(fn=cmd_read_all)
 
     pw = subparsers.add_parser("write", help="Write a local file to the remote path in chunks")
     pw.add_argument("--offset", type=int, default=0)
     pw.add_argument("--chunk", type=int, default=512)
     pw.add_argument("--mkdirs", action="store_true", help="Create parent directories if needed (mkdir -p)")
-    pw.add_argument("fs")
-    pw.add_argument("path")
+    pw.add_argument("uri", help="URI (e.g., tnfs://host:port/file, /path, sd0:/path)")
     pw.add_argument("inp", help="Local input file")
     pw.set_defaults(fn=cmd_write)
