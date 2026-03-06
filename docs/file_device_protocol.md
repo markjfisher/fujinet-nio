@@ -116,6 +116,9 @@ Resolution rules:
 - Resolution remains centralized in the storage/path resolver layer rather than in host ROM code.
 - If the URI cannot be resolved to a registered filesystem, respond `DeviceNotFound`.
 
+Resolution behaviour (implementation note):
+- **"Valid"** means the URI resolves to a *registered* filesystem: the scheme (e.g. `tnfs`, `sd0`, `host`) must match a registered filesystem name. Unknown schemes (e.g. `FOO:/path`) do not fall back to the host filesystem; they result in `DeviceNotFound`. Scheme lookup is case-insensitive so that clients using uppercase (e.g. BBC) can use `HOST:/path` when a filesystem named `host` is registered.
+
 This contract is aligned with the fn-rom planning note in [`../../bbc/fn-rom/docs/fn-rom-command-rewrite-implementation-plan.md`](../../bbc/fn-rom/docs/fn-rom-command-rewrite-implementation-plan.md) so ROM-side commands such as `*FCD` and `*FLIST` can treat the current selection as an opaque URI.
 
 ---

@@ -3,6 +3,7 @@
 #include "fujinet/io/protocol/wire_device_ids.h"
 
 #include "fujinet/core/logging.h"
+#include "fujinet/core/utils.h"
 
 #include <algorithm>  // for std::find
 
@@ -10,6 +11,7 @@ namespace fujinet::io {
 
 static constexpr const char* TAG = "fujibus";
 
+using fujinet::core::log_hexdump;
 using fujinet::io::protocol::FujiBusPacket;
 using fujinet::io::protocol::ByteBuffer;
 using fujinet::io::protocol::SlipByte;
@@ -116,6 +118,19 @@ bool FujiBusTransport::receive(IORequest& outReq)
         (unsigned)(outReq.command & 0xFF),
         (unsigned)outReq.params.size(),
         (unsigned)outReq.payload.size());
+
+#if defined(FN_DEBUG)
+    if (!outReq.params.empty()) {
+        FN_LOGI(TAG, "  params:");
+        for (std::size_t i = 0; i < outReq.params.size(); ++i) {
+            FN_LOGI(TAG, "    [%zu] = 0x%08X", i, (unsigned)outReq.params[i]);
+        }
+    }
+    if (!outReq.payload.empty()) {
+        FN_LOGI(TAG, "  payload (%zu bytes):", outReq.payload.size());
+        log_hexdump(TAG, outReq.payload.data(), outReq.payload.size());
+    }
+#endif
 
     return true;
 }

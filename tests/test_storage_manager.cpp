@@ -133,19 +133,29 @@ TEST_CASE("StorageManager: resolveUri")
 TEST_CASE("StorageManager: resolveUri with no scheme")
 {
     StorageManager manager;
-    
-    // Without any filesystems registered, should return null
+
+    // Plain path with no scheme: no resolver accepts it, so unresolved
     auto [fs1, path1] = manager.resolveUri("/absolute/path");
     CHECK(fs1 == nullptr);
-    
-    // Register host filesystem
+    CHECK(path1 == "");
+
+    // Register host filesystem; plain path still does not resolve (no scheme)
     CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("host")));
-    
-    // Should now resolve to host filesystem
     auto [fs2, path2] = manager.resolveUri("/absolute/path");
-    CHECK(fs2 != nullptr);
-    CHECK(fs2->name() == "host");
-    CHECK(path2 == "/absolute/path");
+    CHECK(fs2 == nullptr);
+    CHECK(path2 == "");
+}
+
+TEST_CASE("StorageManager: resolveUri scheme case-insensitive")
+{
+    StorageManager manager;
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("host")));
+
+    // Uppercase scheme (e.g. BBC) matches registered "host"
+    auto [fs, path] = manager.resolveUri("HOST:/path/to/file.ssd");
+    CHECK(fs != nullptr);
+    CHECK(fs->name() == "host");
+    CHECK(path == "/path/to/file.ssd");
 }
 
 TEST_CASE("StorageManager: resolveUri preserves authority for TNFS")

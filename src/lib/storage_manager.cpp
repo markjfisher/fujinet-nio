@@ -3,7 +3,21 @@
 #include "fujinet/fs/path_resolvers/path_resolver.h"
 #include "fujinet/fs/uri_parser.h"
 
+#include <cctype>
+
 namespace fujinet::fs {
+
+static bool iequals(const std::string& a, const std::string& b)
+{
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
 
 // Singleton path resolver instance - handlers are registered in constructor
 static PathResolver& getPathResolver()
@@ -27,19 +41,38 @@ bool StorageManager::registerFileSystem(std::unique_ptr<IFileSystem> fs)
 
 bool StorageManager::unregisterFileSystem(const std::string& name)
 {
-    return _fileSystems.erase(name) > 0;
+    auto it = _fileSystems.find(name);
+    if (it != _fileSystems.end()) {
+        _fileSystems.erase(it);
+        return true;
+    }
+    for (it = _fileSystems.begin(); it != _fileSystems.end(); ++it) {
+        if (iequals(it->first, name)) {
+            _fileSystems.erase(it);
+            return true;
+        }
+    }
+    return false;
 }
 
 IFileSystem* StorageManager::get(const std::string& name)
 {
     auto it = _fileSystems.find(name);
-    return (it == _fileSystems.end()) ? nullptr : it->second.get();
+    if (it != _fileSystems.end()) return it->second.get();
+    for (auto& [key, fs] : _fileSystems) {
+        if (iequals(key, name)) return fs.get();
+    }
+    return nullptr;
 }
 
 const IFileSystem* StorageManager::get(const std::string& name) const
 {
     auto it = _fileSystems.find(name);
-    return (it == _fileSystems.end()) ? nullptr : it->second.get();
+    if (it != _fileSystems.end()) return it->second.get();
+    for (const auto& [key, fs] : _fileSystems) {
+        if (iequals(key, name)) return fs.get();
+    }
+    return nullptr;
 }
 
 std::vector<std::string> StorageManager::listNames() const
@@ -95,17 +128,7 @@ std::pair<IFileSystem*, std::string> StorageManager::resolveUri(const std::strin
             return {fs, target.fs_path};
         }
     }
-    
-    // Fallback: try host filesystem for plain paths
-    auto fs = get("host");
-    if (fs) {
-        std::string path = uri;
-        if (!path.empty() && path[0] != '/') {
-            path = "/" + path;
-        }
-        return {fs, path};
-    }
-    
+
     return {nullptr, ""};
 }
 
