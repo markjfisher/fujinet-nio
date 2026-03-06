@@ -62,6 +62,7 @@ Command IDs (initial set):
 | `ListDirectory` | `0x02` | Enumerate entries in a directory |
 | `ReadFile`      | `0x03` | Read bytes from a file at offset |
 | `WriteFile`     | `0x04` | Write bytes to a file at offset |
+| `ResolvePath`   | `0x05` | Resolve a base URI plus a path fragment into a canonical URI |
 
 (IDs are intentionally compact to allow use by 8-bit transports.)
 
@@ -89,47 +90,33 @@ If transport status is not `Ok`, the FileDevice payload may be empty or undefine
 
 ## Common Request Prefix
 
-Most commands require selecting a filesystem and a path.
+All v1 FileDevice commands operate on a full URI string.
 
 Common prefix:
 
 ```
 u8   version            // = 1
-u8   fsNameLen
-u8[] fsName             // length fsNameLen
-u16  pathLen            // LE
-u8[] path               // length pathLen
+u16  uriLen             // LE
+u8[] uri                // full URI bytes
 ```
+
+Examples of valid URIs:
+
+- `tnfs://192.168.1.100:16384/`
+- `tnfs://192.168.1.100:16384/GAMES`
+- `sd0:/images/demo.atr`
+- `/tmp/demo.txt` (resolved by the default host filesystem when available)
 
 Validation:
-- If `fsNameLen` or `pathLen` exceeds remaining payload size → `InvalidRequest`
-- `pathLen==0` → `InvalidRequest`
-- `fsNameLen==0` → use full URI mode (see below)
+- If `uriLen` exceeds remaining payload size → `InvalidRequest`
+- `uriLen==0` → `InvalidRequest`
 
-### Full URI Mode (v1.1+)
+Resolution rules:
+- The device resolves the URI with `StorageManager::resolveUri()`.
+- Resolution remains centralized in the storage/path resolver layer rather than in host ROM code.
+- If the URI cannot be resolved to a registered filesystem, respond `DeviceNotFound`.
 
-When `fsNameLen==0`, the `path` field is treated as a **full URI** instead of a path within a named filesystem. This allows clients to specify URIs like `tnfs://host:port/path` directly without requiring a separate filesystem registration step.
-
-The server parses the URI using `StorageManager::resolveUri()`, which:
-- Extracts the scheme (e.g., `tnfs`, `http`, `file`)
-- Preserves authority (host:port) for schemes that need it
-- Returns the resolved filesystem and path components
-
-Example - listing a TNFS directory:
-```
-// Request (fsNameLen=0 indicates URI mode)
-u8   version = 1
-u8   fsNameLen = 0
-// path contains full URI:
-u16  pathLen = 27  // len("tnfs://192.168.1.100:16384/")
-u8[] path = "tnfs://192.168.1.100:16384/"
-u16  startIndex
-u16  maxEntries
-```
-
-If the URI cannot be resolved (e.g., unknown scheme or connection failed), respond `DeviceNotFound`.
-
-If the filesystem name does not exist in `StorageManager`, respond `DeviceNotFound`.
+This contract is aligned with the fn-rom planning note in [`../../bbc/fn-rom/docs/fn-rom-command-rewrite-implementation-plan.md`](../../bbc/fn-rom/docs/fn-rom-command-rewrite-implementation-plan.md) so ROM-side commands such as `*FCD` and `*FLIST` can treat the current selection as an opaque URI.
 
 ---
 
@@ -221,6 +208,7 @@ Notes:
 - Basename-only avoids repeating the directory path per entry.
 - `startIndex`/`maxEntries` make this **stateless** for the device.
 - Ordering is filesystem-defined; v1 does not guarantee stable ordering across calls.
+- This command already accepts a full URI, so it provides the minimal list contract needed by fn-rom `*FLIST`.
 
 ---
 
@@ -296,6 +284,60 @@ Notes:
   - If `offset==0`, open with truncate/create semantics.
   - If `offset>0`, open existing with read/write semantics and seek (best effort).
 - Future `flags` can add explicit mode control: create, append, truncate, etc.
+
+---
+
+## Command: ResolvePath (0x05)
+
+Resolves a base URI plus a path fragment using FujiNet-NIO path-resolution rules and returns a canonical URI for later FileDevice requests.
+
+This is the minimal FileService-side request contract needed by fn-rom `*FCD` while keeping URI parsing, TNFS authority handling, and relative path resolution on fujinet-nio.
+
+### Purpose
+
+- accept the caller's current full URI as an opaque base string
+- accept an absolute or relative path fragment
+- normalize the result via the shared path resolver stack
+- return both a resolved URI for subsequent protocol calls and a display path for lightweight UI/status output
+
+### Request
+
+```
+u8   version            // = 1
+u16  baseUriLen         // LE
+u8[] baseUri            // full current URI
+u16  argLen             // LE
+u8[] arg                // path fragment; may be relative or absolute
+```
+
+Validation:
+- `baseUriLen==0` → `InvalidRequest`
+- `argLen==0` → `InvalidRequest`
+- either string exceeding remaining payload size → `InvalidRequest`
+
+### Response
+
+```
+u8   version            // = 1
+u8   flags              // bit0=isDir, bit1=exists
+u16  reserved           // = 0
+u16  resolvedUriLen     // LE
+u8[] resolvedUri        // canonical full URI
+u16  displayPathLen     // LE
+u8[] displayPath        // user-displayable path/context string
+```
+
+### Status codes
+
+- `Ok`: resolution succeeded; `flags` describe the resolved target when it can be probed
+- `InvalidRequest`: malformed payload or unsupported protocol version
+- `DeviceNotFound`: base URI or resolved URI could not be mapped to a registered filesystem
+- `IOError`: resolver succeeded but target metadata probing failed unexpectedly
+
+Notes:
+- `displayPath` is intended for prompt/help/status output and should not be reparsed by the host.
+- The resolved URI is the canonical value the host stores as its new current directory selection.
+- The command keeps future resolver changes isolated to fujinet-nio instead of requiring ROM-side URI logic.
 
 ---
 

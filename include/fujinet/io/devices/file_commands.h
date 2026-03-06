@@ -8,7 +8,8 @@ enum class FileCommand : std::uint8_t {
     ListDirectory = 0x02,
     ReadFile      = 0x03,
     WriteFile     = 0x04,
-    MakeDirectory = 0x05,
+    ResolvePath   = 0x05,
+    MakeDirectory = 0x06,
 };
 
 inline FileCommand to_file_command(std::uint16_t raw)

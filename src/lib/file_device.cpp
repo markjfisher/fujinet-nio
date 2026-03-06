@@ -9,6 +9,7 @@
 
 // Binary codec
 #include "fujinet/io/devices/file_codec.h"
+#include "fujinet/fs/path_resolvers/path_resolver.h"
 
 #include <algorithm>
 #include <chrono>
@@ -57,6 +58,53 @@ static bool parse_common_prefix(Reader& r, CommonPrefix& out)
     return true;
 }
 
+struct ResolvePathRequest {
+    std::string base_uri;
+    std::string arg;
+};
+
+static bool parse_resolve_path_request(Reader& r, ResolvePathRequest& out)
+{
+    std::uint8_t ver = 0;
+    if (!r.read_u8(ver) || ver != FILEPROTO_VERSION) {
+        return false;
+    }
+
+    std::uint16_t base_uri_len = 0;
+    if (!r.read_u16le(base_uri_len) || base_uri_len == 0) return false;
+    const std::uint8_t* base_uri_ptr = nullptr;
+    if (!r.read_bytes(base_uri_ptr, base_uri_len)) return false;
+    out.base_uri.assign(reinterpret_cast<const char*>(base_uri_ptr), base_uri_len);
+
+    std::uint16_t arg_len = 0;
+    if (!r.read_u16le(arg_len) || arg_len == 0) return false;
+    const std::uint8_t* arg_ptr = nullptr;
+    if (!r.read_bytes(arg_ptr, arg_len)) return false;
+    out.arg.assign(reinterpret_cast<const char*>(arg_ptr), arg_len);
+
+    return true;
+}
+
+static bool make_path_context(const std::string& base_uri, fs::PathContext& ctx)
+{
+    fs::PathResolver resolver;
+    fs::ResolvedTarget target;
+    if (!resolver.resolve(base_uri, {}, target)) {
+        return false;
+    }
+    ctx.cwd_fs = target.fs_name;
+    ctx.cwd_path = target.fs_path;
+    return true;
+}
+
+static std::string build_resolved_uri(const fs::ResolvedTarget& target)
+{
+    if (target.fs_path.find("://") != std::string::npos) {
+        return target.fs_path;
+    }
+    return target.fs_name + ":" + target.fs_path;
+}
+
 static std::uint64_t to_unix_seconds(std::chrono::system_clock::time_point tp)
 {
     if (tp == std::chrono::system_clock::time_point{}) return 0;
@@ -81,6 +129,8 @@ IOResponse FileDevice::handle(const IORequest& request)
             return handle_read_file(request);
         case protocol::FileCommand::WriteFile:
             return handle_write_file(request);
+        case protocol::FileCommand::ResolvePath:
+            return handle_resolve_path(request);
         case protocol::FileCommand::MakeDirectory:
             return handle_make_directory(request);
         default:
@@ -408,6 +458,62 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
     fileproto::write_u16le(out, 0);
     fileproto::write_u32le(out, offset);
     fileproto::write_u16le(out, static_cast<std::uint16_t>(written));
+
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+IOResponse FileDevice::handle_resolve_path(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+
+    Reader r(request.payload.data(), request.payload.size());
+    ResolvePathRequest p{};
+    if (!parse_resolve_path_request(r, p)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    fs::PathContext ctx;
+    if (!make_path_context(p.base_uri, ctx)) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    fs::PathResolver resolver;
+    fs::ResolvedTarget resolved;
+    if (!resolver.resolve(p.arg, ctx, resolved)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    auto [resolved_fs, resolved_path] = _storage.resolveUri(build_resolved_uri(resolved));
+    if (!resolved_fs) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    FileInfo info{};
+    const bool exists = resolved_fs->stat(resolved_path, info);
+
+    std::uint8_t flags = 0;
+    if (exists) {
+        flags |= 0x02;
+        if (info.isDirectory) flags |= 0x01;
+    }
+
+    const std::string resolved_uri = build_resolved_uri(resolved);
+    const std::string display_path = resolved.display_path.empty() ? resolved_uri : resolved.display_path;
+
+    std::string out;
+    out.reserve(1 + 1 + 2 + 2 + resolved_uri.size() + 2 + display_path.size());
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, flags);
+    fileproto::write_u16le(out, 0);
+    fileproto::write_u16le(out, static_cast<std::uint16_t>(resolved_uri.size()));
+    fileproto::write_bytes(out, resolved_uri.data(), resolved_uri.size());
+    fileproto::write_u16le(out, static_cast<std::uint16_t>(display_path.size()));
+    fileproto::write_bytes(out, display_path.data(), display_path.size());
 
     resp.payload.assign(out.begin(), out.end());
     return resp;
