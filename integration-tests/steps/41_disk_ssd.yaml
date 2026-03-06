@@ -11,7 +11,7 @@ steps:
       - "write"
       - "--chunk"
       - "2048"
-      - "host:/test.ssd"
+      - "{FS}:/test.ssd"
       - "{STEP_TMP}/test.ssd"
     timeout_s: 20
 
@@ -23,7 +23,7 @@ steps:
       - "mount"
       - "--slot"
       - "1"
-      - "host:/test.ssd"
+      - "{FS}:/test.ssd"
       - "--type"
       - "auto"
     expect:

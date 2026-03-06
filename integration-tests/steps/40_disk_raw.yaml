@@ -10,7 +10,7 @@ steps:
       - "write"
       - "--chunk"
       - "2048"
-      - "host:/raw_test.img"
+      - "{FS}:/raw_test.img"
       - "{STEP_TMP}/raw_test.img"
     timeout_s: 15
 
@@ -21,7 +21,7 @@ steps:
       - "mount"
       - "--slot"
       - "1"
-      - "host:/raw_test.img"
+      - "{FS}:/raw_test.img"
       - "--type"
       - "auto"
       - "--sector-size"
