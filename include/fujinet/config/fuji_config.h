@@ -38,6 +38,10 @@ struct MountConfig {
         }
         return -1;  // Unassigned
     }
+
+    static constexpr int from_index(int index) {
+        return (index >= 0 && index < 8) ? (index + 1) : 0;
+    }
 };
 
 struct ModemConfig {

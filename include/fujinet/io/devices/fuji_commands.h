@@ -8,6 +8,7 @@ enum class FujiCommand : std::uint8_t {
     GetSsid     = 0xFE,
     GetMounts   = 0xFD,
     SetMount    = 0xFC,
+    GetMount    = 0xFB,
     // Add FujiDevice-specific commands only
 };
 

@@ -7,6 +7,7 @@
 #include "fujinet/config/fuji_config.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace fujinet::io {
 
@@ -38,6 +39,8 @@ IOResponse FujiDevice::handle(const IORequest& request)
             return handle_reset(request);
         case FujiCommand::GetMounts:
             return handle_get_mounts(request);
+        case FujiCommand::GetMount:
+            return handle_get_mount(request);
         case FujiCommand::SetMount:
             return handle_set_mount(request);
         // later:
@@ -54,69 +57,133 @@ IOResponse FujiDevice::handle_get_mounts(const IORequest& request)
     IOResponse resp = make_success_response(request);
 
     // Format: [count][mount1][mount2]...
-    // Mount format: [id][uri_len][uri][mode_len][mode]
+    // Mount format: [slot_index][flags][uri_len][uri][mode_len][mode]
     std::vector<std::uint8_t> payload;
 
-    // Write mount count
-    payload.push_back(static_cast<std::uint8_t>(_config.mounts.size()));
-
+    std::vector<const fujinet::config::MountConfig*> persisted;
+    persisted.reserve(_config.mounts.size());
     for (const auto& mount : _config.mounts) {
-        // Write slot (1-based for protocol)
-        payload.push_back(static_cast<std::uint8_t>(mount.slot));
+        if (mount.effective_slot() < 0) {
+            continue;
+        }
+        persisted.push_back(&mount);
+    }
 
-        // Write URI
-        payload.push_back(static_cast<std::uint8_t>(mount.uri.size()));
-        payload.insert(payload.end(), mount.uri.begin(), mount.uri.end());
+    std::sort(persisted.begin(), persisted.end(), [](const auto* lhs, const auto* rhs) {
+        return lhs->slot < rhs->slot;
+    });
 
-        // Write mode
-        payload.push_back(static_cast<std::uint8_t>(mount.mode.size()));
-        payload.insert(payload.end(), mount.mode.begin(), mount.mode.end());
+    if (persisted.size() > std::numeric_limits<std::uint8_t>::max()) {
+        return make_base_response(request, StatusCode::InternalError);
+    }
+
+    payload.push_back(static_cast<std::uint8_t>(persisted.size()));
+
+    for (const auto* mount : persisted) {
+        auto record = encode_mount_record(
+            static_cast<std::uint8_t>(mount->effective_slot()),
+            mount->uri,
+            mount->mode,
+            mount->enabled);
+        payload.insert(payload.end(), record.begin(), record.end());
     }
 
     resp.payload = std::move(payload);
     return resp;
 }
 
+IOResponse FujiDevice::handle_get_mount(const IORequest& request)
+{
+    if (request.payload.size() != 1) {
+        return make_base_response(request, StatusCode::InvalidRequest);
+    }
+
+    const std::uint8_t slotIndex = request.payload[0];
+    if (!is_valid_mount_slot_index(slotIndex)) {
+        return make_base_response(request, StatusCode::InvalidRequest);
+    }
+
+    IOResponse resp = make_success_response(request);
+    const int slotNumber = fujinet::config::MountConfig::from_index(slotIndex);
+    const auto* mount = find_mount_by_slot_number(slotNumber);
+    if (!mount) {
+        resp.payload = encode_mount_record(slotIndex, "", "r", false);
+        return resp;
+    }
+
+    resp.payload = encode_mount_record(slotIndex, mount->uri, mount->mode, mount->enabled);
+    return resp;
+}
+
 IOResponse FujiDevice::handle_set_mount(const IORequest& request)
 {
-    // Format: [id][uri_len][uri][mode_len][mode]
-    if (request.payload.size() < 3) { // At least id (1) + uri_len (1) + uri (1) + mode_len (1) + mode (1) = 5? Wait, uri or mode could be empty?
+    // Format: [slot_index][flags][uri_len][uri][mode_len][mode]
+    if (request.payload.size() < 4) {
         return make_base_response(request, StatusCode::InvalidRequest);
     }
 
     std::size_t offset = 0;
-    std::uint8_t id = request.payload[offset++];
+    const std::uint8_t slotIndex = request.payload[offset++];
+    const std::uint8_t flags = request.payload[offset++];
 
-    std::uint8_t uri_len = request.payload[offset++];
+    if (!is_valid_mount_slot_index(slotIndex)) {
+        return make_base_response(request, StatusCode::InvalidRequest);
+    }
+
+    const std::uint8_t uri_len = request.payload[offset++];
     if (offset + uri_len > request.payload.size()) {
         return make_base_response(request, StatusCode::InvalidRequest);
     }
     std::string uri(reinterpret_cast<const char*>(&request.payload[offset]), uri_len);
     offset += uri_len;
 
-    std::uint8_t mode_len = request.payload[offset++];
+    if (offset >= request.payload.size()) {
+        return make_base_response(request, StatusCode::InvalidRequest);
+    }
+
+    const std::uint8_t mode_len = request.payload[offset++];
     if (offset + mode_len > request.payload.size()) {
         return make_base_response(request, StatusCode::InvalidRequest);
     }
     std::string mode(reinterpret_cast<const char*>(&request.payload[offset]), mode_len);
     offset += mode_len;
 
-    // Find or create mount
-    auto it = std::find_if(_config.mounts.begin(), _config.mounts.end(),
-        [id](const fujinet::config::MountConfig& m) { return m.slot == id; });
-
-    if (it != _config.mounts.end()) {
-        // Update existing mount
-        it->uri = std::move(uri);
-        it->mode = std::move(mode);
-    } else {
-        // Create new mount
-        fujinet::config::MountConfig new_mount;
-        new_mount.slot = id;
-        new_mount.uri = std::move(uri);
-        new_mount.mode = std::move(mode);
-        _config.mounts.push_back(std::move(new_mount));
+    if (offset != request.payload.size()) {
+        return make_base_response(request, StatusCode::InvalidRequest);
     }
+
+    if (mode.empty()) {
+        mode = "r";
+    }
+
+    const int slotNumber = fujinet::config::MountConfig::from_index(slotIndex);
+    const bool enabled = (flags & 0x01U) != 0 && !uri.empty();
+
+    auto* mount = find_mount_by_slot_number(slotNumber);
+    if (uri.empty()) {
+        if (mount) {
+            _config.mounts.erase(std::remove_if(_config.mounts.begin(), _config.mounts.end(),
+                                    [slotNumber](const fujinet::config::MountConfig& m) { return m.slot == slotNumber; }),
+                                _config.mounts.end());
+        }
+    } else {
+        if (!mount) {
+            fujinet::config::MountConfig new_mount;
+            new_mount.slot = slotNumber;
+            new_mount.uri = std::move(uri);
+            new_mount.mode = std::move(mode);
+            new_mount.enabled = enabled;
+            _config.mounts.push_back(std::move(new_mount));
+        } else {
+            mount->uri = std::move(uri);
+            mount->mode = std::move(mode);
+            mount->enabled = enabled;
+        }
+    }
+
+    std::sort(_config.mounts.begin(), _config.mounts.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.slot < rhs.slot;
+    });
 
     save_config();
     return make_success_response(request);
@@ -157,6 +224,46 @@ void FujiDevice::save_config()
     if (_configStore) {
         _configStore->save(_config);
     }
+}
+
+fujinet::config::MountConfig* FujiDevice::find_mount_by_slot_number(int slot)
+{
+    auto it = std::find_if(_config.mounts.begin(), _config.mounts.end(),
+        [slot](const fujinet::config::MountConfig& m) { return m.slot == slot; });
+    return (it == _config.mounts.end()) ? nullptr : &(*it);
+}
+
+const fujinet::config::MountConfig* FujiDevice::find_mount_by_slot_number(int slot) const
+{
+    auto it = std::find_if(_config.mounts.begin(), _config.mounts.end(),
+        [slot](const fujinet::config::MountConfig& m) { return m.slot == slot; });
+    return (it == _config.mounts.end()) ? nullptr : &(*it);
+}
+
+bool FujiDevice::is_valid_mount_slot_index(std::uint8_t slotIndex)
+{
+    return slotIndex < 8;
+}
+
+std::vector<std::uint8_t> FujiDevice::encode_mount_record(std::uint8_t slotIndex,
+                                                          const std::string& uri,
+                                                          const std::string& mode,
+                                                          bool enabled)
+{
+    if (uri.size() > std::numeric_limits<std::uint8_t>::max() ||
+        mode.size() > std::numeric_limits<std::uint8_t>::max()) {
+        return {};
+    }
+
+    std::vector<std::uint8_t> payload;
+    payload.reserve(4 + uri.size() + mode.size());
+    payload.push_back(slotIndex);
+    payload.push_back(enabled ? 0x01U : 0x00U);
+    payload.push_back(static_cast<std::uint8_t>(uri.size()));
+    payload.insert(payload.end(), uri.begin(), uri.end());
+    payload.push_back(static_cast<std::uint8_t>(mode.size()));
+    payload.insert(payload.end(), mode.begin(), mode.end());
+    return payload;
 }
 
 } // namespace fujinet::io
