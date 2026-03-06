@@ -188,7 +188,7 @@ TEST_CASE("FileDevice ResolvePath resolves relative TNFS paths")
     const std::string display_path = read_len_string(response.payload, offset);
 
     CHECK(resolved_uri == "tnfs://server/root/NEXT");
-    CHECK(display_path == "tnfs:tnfs://server/root/NEXT");
+    CHECK(display_path == "/root/NEXT");
 }
 
 TEST_CASE("FileDevice ResolvePath rejects unresolved base URIs")
@@ -203,6 +203,31 @@ TEST_CASE("FileDevice ResolvePath rejects unresolved base URIs")
 
     const auto response = device.handle(request);
     CHECK(response.status == StatusCode::DeviceNotFound);
+}
+
+TEST_CASE("FileDevice ResolvePath canonicalizes full URI when arg is empty")
+{
+    StorageManager storage;
+    auto fs = std::make_unique<MemoryFs>("tnfs");
+    fs->add_entry("tnfs://server/root/NEXT", true);
+    CHECK(storage.registerFileSystem(std::move(fs)));
+
+    FileDevice device(storage);
+    IORequest request{};
+    request.id = 4;
+    request.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
+    request.payload = make_resolve_request("tnfs://server/root/NEXT", "");
+
+    const auto response = device.handle(request);
+    CHECK(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= 8);
+
+    std::size_t offset = 4;
+    const std::string resolved_uri = read_len_string(response.payload, offset);
+    const std::string display_path = read_len_string(response.payload, offset);
+
+    CHECK(resolved_uri == "tnfs://server/root/NEXT");
+    CHECK(display_path == "/root/NEXT");
 }
 
 } // namespace

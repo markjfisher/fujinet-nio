@@ -77,10 +77,14 @@ static bool parse_resolve_path_request(Reader& r, ResolvePathRequest& out)
     out.base_uri.assign(reinterpret_cast<const char*>(base_uri_ptr), base_uri_len);
 
     std::uint16_t arg_len = 0;
-    if (!r.read_u16le(arg_len) || arg_len == 0) return false;
+    if (!r.read_u16le(arg_len)) return false;
     const std::uint8_t* arg_ptr = nullptr;
-    if (!r.read_bytes(arg_ptr, arg_len)) return false;
-    out.arg.assign(reinterpret_cast<const char*>(arg_ptr), arg_len);
+    if (arg_len > 0) {
+        if (!r.read_bytes(arg_ptr, arg_len)) return false;
+        out.arg.assign(reinterpret_cast<const char*>(arg_ptr), arg_len);
+    } else {
+        out.arg.clear();
+    }
 
     return true;
 }
@@ -103,6 +107,34 @@ static std::string build_resolved_uri(const fs::ResolvedTarget& target)
         return target.fs_path;
     }
     return target.fs_name + ":" + target.fs_path;
+}
+
+static std::string build_display_path(const fs::ResolvedTarget& target)
+{
+    std::string path = target.fs_path;
+
+    const auto scheme_pos = path.find("://");
+    if (scheme_pos != std::string::npos) {
+        const auto slash_pos = path.find('/', scheme_pos + 3);
+        if (slash_pos != std::string::npos) {
+            path = path.substr(slash_pos);
+        } else {
+            path = "/";
+        }
+    } else {
+        const auto prefix_pos = path.find(':');
+        if (prefix_pos != std::string::npos) {
+            path = path.substr(prefix_pos + 1);
+        }
+    }
+
+    if (path.empty()) {
+        path = "/";
+    }
+    if (path.front() != '/') {
+        path.insert(path.begin(), '/');
+    }
+    return path;
 }
 
 static std::uint64_t to_unix_seconds(std::chrono::system_clock::time_point tp)
@@ -474,17 +506,25 @@ IOResponse FileDevice::handle_resolve_path(const IORequest& request)
         return resp;
     }
 
-    fs::PathContext ctx;
-    if (!make_path_context(p.base_uri, ctx)) {
-        resp.status = StatusCode::DeviceNotFound;
-        return resp;
-    }
-
-    fs::PathResolver resolver;
     fs::ResolvedTarget resolved;
-    if (!resolver.resolve(p.arg, ctx, resolved)) {
-        resp.status = StatusCode::InvalidRequest;
-        return resp;
+    if (p.arg.empty()) {
+        fs::PathResolver resolver;
+        if (!resolver.resolve(p.base_uri, {}, resolved)) {
+            resp.status = StatusCode::DeviceNotFound;
+            return resp;
+        }
+    } else {
+        fs::PathContext ctx;
+        if (!make_path_context(p.base_uri, ctx)) {
+            resp.status = StatusCode::DeviceNotFound;
+            return resp;
+        }
+
+        fs::PathResolver resolver;
+        if (!resolver.resolve(p.arg, ctx, resolved)) {
+            resp.status = StatusCode::InvalidRequest;
+            return resp;
+        }
     }
 
     auto [resolved_fs, resolved_path] = _storage.resolveUri(build_resolved_uri(resolved));
@@ -503,7 +543,7 @@ IOResponse FileDevice::handle_resolve_path(const IORequest& request)
     }
 
     const std::string resolved_uri = build_resolved_uri(resolved);
-    const std::string display_path = resolved.display_path.empty() ? resolved_uri : resolved.display_path;
+    const std::string display_path = build_display_path(resolved);
 
     std::string out;
     out.reserve(1 + 1 + 2 + 2 + resolved_uri.size() + 2 + display_path.size());

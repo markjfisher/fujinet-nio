@@ -312,7 +312,7 @@ u8[] arg                // path fragment; may be relative or absolute
 
 Validation:
 - `baseUriLen==0` → `InvalidRequest`
-- `argLen==0` → `InvalidRequest`
+- `argLen==0` is allowed and means “canonicalize `baseUri` as-is”
 - either string exceeding remaining payload size → `InvalidRequest`
 
 ### Response
@@ -338,6 +338,8 @@ Notes:
 - `displayPath` is intended for prompt/help/status output and should not be reparsed by the host.
 - The resolved URI is the canonical value the host stores as its new current directory selection.
 - The command keeps future resolver changes isolated to fujinet-nio instead of requiring ROM-side URI logic.
+- When `argLen==0`, the device should canonicalize the supplied full URI directly. This is the intended path for [`*FHOST`](../../bbc/fn-rom/src/commands/cmd_fhost.s) to populate both current URI and display path without ROM-side URI parsing.
+- `displayPath` should be only the human-facing in-filesystem path component, such as `/root/NEXT` or `/some/path`, regardless of scheme; the full scheme/authority remains in `resolvedUri`.
 
 ---
 
