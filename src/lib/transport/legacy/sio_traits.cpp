@@ -9,6 +9,7 @@ using fujinet::io::DeviceID;
 
 // SIO checksum algorithm (additive wrap-around)
 // Platform-agnostic - same for ESP32 and POSIX
+// This is the generic checksum for legacy transport, the "sio" naming is misleading. Will come back to this.
 static std::uint8_t sio_checksum(const std::uint8_t* buf, std::size_t len) {
     unsigned int chk = 0;
     for (std::size_t i = 0; i < len; i++) {
@@ -35,25 +36,20 @@ static DeviceID map_sio_device_id(std::uint8_t wire_id) {
         return wire_id; // Pass through
     }
     
-    // Printer devices (0x40-0x43)
-    if (wire_id >= 0x40 && wire_id <= 0x43) {
-        return wire_id; // Pass through
-    }
+    // // Printer devices (0x40-0x43)
+    // if (wire_id >= 0x40 && wire_id <= 0x43) {
+    //     return wire_id; // Pass through
+    // }
     
     // Clock device
     if (wire_id == 0x45) {
         return to_device_id(WireDeviceId::Clock);
     }
     
-    // MIDI device
-    if (wire_id == 0x99) {
-        return to_device_id(WireDeviceId::Midi);
-    }
-    
-    // Type 3 poll (broadcast)
-    if (wire_id == 0x7F) {
-        return wire_id; // Pass through for now
-    }
+    // // Type 3 poll (broadcast)
+    // if (wire_id == 0x7F) {
+    //     return wire_id; // Pass through for now
+    // }
     
     // Unknown device - pass through
     return wire_id;
