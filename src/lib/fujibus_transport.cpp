@@ -144,6 +144,13 @@ void FujiBusTransport::send(const IOResponse& resp)
         (unsigned)(resp.command & 0xFF),
         (unsigned)resp.payload.size());
 
+#if defined(FN_DEBUG)
+    if (!resp.payload.empty()) {
+        FN_LOGI(TAG, "  payload (%zu bytes):", resp.payload.size());
+        log_hexdump(TAG, resp.payload.data(), resp.payload.size());
+    }
+#endif
+
     // Payload is the device-specific protocol blob.
     ByteBuffer data(resp.payload.begin(), resp.payload.end());
 
