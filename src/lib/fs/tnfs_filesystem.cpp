@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstring>
 #include <cstdint>
+#include <cctype>
 #include <map>
 #include <memory>
 #include <tuple>
@@ -358,7 +359,14 @@ private:
         endpoint = TnfsEndpoint{};
 
         // Preferred format: tnfs://host[:port]/path
-        if (rawPath.rfind("tnfs://", 0) == 0) {
+        // Make case-insensitive
+        std::string lower_path;
+        lower_path.reserve(rawPath.size());
+        for (char c : rawPath) {
+            lower_path.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+        
+        if (lower_path.rfind("tnfs://", 0) == 0) {
             UriParts parts = parse_uri(rawPath);
             if (parts.scheme != "tnfs") {
                 return false;
@@ -374,9 +382,9 @@ private:
         }
 
         // TCP TNFS form: tnfs+tcp://host[:port]/path (aliases: tnfstcp://, tnfs-tcp://)
-        if (rawPath.rfind("tnfs+tcp://", 0) == 0 ||
-            rawPath.rfind("tnfstcp://", 0) == 0 ||
-            rawPath.rfind("tnfs-tcp://", 0) == 0) {
+        if (lower_path.rfind("tnfs+tcp://", 0) == 0 ||
+            lower_path.rfind("tnfstcp://", 0) == 0 ||
+            lower_path.rfind("tnfs-tcp://", 0) == 0) {
             UriParts parts = parse_uri(rawPath);
             if (parts.scheme != "tnfs+tcp" &&
                 parts.scheme != "tnfstcp" &&

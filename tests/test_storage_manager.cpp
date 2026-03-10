@@ -185,3 +185,24 @@ TEST_CASE("StorageManager: resolveUri preserves authority for HTTP")
     // Should preserve authority in the path
     CHECK(path == "http://example.com:8080/disks/image.dsk");
 }
+
+TEST_CASE("StorageManager: resolveUri case-insensitive TNFS scheme")
+{
+    StorageManager manager;
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("tnfs")));
+
+    // Uppercase TNFS:// should work
+    auto [fs1, path1] = manager.resolveUri("TNFS://192.168.1.100:16384/atari/disk.atr");
+    CHECK(fs1 != nullptr);
+    CHECK(fs1->name() == "tnfs");
+
+    // Mixed case Tnfs:// should work
+    auto [fs2, path2] = manager.resolveUri("Tnfs://192.168.1.100:16384/atari/disk.atr");
+    CHECK(fs2 != nullptr);
+    CHECK(fs2->name() == "tnfs");
+
+    // TNFS+TCP uppercase should work
+    auto [fs3, path3] = manager.resolveUri("TNFS+TCP://192.168.1.100:16384/atari/disk.atr");
+    CHECK(fs3 != nullptr);
+    CHECK(fs3->name() == "tnfs");
+}

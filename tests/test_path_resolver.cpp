@@ -23,6 +23,27 @@ TEST_CASE("PathResolver resolves TNFS URI schemes")
     CHECK(out.fs_path == "tnfs+tcp://127.0.0.1:16384/subdir");
 }
 
+TEST_CASE("PathResolver resolves TNFS URI schemes case-insensitive")
+{
+    PathResolver resolver;
+    ResolvedTarget out;
+    const PathContext ctx{"host", "/"};
+
+    // Uppercase TNFS:// should work
+    CHECK(resolver.resolve("TNFS://192.168.1.100:16384/path", ctx, out));
+    CHECK(out.fs_name == "tnfs");
+    CHECK(out.fs_path == "TNFS://192.168.1.100:16384/path");
+
+    // Mixed case Tnfs:// should work
+    CHECK(resolver.resolve("Tnfs://192.168.1.100:16384/path", ctx, out));
+    CHECK(out.fs_name == "tnfs");
+    CHECK(out.fs_path == "Tnfs://192.168.1.100:16384/path");
+
+    // Uppercase TNFS+TCP:// should work
+    CHECK(resolver.resolve("TNFS+TCP://192.168.1.100:16384/path", ctx, out));
+    CHECK(out.fs_name == "tnfs");
+}
+
 TEST_CASE("PathResolver resolves fs-prefixed paths")
 {
     PathResolver resolver;

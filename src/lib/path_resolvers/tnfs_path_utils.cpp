@@ -2,14 +2,23 @@
 
 #include "fujinet/fs/path_resolvers/path_resolver_utils.h"
 
+#include <algorithm>
+#include <cctype>
+
 namespace fujinet::fs {
 
 bool is_tnfs_uri(std::string_view spec)
 {
-    return spec.rfind("tnfs://", 0) == 0 ||
-           spec.rfind("tnfs+tcp://", 0) == 0 ||
-           spec.rfind("tnfstcp://", 0) == 0 ||
-           spec.rfind("tnfs-tcp://", 0) == 0;
+    // Make case-insensitive by converting to lowercase for comparison
+    std::string lower_spec;
+    lower_spec.reserve(spec.size());
+    for (char c : spec) {
+        lower_spec.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return lower_spec.rfind("tnfs://", 0) == 0 ||
+           lower_spec.rfind("tnfs+tcp://", 0) == 0 ||
+           lower_spec.rfind("tnfstcp://", 0) == 0 ||
+           lower_spec.rfind("tnfs-tcp://", 0) == 0;
 }
 
 bool is_tnfs_endpoint_path(std::string_view p)
