@@ -378,11 +378,11 @@ private:
         TnfsPacket pkt{};
         fill_session_header(pkt, CMD_LSEEK);
         pkt.payload[0] = static_cast<std::uint8_t>(fileHandle);
-        pkt.payload[1] = static_cast<std::uint8_t>(offset & 0xFFU);
-        pkt.payload[2] = static_cast<std::uint8_t>((offset >> 8) & 0xFFU);
-        pkt.payload[3] = static_cast<std::uint8_t>((offset >> 16) & 0xFFU);
-        pkt.payload[4] = static_cast<std::uint8_t>((offset >> 24) & 0xFFU);
-        pkt.payload[5] = whence;
+        pkt.payload[1] = whence;  // SEEK_SET, SEEK_CUR, or SEEK_END
+        pkt.payload[2] = static_cast<std::uint8_t>(offset & 0xFFU);
+        pkt.payload[3] = static_cast<std::uint8_t>((offset >> 8) & 0xFFU);
+        pkt.payload[4] = static_cast<std::uint8_t>((offset >> 16) & 0xFFU);
+        pkt.payload[5] = static_cast<std::uint8_t>((offset >> 24) & 0xFFU);
 
         if (!send_and_receive(pkt, 6)) {
             return false;
