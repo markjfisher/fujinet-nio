@@ -88,6 +88,10 @@ bool FujiBusTransport::receive(IORequest& outReq)
     auto packetPtr = FujiBusPacket::fromSerialized(frame);
     if (!packetPtr) {
         FN_LOGW(TAG, "invalid FujiBus frame (response), dropped");
+        if (!frame.empty()) {
+            FN_LOGW(TAG, "  raw frame (%zu bytes):", frame.size());
+            log_hexdump(TAG, frame.data(), frame.size());
+        }
         return false;
     }
 

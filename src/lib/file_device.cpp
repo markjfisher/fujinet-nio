@@ -30,6 +30,44 @@ using fujinet::io::fileproto::Reader;
 // static const char* TAG = "io";
 
 static constexpr std::uint8_t FILEPROTO_VERSION = 1;
+static constexpr auto LIST_DIRECTORY_CACHE_TTL = std::chrono::seconds(20);
+
+struct ListDirectoryCache {
+    std::string uri;
+    std::vector<FileInfo> entries;
+    std::chrono::steady_clock::time_point expires_at{};
+    bool valid{false};
+};
+
+static ListDirectoryCache g_list_directory_cache{};
+
+static bool get_cached_directory_entries(const std::string& uri, std::vector<FileInfo>& out)
+{
+    if (!g_list_directory_cache.valid) {
+        return false;
+    }
+
+    if (g_list_directory_cache.uri != uri) {
+        return false;
+    }
+
+    if (std::chrono::steady_clock::now() > g_list_directory_cache.expires_at) {
+        g_list_directory_cache.valid = false;
+        return false;
+    }
+
+    out = g_list_directory_cache.entries;
+    g_list_directory_cache.expires_at = std::chrono::steady_clock::now() + LIST_DIRECTORY_CACHE_TTL;
+    return true;
+}
+
+static void store_cached_directory_entries(const std::string& uri, const std::vector<FileInfo>& entries)
+{
+    g_list_directory_cache.uri = uri;
+    g_list_directory_cache.entries = entries;
+    g_list_directory_cache.expires_at = std::chrono::steady_clock::now() + LIST_DIRECTORY_CACHE_TTL;
+    g_list_directory_cache.valid = true;
+}
 
 // Common request prefix:
 // u8 version
@@ -288,9 +326,12 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     }
 
     std::vector<FileInfo> entries;
-    if (!fs->listDirectory(resolvedPath, entries)) {
-        resp.status = StatusCode::IOError;
-        return resp;
+    if (!get_cached_directory_entries(p.uri, entries)) {
+        if (!fs->listDirectory(resolvedPath, entries)) {
+            resp.status = StatusCode::IOError;
+            return resp;
+        }
+        store_cached_directory_entries(p.uri, entries);
     }
 
     // Basename helper
