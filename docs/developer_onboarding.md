@@ -9,6 +9,54 @@ This document provides everything a new developer needs to understand the codeba
 
 ---
 
+# 0. TL;DR
+
+
+```shell
+# ONE TIME ONLY
+# fetch the submodules recursively (littlefs has submodules itself required for the build)
+git submodule update --init --recursive --force
+
+# posix build for basic PTY fujibus with debug
+./build.sh -cp fujibus-pty-debug
+
+# ESP32 build
+
+# ONE TIME ONLY
+# Ensure you've at least ONCE picked a board to use
+./build.sh -S    # list available boards
+./build.sh -s fujibus-gpio-rs232-uart-log-s3-wroom-1-n16r8   # creates platformio.local.ini with chosen board
+
+# I hope you have pio installed, and the submodules
+./build.sh -b
+
+# ESP32 flashing
+./build.sh -u
+```
+
+## board setup
+
+Edit your platformio.local.ini file with relevant information, e.g. for a basic "rs232 fujinet" board
+where logs and console are on the standard UART, use this:
+
+```ini
+[fujinet]
+build_board = fujibus-gpio-rs232-uart-log-s3-wroom-1-n16r8
+console_type = consoleuart
+
+[env]
+build_flags +=
+    -DFN_DEBUG
+;; UART mode
+upload_port = /dev/ttyACM1
+monitor_port = /dev/fujinet-rs232
+```
+
+You can additionally setup udev rules in linux to mount the fujinet to a named port for easier scripting.
+More information on how to do that later in this doc.
+
+---
+
 # 1. Project Overview
 
 FujiNet-NIO is a complete redesign of the FujiNet I/O firmware.  
