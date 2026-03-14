@@ -224,7 +224,7 @@ Build:
 
 # List available POSIX build profiles (included in main help, but here on their own for scripting)
 ./build.sh -p -S
-
+2
 # Build a POSIX target (-c will clean the build dir first)
 ./build.sh -c -p fujibus-pty-debug
 
