@@ -64,6 +64,15 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.cpm.ccpImage != b.cpm.ccpImage) return false;
 
     if (a.printer.enabled != b.printer.enabled) return false;
+    
+    if (a.netsio.enabled != b.netsio.enabled) return false;
+    if (a.netsio.host != b.netsio.host) return false;
+    if (a.netsio.port != b.netsio.port) return false;
+    
+    if (a.clock.enabled != b.clock.enabled) return false;
+    if (a.clock.timezone != b.clock.timezone) return false;
+    
+    if (a.channel.ptyPath != b.channel.ptyPath) return false;
 
     return true;
 }
@@ -625,4 +634,125 @@ TEST_CASE("MountConfig: effective_slot")
     MountConfig m4;
     m4.slot = 0;
     CHECK(m4.effective_slot() == -1);  // Unassigned
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Channel ptyPath config")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    // YAML config with ptyPath set
+    const std::string yaml = R"(
+fujinet:
+  device_name: "test-device"
+  boot_mode: "normal"
+  alt_config_file: ""
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+mounts: []
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+channel:
+  pty_path: "/dev/fujinet-pty"
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    CHECK(cfg.general.deviceName == "test-device");
+    CHECK(cfg.general.bootMode == BootMode::Normal);
+    CHECK(cfg.general.altConfigFile == "");
+    CHECK(cfg.wifi.enabled == false);
+    CHECK(cfg.mounts.empty());
+    CHECK(cfg.channel.ptyPath == "/dev/fujinet-pty");
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Channel ptyPath empty default")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    // YAML config without ptyPath (should default to empty)
+    const std::string yaml = R"(
+fujinet:
+  device_name: "test-device"
+  boot_mode: "normal"
+  alt_config_file: ""
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+mounts: []
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    CHECK(cfg.general.deviceName == "test-device");
+    CHECK(cfg.general.bootMode == BootMode::Normal);
+    CHECK(cfg.general.altConfigFile == "");
+    CHECK(cfg.wifi.enabled == false);
+    CHECK(cfg.mounts.empty());
+    CHECK(cfg.channel.ptyPath.empty());  // Should be empty by default
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load with ptyPath")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    FujiConfig original{};
+    original.general.deviceName = "roundtrip-test";
+    original.general.bootMode = BootMode::Config;
+    original.general.altConfigFile = "/alt.yaml";
+    original.wifi.enabled = true;
+    original.wifi.ssid = "RoundTripWiFi";
+    original.wifi.passphrase = "secretpass";
+
+    MountConfig m1{};
+    m1.slot = 1;
+    m1.uri = "sd:/disks";
+    m1.mode = "rw";
+    original.mounts.push_back(m1);
+
+    MountConfig m2{};
+    m2.slot = 2;
+    m2.uri = "tnfs://server.example.com/atari";
+    m2.mode = "r";
+    original.mounts.push_back(m2);
+
+    original.modem.enabled = true;
+    original.modem.snifferEnabled = true;
+    original.cpm.enabled = true;
+    original.cpm.ccpImage = "/cpm/ccp.img";
+    original.printer.enabled = true;
+    
+    // Set ptyPath
+    original.channel.ptyPath = "/dev/fujinet-pty";
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    store.save(original);
+
+    FujiConfig loaded = store.load();
+
+    CHECK(configs_equal(original, loaded));
 }

@@ -16,6 +16,7 @@
 #include <poll.h>
 #include <unistd.h>
 #include <termios.h>
+#include <sys/stat.h>
 
 #if defined(__linux__)
     #include <pty.h>
@@ -29,13 +30,17 @@ namespace fujinet::platform {
 
 class PtyChannel : public fujinet::io::Channel {
 public:
-    explicit PtyChannel(int masterFd)
+    explicit PtyChannel(int masterFd, std::string symlinkPath = "")
         : _masterFd(masterFd)
+        , _symlinkPath(std::move(symlinkPath))
     {}
 
     ~PtyChannel() override {
         if (_masterFd >= 0) {
             ::close(_masterFd);
+        }
+        if (!_symlinkPath.empty()) {
+            ::unlink(_symlinkPath.c_str());
         }
     }
 
@@ -88,9 +93,10 @@ public:
 
 private:
     int _masterFd;
+    std::string _symlinkPath;
 };
 
-static std::unique_ptr<fujinet::io::Channel> create_pty_channel()
+static std::unique_ptr<fujinet::io::Channel> create_pty_channel(const config::FujiConfig& config)
 {
     int masterFd = -1;
     int slaveFd  = -1;
@@ -108,10 +114,23 @@ static std::unique_ptr<fujinet::io::Channel> create_pty_channel()
         ::fcntl(masterFd, F_SETFL, flags | O_NONBLOCK);
     }
 
+    std::string symlinkPath;
+    if (!config.channel.ptyPath.empty()) {
+        // Remove any existing symlink or file at the path
+        ::unlink(config.channel.ptyPath.c_str());
+        if (::symlink(slaveName, config.channel.ptyPath.c_str()) == 0) {
+            symlinkPath = config.channel.ptyPath;
+            std::cout << "[PtyChannel] Created symlink: " << symlinkPath << " -> " << slaveName << std::endl;
+        } else {
+            std::perror("symlink");
+            // Continue without symlink
+        }
+    }
+
     std::cout << "[PtyChannel] Created PTY. Connect to slave: "
               << slaveName << std::endl;
 
-    return std::make_unique<PtyChannel>(masterFd);
+    return std::make_unique<PtyChannel>(masterFd, std::move(symlinkPath));
 }
 
 std::unique_ptr<fujinet::io::Channel>
@@ -121,9 +140,9 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
 
     switch (profile.primaryChannel) {
 
-    case ChannelKind::Pty:
-        std::cout << "[ChannelFactory] Using PTY channel (Pty).\n";
-        return create_pty_channel();
+     case ChannelKind::Pty:
+         std::cout << "[ChannelFactory] Using PTY channel (Pty).\n";
+         return create_pty_channel(config);
 
     case ChannelKind::UsbCdcDevice:
         std::cout << "[ChannelFactory] UsbCdcDevice not supported on POSIX.\n";

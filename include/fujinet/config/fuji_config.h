@@ -70,6 +70,10 @@ struct ClockConfig {
     bool        enabled{true};
 };
 
+struct ChannelConfig {
+    std::string ptyPath{};   // e.g., "/dev/fujinet-pty" for POSIX PTY; empty to use kernel-assigned PTY
+};
+
 // Unified config for the whole FujiNet instance.
 struct FujiConfig {
     GeneralConfig        general;
@@ -82,6 +86,7 @@ struct FujiConfig {
     PrinterConfig        printer;
     NetSioConfig         netsio;
     ClockConfig          clock;
+    ChannelConfig        channel;
 };
 
 
