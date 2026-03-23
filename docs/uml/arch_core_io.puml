@@ -4,24 +4,31 @@ title fujinet-nio Core / IO / Device Architecture
 skinparam packageStyle rectangle
 skinparam shadowing false
 
-' ========= IO core types =========
-package "fujinet::io" {
+legend right
+  Hand-maintained (not clang-uml). Sync with:
+  `include/fujinet/core/core.h`,
+  `include/fujinet/io/core/*.h`,
+  `include/fujinet/io/transport/*.h`,
+  `include/fujinet/io/devices/virtual_device.h`
+endlegend
 
-    ' ---- Basic IDs & enums ----
-    class IORequest {
-        + RequestID              id
-        + DeviceID               deviceId
-        + RequestType            type
-        + std::uint16_t          command
+' ========= IO core types =========
+package "fujinet::io (messages)" as pkg_io_msg {
+
+    class IORequest <<struct>> {
+        + RequestID   id
+        + DeviceID    deviceId
+        + RequestType type
+        + std::uint16_t command
         + std::vector<std::uint32_t> params
         + std::vector<std::uint8_t>  payload
     }
 
-    class IOResponse {
-        + RequestID              id
-        + DeviceID               deviceId
-        + StatusCode             status
-        + std::uint16_t          command
+    class IOResponse <<struct>> {
+        + RequestID   id
+        + DeviceID    deviceId
+        + StatusCode  status
+        + std::uint16_t command
         + std::vector<std::uint8_t> payload
     }
 
@@ -42,52 +49,61 @@ package "fujinet::io" {
         NotReady
         IOError
         Timeout
+        InternalError
         Unsupported
     }
 
     interface IRequestHandler {
-        + handleRequest(request: IORequest): IOResponse
+        + handleRequest(const IORequest& request): IOResponse
     }
 }
 
 ' ========= Devices & routing =========
-package "fujinet::io (devices & routing)" {
+package "fujinet::io (devices & routing)" as pkg_io_dev {
 
     interface VirtualDevice {
-        + handle(request: IORequest): IOResponse
+        + handle(const IORequest& request): IOResponse
         + poll(): void
     }
+
+    note bottom of VirtualDevice
+        Concrete devices (all in **fujinet::io**):
+        **FujiDevice**, **FileDevice**, **DiskDevice**,
+        **ClockDevice**, **NetworkDevice**, **ModemDevice**
+    end note
 
     class IODeviceManager {
         - std::unordered_map<DeviceID, std::unique_ptr<VirtualDevice>> _devices
         --
-        + IODeviceManager()
-        + IODeviceManager(const IODeviceManager&) = delete
-        + operator=(const IODeviceManager&) = delete
-        + registerDevice(id: DeviceID, dev: std::unique_ptr<VirtualDevice>): bool
+        + registerDevice(id, device: std::unique_ptr<VirtualDevice>): bool
         + unregisterDevice(id: DeviceID): bool
         + getDevice(id: DeviceID): VirtualDevice*
-        + getDevice(id: DeviceID) const: const VirtualDevice*
-        + handleRequest(request: IORequest): IOResponse
+        + handleRequest(const IORequest& request): IOResponse
         + pollDevices(): void
+        + device_count() const: std::size_t
     }
 
     class RoutingManager {
-        .. future routing / override logic ..
-    }
-
-    class DummyDevice {
-        + handle(request: IORequest): IOResponse
-        + poll(): void
+        - IODeviceManager& _deviceManager
+        - IRequestHandler* _overrideHandler
+        - std::unique_ptr<IRequestHandler> _overrideOwned
+        --
+        + RoutingManager(deviceManager: IODeviceManager&)
+        + handleRequest(const IORequest& request): IOResponse
+        + setOverrideHandler(handler: IRequestHandler*): void
+        + setOverrideHandler(handler: std::unique_ptr<IRequestHandler>): void
+        + clearOverrideHandler(): void
+        + deviceManager(): IODeviceManager&
     }
 
     IODeviceManager ..|> IRequestHandler
-    DummyDevice ..|> VirtualDevice
+    RoutingManager ..|> IRequestHandler
+    RoutingManager --> IODeviceManager : forwards to\n(unless override)
     IODeviceManager "1" o-- "0..*" VirtualDevice : owns
 }
 
 ' ========= Channels & transports =========
-package "fujinet::io (channels & transports)" {
+package "fujinet::io (channels & transports)" as pkg_io_xport {
 
     abstract class Channel {
         + available(): bool
@@ -97,23 +113,30 @@ package "fujinet::io (channels & transports)" {
 
     interface ITransport {
         + poll(): void
-        + receive(out request: IORequest): bool
-        + send(response: IOResponse): void
+        + receive(IORequest& outReq): bool
+        + send(const IOResponse& resp): void
     }
 
+    note bottom of ITransport
+        **FujiBusTransport** is the main example here.
+        Legacy buses (SIO, IWM, …) use other **ITransport**
+        implementations under **transport/legacy/**.
+    end note
+
     class FujiBusTransport {
-        - Channel&                       _channel
-        - std::vector<std::uint8_t>      _rxBuffer
-        - RequestID                      _nextRequestId
+        - Channel& _channel
+        - std::vector<std::uint8_t> _rxBuffer
+        - RequestID _nextRequestId
         --
         + FujiBusTransport(channel: Channel&)
         + poll(): void
-        + receive(out request: IORequest): bool
-        + send(response: IOResponse): void
+        + receive(IORequest& outReq): bool
+        + send(const IOResponse& resp): void
+        + receiveResponse(IOResponse& outResp): bool
     }
 
     class IOService {
-        - IRequestHandler&         _handler
+        - IRequestHandler& _handler
         - std::vector<ITransport*> _transports
         --
         + IOService(handler: IRequestHandler&)
@@ -122,36 +145,66 @@ package "fujinet::io (channels & transports)" {
     }
 
     FujiBusTransport ..|> ITransport
-    FujiBusTransport --> Channel : uses >
-    IOService --> ITransport : holds 0..* >
-    IOService --> IRequestHandler : routes requests to >
+    FujiBusTransport --> Channel
+    IOService o-- "0..*" ITransport : non-owning ptrs
+    IOService --> IRequestHandler : _handler
+}
+
+' ========= Filesystem (core-owned) =========
+package "fujinet::fs" as pkg_fs {
+
+    class StorageManager {
+        --
+        + registerFileSystem(fs: std::unique_ptr<IFileSystem>): bool
+        + resolveUri(uri: string): (IFileSystem*, path)
+        ..
+        Registry of named **IFileSystem** backends
+    }
 }
 
 ' ========= Core =========
-package "fujinet::core" {
+package "fujinet::core" as pkg_core {
 
-    class FujinetCore {
-        - std::uint64_t        _tickCount
-        - io::IODeviceManager  _deviceManager
-        - io::RoutingManager   _routing
-        - io::IOService        _ioService
-        --
-        + FujinetCore()
-        + tick(): void
-        + tick_count() const: std::uint64_t
-        + deviceManager(): io::IODeviceManager&
-        + deviceManager() const: const io::IODeviceManager&
-        + routingManager(): io::RoutingManager&
-        + routingManager() const: const io::RoutingManager&
-        + ioService(): io::IOService&
-        + ioService() const: const io::IOService&
-        + addTransport(transport: io::ITransport*): void
+    class SystemEvents {
+        + network(): EventStream<NetworkEvent>&
+        + time(): EventStream<TimeEvent>&
     }
 
-    FujinetCore --> io_IODeviceManager : owns
-    FujinetCore --> io_RoutingManager  : owns
-    FujinetCore --> io_IOService       : owns
-    FujinetCore --> io_ITransport : via addTransport()\n(delegates to IOService)
+    class FujinetCore {
+        - std::uint64_t _tickCount
+        - IODeviceManager _deviceManager
+        - RoutingManager _routing
+        - IOService _ioService
+        - StorageManager _storageManager
+        - SystemEvents _events
+        --
+        + tick(): void
+        + deviceManager(): IODeviceManager&
+        + routingManager(): RoutingManager&
+        + ioService(): IOService&
+        + storageManager(): StorageManager&
+        + events(): SystemEvents&
+        + addTransport(ITransport*): void
+    }
+
+    note bottom of FujinetCore
+        **Construction order:** `_deviceManager` →
+        `_routing(_deviceManager)` → `_ioService(_routing)`.
+
+        **tick():** `_ioService.serviceOnce()` then
+        `_deviceManager.pollDevices()`, then `_tickCount++`.
+
+        **addTransport()** forwards to `_ioService.addTransport()`.
+    end note
+
+    FujinetCore *-- IODeviceManager
+    FujinetCore *-- RoutingManager
+    FujinetCore *-- IOService
+    FujinetCore *-- StorageManager
+    FujinetCore *-- SystemEvents
 }
+
+' Cross-package wiring (FujinetCore is the integration point)
+IOService ..> RoutingManager : <<in FujinetCore>>\nhandler is _routing
 
 @enduml

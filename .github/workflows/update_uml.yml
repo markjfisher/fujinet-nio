@@ -8,6 +8,7 @@ on:
       - 'tests/**'
       - 'clang-uml.yml'
       - 'scripts/gen_uml.sh'
+      - 'docs/uml/arch_*.puml'
   workflow_dispatch: {}
 
 permissions:
