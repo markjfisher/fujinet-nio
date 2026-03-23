@@ -17,17 +17,14 @@ namespace fujinet::tests {
 TEST_CASE("TLS: URL parsing - valid tls://host:port")
 {
     platform::posix::TlsNetworkProtocolPosix proto;
-    
-    // We can't easily test URL parsing without access to internals,
-    // but we can test that open() rejects invalid URLs appropriately
+
     io::NetworkOpenRequest req;
-    req.url = "tls://example.com:443";
-    
-    // This will fail because we can't actually connect in unit tests,
-    // but it should at least parse the URL correctly
+    req.url = "tls://qiuwoeyruyqwoeuryq.xqw:443";
+
     auto result = proto.open(req);
-    // We expect IOError since we can't actually connect
-    CHECK(result != io::StatusCode::Ok);
+    // Parsed URL must not be rejected as malformed. Connect + TLS may succeed
+    // (e.g. CI with outbound HTTPS) or fail offline; that is not what this checks.
+    CHECK(result != io::StatusCode::InvalidRequest);
 }
 
 TEST_CASE("TLS: URL parsing - invalid URL format")
@@ -52,17 +49,16 @@ TEST_CASE("TLS: URL parsing - wrong scheme")
     CHECK(result == io::StatusCode::InvalidRequest);
 }
 
-TEST_CASE("TLS: URL parsing - missing port uses default 443")
+TEST_CASE("TLS: URL parsing - tls://host without explicit port")
 {
     platform::posix::TlsNetworkProtocolPosix proto;
-    
+
     io::NetworkOpenRequest req;
     req.url = "tls://example.com";
-    
-    // Should parse successfully (default port 443), but fail to connect
+
     auto result = proto.open(req);
-    // We expect IOError since we can't actually connect
-    CHECK(result != io::StatusCode::Ok);
+    // Same as explicit :443: URL shape is valid; outcome depends on network/TLS.
+    CHECK(result != io::StatusCode::InvalidRequest);
 }
 
 TEST_CASE("TLS: URL parsing - invalid port")
