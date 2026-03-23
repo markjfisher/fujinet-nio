@@ -28,8 +28,8 @@ public:
     void poll() override;
     
     // Derived classes implement receive() and send() based on their protocol style
-    virtual bool receive(IORequest& outReq) = 0;
-    virtual void send(const IOResponse& resp) = 0;
+    bool receive(IORequest& outReq) override = 0;
+    void send(const IOResponse& resp) override = 0;
     
 protected:
     // Platform-specific implementations must provide these methods

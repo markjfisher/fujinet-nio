@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/**'
       - 'include/**'
+      - 'tests/**'
       - 'clang-uml.yml'
       - 'scripts/gen_uml.sh'
   workflow_dispatch: {}

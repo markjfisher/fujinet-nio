@@ -14,7 +14,6 @@ using fujinet::disk::DiskResult;
 using fujinet::disk::ImageType;
 using fujinet::disk::MountOptions;
 
-namespace diskproto = fujinet::io::diskproto;
 using fujinet::io::protocol::DiskCommand;
 using fujinet::io::protocol::to_disk_command;
 
