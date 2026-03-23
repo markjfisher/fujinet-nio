@@ -21,28 +21,15 @@ __
 +passphrase : std::string
 +ssid : std::string
 }
-enum "config::HostType" as C_0000279772037409680357
-enum C_0000279772037409680357 {
-Sd
-Tnfs
-Unknown
-}
-class "config::HostConfig" as C_0006762991430694965068
-class C_0006762991430694965068 {
-__
-+address : std::string
-+enabled : bool
-+id : int
-+name : std::string
-+type : HostType
-}
 class "config::MountConfig" as C_0013943630642961179492
 class C_0013943630642961179492 {
++effective_slot() const : int
+{static} +from_index(int index) constexpr : int
 __
-+hostId : int
-+id : int
++enabled : bool
 +mode : std::string
-+path : std::string
++slot : int
++uri : std::string
 }
 class "config::ModemConfig" as C_0005975997772767504221
 class C_0005975997772767504221 {
@@ -61,14 +48,34 @@ class C_0011654528465957303447 {
 __
 +enabled : bool
 }
+class "config::NetSioConfig" as C_0009654526727956470660
+class C_0009654526727956470660 {
+__
++enabled : bool
++host : std::string
++port : std::uint16_t
+}
+class "config::ClockConfig" as C_0014123104778393566609
+class C_0014123104778393566609 {
+__
++enabled : bool
++timezone : std::string
+}
+class "config::ChannelConfig" as C_0014601375190208620155
+class C_0014601375190208620155 {
+__
++ptyPath : std::string
+}
 class "config::FujiConfig" as C_0013064010099190715901
 class C_0013064010099190715901 {
 __
++channel : ChannelConfig
++clock : ClockConfig
 +cpm : CpmConfig
 +general : GeneralConfig
-+hosts : std::vector<HostConfig>
 +modem : ModemConfig
 +mounts : std::vector<MountConfig>
++netsio : NetSioConfig
 +printer : PrinterConfig
 +wifi : WifiConfig
 }
@@ -94,14 +101,15 @@ __
 -_relPath : std::string
 }
 C_0016837659718836839167 o-- C_0012427176626669726738 : +bootMode
-C_0006762991430694965068 o-- C_0000279772037409680357 : +type
 C_0013064010099190715901 o-- C_0016837659718836839167 : +general
 C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
-C_0013064010099190715901 o-- C_0006762991430694965068 : +hosts
 C_0013064010099190715901 o-- C_0013943630642961179492 : +mounts
 C_0013064010099190715901 o-- C_0005975997772767504221 : +modem
 C_0013064010099190715901 o-- C_0006472023737076814481 : +cpm
 C_0013064010099190715901 o-- C_0011654528465957303447 : +printer
+C_0013064010099190715901 o-- C_0009654526727956470660 : +netsio
+C_0013064010099190715901 o-- C_0014123104778393566609 : +clock
+C_0013064010099190715901 o-- C_0014601375190208620155 : +channel
 C_0010708806357379257038 ..> C_0013064010099190715901
 C_0004992050062997423308 ..> C_0013064010099190715901
 C_0010708806357379257038 <|-- C_0004992050062997423308

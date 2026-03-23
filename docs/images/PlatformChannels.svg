@@ -30,7 +30,7 @@ link Host to FujinetCore--><path d="M875.09,246.7531 C844.49,280.4231 790.76,339
 link FujinetCore to ITransport--><path d="M761.92,485.6531 C808.7,524.9831 874.05,579.9131 919.8,618.3831 " fill="none" id="FujinetCore-&gt;ITransport" style="stroke: #A80036; stroke-width: 1.0;"/><polygon fill="#A80036" points="923.89,621.8231,919.5691,612.9727,920.0606,618.6082,914.4252,619.0997,923.89,621.8231" style="stroke: #A80036; stroke-width: 1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="95" x="840" y="548.02">addTransport()</text><!--MD5=[4e46a679f33b87cb1acfaa612e05e535]
 link FujiBusTransport to Channel--><path d="M1077.69,498.0931 C1091.22,506.3131 1104.94,514.6131 1118,522.4531 C1172.44,555.1231 1234.15,591.4931 1281.37,619.1831 " fill="none" id="FujiBusTransport-&gt;Channel" style="stroke: #A80036; stroke-width: 1.0;"/><polygon fill="#A80036" points="1285.89,621.8331,1280.1479,613.8313,1281.5763,619.3049,1276.1027,620.7333,1285.89,621.8331" style="stroke: #A80036; stroke-width: 1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="121" x="1165" y="548.02">uses underlying I/O</text><!--MD5=[72ae9ec6927adab59b5286e38e732ba4]
 link Machine to TransportKind--><!--MD5=[bec8232ae9affe6ba4908c1bd6c36ba2]
-link Machine to BuildProfile--><!--MD5=[03a7e09dac2e1bc3eed51e044767d619]
+link Machine to BuildProfile--><!--MD5=[dd52fbd6f0ed5091e3e13e575763c9d1]
 @startuml PlatformChannels
 title Platform Build Profiles + Channels + Transports
 
@@ -154,7 +154,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.17+10
+Java Version: 17.0.18+8
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en

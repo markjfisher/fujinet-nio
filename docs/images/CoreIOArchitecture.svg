@@ -34,7 +34,7 @@ link FujinetCore to io_IOService--><path d="M2893.69,307.0631 C2915.78,360.3431 
 link FujinetCore to io_ITransport--><path d="M2971.07,307.0331 C2993.79,329.4631 3016.71,353.3831 3037,376.9531 C3058.21,401.5931 3079.34,432.1831 3093.56,453.8831 " fill="none" id="FujinetCore-&gt;io_ITransport" style="stroke: #A80036; stroke-width: 1.0;"/><polygon fill="#A80036" points="3096.31,458.1031,3094.7461,448.3792,3093.5795,453.9145,3088.0443,452.748,3096.31,458.1031" style="stroke: #A80036; stroke-width: 1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="117" x="3046.5" y="350.02">via addTransport()</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="154" x="3028" y="365.1528">(delegates to IOService)</text><!--MD5=[93115a7144c7fc9e6487c768ef6852f1]
 link IORequest to IOResponse--><!--MD5=[de16b29d3918365c93d760c4f616adb9]
 link IORequest to RequestType--><!--MD5=[93a9c347a0a8edfc4131282ab18327e7]
-link RequestType to StatusCode--><!--MD5=[381f1df2f3dd0b4473901dc5c8994c3d]
+link RequestType to StatusCode--><!--MD5=[e2f54618be56f6f79ba1b23af28f3f8d]
 @startuml CoreIOArchitecture
 title fujinet-nio Core / IO / Device Architecture
 
@@ -192,7 +192,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.17+10
+Java Version: 17.0.18+8
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en

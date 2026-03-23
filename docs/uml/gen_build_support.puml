@@ -13,6 +13,7 @@ enum "build::TransportKind" as C_0002950475094340712788
 enum C_0002950475094340712788 {
 FujiBus
 SIO
+IWM
 IEC
 }
 enum "build::ChannelKind" as C_0018157593848838900415
@@ -20,6 +21,8 @@ enum C_0018157593848838900415 {
 Pty
 UsbCdcDevice
 TcpSocket
+UdpSocket
+UartGpio
 }
 class "build::NetworkCapabilities" as C_0008019720847980173585
 class C_0008019720847980173585 {
