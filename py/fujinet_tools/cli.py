@@ -34,6 +34,7 @@ def main() -> None:
     pm.add_argument("--timeout", type=float, default=0.01, help="Serial read timeout for incremental reads")
     pm.add_argument("--ascii", action="store_true", help="Include short ASCII payload preview")
     pm.add_argument("--hex", action="store_true", help="Include short payload hex preview")
+    pm.add_argument("--full-hex", action="store_true", help="Include full decoded FujiBus payload hex")
     pm.add_argument("--raw", action="store_true", help="Print full raw SLIP frame bytes")
     pm.add_argument("--json", action="store_true", help="Emit one JSON object per frame (JSONL)")
     pm.set_defaults(
@@ -43,6 +44,7 @@ def main() -> None:
             timeout=args.timeout,
             show_ascii=args.ascii,
             show_hex=args.hex,
+            show_full_hex=args.full_hex,
             show_raw=args.raw,
             json_output=args.json,
         )
