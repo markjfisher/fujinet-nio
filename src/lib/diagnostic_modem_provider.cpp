@@ -1,3 +1,4 @@
+#include "fujinet/diag/diagnostic_parse.h"
 #include "fujinet/diag/diagnostic_provider.h"
 
 #include "fujinet/core/core.h"
@@ -21,19 +22,6 @@ static fujinet::io::ModemDevice* get_modem_device(fujinet::core::FujinetCore& co
 
     auto* dev = core.deviceManager().getDevice(to_device_id(WireDeviceId::ModemService));
     return dynamic_cast<fujinet::io::ModemDevice*>(dev);
-}
-
-static bool parse_u32(std::string_view s, std::uint32_t& out)
-{
-    if (s.empty()) return false;
-    std::uint64_t v = 0;
-    for (char c : s) {
-        if (c < '0' || c > '9') return false;
-        v = v * 10 + static_cast<std::uint64_t>(c - '0');
-        if (v > 0xFFFFFFFFull) return false;
-    }
-    out = static_cast<std::uint32_t>(v);
-    return true;
 }
 
 class ModemDiagnosticProvider final : public IDiagnosticProvider {
@@ -183,7 +171,7 @@ private:
         if (args.argv.size() != 2) return DiagResult::invalid_args("usage: modem.baud <rate>");
 
         std::uint32_t b = 0;
-        if (!parse_u32(args.argv[1], b)) return DiagResult::invalid_args("baud must be decimal");
+        if (!parse_decimal_u32(args.argv[1], b)) return DiagResult::invalid_args("baud must be decimal");
 
         fujinet::io::ModemDeviceDiagnosticsAccessor::set_baud(*mdm, b);
         const auto s = fujinet::io::ModemDeviceDiagnosticsAccessor::state(*mdm);

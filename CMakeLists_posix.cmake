@@ -112,6 +112,7 @@ target_sources(fujinet-nio
         src/lib/diagnostic_disk_provider.cpp
         src/lib/diagnostic_modem_provider.cpp
         src/lib/diagnostic_network_provider.cpp
+        src/lib/diagnostic_parse.cpp
         src/lib/diagnostic_registry.cpp
         src/lib/diagnostic_uart_channel_provider.cpp
         src/lib/disk/atr_image.cpp

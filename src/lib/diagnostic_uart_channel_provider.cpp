@@ -16,11 +16,11 @@ std::unique_ptr<IDiagnosticProvider> create_uart_channel_diagnostic_provider(
 #else
 
 #include "fujinet/config/fuji_config.h"
+#include "fujinet/diag/diagnostic_parse.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/platform/esp32/uart_channel.h"
 
-#include <cctype>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -29,33 +29,6 @@ std::unique_ptr<IDiagnosticProvider> create_uart_channel_diagnostic_provider(
 namespace fujinet::diag {
 
 namespace detail {
-
-static bool parse_u32(std::string_view s, std::uint32_t& out)
-{
-    if (s.empty()) {
-        return false;
-    }
-    std::uint64_t v = 0;
-    for (char c : s) {
-        if (c < '0' || c > '9') {
-            return false;
-        }
-        v = v * 10 + static_cast<std::uint64_t>(c - '0');
-        if (v > 0xFFFFFFFFull) {
-            return false;
-        }
-    }
-    out = static_cast<std::uint32_t>(v);
-    return true;
-}
-
-static std::string lower_ascii(std::string s)
-{
-    for (char& c : s) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    return s;
-}
 
 static const char* parity_str(config::UartParity p)
 {
@@ -96,11 +69,10 @@ static const char* flow_str(config::UartFlowControl f)
 
 static config::UartParity parse_parity(std::string_view raw)
 {
-    const std::string s = lower_ascii(std::string(raw));
-    if (s == "even") {
+    if (ascii_iequals(raw, "even")) {
         return config::UartParity::Even;
     }
-    if (s == "odd") {
+    if (ascii_iequals(raw, "odd")) {
         return config::UartParity::Odd;
     }
     return config::UartParity::None;
@@ -108,11 +80,10 @@ static config::UartParity parse_parity(std::string_view raw)
 
 static config::UartStopBits parse_stop(std::string_view raw)
 {
-    const std::string s = lower_ascii(std::string(raw));
-    if (s == "2" || s == "two") {
+    if (ascii_iequals(raw, "2") || ascii_iequals(raw, "two")) {
         return config::UartStopBits::Two;
     }
-    if (s == "1.5" || s == "1_5" || s == "one_point_five") {
+    if (ascii_iequals(raw, "1.5") || ascii_iequals(raw, "1_5") || ascii_iequals(raw, "one_point_five")) {
         return config::UartStopBits::OnePointFive;
     }
     return config::UartStopBits::One;
@@ -120,8 +91,7 @@ static config::UartStopBits parse_stop(std::string_view raw)
 
 static config::UartFlowControl parse_flow(std::string_view raw)
 {
-    const std::string s = lower_ascii(std::string(raw));
-    if (s == "rts_cts" || s == "rts-cts" || s == "hw") {
+    if (ascii_iequals(raw, "rts_cts") || ascii_iequals(raw, "rts-cts") || ascii_iequals(raw, "hw")) {
         return config::UartFlowControl::RtsCts;
     }
     return config::UartFlowControl::None;
@@ -238,7 +208,7 @@ private:
             return DiagResult::invalid_args("usage: uart.baud <rate>");
         }
         std::uint32_t baud = 0;
-        if (!parse_u32(args.argv[1], baud) || baud == 0) {
+        if (!parse_decimal_u32(args.argv[1], baud) || baud == 0) {
             return DiagResult::invalid_args("invalid baud rate");
         }
         uart->setBaudrate(baud);
@@ -260,26 +230,26 @@ private:
         }
 
         config::UartConfig next = uart->uart_config();
-        const std::string key = lower_ascii(std::string(args.argv[1]));
+        const std::string_view field = args.argv[1];
         const std::string_view val = args.argv[2];
 
-        if (key == "baud_rate") {
+        if (ascii_iequals(field, "baud_rate")) {
             std::uint32_t baud = 0;
-            if (!parse_u32(val, baud) || baud == 0) {
+            if (!parse_decimal_u32(val, baud) || baud == 0) {
                 return DiagResult::invalid_args("invalid baud_rate");
             }
             next.baudRate = baud;
-        } else if (key == "data_bits") {
+        } else if (ascii_iequals(field, "data_bits")) {
             std::uint32_t ub = 0;
-            if (!parse_u32(val, ub) || ub < 5 || ub > 8) {
+            if (!parse_decimal_u32(val, ub) || ub < 5 || ub > 8) {
                 return DiagResult::invalid_args("data_bits must be 5..8");
             }
             next.dataBits = static_cast<int>(ub);
-        } else if (key == "parity") {
+        } else if (ascii_iequals(field, "parity")) {
             next.parity = parse_parity(val);
-        } else if (key == "stop_bits") {
+        } else if (ascii_iequals(field, "stop_bits")) {
             next.stopBits = parse_stop(val);
-        } else if (key == "flow_control") {
+        } else if (ascii_iequals(field, "flow_control")) {
             next.flowControl = parse_flow(val);
         } else {
             return DiagResult::invalid_args("unknown field (see uart.set usage)");
