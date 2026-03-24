@@ -35,6 +35,7 @@ def main() -> None:
     pm.add_argument("--ascii", action="store_true", help="Include short ASCII payload preview")
     pm.add_argument("--hex", action="store_true", help="Include short payload hex preview")
     pm.add_argument("--full-hex", action="store_true", help="Include full decoded FujiBus payload hex")
+    pm.add_argument("--decoded-hex", action="store_true", help="Print full decoded FujiBus packet hex")
     pm.add_argument("--raw", action="store_true", help="Print full raw SLIP frame bytes")
     pm.add_argument("--json", action="store_true", help="Emit one JSON object per frame (JSONL)")
     pm.set_defaults(
@@ -45,6 +46,7 @@ def main() -> None:
             show_ascii=args.ascii,
             show_hex=args.hex,
             show_full_hex=args.full_hex,
+            show_decoded_hex=args.decoded_hex,
             show_raw=args.raw,
             json_output=args.json,
         )

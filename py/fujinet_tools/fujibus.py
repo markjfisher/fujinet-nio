@@ -30,6 +30,21 @@ class FujiPacket:
     payload: bytes
 
 
+@dataclass
+class SlipDecodeResult:
+    status: str
+    reason: Optional[str]
+    decoded: bytes
+    warnings: List[str]
+
+
+@dataclass
+class ParseResult:
+    status: str
+    reason: Optional[str]
+    packet: Optional[FujiPacket]
+
+
 def calc_checksum(data: bytes) -> int:
     chk = 0
     for b in data:
@@ -55,16 +70,29 @@ def slip_encode(payload: bytes) -> bytes:
 
 
 def slip_decode(frame: bytes) -> bytes:
-    if not frame or frame[0] != SLIP_END or frame[-1] != SLIP_END:
-        return b""
+    return slip_decode_ex(frame).decoded
+
+
+def slip_decode_ex(frame: bytes) -> SlipDecodeResult:
+    if not frame:
+        return SlipDecodeResult(status="fail", reason="invalid_framing", decoded=b"", warnings=[])
+    if frame[0] != SLIP_END or frame[-1] != SLIP_END:
+        return SlipDecodeResult(status="fail", reason="invalid_framing", decoded=b"", warnings=[])
+
     out = bytearray()
+    warnings: List[str] = []
     i = 1
     while i < len(frame) - 1:
         b = frame[i]
         if b == SLIP_ESCAPE:
             i += 1
             if i >= len(frame) - 1:
-                break
+                return SlipDecodeResult(
+                    status="fail",
+                    reason="dangling_escape",
+                    decoded=bytes(out),
+                    warnings=warnings,
+                )
             esc = frame[i]
             if esc == SLIP_ESC_END:
                 out.append(SLIP_END)
@@ -73,15 +101,20 @@ def slip_decode(frame: bytes) -> bytes:
             else:
                 # unknown escape, keep original escape byte
                 out.append(b)
+                warnings.append("unknown_escape_sequence")
         else:
             out.append(b)
         i += 1
-    return bytes(out)
+    return SlipDecodeResult(status="ok", reason=None, decoded=bytes(out), warnings=warnings)
 
 
 def parse_fuji_packet(decoded: bytes) -> Optional[FujiPacket]:
+    return parse_fuji_packet_ex(decoded).packet
+
+
+def parse_fuji_packet_ex(decoded: bytes) -> ParseResult:
     if len(decoded) < HEADER_SIZE:
-        return None
+        return ParseResult(status="fail", reason="frame_too_short", packet=None)
 
     device = decoded[0]
     command = decoded[1]
@@ -90,7 +123,7 @@ def parse_fuji_packet(decoded: bytes) -> Optional[FujiPacket]:
     descr = decoded[5]
 
     if length != len(decoded):
-        return None
+        return ParseResult(status="fail", reason="length_mismatch", packet=None)
 
     tmp = bytearray(decoded)
     tmp[4] = 0
@@ -99,11 +132,10 @@ def parse_fuji_packet(decoded: bytes) -> Optional[FujiPacket]:
 
     offset = HEADER_SIZE
 
-    # Descriptor can be "varint-like": continuation bit 0x80
     descr_bytes = [descr]
     while descr_bytes[-1] & 0x80:
         if offset >= len(decoded):
-            return None
+            return ParseResult(status="fail", reason="descriptor_truncated", packet=None)
         descr_bytes.append(decoded[offset])
         offset += 1
 
@@ -114,7 +146,7 @@ def parse_fuji_packet(decoded: bytes) -> Optional[FujiPacket]:
         field_size = FIELD_SIZE_TABLE[field_desc]
         for _ in range(field_count):
             if offset + field_size > len(decoded):
-                return None
+                return ParseResult(status="fail", reason="param_truncated", packet=None)
             v = 0
             for i in range(field_size):
                 v |= decoded[offset + i] << (8 * i)
@@ -122,16 +154,20 @@ def parse_fuji_packet(decoded: bytes) -> Optional[FujiPacket]:
             offset += field_size
 
     payload = decoded[offset:]
-    return FujiPacket(
-        device=device,
-        command=command,
-        length=length,
-        checksum=checksum,
-        checksum_computed=computed,
-        checksum_ok=checksum_ok,
-        descr=descr,
-        params=params,
-        payload=payload,
+    return ParseResult(
+        status="ok",
+        reason=None,
+        packet=FujiPacket(
+            device=device,
+            command=command,
+            length=length,
+            checksum=checksum,
+            checksum_computed=computed,
+            checksum_ok=checksum_ok,
+            descr=descr,
+            params=params,
+            payload=payload,
+        ),
     )
 
 
