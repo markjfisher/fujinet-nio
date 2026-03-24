@@ -9,6 +9,7 @@ from . import net as net_cmds
 from . import disk as disk_cmds
 from . import bbc as bbc_cmds
 from . import modem as modem_cmds
+from . import monitor as monitor_cmds
 
 
 def main() -> None:
@@ -28,6 +29,10 @@ def main() -> None:
     disk_cmds.register_subcommands(sub)
     bbc_cmds.register_subcommands(sub)
     modem_cmds.register_subcommands(sub)
+
+    pm = sub.add_parser("monitor", help="Live FujiBus-over-SLIP serial monitor")
+    pm.add_argument("--timeout", type=float, default=0.01, help="Serial read timeout for incremental reads")
+    pm.set_defaults(fn=lambda args: monitor_cmds.monitor_port(port=args.port, baud=args.baud, timeout=args.timeout))
 
     args = p.parse_args()
     raise SystemExit(args.fn(args))
