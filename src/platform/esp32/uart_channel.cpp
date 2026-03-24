@@ -14,16 +14,63 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
+namespace {
+
 static const char* TAG = "uart_channel";
 
-// UART configuration
-static constexpr int UART_BAUD_RATE = 115200;
 static constexpr int UART_RX_BUF_SIZE = 2048;
 static constexpr int UART_TX_BUF_SIZE = 0;  // 0 = TX buffer not used, blocking write
 static constexpr int UART_QUEUE_SIZE = 10;
 static constexpr int MAX_FLUSH_WAIT_TICKS = 200;
+/// HW flow: UART ISR asserts RTS when RX FIFO bytes exceed this threshold.
+static constexpr int UART_RX_FLOW_THRESH = 112;
 
-UartChannel::UartChannel()
+static uart_word_length_t map_data_bits(int bits)
+{
+    switch (bits) {
+    case 5:
+        return UART_DATA_5_BITS;
+    case 6:
+        return UART_DATA_6_BITS;
+    case 7:
+        return UART_DATA_7_BITS;
+    case 8:
+        return UART_DATA_8_BITS;
+    default:
+        return UART_DATA_8_BITS;
+    }
+}
+
+static uart_parity_t map_parity(config::UartParity p)
+{
+    switch (p) {
+    case config::UartParity::Even:
+        return UART_PARITY_EVEN;
+    case config::UartParity::Odd:
+        return UART_PARITY_ODD;
+    case config::UartParity::None:
+    default:
+        return UART_PARITY_DISABLE;
+    }
+}
+
+static uart_stop_bits_t map_stop_bits(config::UartStopBits s)
+{
+    switch (s) {
+    case config::UartStopBits::Two:
+        return UART_STOP_BITS_2;
+    case config::UartStopBits::OnePointFive:
+        return UART_STOP_BITS_1_5;
+    case config::UartStopBits::One:
+    default:
+        return UART_STOP_BITS_1;
+    }
+}
+
+} // namespace
+
+UartChannel::UartChannel(const config::UartConfig& uart_cfg)
+    : _uart_cfg(uart_cfg)
 {
     _initialized = initialize();
     if (!_initialized) {
@@ -37,16 +84,14 @@ UartChannel::~UartChannel()
         uart_driver_delete(_uart_port);
         _initialized = false;
     }
-    
-    // Queue is deleted by uart_driver_delete, but clear our reference
+
     _uart_queue = nullptr;
 }
 
 bool UartChannel::initialize()
 {
-    // Get UART pins from the pinmap
     const UartPins uart_pins = pinmap().primaryUart();
-    
+
     if (uart_pins.rx < 0 || uart_pins.tx < 0) {
         FN_LOGE(TAG, "No valid UART pins configured in pinmap");
         return false;
@@ -54,17 +99,54 @@ bool UartChannel::initialize()
 
     FN_LOGI(TAG, "Using UART pins: RX=%d, TX=%d", uart_pins.rx, uart_pins.tx);
 
-    // Use UART_NUM_1 for the channel (UART_NUM_0 is typically the debug console)
     _uart_port = UART_NUM_1;
 
-    // Configure UART
+    int baud = static_cast<int>(_uart_cfg.baudRate);
+    if (baud <= 0) {
+        FN_LOGW(TAG, "Invalid UART baud %u, using 115200", static_cast<unsigned>(_uart_cfg.baudRate));
+        baud = 115200;
+        _uart_cfg.baudRate = 115200;
+    }
+
+    int data_bits = _uart_cfg.dataBits;
+    if (data_bits < 5 || data_bits > 8) {
+        FN_LOGW(TAG, "Invalid UART data_bits %d, using 8", data_bits);
+        data_bits = 8;
+        _uart_cfg.dataBits = 8;
+    }
+
+    const PinMap& pm = pinmap();
+    int rts_pin = UART_PIN_NO_CHANGE;
+    int cts_pin = UART_PIN_NO_CHANGE;
+    uart_hw_flowcontrol_t flow = UART_HW_FLOWCTRL_DISABLE;
+
+    if (_uart_cfg.flowControl == config::UartFlowControl::RtsCts) {
+        if (pm.rs232.rts >= 0 && pm.rs232.cts >= 0) {
+            rts_pin = pm.rs232.rts;
+            cts_pin = pm.rs232.cts;
+#if defined(UART_HW_FLOWCTRL_CTS_RTS)
+            flow = UART_HW_FLOWCTRL_CTS_RTS;
+#else
+            flow = static_cast<uart_hw_flowcontrol_t>(UART_HW_FLOWCTRL_RTS | UART_HW_FLOWCTRL_CTS);
+#endif
+            FN_LOGI(TAG, "UART hardware flow control RTS=%d CTS=%d", rts_pin, cts_pin);
+        } else {
+            FN_LOGW(TAG,
+                    "flow_control rts_cts requested but board pinmap has no RS232 RTS/CTS; using none");
+            _uart_cfg.flowControl = config::UartFlowControl::None;
+        }
+    }
+
     uart_config_t uart_config = {};
-    uart_config.baud_rate = UART_BAUD_RATE;
-    uart_config.data_bits = UART_DATA_8_BITS;
-    uart_config.parity = UART_PARITY_DISABLE;
-    uart_config.stop_bits = UART_STOP_BITS_1;
-    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.baud_rate = baud;
+    uart_config.data_bits = map_data_bits(data_bits);
+    uart_config.parity = map_parity(_uart_cfg.parity);
+    uart_config.stop_bits = map_stop_bits(_uart_cfg.stopBits);
+    uart_config.flow_ctrl = flow;
     uart_config.source_clk = UART_SCLK_DEFAULT;
+    if (flow != UART_HW_FLOWCTRL_DISABLE) {
+        uart_config.rx_flow_ctrl_thresh = UART_RX_FLOW_THRESH;
+    }
 
     esp_err_t err = uart_param_config(_uart_port, &uart_config);
     if (err != ESP_OK) {
@@ -72,29 +154,32 @@ bool UartChannel::initialize()
         return false;
     }
 
-    // Set UART pins
-    err = uart_set_pin(_uart_port, uart_pins.tx, uart_pins.rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    err = uart_set_pin(_uart_port, uart_pins.tx, uart_pins.rx, rts_pin, cts_pin);
     if (err != ESP_OK) {
         FN_LOGE(TAG, "uart_set_pin failed: %d", err);
         return false;
     }
 
-    // Install UART driver with event queue
-    // Using a queue allows us to receive UART events (data ready, break, errors, etc.)
     err = uart_driver_install(
         _uart_port,
         UART_RX_BUF_SIZE,
         UART_TX_BUF_SIZE,
         UART_QUEUE_SIZE,
         &_uart_queue,
-        0        // intr_alloc_flags
-    );
+        0);
     if (err != ESP_OK) {
         FN_LOGE(TAG, "uart_driver_install failed: %d", err);
         return false;
     }
 
-    FN_LOGI(TAG, "UartChannel initialized on UART%d with event queue", _uart_port);
+    FN_LOGI(TAG,
+            "UartChannel UART%d baud=%d data=%d parity=%d stop=%d flow=%d",
+            static_cast<int>(_uart_port),
+            baud,
+            data_bits,
+            static_cast<int>(_uart_cfg.parity),
+            static_cast<int>(_uart_cfg.stopBits),
+            static_cast<int>(_uart_cfg.flowControl));
     return true;
 }
 
@@ -106,14 +191,10 @@ void UartChannel::updateFIFO()
 
     uart_event_t event;
 
-    // Process all pending events from the queue
-    // Use 1 tick timeout to avoid blocking if queue is empty
     while (xQueueReceive(_uart_queue, &event, 1))
     {
         switch (event.type) {
         case UART_DATA:
-            // Data is available in the UART hardware FIFO
-            // Read it into our internal FIFO
             {
                 size_t old_len = _fifo.size();
                 _fifo.resize(old_len + event.size);
@@ -126,19 +207,16 @@ void UartChannel::updateFIFO()
             break;
 
         case UART_FIFO_OVF:
-            // UART FIFO overflow - data was lost
             FN_LOGW(TAG, "UART FIFO overflow");
             uart_flush_input(_uart_port);
             break;
 
         case UART_BUFFER_FULL:
-            // Ring buffer full - this shouldn't happen with our config
             FN_LOGW(TAG, "UART buffer full");
             uart_flush_input(_uart_port);
             break;
 
         case UART_BREAK:
-            // Break condition detected
             FN_LOGI(TAG, "UART break detected");
             break;
 
@@ -151,7 +229,6 @@ void UartChannel::updateFIFO()
             break;
 
         case UART_PATTERN_DET:
-            // Pattern detected (if pattern detection is enabled)
             break;
 
         default:
@@ -167,10 +244,8 @@ bool UartChannel::available()
         return false;
     }
 
-    // First, process any pending events to update our FIFO
     updateFIFO();
 
-    // Return true if we have data in our internal FIFO
     return !_fifo.empty();
 }
 
@@ -180,19 +255,15 @@ std::size_t UartChannel::read(std::uint8_t* buffer, std::size_t maxLen)
         return 0;
     }
 
-    // Process any pending events first
     updateFIFO();
 
-    // Read from our internal FIFO
     std::size_t to_copy = (maxLen < _fifo.size()) ? maxLen : _fifo.size();
     if (to_copy == 0) {
         return 0;
     }
 
-    // Copy data to caller's buffer
     std::copy(_fifo.begin(), _fifo.begin() + to_copy, buffer);
 
-    // Remove the copied data from our FIFO
     _fifo.erase(_fifo.begin(), _fifo.begin() + to_copy);
 
     return to_copy;
@@ -239,6 +310,7 @@ void UartChannel::setBaudrate(uint32_t baud)
         return;
     }
     uart_set_baudrate(_uart_port, baud);
+    _uart_cfg.baudRate = baud;
 }
 
 } // namespace fujinet::platform::esp32

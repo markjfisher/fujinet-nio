@@ -18,7 +18,7 @@ namespace fujinet::platform {
 static const char* TAG = "platform";
 
 std::unique_ptr<fujinet::io::Channel>
-create_channel_for_profile(const build::BuildProfile& profile, const config::FujiConfig& /*config*/)
+create_channel_for_profile(const build::BuildProfile& profile, const config::FujiConfig& config)
 {
     using build::ChannelKind;
 
@@ -49,8 +49,10 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
         return nullptr;
 
     case ChannelKind::UartGpio:
-        FN_ELOG("Using UartChannel for UartGpio");
-        return std::make_unique<esp32::UartChannel>();
+        FN_ELOG("Using UartChannel for UartGpio (baud=%u, data_bits=%d)",
+                static_cast<unsigned>(config.channel.uart.baudRate),
+                config.channel.uart.dataBits);
+        return std::make_unique<esp32::UartChannel>(config.channel.uart);
     }
 
     FN_LOGE(TAG, "Unknown ChannelKind in create_channel_for_profile");

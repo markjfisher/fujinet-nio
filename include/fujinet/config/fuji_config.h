@@ -70,8 +70,37 @@ struct ClockConfig {
     bool        enabled{true};
 };
 
+/// Serial line format for ESP32 `UartGpio` / RS232 (and any future UART-backed channel).
+enum class UartParity {
+    None,
+    Even,
+    Odd,
+};
+
+enum class UartStopBits {
+    One,
+    OnePointFive,
+    Two,
+};
+
+enum class UartFlowControl {
+    None,
+    RtsCts,
+};
+
+struct UartConfig {
+    std::uint32_t     baudRate{115200};
+    int               dataBits{8};  // 5..8
+    UartParity        parity{UartParity::None};
+    UartStopBits      stopBits{UartStopBits::One};
+    UartFlowControl   flowControl{UartFlowControl::None};
+};
+
+/// Settings for the logical FujiBus channel (profile-dependent: PTY path on POSIX,
+/// `uart` on ESP32 UartGpio, etc.).
 struct ChannelConfig {
-    std::string ptyPath{};   // e.g., "/dev/fujinet-pty" for POSIX PTY; empty to use kernel-assigned PTY
+    std::string ptyPath{};  // POSIX PTY device path; empty = kernel-assigned
+    UartConfig  uart{};     // ESP32 host UART (baud, framing, optional RTS/CTS)
 };
 
 // Unified config for the whole FujiNet instance.

@@ -12,6 +12,9 @@
 using fujinet::config::BootMode;
 using fujinet::config::FujiConfig;
 using fujinet::config::MountConfig;
+using fujinet::config::UartFlowControl;
+using fujinet::config::UartParity;
+using fujinet::config::UartStopBits;
 using fujinet::config::YamlFujiConfigStoreFs;
 
 namespace {
@@ -73,6 +76,11 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.clock.timezone != b.clock.timezone) return false;
     
     if (a.channel.ptyPath != b.channel.ptyPath) return false;
+    if (a.channel.uart.baudRate != b.channel.uart.baudRate) return false;
+    if (a.channel.uart.dataBits != b.channel.uart.dataBits) return false;
+    if (a.channel.uart.parity != b.channel.uart.parity) return false;
+    if (a.channel.uart.stopBits != b.channel.uart.stopBits) return false;
+    if (a.channel.uart.flowControl != b.channel.uart.flowControl) return false;
 
     return true;
 }
@@ -675,6 +683,87 @@ channel:
     CHECK(cfg.wifi.enabled == false);
     CHECK(cfg.mounts.empty());
     CHECK(cfg.channel.ptyPath == "/dev/fujinet-pty");
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Channel uart nested map")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    const std::string yaml = R"(
+fujinet:
+  device_name: "test-device"
+  boot_mode: "normal"
+  alt_config_file: ""
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+mounts: []
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+channel:
+  uart:
+    baud_rate: 9600
+    data_bits: 7
+    parity: even
+    stop_bits: "2"
+    flow_control: rts_cts
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    CHECK(cfg.channel.uart.baudRate == 9600u);
+    CHECK(cfg.channel.uart.dataBits == 7);
+    CHECK(cfg.channel.uart.parity == UartParity::Even);
+    CHECK(cfg.channel.uart.stopBits == UartStopBits::Two);
+    CHECK(cfg.channel.uart.flowControl == UartFlowControl::RtsCts);
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Channel legacy uart_baud key")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    const std::string yaml = R"(
+fujinet:
+  device_name: "test-device"
+  boot_mode: "normal"
+  alt_config_file: ""
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+mounts: []
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+channel:
+  uart_baud: 9600
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    CHECK(cfg.channel.uart.baudRate == 9600u);
+    CHECK(cfg.channel.uart.dataBits == 8);
+    CHECK(cfg.channel.uart.parity == UartParity::None);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Channel ptyPath empty default")

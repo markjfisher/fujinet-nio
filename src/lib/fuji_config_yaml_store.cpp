@@ -1,6 +1,7 @@
 #include "fujinet/config/fuji_config_yaml_store_fs.h"
 #include "fujinet/core/logging.h"
 
+#include <cctype>
 #include <fstream>
 #include <stdexcept>
 #include <vector>
@@ -94,9 +95,105 @@ static void from_yaml(const YAML::Node& node, ClockConfig& out)
     out.enabled  = get_or<bool>(node, "enabled", true);
 }
 
+static std::string yaml_lower_ascii(std::string s)
+{
+    for (char& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
+static UartParity parse_uart_parity(const std::string& raw)
+{
+    const std::string s = yaml_lower_ascii(raw);
+    if (s == "even") {
+        return UartParity::Even;
+    }
+    if (s == "odd") {
+        return UartParity::Odd;
+    }
+    return UartParity::None;
+}
+
+static UartStopBits parse_uart_stop_bits(const std::string& raw)
+{
+    const std::string s = yaml_lower_ascii(raw);
+    if (s == "2" || s == "two") {
+        return UartStopBits::Two;
+    }
+    if (s == "1.5" || s == "1_5" || s == "one_point_five") {
+        return UartStopBits::OnePointFive;
+    }
+    return UartStopBits::One;
+}
+
+static UartFlowControl parse_uart_flow_control(const std::string& raw)
+{
+    const std::string s = yaml_lower_ascii(raw);
+    if (s == "rts_cts" || s == "rts-cts" || s == "hw") {
+        return UartFlowControl::RtsCts;
+    }
+    return UartFlowControl::None;
+}
+
+static std::string uart_parity_to_string(UartParity p)
+{
+    switch (p) {
+    case UartParity::Even:
+        return "even";
+    case UartParity::Odd:
+        return "odd";
+    case UartParity::None:
+    default:
+        return "none";
+    }
+}
+
+static std::string uart_stop_bits_to_string(UartStopBits s)
+{
+    switch (s) {
+    case UartStopBits::Two:
+        return "2";
+    case UartStopBits::OnePointFive:
+        return "1.5";
+    case UartStopBits::One:
+    default:
+        return "1";
+    }
+}
+
+static std::string uart_flow_to_string(UartFlowControl f)
+{
+    switch (f) {
+    case UartFlowControl::RtsCts:
+        return "rts_cts";
+    case UartFlowControl::None:
+    default:
+        return "none";
+    }
+}
+
+static void from_yaml(const YAML::Node& node, UartConfig& out)
+{
+    out.baudRate   = static_cast<std::uint32_t>(get_or<int>(node, "baud_rate", 115200));
+    out.dataBits   = get_or<int>(node, "data_bits", 8);
+    out.parity     = parse_uart_parity(get_or<std::string>(node, "parity", "none"));
+    out.stopBits   = parse_uart_stop_bits(get_or<std::string>(node, "stop_bits", "1"));
+    out.flowControl = parse_uart_flow_control(get_or<std::string>(node, "flow_control", "none"));
+}
+
 static void from_yaml(const YAML::Node& node, ChannelConfig& out)
 {
     out.ptyPath = get_or<std::string>(node, "pty_path", "");
+    if (auto u = node["uart"]) {
+        if (u.IsMap()) {
+            from_yaml(u, out.uart);
+        }
+    }
+    // Legacy flat key (still honored so older configs work)
+    if (node["uart_baud"]) {
+        out.uart.baudRate = static_cast<std::uint32_t>(node["uart_baud"].as<int>());
+    }
 }
 
 // Top-level FujiConfig mapper.
@@ -207,6 +304,13 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
      // channel:
      out << YAML::Key << "channel" << YAML::Value << YAML::BeginMap;
      out << YAML::Key << "pty_path" << YAML::Value << cfg.channel.ptyPath;
+     out << YAML::Key << "uart" << YAML::Value << YAML::BeginMap;
+     out << YAML::Key << "baud_rate"     << YAML::Value << cfg.channel.uart.baudRate;
+     out << YAML::Key << "data_bits"     << YAML::Value << cfg.channel.uart.dataBits;
+     out << YAML::Key << "parity"        << YAML::Value << uart_parity_to_string(cfg.channel.uart.parity);
+     out << YAML::Key << "stop_bits"     << YAML::Value << uart_stop_bits_to_string(cfg.channel.uart.stopBits);
+     out << YAML::Key << "flow_control"  << YAML::Value << uart_flow_to_string(cfg.channel.uart.flowControl);
+     out << YAML::EndMap; // uart
      out << YAML::EndMap;
 
     out << YAML::EndMap; // root

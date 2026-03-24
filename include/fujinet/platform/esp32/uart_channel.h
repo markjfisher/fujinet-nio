@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fujinet/config/fuji_config.h"
 #include "fujinet/io/core/channel.h"
 
 #include <vector>
@@ -22,7 +23,8 @@ namespace fujinet::platform::esp32 {
 /// the time between incoming bytes.
 class UartChannel : public fujinet::io::Channel {
 public:
-    UartChannel();
+    /// Host-facing UART from `channel.uart` in FujiConfig (baud, framing, optional RTS/CTS).
+    explicit UartChannel(const config::UartConfig& uart_cfg = {});
     ~UartChannel() override;
 
     bool available() override;
@@ -46,6 +48,7 @@ public:
 private:
     bool initialize();
     bool _initialized{false};
+    config::UartConfig _uart_cfg{};
     
     // UART port number
     uart_port_t _uart_port{UART_NUM_1};
