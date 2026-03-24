@@ -10,6 +10,7 @@ from . import disk as disk_cmds
 from . import bbc as bbc_cmds
 from . import modem as modem_cmds
 from . import monitor as monitor_cmds
+from . import analyze_capture as analyze_capture_cmds
 
 
 def main() -> None:
@@ -29,6 +30,7 @@ def main() -> None:
     disk_cmds.register_subcommands(sub)
     bbc_cmds.register_subcommands(sub)
     modem_cmds.register_subcommands(sub)
+    analyze_capture_cmds.register_subcommands(sub)
 
     pm = sub.add_parser("monitor", help="Live FujiBus-over-SLIP serial monitor")
     pm.add_argument("--timeout", type=float, default=0.01, help="Serial read timeout for incremental reads")
