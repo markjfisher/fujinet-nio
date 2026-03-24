@@ -88,19 +88,8 @@ UartChannel::~UartChannel()
     _uart_queue = nullptr;
 }
 
-bool UartChannel::initialize()
+bool UartChannel::apply_hw_parameters(const UartPins& uart_pins)
 {
-    const UartPins uart_pins = pinmap().primaryUart();
-
-    if (uart_pins.rx < 0 || uart_pins.tx < 0) {
-        FN_LOGE(TAG, "No valid UART pins configured in pinmap");
-        return false;
-    }
-
-    FN_LOGI(TAG, "Using UART pins: RX=%d, TX=%d", uart_pins.rx, uart_pins.tx);
-
-    _uart_port = UART_NUM_1;
-
     int baud = static_cast<int>(_uart_cfg.baudRate);
     if (baud <= 0) {
         FN_LOGW(TAG, "Invalid UART baud %u, using 115200", static_cast<unsigned>(_uart_cfg.baudRate));
@@ -160,7 +149,35 @@ bool UartChannel::initialize()
         return false;
     }
 
-    err = uart_driver_install(
+    FN_LOGI(TAG,
+            "UartChannel UART%d baud=%d data=%d parity=%d stop=%d flow=%d",
+            static_cast<int>(_uart_port),
+            baud,
+            data_bits,
+            static_cast<int>(_uart_cfg.parity),
+            static_cast<int>(_uart_cfg.stopBits),
+            static_cast<int>(_uart_cfg.flowControl));
+    return true;
+}
+
+bool UartChannel::initialize()
+{
+    const UartPins uart_pins = pinmap().primaryUart();
+
+    if (uart_pins.rx < 0 || uart_pins.tx < 0) {
+        FN_LOGE(TAG, "No valid UART pins configured in pinmap");
+        return false;
+    }
+
+    FN_LOGI(TAG, "Using UART pins: RX=%d, TX=%d", uart_pins.rx, uart_pins.tx);
+
+    _uart_port = UART_NUM_1;
+
+    if (!apply_hw_parameters(uart_pins)) {
+        return false;
+    }
+
+    esp_err_t err = uart_driver_install(
         _uart_port,
         UART_RX_BUF_SIZE,
         UART_TX_BUF_SIZE,
@@ -172,15 +189,25 @@ bool UartChannel::initialize()
         return false;
     }
 
-    FN_LOGI(TAG,
-            "UartChannel UART%d baud=%d data=%d parity=%d stop=%d flow=%d",
-            static_cast<int>(_uart_port),
-            baud,
-            data_bits,
-            static_cast<int>(_uart_cfg.parity),
-            static_cast<int>(_uart_cfg.stopBits),
-            static_cast<int>(_uart_cfg.flowControl));
     return true;
+}
+
+bool UartChannel::reconfigure(const config::UartConfig& cfg)
+{
+    if (!_initialized) {
+        return false;
+    }
+
+    const UartPins uart_pins = pinmap().primaryUart();
+    if (uart_pins.rx < 0 || uart_pins.tx < 0) {
+        return false;
+    }
+
+    uart_flush_input(_uart_port);
+    flushOutput();
+
+    _uart_cfg = cfg;
+    return apply_hw_parameters(uart_pins);
 }
 
 void UartChannel::updateFIFO()

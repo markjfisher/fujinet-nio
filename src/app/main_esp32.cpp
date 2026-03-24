@@ -38,6 +38,7 @@ extern "C" {
 #include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/mount_applier.h"
 
+#include <memory>
 #include <unistd.h>
 
 static const char* TAG = "nio";
@@ -145,6 +146,7 @@ extern "C" void fujinet_core_task(void* arg)
     auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
     auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
     auto modemDiag = fujinet::diag::create_modem_diagnostic_provider(core);
+    std::unique_ptr<fujinet::diag::IDiagnosticProvider> uartChannelDiag;
     diagRegistry.add_provider(*coreDiag);
     diagRegistry.add_provider(*netDiag);
     diagRegistry.add_provider(*diskDiag);
@@ -233,6 +235,11 @@ extern "C" void fujinet_core_task(void* arg)
         FN_LOGE(TAG, "Failed to create Channel for profile");
         vTaskDelete(nullptr);
         return;
+    }
+
+    uartChannelDiag = fujinet::diag::create_uart_channel_diagnostic_provider(channel.get(), services.fuji);
+    if (uartChannelDiag) {
+        diagRegistry.add_provider(*uartChannelDiag);
     }
 
     // Set up transports based on profile (FujiBus, SIO, etc.).

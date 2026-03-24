@@ -2,6 +2,7 @@
 
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/io/core/channel.h"
+#include "fujinet/platform/esp32/pinmap.h"
 
 #include <vector>
 #include <cstdint>
@@ -42,11 +43,20 @@ public:
     /// Get current baud rate.
     uint32_t getBaudrate();
 
-    /// Set baud rate.
+    /// Set baud rate (updates hardware and stored `UartConfig`).
     void setBaudrate(uint32_t baud);
+
+    /// Last applied settings (may differ slightly from hardware baud rounding).
+    const config::UartConfig& uart_config() const { return _uart_cfg; }
+
+    /// Re-apply framing/baud/flow on the live UART (driver must already be installed).
+    /// Flushes RX/TX first. Returns false if pins are invalid or ESP-IDF calls fail.
+    bool reconfigure(const config::UartConfig& cfg);
 
 private:
     bool initialize();
+    /// Apply `uart_param_config` + `uart_set_pin` for current `_uart_cfg`.
+    bool apply_hw_parameters(const UartPins& uart_pins);
     bool _initialized{false};
     config::UartConfig _uart_cfg{};
     

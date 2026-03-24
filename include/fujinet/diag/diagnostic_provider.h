@@ -9,6 +9,11 @@
 
 namespace fujinet::core { class FujinetCore; }
 
+namespace fujinet::io {
+class Channel;
+class FujiDevice;
+}
+
 namespace fujinet::diag {
 
 // Providers publish a set of commands and execute them.
@@ -41,5 +46,10 @@ std::unique_ptr<IDiagnosticProvider> create_disk_diagnostic_provider(::fujinet::
 
 // Modem device provider: AT command injection + status/control.
 std::unique_ptr<IDiagnosticProvider> create_modem_diagnostic_provider(::fujinet::core::FujinetCore& core);
+
+// ESP32 UartChannel: inspect/change host UART (FujiBus) settings. Returns nullptr on POSIX or non-UART channel.
+std::unique_ptr<IDiagnosticProvider> create_uart_channel_diagnostic_provider(
+    ::fujinet::io::Channel* channel,
+    ::fujinet::io::FujiDevice* fuji);
 
 } // namespace fujinet::diag
