@@ -646,6 +646,7 @@ class "config::ChannelConfig" as C_0014601375190208620155
 class C_0014601375190208620155 {
 __
 +ptyPath : std::string
++uart : UartConfig
 }
 class "config::FujiConfig" as C_0013064010099190715901
 class C_0013064010099190715901 {

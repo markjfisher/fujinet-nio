@@ -61,10 +61,37 @@ __
 +enabled : bool
 +timezone : std::string
 }
+enum "config::UartParity" as C_0011809635346976144757
+enum C_0011809635346976144757 {
+None
+Even
+Odd
+}
+enum "config::UartStopBits" as C_0000352932751041244767
+enum C_0000352932751041244767 {
+One
+OnePointFive
+Two
+}
+enum "config::UartFlowControl" as C_0005231581209463879465
+enum C_0005231581209463879465 {
+None
+RtsCts
+}
+class "config::UartConfig" as C_0010483269678483040323
+class C_0010483269678483040323 {
+__
++baudRate : std::uint32_t
++dataBits : int
++flowControl : UartFlowControl
++parity : UartParity
++stopBits : UartStopBits
+}
 class "config::ChannelConfig" as C_0014601375190208620155
 class C_0014601375190208620155 {
 __
 +ptyPath : std::string
++uart : UartConfig
 }
 class "config::FujiConfig" as C_0013064010099190715901
 class C_0013064010099190715901 {
@@ -101,6 +128,10 @@ __
 -_relPath : std::string
 }
 C_0016837659718836839167 o-- C_0012427176626669726738 : +bootMode
+C_0010483269678483040323 o-- C_0011809635346976144757 : +parity
+C_0010483269678483040323 o-- C_0000352932751041244767 : +stopBits
+C_0010483269678483040323 o-- C_0005231581209463879465 : +flowControl
+C_0014601375190208620155 o-- C_0010483269678483040323 : +uart
 C_0013064010099190715901 o-- C_0016837659718836839167 : +general
 C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
 C_0013064010099190715901 o-- C_0013943630642961179492 : +mounts
