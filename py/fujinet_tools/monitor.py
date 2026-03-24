@@ -167,8 +167,6 @@ def _format_packet_line(
         parts.append(f"hex={pretty_hex(pkt.payload)}")
     elif show_hex and pkt.payload:
         parts.append(f"hex={_hex_preview(pkt.payload)}")
-    if show_decoded_hex:
-        parts.append("decoded_hex=...see-next-line")
 
     return " ".join(parts)
 
@@ -207,8 +205,6 @@ def _format_invalid_line(
         parts.append(f"decoded_ascii='{_ascii_preview(decoded, 24)}'")
     if show_raw:
         parts.append(f"raw={pretty_hex(raw_frame)}")
-    if show_decoded_hex and decoded:
-        parts.append("decoded_hex=...see-next-line")
     return " ".join(parts)
 
 

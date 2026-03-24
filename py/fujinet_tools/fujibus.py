@@ -99,8 +99,9 @@ def slip_decode_ex(frame: bytes) -> SlipDecodeResult:
             elif esc == SLIP_ESC_ESC:
                 out.append(SLIP_ESCAPE)
             else:
-                # unknown escape, keep original escape byte
+                # unknown escape: preserve both literal bytes for diagnostics
                 out.append(b)
+                out.append(esc)
                 warnings.append("unknown_escape_sequence")
         else:
             out.append(b)
