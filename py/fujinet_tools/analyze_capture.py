@@ -11,6 +11,7 @@ from . import diskproto as dp
 from . import fileproto as fp
 from . import modemproto as mp
 from . import netproto as np
+from .host_analysis.base import HostAnnotation
 
 
 DEVICE_NAMES: dict[int, str] = {
@@ -92,8 +93,24 @@ class CapturedFrame:
     payload_ascii_full: str
 
 
+def _host_annotations_for(args: argparse.Namespace, frames: list[CapturedFrame]) -> dict[int, HostAnnotation]:
+    if getattr(args, "host", None) != "bbc":
+        return {}
+
+    from .host_analysis import bbc as host_bbc
+
+    return host_bbc.analyze_frames(frames)
+
+
 def _parse_int_filter(s: str) -> int:
     return int(s, 0)
+
+
+def _parse_host(s: str) -> str:
+    host = s.strip().lower()
+    if host != "bbc":
+        raise argparse.ArgumentTypeError(f"unsupported host analyzer: {s}")
+    return host
 
 
 def _short_ts(ts: str) -> str:
@@ -259,7 +276,7 @@ def _matches(ev: CapturedFrame, args: argparse.Namespace) -> bool:
     return True
 
 
-def _format_summary(ev: CapturedFrame) -> str:
+def _format_summary(ev: CapturedFrame, host_annotation: HostAnnotation | None = None) -> str:
     head = [
         f"#{ev.frame_no if ev.frame_no is not None else '?'}",
         _short_ts(ev.timestamp),
@@ -280,28 +297,46 @@ def _format_summary(ev: CapturedFrame) -> str:
     head += [
         f"dev={_device_name(ev.device)}(0x{(ev.device or 0):02X})",
         f"cmd={_command_name(ev.device, ev.command)}(0x{(ev.command or 0):02X})",
-        f"chk={'OK' if ev.checksum_ok else 'BAD'}",
+        f"chk={'ok' if ev.checksum_ok else 'bad'}",
         f"params={_params_compact(ev)}",
         f"payload={ev.payload_length}",
     ]
     hints = _payload_hints(ev)
-    if hints:
+    if hints and not (
+        host_annotation
+        and (host_annotation.suppress_summary_hint or host_annotation.suppress_summary_payload_hint)
+    ):
         head.append(f"hint={json.dumps(hints[0])}")
+    if host_annotation and host_annotation.summary_suffix:
+        head.append(host_annotation.summary_suffix)
     return " ".join(head)
 
 
-def _print_detail(ev: CapturedFrame) -> None:
-    print(f"  slip={ev.slip_status} parse={ev.parse_status} checksum_ok={ev.checksum_ok}")
+def _print_detail(ev: CapturedFrame, host_annotation: HostAnnotation | None = None) -> None:
+    checksum_text = "ok" if ev.checksum_ok else "bad"
+    print(f"  slip={ev.slip_status} parse={ev.parse_status} checksum={checksum_text}")
     if ev.params:
         print(f"  params_int={ev.params}")
     if ev.params_hex:
         print(f"  params_hex={ev.params_hex}")
     hints = _payload_hints(ev)
-    if hints:
+    if hints and not (host_annotation and host_annotation.suppress_payload_hints):
         print(f"  payload_hints={hints}")
     semantic = _decode_semantic_hint(ev)
     if semantic:
         print(f"  decode={semantic}")
+    if host_annotation:
+        print(f"  host_hint={host_annotation.host_hint}")
+        if host_annotation.confidence:
+            print(f"  host_confidence={host_annotation.confidence}")
+        if host_annotation.host_decode:
+            print(f"  host_decode={host_annotation.host_decode}")
+        if host_annotation.validation_status:
+            print(f"  host_validate={host_annotation.validation_status}")
+        if host_annotation.validation_detail:
+            print(f"  host_validate_detail={host_annotation.validation_detail}")
+        for line in host_annotation.extra_lines:
+            print(f"  {line}")
     if ev.slip_reason:
         print(f"  slip_reason={ev.slip_reason}")
     if ev.parse_reason:
@@ -310,6 +345,7 @@ def _print_detail(ev: CapturedFrame) -> None:
 
 def analyze_capture(args: argparse.Namespace) -> int:
     path = Path(args.capture)
+    frames: list[CapturedFrame] = []
     malformed = 0
     total = 0
     shown = 0
@@ -327,6 +363,7 @@ def analyze_capture(args: argparse.Namespace) -> int:
             continue
 
         ev = _frame_from_record(line_no, obj)
+        frames.append(ev)
         total += 1
         if ev.device is not None:
             devices[ev.device] += 1
@@ -342,10 +379,17 @@ def analyze_capture(args: argparse.Namespace) -> int:
         if not _matches(ev, args):
             continue
 
-        print(_format_summary(ev))
+    host_annotations = _host_annotations_for(args, frames)
+
+    for ev in frames:
+        if not _matches(ev, args):
+            continue
+
+        host_annotation = host_annotations.get(ev.line_no)
+        print(_format_summary(ev, host_annotation))
         shown += 1
         if args.detail:
-            _print_detail(ev)
+            _print_detail(ev, host_annotation)
 
     if args.stats:
         print("-- stats --")
@@ -364,6 +408,7 @@ def register_subcommands(subparsers) -> None:
     pa = subparsers.add_parser("analyze-capture", help="Analyze FujiBus monitor JSONL capture")
     pa.add_argument("capture", help="Path to JSONL capture file produced by the monitor")
     pa.add_argument("--detail", action="store_true", help="Show extra decoded detail below each matching frame")
+    pa.add_argument("--host", type=_parse_host, default=None, help="Enable lightweight host-specific analysis (currently: bbc)")
     pa.add_argument("--device", type=_parse_int_filter, default=None, help="Filter by device id, e.g. 0xFE")
     pa.add_argument("--command", type=_parse_int_filter, default=None, help="Filter by command id, e.g. 0x02")
     pa.add_argument("--checksum-fail", action="store_true", help="Show only checksum failures")
@@ -378,6 +423,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Analyze FujiBus monitor JSONL captures")
     p.add_argument("capture", help="Path to JSONL capture file produced by the monitor")
     p.add_argument("--detail", action="store_true", help="Show extra decoded detail below each matching frame")
+    p.add_argument("--host", type=_parse_host, default=None, help="Enable lightweight host-specific analysis (currently: bbc)")
     p.add_argument("--device", type=_parse_int_filter, default=None, help="Filter by device id, e.g. 0xFE")
     p.add_argument("--command", type=_parse_int_filter, default=None, help="Filter by command id, e.g. 0x02")
     p.add_argument("--checksum-fail", action="store_true", help="Show only checksum failures")
