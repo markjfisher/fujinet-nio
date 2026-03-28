@@ -1,70 +1,5 @@
 @startuml
 title Filesystem (auto-gen from clang-uml)
-class "fs::PathContext" as C_0017149840192841842787
-class C_0017149840192841842787 {
-__
-+cwd_fs : std::string
-+cwd_path : std::string
-}
-class "fs::ResolvedTarget" as C_0005227273030995872898
-class C_0005227273030995872898 {
-__
-+display_path : std::string
-+fs_name : std::string
-+fs_path : std::string
-}
-abstract "fs::IPathHandler" as C_0000734777446487978569
-abstract C_0000734777446487978569 {
-+~IPathHandler() constexpr = default : void
-..
-{abstract} +can_handle(std::string_view spec, const PathContext & ctx) const = 0 : bool
-{abstract} +resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const = 0 : bool
-__
-}
-class "fs::PathResolver" as C_0018164203139191836918
-class C_0018164203139191836918 {
-+PathResolver() : void
-+PathResolver(const PathResolver &) = deleted : void
-+~PathResolver() constexpr = default : void
-..
-+operator=(const PathResolver &) = deleted : PathResolver &
-..
-+registerHandler(std::unique_ptr<IPathHandler> handler) : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-+resolveOrCwd(const std::vector<std::string_view> & argv, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
--_handlers : std::vector<std::unique_ptr<IPathHandler>>
-}
-class "fs::FsPrefixResolver" as C_0011250052154589645767
-class C_0011250052154589645767 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
-class "fs::RelativePathResolver" as C_0009054822670205828333
-class C_0009054822670205828333 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
-class "fs::TnfsPrefixResolver" as C_0006279482444175084267
-class C_0006279482444175084267 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
-class "fs::TnfsRelativeResolver" as C_0004513185020093159945
-class C_0004513185020093159945 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
-class "fs::TnfsUriResolver" as C_0016978127350543900368
-class C_0016978127350543900368 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
 enum "fs::FileSystemKind" as C_0014883681608496495557
 enum C_0014883681608496495557 {
 LocalFlash
@@ -112,6 +47,32 @@ abstract C_0012397556205933868732 {
 {abstract} +stat(const std::string & path, FileInfo & outInfo) = 0 : bool
 __
 }
+class "fs::UriParts" as C_0002767221591476794428
+class C_0002767221591476794428 {
+__
++authority : std::string
++path : std::string
++scheme : std::string
+}
+class "fs::StorageManager" as C_0001279065520068563954
+class C_0001279065520068563954 {
++StorageManager() = default : void
++StorageManager(const StorageManager &) = deleted : void
++~StorageManager() = default : void
+..
++operator=(const StorageManager &) = deleted : StorageManager &
+..
++get(const std::string & name) : IFileSystem *
++get(const std::string & name) const : const IFileSystem *
++getByScheme(const std::string & scheme) : IFileSystem *
++getByScheme(const std::string & scheme) const : const IFileSystem *
++listNames() const : std::vector<std::string>
++registerFileSystem(std::unique_ptr<IFileSystem> fs) : bool
++resolveUri(const std::string & uri) : std::pair<IFileSystem *,std::string>
++unregisterFileSystem(const std::string & name) : bool
+__
+-_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
+}
 class "fs::HttpFileSystem" as C_0017926825113595461604
 class C_0017926825113595461604 {
 +createDirectory(const std::string & path) : bool
@@ -136,13 +97,6 @@ __
 +port : std::uint16_t
 +useTcp : bool
 +user : std::string
-}
-class "fs::UriParts" as C_0002767221591476794428
-class C_0002767221591476794428 {
-__
-+authority : std::string
-+path : std::string
-+scheme : std::string
 }
 class "fs::TnfsFile" as C_0001141488783119530799
 class C_0001141488783119530799 {
@@ -212,24 +166,70 @@ __
 +endpoint : TnfsEndpoint
 +path : std::string
 }
-class "fs::StorageManager" as C_0001279065520068563954
-class C_0001279065520068563954 {
-+StorageManager() = default : void
-+StorageManager(const StorageManager &) = deleted : void
-+~StorageManager() = default : void
-..
-+operator=(const StorageManager &) = deleted : StorageManager &
-..
-+get(const std::string & name) : IFileSystem *
-+get(const std::string & name) const : const IFileSystem *
-+getByScheme(const std::string & scheme) : IFileSystem *
-+getByScheme(const std::string & scheme) const : const IFileSystem *
-+listNames() const : std::vector<std::string>
-+registerFileSystem(std::unique_ptr<IFileSystem> fs) : bool
-+resolveUri(const std::string & uri) : std::pair<IFileSystem *,std::string>
-+unregisterFileSystem(const std::string & name) : bool
+class "fs::PathContext" as C_0017149840192841842787
+class C_0017149840192841842787 {
 __
--_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
++cwd_fs : std::string
++cwd_path : std::string
+}
+class "fs::ResolvedTarget" as C_0005227273030995872898
+class C_0005227273030995872898 {
+__
++display_path : std::string
++fs_name : std::string
++fs_path : std::string
+}
+abstract "fs::IPathHandler" as C_0000734777446487978569
+abstract C_0000734777446487978569 {
++~IPathHandler() constexpr = default : void
+..
+{abstract} +can_handle(std::string_view spec, const PathContext & ctx) const = 0 : bool
+{abstract} +resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const = 0 : bool
+__
+}
+class "fs::PathResolver" as C_0018164203139191836918
+class C_0018164203139191836918 {
++PathResolver() : void
++PathResolver(const PathResolver &) = deleted : void
++~PathResolver() constexpr = default : void
+..
++operator=(const PathResolver &) = deleted : PathResolver &
+..
++registerHandler(std::unique_ptr<IPathHandler> handler) : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
++resolveOrCwd(const std::vector<std::string_view> & argv, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
+-_handlers : std::vector<std::unique_ptr<IPathHandler>>
+}
+class "fs::TnfsRelativeResolver" as C_0004513185020093159945
+class C_0004513185020093159945 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
+}
+class "fs::FsPrefixResolver" as C_0011250052154589645767
+class C_0011250052154589645767 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
+}
+class "fs::RelativePathResolver" as C_0009054822670205828333
+class C_0009054822670205828333 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
+}
+class "fs::TnfsPrefixResolver" as C_0006279482444175084267
+class C_0006279482444175084267 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
+}
+class "fs::TnfsUriResolver" as C_0016978127350543900368
+class C_0016978127350543900368 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
 }
 class "fs::StdioFile" as C_0007693094110734758389
 class C_0007693094110734758389 {
@@ -266,29 +266,10 @@ __
 -_name : std::string
 -_root : std::string
 }
-C_0000734777446487978569 ..> C_0017149840192841842787
-C_0000734777446487978569 ..> C_0005227273030995872898
-C_0018164203139191836918 ..> C_0017149840192841842787
-C_0018164203139191836918 ..> C_0005227273030995872898
-C_0018164203139191836918 o-- C_0000734777446487978569 : -_handlers
-C_0011250052154589645767 ..> C_0017149840192841842787
-C_0011250052154589645767 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0011250052154589645767
-C_0009054822670205828333 ..> C_0017149840192841842787
-C_0009054822670205828333 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0009054822670205828333
-C_0006279482444175084267 ..> C_0017149840192841842787
-C_0006279482444175084267 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0006279482444175084267
-C_0004513185020093159945 ..> C_0017149840192841842787
-C_0004513185020093159945 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0004513185020093159945
-C_0016978127350543900368 ..> C_0017149840192841842787
-C_0016978127350543900368 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0016978127350543900368
 C_0012397556205933868732 ..> C_0014883681608496495557
 C_0012397556205933868732 ..> C_0014904826619290153445
 C_0012397556205933868732 ..> C_0007646493544420080876
+C_0001279065520068563954 o-- C_0012397556205933868732 : -_fileSystems
 C_0017926825113595461604 ..> C_0014883681608496495557
 C_0017926825113595461604 ..> C_0014904826619290153445
 C_0017926825113595461604 ..> C_0007646493544420080876
@@ -306,7 +287,26 @@ C_0014930310490567351521 --+ C_0004815503964018113655
 C_0014930310490567351521 o-- C_0014824357918949884358 : +endpoint
 C_0008873171637048110288 --+ C_0004815503964018113655
 C_0008873171637048110288 o-- C_0014824357918949884358 : +endpoint
-C_0001279065520068563954 o-- C_0012397556205933868732 : -_fileSystems
+C_0000734777446487978569 ..> C_0017149840192841842787
+C_0000734777446487978569 ..> C_0005227273030995872898
+C_0018164203139191836918 ..> C_0017149840192841842787
+C_0018164203139191836918 ..> C_0005227273030995872898
+C_0018164203139191836918 o-- C_0000734777446487978569 : -_handlers
+C_0004513185020093159945 ..> C_0017149840192841842787
+C_0004513185020093159945 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0004513185020093159945
+C_0011250052154589645767 ..> C_0017149840192841842787
+C_0011250052154589645767 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0011250052154589645767
+C_0009054822670205828333 ..> C_0017149840192841842787
+C_0009054822670205828333 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0009054822670205828333
+C_0006279482444175084267 ..> C_0017149840192841842787
+C_0006279482444175084267 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0006279482444175084267
+C_0016978127350543900368 ..> C_0017149840192841842787
+C_0016978127350543900368 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0016978127350543900368
 C_0014904826619290153445 <|-- C_0007693094110734758389
 C_0001007711765235056436 ..> C_0014904826619290153445
 C_0001007711765235056436 ..> C_0007646493544420080876
