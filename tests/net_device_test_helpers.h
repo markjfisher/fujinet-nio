@@ -131,6 +131,28 @@ inline IOResponse read_req(
     return dev.handle(rreq);
 }
 
+inline IOResponse info_read_req(
+    NetworkDevice& dev,
+    std::uint16_t deviceId,
+    std::uint16_t handle,
+    std::uint32_t offset,
+    std::uint16_t maxBytes
+) {
+    std::string rp;
+    netproto::write_u8(rp, V);
+    netproto::write_u16le(rp, handle);
+    netproto::write_u32le(rp, offset);
+    netproto::write_u16le(rp, maxBytes);
+
+    IORequest rreq{};
+    rreq.id = 350;
+    rreq.deviceId = deviceId;
+    rreq.command = 0x06; // InfoRead
+    rreq.payload = to_vec(rp);
+
+    return dev.handle(rreq);
+}
+
 inline IOResponse write_req(
     NetworkDevice& dev,
     std::uint16_t deviceId,

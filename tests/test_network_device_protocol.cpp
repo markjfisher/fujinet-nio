@@ -35,7 +35,7 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
         std::uint8_t iver = 0, iflags = 0;
         std::uint16_t ires = 0, ihandle = 0, httpStatus = 0;
         std::uint64_t contentLength = 0;
-        std::uint16_t hdrLen = 0;
+        std::uint32_t hdrLen = 0;
 
         REQUIRE(ir.read_u8(iver));
         REQUIRE(ir.read_u8(iflags));
@@ -43,7 +43,7 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
         REQUIRE(ir.read_u16le(ihandle));
         REQUIRE(ir.read_u16le(httpStatus));
         REQUIRE(ir.read_u64le(contentLength));
-        REQUIRE(ir.read_u16le(hdrLen));
+        REQUIRE(ir.read_u32le(hdrLen));
 
         CHECK(iver == V);
         CHECK(ihandle == handle);
@@ -52,10 +52,27 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
         CHECK((iflags & 0x04) != 0); // hasHttpStatus
         CHECK(hdrLen > 0);
 
-        const std::uint8_t* hdrPtr = nullptr;
-        REQUIRE(ir.read_bytes(hdrPtr, hdrLen));
+        CHECK(ir.remaining() == 0);
 
-        std::string hdr(reinterpret_cast<const char*>(hdrPtr), hdrLen);
+        IOResponse hresp = info_read_req(dev, deviceId, handle, 0, 1024);
+        CHECK(hresp.status == StatusCode::Ok);
+        netproto::Reader hr(hresp.payload.data(), hresp.payload.size());
+        std::uint8_t hver = 0, hflags = 0;
+        std::uint16_t hres = 0, hhandle = 0, hlen = 0;
+        std::uint32_t hoff = 0;
+        REQUIRE(hr.read_u8(hver));
+        REQUIRE(hr.read_u8(hflags));
+        REQUIRE(hr.read_u16le(hres));
+        REQUIRE(hr.read_u16le(hhandle));
+        REQUIRE(hr.read_u32le(hoff));
+        REQUIRE(hr.read_u16le(hlen));
+        CHECK(hver == V);
+        CHECK(hhandle == handle);
+        CHECK(hoff == 0);
+        CHECK((hflags & 0x01) != 0);
+        const std::uint8_t* hdrPtr = nullptr;
+        REQUIRE(hr.read_bytes(hdrPtr, hlen));
+        std::string hdr(reinterpret_cast<const char*>(hdrPtr), hlen);
         CHECK(hdr.find("Server:") != std::string::npos);
     }
 
@@ -130,7 +147,7 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         std::uint16_t reserved = 0, handle = 0;
         std::uint16_t httpStatus = 0;
         std::uint64_t contentLen = 0;
-        std::uint16_t hdrLen = 0;
+        std::uint32_t hdrLen = 0;
 
         REQUIRE(r.read_u8(ver));
         REQUIRE(r.read_u8(flags));
@@ -138,7 +155,7 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         REQUIRE(r.read_u16le(handle));
         REQUIRE(r.read_u16le(httpStatus));
         REQUIRE(r.read_u64le(contentLen));
-        REQUIRE(r.read_u16le(hdrLen));
+        REQUIRE(r.read_u32le(hdrLen));
 
         CHECK(ver == V);
         CHECK(handle == h);
@@ -165,7 +182,7 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         std::uint16_t reserved = 0, handle = 0;
         std::uint16_t httpStatus = 0;
         std::uint64_t contentLen = 0;
-        std::uint16_t hdrLen = 0;
+        std::uint32_t hdrLen = 0;
 
         REQUIRE(r.read_u8(ver));
         REQUIRE(r.read_u8(flags));
@@ -173,16 +190,30 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         REQUIRE(r.read_u16le(handle));
         REQUIRE(r.read_u16le(httpStatus));
         REQUIRE(r.read_u64le(contentLen));
-        REQUIRE(r.read_u16le(hdrLen));
+        REQUIRE(r.read_u32le(hdrLen));
 
         REQUIRE(ver == V);
         REQUIRE(handle == h);
         REQUIRE((flags & 0x01) != 0); // headersIncluded must be true
         REQUIRE(hdrLen > 0);
 
+        CHECK(r.remaining() == 0);
+
+        IOResponse hresp = info_read_req(dev, deviceId, h, 0, 1024);
+        REQUIRE(hresp.status == StatusCode::Ok);
+        netproto::Reader hr(hresp.payload.data(), hresp.payload.size());
+        std::uint8_t hver = 0, hflags = 0;
+        std::uint16_t hres = 0, hhandle = 0, hlen = 0;
+        std::uint32_t hoff = 0;
+        REQUIRE(hr.read_u8(hver));
+        REQUIRE(hr.read_u8(hflags));
+        REQUIRE(hr.read_u16le(hres));
+        REQUIRE(hr.read_u16le(hhandle));
+        REQUIRE(hr.read_u32le(hoff));
+        REQUIRE(hr.read_u16le(hlen));
         const std::uint8_t* hdrPtr = nullptr;
-        REQUIRE(r.read_bytes(hdrPtr, hdrLen));
-        std::string hdrs(reinterpret_cast<const char*>(hdrPtr), hdrLen);
+        REQUIRE(hr.read_bytes(hdrPtr, hlen));
+        std::string hdrs(reinterpret_cast<const char*>(hdrPtr), hlen);
 
         CHECK(hdrs.find("Server:") != std::string::npos);
         CHECK(hdrs.find("Content-Type:") == std::string::npos); // must not be included
@@ -207,7 +238,7 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         std::uint16_t reserved = 0, handle = 0;
         std::uint16_t httpStatus = 0;
         std::uint64_t contentLen = 0;
-        std::uint16_t hdrLen = 0;
+        std::uint32_t hdrLen = 0;
 
         REQUIRE(r.read_u8(ver));
         REQUIRE(r.read_u8(flags));
@@ -215,14 +246,26 @@ TEST_CASE("NetworkDevice v1: response headers are only returned when requested (
         REQUIRE(r.read_u16le(handle));
         REQUIRE(r.read_u16le(httpStatus));
         REQUIRE(r.read_u64le(contentLen));
-        REQUIRE(r.read_u16le(hdrLen));
+        REQUIRE(r.read_u32le(hdrLen));
 
         REQUIRE((flags & 0x01) != 0);
         REQUIRE(hdrLen > 0);
 
+        IOResponse hresp = info_read_req(dev, deviceId, h, 0, 1024);
+        REQUIRE(hresp.status == StatusCode::Ok);
+        netproto::Reader hr(hresp.payload.data(), hresp.payload.size());
+        std::uint8_t hver = 0, hflags = 0;
+        std::uint16_t hres = 0, hhandle = 0, hlen = 0;
+        std::uint32_t hoff = 0;
+        REQUIRE(hr.read_u8(hver));
+        REQUIRE(hr.read_u8(hflags));
+        REQUIRE(hr.read_u16le(hres));
+        REQUIRE(hr.read_u16le(hhandle));
+        REQUIRE(hr.read_u32le(hoff));
+        REQUIRE(hr.read_u16le(hlen));
         const std::uint8_t* hdrPtr = nullptr;
-        REQUIRE(r.read_bytes(hdrPtr, hdrLen));
-        std::string hdrs(reinterpret_cast<const char*>(hdrPtr), hdrLen);
+        REQUIRE(hr.read_bytes(hdrPtr, hlen));
+        std::string hdrs(reinterpret_cast<const char*>(hdrPtr), hlen);
         
         CHECK(hdrs.find("Server:") != std::string::npos);
 

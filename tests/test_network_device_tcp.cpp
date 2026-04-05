@@ -194,8 +194,7 @@ struct InfoParsed {
     std::uint16_t handle = 0;
     std::uint16_t httpStatus = 0;
     std::uint64_t contentLength = 0;
-    std::uint16_t hdrLen = 0;
-    std::string   headers;
+    std::uint32_t hdrLen = 0;
 };
 
 static bool parse_info_response(const IOResponse& resp, InfoParsed& out)
@@ -208,13 +207,40 @@ static bool parse_info_response(const IOResponse& resp, InfoParsed& out)
     if (!r.read_u16le(out.handle)) return false;
     if (!r.read_u16le(out.httpStatus)) return false;
     if (!r.read_u64le(out.contentLength)) return false;
-    if (!r.read_u16le(out.hdrLen)) return false;
-
-    const std::uint8_t* p = nullptr;
-    if (!r.read_bytes(p, out.hdrLen)) return false;
-
-    out.headers.assign(reinterpret_cast<const char*>(p), reinterpret_cast<const char*>(p + out.hdrLen));
+    if (!r.read_u32le(out.hdrLen)) return false;
     return r.remaining() == 0;
+}
+
+static bool fetch_info_headers(NetworkDevice& dev, std::uint16_t deviceId, std::uint16_t handle, std::uint32_t hdrLen, std::string& out)
+{
+    out.clear();
+    std::uint32_t offset = 0;
+    while (offset < hdrLen) {
+        IOResponse rr = info_read_req(dev, deviceId, handle, offset, 128);
+        if (rr.status != StatusCode::Ok) return false;
+
+        netproto::Reader r(rr.payload.data(), rr.payload.size());
+        std::uint8_t ver = 0, flags = 0;
+        std::uint16_t reserved = 0, h = 0, len = 0;
+        std::uint32_t off = 0;
+        if (!r.read_u8(ver)) return false;
+        if (!r.read_u8(flags)) return false;
+        if (!r.read_u16le(reserved)) return false;
+        if (!r.read_u16le(h)) return false;
+        if (!r.read_u32le(off)) return false;
+        if (!r.read_u16le(len)) return false;
+        if (ver != V || h != handle || off != offset) return false;
+
+        const std::uint8_t* p = nullptr;
+        if (!r.read_bytes(p, len)) return false;
+        out.append(reinterpret_cast<const char*>(p), reinterpret_cast<const char*>(p + len));
+        if (r.remaining() != 0) return false;
+
+        offset += len;
+        if ((flags & 0x01) != 0) break;
+        if (len == 0) return false;
+    }
+    return out.size() == hdrLen;
 }
 
 template <typename Pred>
@@ -255,7 +281,9 @@ TEST_CASE("TCP: Open + Write + Read echoes bytes (sequential offsets)")
         if (ir.status != StatusCode::Ok) return false;
         InfoParsed ip;
         if (!parse_info_response(ir, ip)) return false;
-        return ip.headers.find("X-FujiNet-Connected: 1") != std::string::npos;
+        std::string headers;
+        if (!fetch_info_headers(dev, deviceId, handle, ip.hdrLen, headers)) return false;
+        return headers.find("X-FujiNet-Connected: 1") != std::string::npos;
     }, 1500));
 
     // Write "hello"
@@ -350,9 +378,11 @@ TEST_CASE("TCP: Info exposes pseudo-headers without breaking v1 flags")
     CHECK((ip.flags & 0x02) == 0); // no content-length for tcp
     CHECK((ip.flags & 0x04) == 0); // no http status for tcp
 
-    CHECK(ip.headers.find("X-FujiNet-Scheme: tcp") != std::string::npos);
-    CHECK(ip.headers.find("X-FujiNet-RxAvailable:") != std::string::npos);
-    CHECK(ip.headers.find("X-FujiNet-LastError:") != std::string::npos);
+    std::string headers;
+    REQUIRE(fetch_info_headers(dev, deviceId, handle, ip.hdrLen, headers));
+    CHECK(headers.find("X-FujiNet-Scheme: tcp") != std::string::npos);
+    CHECK(headers.find("X-FujiNet-RxAvailable:") != std::string::npos);
+    CHECK(headers.find("X-FujiNet-LastError:") != std::string::npos);
 
     CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
 }
@@ -376,8 +406,9 @@ TEST_CASE("TCP: Write enforces sequential offset (mismatch => InvalidRequest)")
 
         InfoParsed ip;
         if (!parse_info_response(ir, ip)) return false;
-
-        return ip.headers.find("X-FujiNet-Connected: 1") != std::string::npos;
+        std::string headers;
+        if (!fetch_info_headers(dev, deviceId, handle, ip.hdrLen, headers)) return false;
+        return headers.find("X-FujiNet-Connected: 1") != std::string::npos;
     }, 1500));
 
     // First write at offset 0 should succeed (or transiently DeviceBusy).

@@ -27,11 +27,12 @@ FLAG_BODY_IS_CHUNKED_OR_UNKNOWN = 0x04
 FLAG_ALLOW_EVICT = 0x08
 
 # NetworkCommand (v1)
-CMD_OPEN = 0x01
-CMD_READ = 0x02
-CMD_WRITE = 0x03
-CMD_CLOSE = 0x04
-CMD_INFO = 0x05
+CMD_OPEN      = 0x01
+CMD_READ      = 0x02
+CMD_WRITE     = 0x03
+CMD_CLOSE     = 0x04
+CMD_INFO      = 0x05
+CMD_INFO_READ = 0x06
 
 
 def _check_version(payload: bytes, off: int = 0) -> int:
@@ -168,7 +169,7 @@ class InfoResp:
     handle: int
     http_status: Optional[int]
     content_length: Optional[int]
-    header_bytes: bytes
+    header_length: int
 
 
 def parse_info_resp(payload: bytes) -> InfoResp:
@@ -178,11 +179,7 @@ def parse_info_resp(payload: bytes) -> InfoResp:
     handle, off = read_u16le(payload, off)
     http_status, off = read_u16le(payload, off)
     content_length, off = read_u64le(payload, off)
-    hdr_len, off = read_u16le(payload, off)
-    if off + hdr_len > len(payload):
-        raise ValueError("header bytes out of bounds")
-    hdr = payload[off : off + hdr_len]
-    off += hdr_len
+    hdr_len, off = read_u32le(payload, off)
     if off != len(payload):
         raise ValueError("trailing bytes in info response")
 
@@ -196,7 +193,48 @@ def parse_info_resp(payload: bytes) -> InfoResp:
         handle=handle,
         http_status=http_status if has_status else None,
         content_length=content_length if has_len else None,
-        header_bytes=hdr,
+        header_length=hdr_len,
+    )
+
+
+def build_info_read_req(handle: int, offset: int, max_bytes: int) -> bytes:
+    if not (0 <= handle <= 0xFFFF):
+        raise ValueError("handle must fit u16")
+    if not (0 <= offset <= 0xFFFFFFFF):
+        raise ValueError("offset must fit u32")
+    if not (0 <= max_bytes <= 0xFFFF):
+        raise ValueError("max_bytes must fit u16")
+    return bytes([NETPROTO_VERSION]) + u16le(handle) + u32le(offset) + u16le(max_bytes)
+
+
+@dataclass
+class InfoReadResp:
+    eof: bool
+    truncated: bool
+    handle: int
+    offset: int
+    data: bytes
+
+
+def parse_info_read_resp(payload: bytes) -> InfoReadResp:
+    off = _check_version(payload, 0)
+    flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    handle, off = read_u16le(payload, off)
+    offset, off = read_u32le(payload, off)
+    data_len, off = read_u16le(payload, off)
+    if off + data_len > len(payload):
+        raise ValueError("info-read data out of bounds")
+    data = payload[off : off + data_len]
+    off += data_len
+    if off != len(payload):
+        raise ValueError("trailing bytes in info-read response")
+    return InfoReadResp(
+        eof=bool(flags & 0x01),
+        truncated=bool(flags & 0x02),
+        handle=handle,
+        offset=offset,
+        data=data,
     )
 
 
@@ -214,7 +252,13 @@ def build_write_req(handle: int, offset: int, data: bytes) -> bytes:
         raise ValueError("offset must fit u32")
     if len(data) > 0xFFFF:
         raise ValueError("data too large for u16 length; split it")
-    return bytes([NETPROTO_VERSION]) + u16le(handle) + u32le(offset) + u16le(len(data)) + data
+    return (
+        bytes([NETPROTO_VERSION])
+        + u16le(handle)
+        + u32le(offset)
+        + u16le(len(data))
+        + data
+    )
 
 
 def parse_write_resp(payload: bytes) -> WriteResp:

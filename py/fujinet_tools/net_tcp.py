@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 import time
-import serial # type: ignore
+import serial  # type: ignore
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -11,6 +11,50 @@ from typing import Optional, Tuple
 from .fujibus import FujiBusSession
 from . import netproto as np
 from .common import status_ok, open_serial
+
+
+def _fetch_info_headers(
+    *,
+    bus: FujiBusSession,
+    handle: int,
+    timeout: float,
+    header_length: int,
+    chunk_size: int = 512,
+) -> bytes:
+    out = bytearray()
+    offset = 0
+    while offset < header_length:
+        req = np.build_info_read_req(
+            handle, offset, min(chunk_size, header_length - offset)
+        )
+        pkt = _send_retry(
+            bus=bus,
+            device=np.NETWORK_DEVICE_ID,
+            command=np.CMD_INFO_READ,
+            payload=req,
+            timeout=timeout,
+            retries=200,
+            sleep_s=0.01,
+            cmd_txt="INFO_READ",
+        )
+        if pkt is None:
+            raise RuntimeError("No response to InfoRead")
+        if not status_ok(pkt):
+            code = _pkt_status_code(pkt)
+            raise RuntimeError(f"InfoRead failed: status={code} ({_status_str(code)})")
+        rr = np.parse_info_read_resp(pkt.payload)
+        if rr.offset != offset:
+            raise RuntimeError(
+                f"InfoRead offset mismatch: expected {offset}, got {rr.offset}"
+            )
+        out.extend(rr.data)
+        offset += len(rr.data)
+        if rr.eof:
+            break
+        if len(rr.data) == 0:
+            break
+    return bytes(out)
+
 
 # Reuse status text mapping from net.py style (keep local so this file is standalone)
 STATUS_TEXT = {
@@ -25,13 +69,16 @@ STATUS_TEXT = {
     8: "Unsupported",
 }
 
+
 def _status_str(code: int) -> str:
     return STATUS_TEXT.get(code, f"Unknown({code})")
+
 
 def _pkt_status_code(pkt) -> int:
     if not pkt or not pkt.params:
         return -1
     return int(pkt.params[0])
+
 
 def _send_retry(
     *,
@@ -128,15 +175,11 @@ def _tcp_url_with_opts(
     return base + "?" + "&".join(opts)
 
 
-def _parse_tcp_connected_from_info(ir: np.InfoResp) -> Tuple[bool, bool]:
+def _parse_tcp_connected_from_text(text: str) -> Tuple[bool, bool]:
     """
     Returns (connected, connecting) from TCP pseudo headers, if present.
     If headers are absent or unparsable, returns (False, False).
     """
-    if not ir.header_bytes:
-        return (False, False)
-
-    text = ir.header_bytes.decode("utf-8", errors="replace")
     connected = False
     connecting = False
     for line in text.splitlines():
@@ -163,7 +206,14 @@ def tcp_open(
     info_poll_s: float,
 ) -> TcpStreamSession:
     # method is ignored by TCP backend; use GET (1) for consistency
-    open_req = np.build_open_req(method=1, flags=np.FLAG_ALLOW_EVICT, url=url, headers=[], body_len_hint=0)
+    open_req = np.build_open_req(
+        method=1,
+        flags=np.FLAG_ALLOW_EVICT,
+        url=url,
+        headers=[],
+        body_len_hint=0,
+        response_headers=[],
+    )
     pkt = _send_retry(
         bus=bus,
         device=np.NETWORK_DEVICE_ID,
@@ -215,7 +265,17 @@ def tcp_open(
             continue
 
         ir = np.parse_info_resp(ipkt.payload)
-        connected, connecting = _parse_tcp_connected_from_info(ir)
+        headers = b""
+        if ir.header_length > 0:
+            headers = _fetch_info_headers(
+                bus=bus,
+                handle=sess.handle,
+                timeout=timeout,
+                header_length=ir.header_length,
+            )
+        connected, connecting = _parse_tcp_connected_from_text(
+            headers.decode("utf-8", errors="replace")
+        )
         if connected:
             return sess
 
@@ -330,7 +390,9 @@ def tcp_recv_some(
 
     rr = np.parse_read_resp(rpkt.payload)
     if rr.offset != sess.read_offset:
-        raise RuntimeError(f"Offset echo mismatch: expected {sess.read_offset}, got {rr.offset}")
+        raise RuntimeError(
+            f"Offset echo mismatch: expected {sess.read_offset}, got {rr.offset}"
+        )
 
     sess.read_offset += len(rr.data)
     return (rr.data, rr.eof)
@@ -362,10 +424,21 @@ def tcp_info_print(
         print(f"Device status={code} ({_status_str(code)})")
         return
     ir = np.parse_info_resp(pkt.payload)
-    print(f"handle={ir.handle} http_status={ir.http_status} content_length={ir.content_length}")
-    if ir.header_bytes:
-        sys.stdout.write(ir.header_bytes.decode("utf-8", errors="replace"))
-        if not ir.header_bytes.endswith(b"\n"):
+    print(
+        f"handle={ir.handle} http_status={ir.http_status} content_length={ir.content_length} header_length={ir.header_length}"
+    )
+    last_chunk = b""
+    if ir.header_length > 0:
+        headers = _fetch_info_headers(
+            bus=bus,
+            handle=handle,
+            timeout=timeout,
+            header_length=ir.header_length,
+        )
+        if headers:
+            last_chunk = headers
+            sys.stdout.write(headers.decode("utf-8", errors="replace"))
+        if headers and not last_chunk.endswith(b"\n"):
             sys.stdout.write("\n")
 
 
@@ -391,8 +464,9 @@ def tcp_close(*, bus: FujiBusSession, handle: int, timeout: float) -> None:
 def _hexdump(b: bytes, max_len: int = 256) -> str:
     s = b[:max_len].hex()
     if len(b) > max_len:
-        s += f"... (+{len(b)-max_len} bytes)"
+        s += f"... (+{len(b) - max_len} bytes)"
     return s
+
 
 def _parse_hex_bytes(s: str) -> bytes:
     # accepts "aa bb cc" or "aabbcc"
@@ -405,6 +479,7 @@ def _parse_hex_bytes(s: str) -> bytes:
 # ----------------------------------------------------------------------
 # CLI commands (plug into net.py under: fujinet net tcp ...)
 # ----------------------------------------------------------------------
+
 
 def cmd_net_tcp_repl(args) -> int:
     """
@@ -439,7 +514,12 @@ def cmd_net_tcp_repl(args) -> int:
                     info_poll_s=args.info_poll,
                 )
                 if args.show_info:
-                    tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
+                    tcp_info_print(
+                        bus=bus,
+                        handle=sess.handle,
+                        timeout=args.timeout,
+                        max_headers=getattr(args, "max_headers", 0),
+                    )
                 print(f"[tcp] opened handle={sess.handle}")
 
             def ensure_open() -> TcpStreamSession:
@@ -460,13 +540,15 @@ def cmd_net_tcp_repl(args) -> int:
 
                 parts = line.split()
                 cmd = parts[0].lower()
-                rest = line[len(parts[0]):].lstrip()
+                rest = line[len(parts[0]) :].lstrip()
 
                 try:
                     if cmd in ("quit", "exit"):
                         if sess is not None:
                             try:
-                                tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
+                                tcp_close(
+                                    bus=bus, handle=sess.handle, timeout=args.timeout
+                                )
                                 print("[tcp] closed")
                             except Exception:
                                 pass
@@ -482,7 +564,9 @@ def cmd_net_tcp_repl(args) -> int:
                             continue
                         if sess is not None:
                             try:
-                                tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
+                                tcp_close(
+                                    bus=bus, handle=sess.handle, timeout=args.timeout
+                                )
                             except Exception:
                                 pass
                         sess = tcp_open(
@@ -494,7 +578,12 @@ def cmd_net_tcp_repl(args) -> int:
                         )
                         print(f"[tcp] opened handle={sess.handle}")
                         if args.show_info:
-                            tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
+                            tcp_info_print(
+                                bus=bus,
+                                handle=sess.handle,
+                                timeout=args.timeout,
+                                max_headers=getattr(args, "max_headers", 0),
+                            )
                         continue
 
                     if cmd == "close":
@@ -506,12 +595,19 @@ def cmd_net_tcp_repl(args) -> int:
 
                     if cmd == "info":
                         s = ensure_open()
-                        tcp_info_print(bus=bus, handle=s.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
+                        tcp_info_print(
+                            bus=bus,
+                            handle=s.handle,
+                            timeout=args.timeout,
+                            max_headers=getattr(args, "max_headers", 0),
+                        )
                         continue
 
                     if cmd == "offsets":
                         s = ensure_open()
-                        print(f"read_offset={s.read_offset} write_offset={s.write_offset}")
+                        print(
+                            f"read_offset={s.read_offset} write_offset={s.write_offset}"
+                        )
                         continue
 
                     if cmd == "send":
@@ -520,7 +616,13 @@ def cmd_net_tcp_repl(args) -> int:
                             print("usage: send <text...>")
                             continue
                         data = rest.encode("utf-8")
-                        n = tcp_send(bus=bus, sess=s, data=data, timeout=args.timeout, chunk=args.write_chunk)
+                        n = tcp_send(
+                            bus=bus,
+                            sess=s,
+                            data=data,
+                            timeout=args.timeout,
+                            chunk=args.write_chunk,
+                        )
                         print(f"[tcp] sent {n} bytes")
                         continue
 
@@ -530,7 +632,13 @@ def cmd_net_tcp_repl(args) -> int:
                             print("usage: sendhex <aabbcc...>  (spaces ok)")
                             continue
                         data = _parse_hex_bytes(rest)
-                        n = tcp_send(bus=bus, sess=s, data=data, timeout=args.timeout, chunk=args.write_chunk)
+                        n = tcp_send(
+                            bus=bus,
+                            sess=s,
+                            data=data,
+                            timeout=args.timeout,
+                            chunk=args.write_chunk,
+                        )
                         print(f"[tcp] sent {n} bytes")
                         continue
 
@@ -545,7 +653,9 @@ def cmd_net_tcp_repl(args) -> int:
                         n = args.read_chunk
                         if len(parts) >= 2:
                             n = int(parts[1])
-                        data, eof = tcp_recv_some(bus=bus, sess=s, timeout=args.timeout, max_bytes=n)
+                        data, eof = tcp_recv_some(
+                            bus=bus, sess=s, timeout=args.timeout, max_bytes=n
+                        )
                         if data:
                             if args.binary:
                                 # raw bytes to stdout
@@ -570,15 +680,24 @@ def cmd_net_tcp_repl(args) -> int:
                         total = 0
                         idle_deadline = time.monotonic() + max(args.idle_timeout, 0.25)
                         while True:
-                            data, eof = tcp_recv_some(bus=bus, sess=s, timeout=args.timeout, max_bytes=args.read_chunk)
+                            data, eof = tcp_recv_some(
+                                bus=bus,
+                                sess=s,
+                                timeout=args.timeout,
+                                max_bytes=args.read_chunk,
+                            )
                             if data:
                                 total += len(data)
-                                idle_deadline = time.monotonic() + max(args.idle_timeout, 0.25)
+                                idle_deadline = time.monotonic() + max(
+                                    args.idle_timeout, 0.25
+                                )
                                 if args.binary:
                                     sys.stdout.buffer.write(data)
                                     sys.stdout.buffer.flush()
                                 else:
-                                    print(data.decode("utf-8", errors="replace"), end="")
+                                    print(
+                                        data.decode("utf-8", errors="replace"), end=""
+                                    )
                                 if max_total is not None and total >= max_total:
                                     break
                             if eof:
@@ -604,6 +723,7 @@ def cmd_net_tcp_repl(args) -> int:
 
     return 0
 
+
 def cmd_net_tcp_connect(args) -> int:
     with open_serial(port=args.port, baud=args.baud, timeout_s=args.timeout) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
@@ -626,12 +746,18 @@ def cmd_net_tcp_connect(args) -> int:
             wait_connected=args.wait_connected,
             info_poll_s=args.info_poll,
         )
-        print(f"handle={sess.handle} connected={'yes' if args.wait_connected else 'maybe'}")
+        print(
+            f"handle={sess.handle} connected={'yes' if args.wait_connected else 'maybe'}"
+        )
     return 0
 
 
 def cmd_net_tcp_sendrecv(args) -> int:
-    data = Path(args.inp).read_bytes() if args.inp else (args.data.encode("utf-8") if args.data else b"")
+    data = (
+        Path(args.inp).read_bytes()
+        if args.inp
+        else (args.data.encode("utf-8") if args.data else b"")
+    )
 
     out_path = Path(args.out) if args.out else None
     if out_path:
@@ -657,11 +783,22 @@ def cmd_net_tcp_sendrecv(args) -> int:
 
             if args.show_info:
                 # max_headers arg is legacy; tcp_info_print ignores it after your earlier update
-                tcp_info_print(bus=bus, handle=sess.handle, timeout=args.timeout, max_headers=getattr(args, "max_headers", 0))
+                tcp_info_print(
+                    bus=bus,
+                    handle=sess.handle,
+                    timeout=args.timeout,
+                    max_headers=getattr(args, "max_headers", 0),
+                )
 
             # Send payload
             if data:
-                tcp_send(bus=bus, sess=sess, data=data, timeout=args.timeout, chunk=args.write_chunk)
+                tcp_send(
+                    bus=bus,
+                    sess=sess,
+                    data=data,
+                    timeout=args.timeout,
+                    chunk=args.write_chunk,
+                )
 
             # Halfclose TX if requested
             if args.halfclose:
@@ -671,13 +808,24 @@ def cmd_net_tcp_sendrecv(args) -> int:
             # - write any received bytes
             # - reset idle timer on progress
             # - sleep briefly on empty reads (prevents hot-loop flakiness)
-            idle_window = max(float(args.idle_timeout), 0.25) if float(args.idle_timeout) > 0 else 0.0
-            idle_deadline = time.monotonic() + idle_window if idle_window > 0 else float("inf")
+            idle_window = (
+                max(float(args.idle_timeout), 0.25)
+                if float(args.idle_timeout) > 0
+                else 0.0
+            )
+            idle_deadline = (
+                time.monotonic() + idle_window if idle_window > 0 else float("inf")
+            )
 
             total = 0
             while True:
                 try:
-                    chunk, eof = tcp_recv_some(bus=bus, sess=sess, timeout=args.timeout, max_bytes=args.read_chunk)
+                    chunk, eof = tcp_recv_some(
+                        bus=bus,
+                        sess=sess,
+                        timeout=args.timeout,
+                        max_bytes=args.read_chunk,
+                    )
                 except RuntimeError as e:
                     # If we've already received some bytes, and the peer disappears abruptly (RST/close),
                     # the device may report IOError. Treat that as EOF once we've got data.
@@ -715,7 +863,9 @@ def cmd_net_tcp_sendrecv(args) -> int:
                 time.sleep(0.02)
 
             if args.verbose:
-                print(f"\nread_total={total} bytes read_offset={sess.read_offset} write_offset={sess.write_offset}")
+                print(
+                    f"\nread_total={total} bytes read_offset={sess.read_offset} write_offset={sess.write_offset}"
+                )
 
             return 0
         finally:
@@ -725,7 +875,6 @@ def cmd_net_tcp_sendrecv(args) -> int:
                     tcp_close(bus=bus, handle=sess.handle, timeout=args.timeout)
                 except Exception:
                     pass
-
 
 
 def register_tcp_subcommands(nsub) -> None:
@@ -744,32 +893,67 @@ def register_tcp_subcommands(nsub) -> None:
     pc.add_argument("--keepalive", type=int, choices=[0, 1], default=None)
     pc.add_argument("--rx-buf", type=int, default=None)
     pc.add_argument("--halfclose", type=int, choices=[0, 1], default=None)
-    pc.add_argument("--wait-connected", action="store_true", help="Poll Info until connected=1")
-    pc.add_argument("--info-poll", type=float, default=0.01, help="Sleep between Info polls")
+    pc.add_argument(
+        "--wait-connected", action="store_true", help="Poll Info until connected=1"
+    )
+    pc.add_argument(
+        "--info-poll", type=float, default=0.01, help="Sleep between Info polls"
+    )
     pc.set_defaults(fn=cmd_net_tcp_connect)
 
-    ps = tsub.add_parser("sendrecv", help="Connect, send bytes, then read response stream")
+    ps = tsub.add_parser(
+        "sendrecv", help="Connect, send bytes, then read response stream"
+    )
     ps.add_argument("url", help="tcp://host:port[?opts]")
     src = ps.add_mutually_exclusive_group(required=False)
     src.add_argument("--inp", help="Read bytes to send from file")
     src.add_argument("--data", help="Send these UTF-8 bytes")
     ps.add_argument("--write-chunk", type=int, default=1024)
     ps.add_argument("--read-chunk", type=int, default=512)
-    ps.add_argument("--halfclose", action="store_true", help="Send zero-length write to half-close TX")
-    ps.add_argument("--idle-timeout", type=float, default=0.25, help="Stop reading if idle for this many seconds (0=never)")
-    ps.add_argument("--show-info", action="store_true", help="Print Info() pseudo headers after connect")
+    ps.add_argument(
+        "--halfclose",
+        action="store_true",
+        help="Send zero-length write to half-close TX",
+    )
+    ps.add_argument(
+        "--idle-timeout",
+        type=float,
+        default=0.25,
+        help="Stop reading if idle for this many seconds (0=never)",
+    )
+    ps.add_argument(
+        "--show-info",
+        action="store_true",
+        help="Print Info() pseudo headers after connect",
+    )
     ps.add_argument("--info-poll", type=float, default=0.01)
     ps.add_argument("--out", help="Write received bytes to this file (else stdout)")
     ps.add_argument("--force", action="store_true", help="Overwrite --out if it exists")
     ps.set_defaults(fn=cmd_net_tcp_sendrecv)
 
     pr = tsub.add_parser("repl", help="Interactive TCP REPL")
-    pr.add_argument("url", nargs="?", help="tcp://host:port[?opts] (optional; can also 'open' inside repl)")
-    pr.add_argument("--wait-connected", action="store_true", help="Poll Info until connected=1 when opening")
-    pr.add_argument("--show-info", action="store_true", help="Print Info() pseudo headers after opening")
+    pr.add_argument(
+        "url",
+        nargs="?",
+        help="tcp://host:port[?opts] (optional; can also 'open' inside repl)",
+    )
+    pr.add_argument(
+        "--wait-connected",
+        action="store_true",
+        help="Poll Info until connected=1 when opening",
+    )
+    pr.add_argument(
+        "--show-info",
+        action="store_true",
+        help="Print Info() pseudo headers after opening",
+    )
     pr.add_argument("--info-poll", type=float, default=0.01)
     pr.add_argument("--write-chunk", type=int, default=1024)
     pr.add_argument("--read-chunk", type=int, default=512)
     pr.add_argument("--idle-timeout", type=float, default=0.25)
-    pr.add_argument("--binary", action="store_true", help="For recv/drain, write raw bytes to stdout")
+    pr.add_argument(
+        "--binary",
+        action="store_true",
+        help="For recv/drain, write raw bytes to stdout",
+    )
     pr.set_defaults(fn=cmd_net_tcp_repl)

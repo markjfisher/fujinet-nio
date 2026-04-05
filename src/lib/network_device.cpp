@@ -404,21 +404,86 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
 
             std::uint8_t flags = 0;
-            // bit0=headersIncluded, bit1=hasContentLength, bit2=hasHttpStatus
+            // bit0=headersAvailable, bit1=hasContentLength, bit2=hasHttpStatus
             const std::size_t hdrLen = info.headersBlock.size();
             if (hdrLen > 0) flags |= 0x01;
             if (info.hasContentLength) flags |= 0x02;
             if (info.hasHttpStatus) flags |= 0x04;
 
             std::string out;
-            out.reserve(32 + hdrLen);
+            out.reserve(1 + 1 + 2 + 2 + 2 + 8 + 4);
 
             write_common_prefix(out, NETPROTO_VERSION, flags);
             netproto::write_u16le(out, handle);
             netproto::write_u16le(out, info.hasHttpStatus ? info.httpStatus : 0);
             netproto::write_u64le(out, info.hasContentLength ? info.contentLength : 0);
-            netproto::write_u16le(out, static_cast<std::uint16_t>(hdrLen));
-            out.append(info.headersBlock.data(), hdrLen);
+            netproto::write_u32le(out, static_cast<std::uint32_t>(hdrLen));
+
+            resp.payload = to_vec(out);
+            return resp;
+        }
+
+        case NetworkCommand::InfoRead: {
+            auto resp = make_success_response(request);
+            Reader r(request.payload.data(), request.payload.size());
+            if (!check_version(r, NETPROTO_VERSION)) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            std::uint16_t handle = 0;
+            std::uint32_t offset = 0;
+            std::uint16_t maxBytes = 0;
+            if (!r.read_u16le(handle) || !r.read_u32le(offset) || !r.read_u16le(maxBytes) || r.remaining() != 0) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            auto* s = session_for_handle(handle);
+            if (!s || !s->proto) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+            touch(*s);
+
+            if (s->awaitingBody) {
+                resp.status = StatusCode::NotReady;
+                return resp;
+            }
+
+            NetworkInfo info{};
+            const StatusCode st = s->proto->info(info);
+            if (st != StatusCode::Ok) {
+                resp.status = st;
+                return resp;
+            }
+
+            const std::size_t total = info.headersBlock.size();
+            if (offset > total) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            const std::size_t remaining = total - offset;
+            const std::size_t n = std::min<std::size_t>(remaining, maxBytes);
+
+            std::uint8_t flags = 0;
+            if (offset + n >= total) {
+                flags |= 0x01;
+            }
+            if (n == maxBytes && offset + n < total) {
+                flags |= 0x02;
+            }
+
+            std::string out;
+            out.reserve(1 + 1 + 2 + 2 + 4 + 2 + n);
+            write_common_prefix(out, NETPROTO_VERSION, flags);
+            netproto::write_u16le(out, handle);
+            netproto::write_u32le(out, offset);
+            netproto::write_u16le(out, static_cast<std::uint16_t>(n));
+            if (n > 0) {
+                out.append(info.headersBlock.data() + offset, n);
+            }
 
             resp.payload = to_vec(out);
             return resp;
@@ -595,5 +660,4 @@ IOResponse NetworkDevice::handle(const IORequest& request)
 }
 
 } // namespace fujinet::io
-
 

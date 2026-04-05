@@ -27,9 +27,9 @@ struct WifiConfig {
 
 struct MountConfig {
     int         slot{0};            // Slot number (1-8). 0 means unassigned.
-    std::string uri;              // URI of the resource to mount (e.g., "sd:/disks/img.ssd", "tnfs://server/dir/img.atr")
-    std::string mode{"r"};       // "r", "rw", etc.
-    bool        enabled{true};    // Whether this mount is active
+    std::string uri;                // URI of the resource to mount (e.g., "sd:/disks/img.ssd", "tnfs://server/dir/img.atr")
+    std::string mode{"r"};          // "r", "rw", etc.
+    bool        enabled{true};      // Whether this mount is active
 
     // Get effective slot index (0-7) or -1 if unassigned
     int effective_slot() const {
