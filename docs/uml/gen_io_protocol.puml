@@ -16,6 +16,7 @@ Read
 Write
 Close
 Info
+InfoRead
 }
 enum "io::protocol::FileCommand" as C_0003895064208135060769
 enum C_0003895064208135060769 {
