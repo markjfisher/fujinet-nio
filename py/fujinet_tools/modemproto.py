@@ -123,7 +123,7 @@ def parse_read_resp(payload: bytes) -> ReadResp:
     n, off = read_u16le(payload, off)
     if off + n > len(payload):
         raise ValueError("read resp out of bounds")
-    data = payload[off:off + n]
+    data = payload[off : off + n]
     off += n
     if off != len(payload):
         raise ValueError("trailing bytes in read resp")
@@ -194,11 +194,9 @@ def normalize_hostport(target: str) -> str:
     """
     s = target.strip()
     if s.startswith("tcp://"):
-        s = s[len("tcp://"):]
+        s = s[len("tcp://") :]
     if not s:
         raise ValueError("empty target")
     if ":" not in s:
         return s + ":23"
     return s
-
-

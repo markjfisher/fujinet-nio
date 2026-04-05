@@ -135,6 +135,7 @@ class _RawTerminal:
     Put stdin into raw mode (POSIX) for interactive modem sessions.
     Safe no-op on non-POSIX platforms (command will error earlier).
     """
+
     def __init__(self) -> None:
         self._fd = None
         self._old = None
@@ -164,9 +165,15 @@ def cmd_modem_status(args) -> int:
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
         st = _get_status(bus, timeout=args.timeout, debug=args.debug)
-        print(f"cmd_mode={int(st.cmd_mode)} connected={int(st.connected)} listen_port={st.listen_port}")
-        print(f"host_rx_avail={st.host_rx_avail} host_write_cursor={st.host_write_cursor}")
-        print(f"net_read_cursor={st.net_read_cursor} net_write_cursor={st.net_write_cursor}")
+        print(
+            f"cmd_mode={int(st.cmd_mode)} connected={int(st.connected)} listen_port={st.listen_port}"
+        )
+        print(
+            f"host_rx_avail={st.host_rx_avail} host_write_cursor={st.host_write_cursor}"
+        )
+        print(
+            f"net_read_cursor={st.net_read_cursor} net_write_cursor={st.net_write_cursor}"
+        )
         print(f"flags=0x{st.flags:02X}")
         return 0
 
@@ -177,6 +184,7 @@ def cmd_modem_drain(args) -> int:
         out = _drain(bus=bus, timeout=args.timeout, max_total=args.max_bytes)
         if args.out:
             from pathlib import Path
+
             Path(args.out).write_bytes(out)
         else:
             # default: write to stdout as raw bytes
@@ -269,6 +277,7 @@ def cmd_modem_write(args) -> int:
     data = args.data.encode("utf-8", errors="replace") if args.data is not None else b""
     if args.inp:
         from pathlib import Path
+
         data = Path(args.inp).read_bytes()
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
@@ -322,6 +331,7 @@ def cmd_modem_read(args) -> int:
         rr = mp.parse_read_resp(pkt.payload)
         if args.out:
             from pathlib import Path
+
             Path(args.out).write_bytes(rr.data)
         else:
             sys.stdout.buffer.write(rr.data)
@@ -380,7 +390,9 @@ def cmd_modem_sendrecv(args) -> int:
                 bus=bus,
                 device=mp.MODEM_DEVICE_ID,
                 command=mp.CMD_READ,
-                payload=mp.build_read_req(offset=roff, max_bytes=min(512, want - len(out))),
+                payload=mp.build_read_req(
+                    offset=roff, max_bytes=min(512, want - len(out))
+                ),
                 timeout=min(args.timeout, 0.2),
                 cmd_txt="MODEM READ",
             )
@@ -493,14 +505,20 @@ def cmd_modem_term(args) -> int:
                 # and to detect disconnect transitions.
                 if now >= next_status_at:
                     try:
-                        st = _get_status(bus, timeout=min(args.timeout, 0.2), debug=args.debug)
+                        st = _get_status(
+                            bus, timeout=min(args.timeout, 0.2), debug=args.debug
+                        )
                         woff = st.host_write_cursor
 
                         # If we were connected and now we're not, exit (server hangup / local hangup).
                         if was_connected and not st.connected:
                             # Drain any remaining output (e.g. "NO CARRIER") then exit.
                             try:
-                                out = _drain(bus=bus, timeout=min(args.timeout, 0.5), max_total=4096)
+                                out = _drain(
+                                    bus=bus,
+                                    timeout=min(args.timeout, 0.5),
+                                    max_total=4096,
+                                )
                                 if out:
                                     sys.stdout.buffer.write(out)
                                     sys.stdout.buffer.flush()
@@ -523,7 +541,9 @@ def cmd_modem_term(args) -> int:
                         bus=bus,
                         device=mp.MODEM_DEVICE_ID,
                         command=mp.CMD_READ,
-                        payload=mp.build_read_req(offset=roff, max_bytes=args.read_chunk),
+                        payload=mp.build_read_req(
+                            offset=roff, max_bytes=args.read_chunk
+                        ),
                         timeout=0.05,
                         cmd_txt="MODEM READ",
                     )
@@ -533,7 +553,9 @@ def cmd_modem_term(args) -> int:
                             # If our read offset got out of sync, resync and continue.
                             if code == 2:  # InvalidRequest
                                 try:
-                                    st2 = _get_status(bus, timeout=args.timeout, debug=args.debug)
+                                    st2 = _get_status(
+                                        bus, timeout=args.timeout, debug=args.debug
+                                    )
                                     roff = st2.host_read_cursor
                                     continue
                                 except Exception:
@@ -543,7 +565,9 @@ def cmd_modem_term(args) -> int:
                         rr = mp.parse_read_resp(pkt.payload)
                         if rr.offset != roff:
                             # Resync offsets (e.g. if another tool consumed output).
-                            st2 = _get_status(bus, timeout=args.timeout, debug=args.debug)
+                            st2 = _get_status(
+                                bus, timeout=args.timeout, debug=args.debug
+                            )
                             roff = st2.host_read_cursor
                         else:
                             if rr.data:
@@ -578,7 +602,9 @@ def cmd_modem_term(args) -> int:
                         code = _pkt_status_code(pkt)
                         # Try to resync write cursor once.
                         if code == 2:  # InvalidRequest
-                            st = _get_status(bus, timeout=args.timeout, debug=args.debug)
+                            st = _get_status(
+                                bus, timeout=args.timeout, debug=args.debug
+                            )
                             woff = st.host_write_cursor
                             continue
                         print(f"\nDevice status={code} ({_status_str(code)})")
@@ -597,7 +623,9 @@ def cmd_modem_term(args) -> int:
 
 
 def register_subcommands(subparsers) -> None:
-    pm = subparsers.add_parser("modem", help="Modem device commands (AT + binary protocol)")
+    pm = subparsers.add_parser(
+        "modem", help="Modem device commands (AT + binary protocol)"
+    )
     msub = pm.add_subparsers(dest="modem_cmd", required=True)
 
     ps = msub.add_parser("status", help="Show modem status")
@@ -608,7 +636,10 @@ def register_subcommands(subparsers) -> None:
     pa.add_argument("--read-max", type=int, default=2048)
     pa.set_defaults(fn=cmd_modem_at)
 
-    pd = msub.add_parser("dial", help="Dial a host:port or tcp://host:port and print output (CONNECT/NO CARRIER)")
+    pd = msub.add_parser(
+        "dial",
+        help="Dial a host:port or tcp://host:port and print output (CONNECT/NO CARRIER)",
+    )
     pd.add_argument("target")
     pd.set_defaults(fn=cmd_modem_dial)
 
@@ -617,30 +648,55 @@ def register_subcommands(subparsers) -> None:
     pdr.add_argument("--out", help="Write bytes to file (else stdout)")
     pdr.set_defaults(fn=cmd_modem_drain)
 
-    pw = msub.add_parser("write", help="Write bytes to modem (connected or command mode)")
-    pw.add_argument("--offset", type=int, default=None, help="Override write offset (default: use status cursor)")
+    pw = msub.add_parser(
+        "write", help="Write bytes to modem (connected or command mode)"
+    )
+    pw.add_argument(
+        "--offset",
+        type=int,
+        default=None,
+        help="Override write offset (default: use status cursor)",
+    )
     src = pw.add_mutually_exclusive_group(required=True)
     src.add_argument("--data", help="Send these UTF-8 bytes")
     src.add_argument("--inp", help="Read bytes from this file")
     pw.set_defaults(fn=cmd_modem_write)
 
-    pr = msub.add_parser("read", help="Read bytes from modem output buffer (single chunk)")
-    pr.add_argument("--offset", type=int, default=None, help="Override read offset (default: use status cursor)")
+    pr = msub.add_parser(
+        "read", help="Read bytes from modem output buffer (single chunk)"
+    )
+    pr.add_argument(
+        "--offset",
+        type=int,
+        default=None,
+        help="Override read offset (default: use status cursor)",
+    )
     pr.add_argument("--max-bytes", type=int, default=512)
     pr.add_argument("--out", help="Write bytes to file (else stdout)")
     pr.set_defaults(fn=cmd_modem_read)
 
-    psr = msub.add_parser("sendrecv", help="Write bytes, then read back same number of bytes (TCP echo convenience)")
+    psr = msub.add_parser(
+        "sendrecv",
+        help="Write bytes, then read back same number of bytes (TCP echo convenience)",
+    )
     psr.add_argument("--data", required=True, help="UTF-8 bytes to send")
     psr.set_defaults(fn=cmd_modem_sendrecv)
 
-    ph = msub.add_parser("hangup", help="Hang up (binary control op; emits NO CARRIER if connected)")
+    ph = msub.add_parser(
+        "hangup", help="Hang up (binary control op; emits NO CARRIER if connected)"
+    )
     ph.add_argument("--read-max", type=int, default=2048)
     ph.set_defaults(fn=cmd_modem_hangup)
 
-    pt = msub.add_parser("term", help="Interactive terminal bridge to the modem (stdin/stdout)")
-    pt.add_argument("--dial", default=None, help="Optional: dial host (host[:port] or tcp://host:port) before entering terminal mode")
-    pt.add_argument("--read-chunk", type=int, default=512, help="Read chunk size from modem")
+    pt = msub.add_parser(
+        "term", help="Interactive terminal bridge to the modem (stdin/stdout)"
+    )
+    pt.add_argument(
+        "--dial",
+        default=None,
+        help="Optional: dial host (host[:port] or tcp://host:port) before entering terminal mode",
+    )
+    pt.add_argument(
+        "--read-chunk", type=int, default=512, help="Read chunk size from modem"
+    )
     pt.set_defaults(fn=cmd_modem_term)
-
-

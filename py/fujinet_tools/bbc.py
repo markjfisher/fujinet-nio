@@ -9,7 +9,6 @@ from .fujibus import FujiBusSession
 from . import diskproto as dp
 from .bbc_dfs import find_entry, parse_dfs_catalogue_090
 
-
 BOOT_TEXT = {
     0: "none",
     1: "load",
@@ -35,7 +34,9 @@ def _send_expect(*, args, command: int, payload: bytes, cmd_txt: str):
 
 def _read_sector(*, args, slot: int, lba: int, max_bytes: int = 256) -> bytes:
     req = dp.build_read_sector_req(slot=slot, lba=lba, max_bytes=max_bytes)
-    pkt = _send_expect(args=args, command=dp.CMD_READ_SECTOR, payload=req, cmd_txt="DISK_READ_SECTOR")
+    pkt = _send_expect(
+        args=args, command=dp.CMD_READ_SECTOR, payload=req, cmd_txt="DISK_READ_SECTOR"
+    )
     if pkt is None:
         raise RuntimeError("no response")
     if not status_ok(pkt):
@@ -60,7 +61,9 @@ def cmd_dfs_info(args) -> int:
         return 1
 
     boot = BOOT_TEXT.get(desc.boot_option, f"unknown({desc.boot_option})")
-    print(f"title={desc.title!s} cycle={desc.cycle_bcd} files={len(entries)} boot={boot} sectors={desc.disc_sectors}")
+    print(
+        f"title={desc.title!s} cycle={desc.cycle_bcd} files={len(entries)} boot={boot} sectors={desc.disc_sectors}"
+    )
     return 0
 
 
@@ -122,7 +125,9 @@ def cmd_dfs_read(args) -> int:
 
 
 def register_subcommands(subparsers) -> None:
-    pb = subparsers.add_parser("bbc", help="BBC helpers (DFS client emulator over DiskDevice)")
+    pb = subparsers.add_parser(
+        "bbc", help="BBC helpers (DFS client emulator over DiskDevice)"
+    )
     sb = pb.add_subparsers(dest="bbc_cmd", required=True)
 
     pdfs = sb.add_parser("dfs", help="Acorn DFS 0.90 helpers")
@@ -136,10 +141,10 @@ def register_subcommands(subparsers) -> None:
     pcat.add_argument("--slot", type=int, required=True)
     pcat.set_defaults(fn=cmd_dfs_cat)
 
-    pread = sdfs.add_parser("read", help="Read a file from a DFS disk by name (D.NAME or NAME)")
+    pread = sdfs.add_parser(
+        "read", help="Read a file from a DFS disk by name (D.NAME or NAME)"
+    )
     pread.add_argument("--slot", type=int, required=True)
     pread.add_argument("name", help="D.NAME or NAME (defaults to $ directory)")
     pread.add_argument("--out", help="Write to file (else stdout)")
     pread.set_defaults(fn=cmd_dfs_read)
-
-

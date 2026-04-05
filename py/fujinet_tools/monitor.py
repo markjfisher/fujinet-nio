@@ -106,8 +106,14 @@ def _packet_to_dict(
         base["payload"] = {
             "length": max(0, len(decoded) - 6),
             "hex": _bytes_hex(decoded[6:]) if len(decoded) > 6 else "",
-            "ascii": _ascii_preview(decoded[6:], limit=len(decoded[6:])) if len(decoded) > 6 else "",
-            "payload_ascii_full": _payload_ascii_full(decoded[6:]) if len(decoded) > 6 else "",
+            "ascii": (
+                _ascii_preview(decoded[6:], limit=len(decoded[6:]))
+                if len(decoded) > 6
+                else ""
+            ),
+            "payload_ascii_full": (
+                _payload_ascii_full(decoded[6:]) if len(decoded) > 6 else ""
+            ),
         }
         return base
 
@@ -236,7 +242,11 @@ def monitor_port(
                     last_emit_ts = now_mono
                     slip_res = slip_decode_ex(frame)
                     decoded = slip_res.decoded
-                    parse_res = parse_fuji_packet_ex(decoded) if slip_res.status == "ok" else None
+                    parse_res = (
+                        parse_fuji_packet_ex(decoded)
+                        if slip_res.status == "ok"
+                        else None
+                    )
                     pkt = parse_res.packet if parse_res is not None else None
                     direction = "unknown"
 
@@ -253,8 +263,16 @@ def monitor_port(
                                     slip_reason=slip_res.reason,
                                     slip_warnings=slip_res.warnings,
                                     decoded=decoded,
-                                    parse_status=parse_res.status if parse_res is not None else "fail",
-                                    parse_reason=parse_res.reason if parse_res is not None else slip_res.reason,
+                                    parse_status=(
+                                        parse_res.status
+                                        if parse_res is not None
+                                        else "fail"
+                                    ),
+                                    parse_reason=(
+                                        parse_res.reason
+                                        if parse_res is not None
+                                        else slip_res.reason
+                                    ),
                                     pkt=pkt,
                                 ),
                                 separators=(",", ":"),
@@ -269,7 +287,10 @@ def monitor_port(
                             flush=True,
                         )
                         if slip_res.warnings:
-                            print(f"  slip_warnings={','.join(slip_res.warnings)}", flush=True)
+                            print(
+                                f"  slip_warnings={','.join(slip_res.warnings)}",
+                                flush=True,
+                            )
                         if show_raw:
                             print(f"  raw={pretty_hex(frame)}", flush=True)
                         continue
@@ -282,7 +303,9 @@ def monitor_port(
                                 direction=direction,
                                 delta_ms=delta_ms,
                                 slip_reason=slip_res.reason,
-                                parse_reason=parse_res.reason if parse_res is not None else None,
+                                parse_reason=(
+                                    parse_res.reason if parse_res is not None else None
+                                ),
                                 raw_frame=frame,
                                 decoded=decoded,
                                 show_raw=show_raw,
@@ -312,7 +335,9 @@ def monitor_port(
                         flush=True,
                     )
                     if slip_res.warnings:
-                        print(f"  slip_warnings={','.join(slip_res.warnings)}", flush=True)
+                        print(
+                            f"  slip_warnings={','.join(slip_res.warnings)}", flush=True
+                        )
                     if show_decoded_hex:
                         print(f"  decoded_hex={pretty_hex(decoded)}", flush=True)
                     if show_raw:
@@ -333,7 +358,9 @@ def monitor_port(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Live FujiBus-over-SLIP serial monitor")
-    p.add_argument("--port", required=True, help="Serial device path, e.g. /dev/ttyUSB0")
+    p.add_argument(
+        "--port", required=True, help="Serial device path, e.g. /dev/ttyUSB0"
+    )
     p.add_argument("--baud", type=int, default=115200, help="Baud rate")
     p.add_argument(
         "--timeout",
@@ -341,12 +368,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=0.01,
         help="Serial read timeout in seconds for incremental low-latency reads",
     )
-    p.add_argument("--ascii", action="store_true", help="Include short ASCII payload preview")
-    p.add_argument("--hex", action="store_true", help="Include short payload hex preview")
-    p.add_argument("--full-hex", action="store_true", help="Include full decoded FujiBus payload hex")
-    p.add_argument("--decoded-hex", action="store_true", help="Print full decoded FujiBus packet hex")
+    p.add_argument(
+        "--ascii", action="store_true", help="Include short ASCII payload preview"
+    )
+    p.add_argument(
+        "--hex", action="store_true", help="Include short payload hex preview"
+    )
+    p.add_argument(
+        "--full-hex",
+        action="store_true",
+        help="Include full decoded FujiBus payload hex",
+    )
+    p.add_argument(
+        "--decoded-hex",
+        action="store_true",
+        help="Print full decoded FujiBus packet hex",
+    )
     p.add_argument("--raw", action="store_true", help="Print full raw SLIP frame bytes")
-    p.add_argument("--json", action="store_true", help="Emit one JSON object per frame (JSONL)")
+    p.add_argument(
+        "--json", action="store_true", help="Emit one JSON object per frame (JSONL)"
+    )
     return p
 
 

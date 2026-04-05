@@ -75,9 +75,13 @@ def slip_decode(frame: bytes) -> bytes:
 
 def slip_decode_ex(frame: bytes) -> SlipDecodeResult:
     if not frame:
-        return SlipDecodeResult(status="fail", reason="invalid_framing", decoded=b"", warnings=[])
+        return SlipDecodeResult(
+            status="fail", reason="invalid_framing", decoded=b"", warnings=[]
+        )
     if frame[0] != SLIP_END or frame[-1] != SLIP_END:
-        return SlipDecodeResult(status="fail", reason="invalid_framing", decoded=b"", warnings=[])
+        return SlipDecodeResult(
+            status="fail", reason="invalid_framing", decoded=b"", warnings=[]
+        )
 
     out = bytearray()
     warnings: List[str] = []
@@ -106,7 +110,9 @@ def slip_decode_ex(frame: bytes) -> SlipDecodeResult:
         else:
             out.append(b)
         i += 1
-    return SlipDecodeResult(status="ok", reason=None, decoded=bytes(out), warnings=warnings)
+    return SlipDecodeResult(
+        status="ok", reason=None, decoded=bytes(out), warnings=warnings
+    )
 
 
 def parse_fuji_packet(decoded: bytes) -> Optional[FujiPacket]:
@@ -136,7 +142,9 @@ def parse_fuji_packet_ex(decoded: bytes) -> ParseResult:
     descr_bytes = [descr]
     while descr_bytes[-1] & 0x80:
         if offset >= len(decoded):
-            return ParseResult(status="fail", reason="descriptor_truncated", packet=None)
+            return ParseResult(
+                status="fail", reason="descriptor_truncated", packet=None
+            )
         descr_bytes.append(decoded[offset])
         offset += 1
 
@@ -293,6 +301,7 @@ class FujiBusSession:
       - parses FujiPacket responses
       - stashes out-of-order packets keyed by (device, command)
     """
+
     def __init__(self):
         self._stash: Dict[Tuple[int, int], list[FujiPacket]] = defaultdict(list)
         self._ser: Optional[serial.Serial] = None
@@ -307,8 +316,9 @@ class FujiBusSession:
     def stash(self, pkt: FujiPacket) -> None:
         self._stash[(pkt.device, pkt.command)].append(pkt)
 
-
-    def send_command(self, device: int, command: int, payload: bytes, *, cmd_txt: str = "") -> None:
+    def send_command(
+        self, device: int, command: int, payload: bytes, *, cmd_txt: str = ""
+    ) -> None:
         if self._ser is None:
             raise RuntimeError("FujiBusSession is not attached to a serial port")
 
@@ -426,7 +436,9 @@ class FujiBusSession:
 
         return pkt
 
-    def _read_one_slip_frame(self, deadline: float, read_chunk: int = 256) -> Optional[bytes]:
+    def _read_one_slip_frame(
+        self, deadline: float, read_chunk: int = 256
+    ) -> Optional[bytes]:
         if self._ser is None:
             raise RuntimeError("FujiBusSession is not attached to a serial port")
 
@@ -447,6 +459,7 @@ class FujiBusSession:
 
 # --- Convenience wrappers (no duplicate SLIP/parse logic) ---
 
+
 def send_command(
     port: Union[str, serial.Serial],
     device: int,
@@ -463,11 +476,14 @@ def send_command(
       - if `port` is serial.Serial: reuse it
     This function now uses FujiBusSession internally (no duplicate framing logic).
     """
+
     def _do(ser: serial.Serial) -> Optional[FujiPacket]:
         bus = FujiBusSession().attach(ser, debug=debug)
         # We expect the response to match the request's device+command.
         return bus.send_command_expect(
-            device, command, payload,
+            device,
+            command,
+            payload,
             expect_device=device,
             expect_command=command,
             timeout=timeout,
@@ -478,7 +494,9 @@ def send_command(
         return _do(port)
 
     # Use consistent timeout settings (avoid circular import with common.open_serial)
-    with serial.Serial(port=port, baudrate=baud, timeout=timeout, write_timeout=max(1.0, timeout)) as ser:
+    with serial.Serial(
+        port=port, baudrate=baud, timeout=timeout, write_timeout=max(1.0, timeout)
+    ) as ser:
         return _do(ser)
 
 
@@ -499,10 +517,13 @@ def send_command_expect(
     Convenience wrapper matching the session API, but usable from callers that
     still pass a port string.
     """
+
     def _do(ser: serial.Serial) -> Optional[FujiPacket]:
         bus = FujiBusSession().attach(ser, debug=debug)
         return bus.send_command_expect(
-            device, command, payload,
+            device,
+            command,
+            payload,
             expect_device=expect_device,
             expect_command=expect_command,
             timeout=timeout,
@@ -513,5 +534,7 @@ def send_command_expect(
         return _do(port)
 
     # Use consistent timeout settings (avoid circular import with common.open_serial)
-    with serial.Serial(port=port, baudrate=baud, timeout=timeout, write_timeout=max(1.0, timeout)) as ser:
+    with serial.Serial(
+        port=port, baudrate=baud, timeout=timeout, write_timeout=max(1.0, timeout)
+    ) as ser:
         return _do(ser)

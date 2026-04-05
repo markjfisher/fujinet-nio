@@ -13,8 +13,10 @@ STATUS_NAMES: dict[int, str] = {
     8: "Unsupported",
 }
 
+
 def status_name(code: int) -> str:
     return STATUS_NAMES.get(int(code), f"Unknown({code})")
+
 
 def format_status(code: int) -> str:
     code_i = int(code)

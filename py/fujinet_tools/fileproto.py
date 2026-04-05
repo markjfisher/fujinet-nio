@@ -39,7 +39,7 @@ def _lp_u16(s: str) -> bytes:
 def build_uri_request(uri: str) -> bytes:
     """
     Build the common request prefix for FileDevice v2+.
-    
+
     New format (single URI):
     - u8 version
     - u16 uriLen (LE)
@@ -48,16 +48,17 @@ def build_uri_request(uri: str) -> bytes:
     uri_b = uri.encode("utf-8")
     if not (1 <= len(uri_b) <= 65535):
         raise ValueError("uri must be 1..65535 bytes")
-    
+
     return bytes([FILEPROTO_VERSION]) + _lp_u16(uri)
 
 
 # -------- Requests --------
 
+
 def build_stat_req(uri: str) -> bytes:
     """
     Build a stat request.
-    
+
     Args:
         uri: Full URI (e.g., "tnfs://192.168.1.100:16384/file.txt", "sd0:/path/file")
     """
@@ -67,7 +68,7 @@ def build_stat_req(uri: str) -> bytes:
 def build_list_req(uri: str, start: int, max_entries: int) -> bytes:
     """
     Build a list directory request.
-    
+
     Args:
         uri: Full URI for directory
         start: Starting index
@@ -83,7 +84,7 @@ def build_list_req(uri: str, start: int, max_entries: int) -> bytes:
 def build_read_req(uri: str, offset: int, max_bytes: int) -> bytes:
     """
     Build a read file request.
-    
+
     Args:
         uri: Full URI for file
         offset: Byte offset to read from
@@ -99,7 +100,7 @@ def build_read_req(uri: str, offset: int, max_bytes: int) -> bytes:
 def build_write_req(uri: str, offset: int, data: bytes) -> bytes:
     """
     Build a write file request.
-    
+
     Args:
         uri: Full URI for file
         offset: Byte offset to write at
@@ -115,7 +116,7 @@ def build_write_req(uri: str, offset: int, data: bytes) -> bytes:
 def build_mkdir_req(*, uri: str, parents: bool = True, exist_ok: bool = True) -> bytes:
     """
     Build a make directory request.
-    
+
     Args:
         uri: Full URI for directory
         parents: Create parent directories
@@ -138,6 +139,7 @@ def parse_mkdir_resp(payload: bytes) -> None:
 
 
 # -------- Responses --------
+
 
 @dataclass
 class StatResp:
@@ -210,18 +212,20 @@ def parse_list_resp(payload: bytes) -> ListResp:
         name_len, off = read_u8(payload, off)
         if off + name_len > len(payload):
             raise ValueError("name out of bounds")
-        name = payload[off:off + name_len].decode("utf-8", errors="replace")
+        name = payload[off : off + name_len].decode("utf-8", errors="replace")
         off += name_len
 
         size, off = read_u64le(payload, off)
         mtime, off = read_u64le(payload, off)
 
-        entries.append(ListEntry(
-            is_dir=bool(eflags & 0x01),
-            name=name,
-            size_bytes=size,
-            mtime_unix=mtime,
-        ))
+        entries.append(
+            ListEntry(
+                is_dir=bool(eflags & 0x01),
+                name=name,
+                size_bytes=size,
+                mtime_unix=mtime,
+            )
+        )
 
     return ListResp(more=more, entries=entries)
 
@@ -236,7 +240,7 @@ def parse_read_resp(payload: bytes) -> ReadResp:
 
     if off + data_len > len(payload):
         raise ValueError("read data out of bounds")
-    data = payload[off:off + data_len]
+    data = payload[off : off + data_len]
 
     eof = bool(flags & 0x01)
     truncated = bool(flags & 0x02)
@@ -257,4 +261,8 @@ def fmt_utc(ts: int) -> str:
     if ts == 0:
         return "-"
     # Fix the deprecation you hit: use timezone-aware objects
-    return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    return (
+        datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )

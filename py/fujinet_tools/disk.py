@@ -8,7 +8,6 @@ from .common import open_serial, status_ok
 from .fujibus import FujiBusSession
 from . import diskproto as dp
 
-
 STATUS_TEXT = {
     0: "Ok",
     1: "DeviceNotFound",
@@ -81,7 +80,9 @@ def cmd_mount(args) -> int:
         sector_size_hint=args.sector_size,
     )
 
-    pkt = _send_expect(args=args, command=dp.CMD_MOUNT, payload=req, cmd_txt="DISK_MOUNT")
+    pkt = _send_expect(
+        args=args, command=dp.CMD_MOUNT, payload=req, cmd_txt="DISK_MOUNT"
+    )
     if pkt is None:
         print("No response", file=sys.stderr)
         return 2
@@ -93,14 +94,23 @@ def cmd_mount(args) -> int:
     mr = dp.parse_mount_resp(pkt.payload)
     print(
         "mounted=%d readonly=%d slot=%d type=%s sector_size=%d sector_count=%d"
-        % (1 if mr.mounted else 0, 1 if mr.readonly else 0, mr.slot, _type_str(mr.img_type), mr.sector_size, mr.sector_count)
+        % (
+            1 if mr.mounted else 0,
+            1 if mr.readonly else 0,
+            mr.slot,
+            _type_str(mr.img_type),
+            mr.sector_size,
+            mr.sector_count,
+        )
     )
     return 0
 
 
 def cmd_unmount(args) -> int:
     req = dp.build_unmount_req(slot=args.slot)
-    pkt = _send_expect(args=args, command=dp.CMD_UNMOUNT, payload=req, cmd_txt="DISK_UNMOUNT")
+    pkt = _send_expect(
+        args=args, command=dp.CMD_UNMOUNT, payload=req, cmd_txt="DISK_UNMOUNT"
+    )
     if pkt is None:
         print("No response", file=sys.stderr)
         return 2
@@ -142,7 +152,12 @@ def cmd_info(args) -> int:
 
 def cmd_clear_changed(args) -> int:
     req = dp.build_clear_changed_req(slot=args.slot)
-    pkt = _send_expect(args=args, command=dp.CMD_CLEAR_CHANGED, payload=req, cmd_txt="DISK_CLEAR_CHANGED")
+    pkt = _send_expect(
+        args=args,
+        command=dp.CMD_CLEAR_CHANGED,
+        payload=req,
+        cmd_txt="DISK_CLEAR_CHANGED",
+    )
     if pkt is None:
         print("No response", file=sys.stderr)
         return 2
@@ -155,8 +170,12 @@ def cmd_clear_changed(args) -> int:
 
 
 def cmd_read_sector(args) -> int:
-    req = dp.build_read_sector_req(slot=args.slot, lba=args.lba, max_bytes=args.max_bytes)
-    pkt = _send_expect(args=args, command=dp.CMD_READ_SECTOR, payload=req, cmd_txt="DISK_READ_SECTOR")
+    req = dp.build_read_sector_req(
+        slot=args.slot, lba=args.lba, max_bytes=args.max_bytes
+    )
+    pkt = _send_expect(
+        args=args, command=dp.CMD_READ_SECTOR, payload=req, cmd_txt="DISK_READ_SECTOR"
+    )
     if pkt is None:
         print("No response", file=sys.stderr)
         return 2
@@ -177,7 +196,9 @@ def cmd_read_sector(args) -> int:
 def cmd_write_sector(args) -> int:
     data = Path(args.inp).read_bytes()
     req = dp.build_write_sector_req(slot=args.slot, lba=args.lba, data=data)
-    pkt = _send_expect(args=args, command=dp.CMD_WRITE_SECTOR, payload=req, cmd_txt="DISK_WRITE_SECTOR")
+    pkt = _send_expect(
+        args=args, command=dp.CMD_WRITE_SECTOR, payload=req, cmd_txt="DISK_WRITE_SECTOR"
+    )
     if pkt is None:
         print("No response", file=sys.stderr)
         return 2
@@ -203,7 +224,9 @@ def cmd_create(args) -> int:
         overwrite=args.force,
     )
 
-    pkt = _send_expect(args=args, command=dp.CMD_CREATE, payload=req, cmd_txt="DISK_CREATE")
+    pkt = _send_expect(
+        args=args, command=dp.CMD_CREATE, payload=req, cmd_txt="DISK_CREATE"
+    )
     if pkt is None:
         print("No response", file=sys.stderr)
         return 2
@@ -213,7 +236,9 @@ def cmd_create(args) -> int:
         return 1
 
     cr = dp.parse_create_resp(pkt.payload)
-    print(f"created=1 type={_type_str(cr.img_type)} sector_size={cr.sector_size} sector_count={cr.sector_count}")
+    print(
+        f"created=1 type={_type_str(cr.img_type)} sector_size={cr.sector_size} sector_count={cr.sector_count}"
+    )
     return 0
 
 
@@ -223,10 +248,14 @@ def register_subcommands(subparsers) -> None:
 
     pm = sd.add_parser("mount", help="Mount an image into a slot")
     pm.add_argument("--slot", type=int, required=True)
-    pm.add_argument("uri", help="URI (e.g., tnfs://192.168.1.101:16384/path, sd0:/path, /path)")
+    pm.add_argument(
+        "uri", help="URI (e.g., tnfs://192.168.1.101:16384/path, sd0:/path, /path)"
+    )
     pm.add_argument("--ro", action="store_true", help="Request readonly")
     pm.add_argument("--type", default="auto", help="auto|atr|ssd|dsd|raw")
-    pm.add_argument("--sector-size", type=int, default=256, help="Sector size hint (used for raw)")
+    pm.add_argument(
+        "--sector-size", type=int, default=256, help="Sector size hint (used for raw)"
+    )
     pm.set_defaults(fn=cmd_mount)
 
     pu = sd.add_parser("unmount", help="Unmount a slot")

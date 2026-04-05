@@ -26,12 +26,18 @@ def _is_catalog_textish(data: bytes) -> bool:
     title_bytes = data[0:8]
     name_area = data[8 : 8 + 8 * 8]
     sample = title_bytes + name_area
-    printable_count = sum(chr(b) in printable and b not in b"\x0b\x0c\r\n\t" for b in sample)
+    printable_count = sum(
+        chr(b) in printable and b not in b"\x0b\x0c\r\n\t" for b in sample
+    )
     return printable_count >= max(8, len(sample) // 3)
 
 
 def _parse_read_sector_hit(ev: CapturedFrame) -> _ReadSectorHit | None:
-    if ev.parse_status != "ok" or ev.device != dp.DISK_DEVICE_ID or ev.command != dp.CMD_READ_SECTOR:
+    if (
+        ev.parse_status != "ok"
+        or ev.device != dp.DISK_DEVICE_ID
+        or ev.command != dp.CMD_READ_SECTOR
+    ):
         return None
     try:
         payload = bytes.fromhex(ev.payload_hex) if ev.payload_hex else b""
@@ -66,7 +72,9 @@ def _catalog_summary(entries) -> str:
 def _validation_status(desc, entries) -> tuple[str, str, list[str]]:
     warnings: list[str] = []
     if desc.file_count != len(entries):
-        warnings.append(f"parsed_files={len(entries)} descriptor_files={desc.file_count}")
+        warnings.append(
+            f"parsed_files={len(entries)} descriptor_files={desc.file_count}"
+        )
     if desc.boot_option not in {0, 1, 2, 3}:
         warnings.append(f"boot_option_out_of_range={desc.boot_option}")
     if desc.disc_sectors <= 0:
@@ -76,7 +84,11 @@ def _validation_status(desc, entries) -> tuple[str, str, list[str]]:
     if any(entry.length <= 0 for entry in entries):
         warnings.append("entry_with_non_positive_length")
     if warnings:
-        return ("warning", f"catalogue decoded with {len(warnings)} warning(s)", warnings)
+        return (
+            "warning",
+            f"catalogue decoded with {len(warnings)} warning(s)",
+            warnings,
+        )
     return ("ok", "catalogue decoded cleanly", warnings)
 
 
@@ -107,7 +119,9 @@ def analyze_frames(frames: list[CapturedFrame]) -> dict[int, HostAnnotation]:
             extra_lines: list[str] = []
             confidence = "possible"
             if _is_catalog_textish(hit.data[:256]):
-                extra_lines.append("host_note=sector0 looks catalogue-like before sector1 confirmation")
+                extra_lines.append(
+                    "host_note=sector0 looks catalogue-like before sector1 confirmation"
+                )
                 confidence = "candidate"
             annotations[ev.line_no] = HostAnnotation(
                 frame_line_no=ev.line_no,
@@ -131,7 +145,9 @@ def analyze_frames(frames: list[CapturedFrame]) -> dict[int, HostAnnotation]:
             continue
 
         try:
-            desc, entries = parse_dfs_catalogue_090(sector0=first.data[:256], sector1=hit.data[:256])
+            desc, entries = parse_dfs_catalogue_090(
+                sector0=first.data[:256], sector1=hit.data[:256]
+            )
         except Exception:
             continue
 
@@ -139,7 +155,9 @@ def analyze_frames(frames: list[CapturedFrame]) -> dict[int, HostAnnotation]:
             f"title={desc.title!r} files={len(entries)} boot_option={desc.boot_option} "
             f"disc_sectors={desc.disc_sectors} cycle={desc.cycle_bcd}"
         )
-        validation_status, validation_detail, warnings = _validation_status(desc, entries)
+        validation_status, validation_detail, warnings = _validation_status(
+            desc, entries
+        )
         extra_lines: list[str] = []
         if warnings:
             extra_lines.append(f"host_warnings={warnings}")

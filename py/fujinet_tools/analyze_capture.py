@@ -13,7 +13,6 @@ from . import modemproto as mp
 from . import netproto as np
 from .host_analysis.base import HostAnnotation
 
-
 DEVICE_NAMES: dict[int, str] = {
     0x70: "FujiNet",
     0x45: "Clock",
@@ -93,7 +92,9 @@ class CapturedFrame:
     payload_ascii_full: str
 
 
-def _host_annotations_for(args: argparse.Namespace, frames: list[CapturedFrame]) -> dict[int, HostAnnotation]:
+def _host_annotations_for(
+    args: argparse.Namespace, frames: list[CapturedFrame]
+) -> dict[int, HostAnnotation]:
     if getattr(args, "host", None) != "bbc":
         return {}
 
@@ -139,7 +140,17 @@ def _extract_string_hints(text: str) -> list[str]:
     hints: list[str] = []
     if not text:
         return hints
-    for token in ["sd0:/", "tnfs://", ".ini", ".atr", ".cas", ".xex", "http://", "https://", "host:"]:
+    for token in [
+        "sd0:/",
+        "tnfs://",
+        ".ini",
+        ".atr",
+        ".cas",
+        ".xex",
+        "http://",
+        "https://",
+        "host:",
+    ]:
         idx = text.lower().find(token)
         if idx >= 0:
             end = idx
@@ -276,7 +287,9 @@ def _matches(ev: CapturedFrame, args: argparse.Namespace) -> bool:
     return True
 
 
-def _format_summary(ev: CapturedFrame, host_annotation: HostAnnotation | None = None) -> str:
+def _format_summary(
+    ev: CapturedFrame, host_annotation: HostAnnotation | None = None
+) -> str:
     head = [
         f"#{ev.frame_no if ev.frame_no is not None else '?'}",
         _short_ts(ev.timestamp),
@@ -304,7 +317,10 @@ def _format_summary(ev: CapturedFrame, host_annotation: HostAnnotation | None = 
     hints = _payload_hints(ev)
     if hints and not (
         host_annotation
-        and (host_annotation.suppress_summary_hint or host_annotation.suppress_summary_payload_hint)
+        and (
+            host_annotation.suppress_summary_hint
+            or host_annotation.suppress_summary_payload_hint
+        )
     ):
         head.append(f"hint={json.dumps(hints[0])}")
     if host_annotation and host_annotation.summary_suffix:
@@ -312,7 +328,9 @@ def _format_summary(ev: CapturedFrame, host_annotation: HostAnnotation | None = 
     return " ".join(head)
 
 
-def _print_detail(ev: CapturedFrame, host_annotation: HostAnnotation | None = None) -> None:
+def _print_detail(
+    ev: CapturedFrame, host_annotation: HostAnnotation | None = None
+) -> None:
     checksum_text = "ok" if ev.checksum_ok else "bad"
     print(f"  slip={ev.slip_status} parse={ev.parse_status} checksum={checksum_text}")
     if ev.params:
@@ -405,32 +423,100 @@ def analyze_capture(args: argparse.Namespace) -> int:
 
 
 def register_subcommands(subparsers) -> None:
-    pa = subparsers.add_parser("analyze-capture", help="Analyze FujiBus monitor JSONL capture")
-    pa.add_argument("capture", help="Path to JSONL capture file produced by the monitor")
-    pa.add_argument("--detail", action="store_true", help="Show extra decoded detail below each matching frame")
-    pa.add_argument("--host", type=_parse_host, default=None, help="Enable lightweight host-specific analysis (currently: bbc)")
-    pa.add_argument("--device", type=_parse_int_filter, default=None, help="Filter by device id, e.g. 0xFE")
-    pa.add_argument("--command", type=_parse_int_filter, default=None, help="Filter by command id, e.g. 0x02")
-    pa.add_argument("--checksum-fail", action="store_true", help="Show only checksum failures")
-    pa.add_argument("--parse-fail", action="store_true", help="Show only parse failures")
-    pa.add_argument("--slip-fail", action="store_true", help="Show only SLIP decode failures")
-    pa.add_argument("--no-stats", action="store_true", help="Do not print summary stats at end")
-    pa.add_argument("--quiet-malformed", action="store_true", help="Suppress malformed JSONL line reports")
-    pa.set_defaults(fn=lambda args: analyze_capture(argparse.Namespace(**{**vars(args), "stats": not args.no_stats})))
+    pa = subparsers.add_parser(
+        "analyze-capture", help="Analyze FujiBus monitor JSONL capture"
+    )
+    pa.add_argument(
+        "capture", help="Path to JSONL capture file produced by the monitor"
+    )
+    pa.add_argument(
+        "--detail",
+        action="store_true",
+        help="Show extra decoded detail below each matching frame",
+    )
+    pa.add_argument(
+        "--host",
+        type=_parse_host,
+        default=None,
+        help="Enable lightweight host-specific analysis (currently: bbc)",
+    )
+    pa.add_argument(
+        "--device",
+        type=_parse_int_filter,
+        default=None,
+        help="Filter by device id, e.g. 0xFE",
+    )
+    pa.add_argument(
+        "--command",
+        type=_parse_int_filter,
+        default=None,
+        help="Filter by command id, e.g. 0x02",
+    )
+    pa.add_argument(
+        "--checksum-fail", action="store_true", help="Show only checksum failures"
+    )
+    pa.add_argument(
+        "--parse-fail", action="store_true", help="Show only parse failures"
+    )
+    pa.add_argument(
+        "--slip-fail", action="store_true", help="Show only SLIP decode failures"
+    )
+    pa.add_argument(
+        "--no-stats", action="store_true", help="Do not print summary stats at end"
+    )
+    pa.add_argument(
+        "--quiet-malformed",
+        action="store_true",
+        help="Suppress malformed JSONL line reports",
+    )
+    pa.set_defaults(
+        fn=lambda args: analyze_capture(
+            argparse.Namespace(**{**vars(args), "stats": not args.no_stats})
+        )
+    )
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Analyze FujiBus monitor JSONL captures")
     p.add_argument("capture", help="Path to JSONL capture file produced by the monitor")
-    p.add_argument("--detail", action="store_true", help="Show extra decoded detail below each matching frame")
-    p.add_argument("--host", type=_parse_host, default=None, help="Enable lightweight host-specific analysis (currently: bbc)")
-    p.add_argument("--device", type=_parse_int_filter, default=None, help="Filter by device id, e.g. 0xFE")
-    p.add_argument("--command", type=_parse_int_filter, default=None, help="Filter by command id, e.g. 0x02")
-    p.add_argument("--checksum-fail", action="store_true", help="Show only checksum failures")
+    p.add_argument(
+        "--detail",
+        action="store_true",
+        help="Show extra decoded detail below each matching frame",
+    )
+    p.add_argument(
+        "--host",
+        type=_parse_host,
+        default=None,
+        help="Enable lightweight host-specific analysis (currently: bbc)",
+    )
+    p.add_argument(
+        "--device",
+        type=_parse_int_filter,
+        default=None,
+        help="Filter by device id, e.g. 0xFE",
+    )
+    p.add_argument(
+        "--command",
+        type=_parse_int_filter,
+        default=None,
+        help="Filter by command id, e.g. 0x02",
+    )
+    p.add_argument(
+        "--checksum-fail", action="store_true", help="Show only checksum failures"
+    )
     p.add_argument("--parse-fail", action="store_true", help="Show only parse failures")
-    p.add_argument("--slip-fail", action="store_true", help="Show only SLIP decode failures")
-    p.add_argument("--no-stats", action="store_true", help="Do not print summary stats at end")
-    p.add_argument("--quiet-malformed", action="store_true", help="Suppress malformed JSONL line reports")
+    p.add_argument(
+        "--slip-fail", action="store_true", help="Show only SLIP decode failures"
+    )
+    p.add_argument(
+        "--no-stats", action="store_true", help="Do not print summary stats at end"
+    )
+    p.add_argument(
+        "--quiet-malformed",
+        action="store_true",
+        help="Suppress malformed JSONL line reports",
+    )
     return p
 
 

@@ -6,15 +6,15 @@ from .fujibus import FujiBusSession
 from . import fileproto as fp
 from .common import open_serial, status_ok
 
-
 # ----------------------------------------------------------------------
 # Commands
 # ----------------------------------------------------------------------
 
+
 def _parse_uri(arg: str) -> str:
     """
     Parse a single URI argument.
-    
+
     If the argument contains "://" or starts with "/", it's already a URI.
     Otherwise, treat it as a path on the "host" filesystem.
     """
@@ -69,7 +69,10 @@ def cmd_list(args) -> int:
 
         # FujiBus convention: status is param[0] on responses
         if not status_ok(pkt):
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
+            print(
+                f"Device status={pkt.params[0] if pkt.params else '??'}",
+                file=sys.stderr,
+            )
             return 1
 
         lr = fp.parse_list_resp(pkt.payload)
@@ -77,7 +80,9 @@ def cmd_list(args) -> int:
         print(f"{args.uri} (more={lr.more}, count={len(lr.entries)})")
         for e in lr.entries:
             kind = "DIR " if e.is_dir else "FILE"
-            print(f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}")
+            print(
+                f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}"
+            )
 
     return 0
 
@@ -104,7 +109,10 @@ def cmd_stat(args) -> int:
 
         # FujiBus convention: status is param[0] on responses
         if not status_ok(pkt):
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
+            print(
+                f"Device status={pkt.params[0] if pkt.params else '??'}",
+                file=sys.stderr,
+            )
             return 1
 
         st = fp.parse_stat_resp(pkt.payload)
@@ -137,7 +145,10 @@ def cmd_read(args) -> int:
             print("No response", file=sys.stderr)
             return 2
         if not status_ok(pkt):
-            print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
+            print(
+                f"Device status={pkt.params[0] if pkt.params else '??'}",
+                file=sys.stderr,
+            )
             return 1
 
         rr = fp.parse_read_resp(pkt.payload)
@@ -149,7 +160,9 @@ def cmd_read(args) -> int:
             sys.stdout.buffer.write(rr.data)
 
         if args.verbose:
-            print(f"\n(offset={rr.offset}, len={len(rr.data)}, eof={rr.eof}, truncated={rr.truncated})")
+            print(
+                f"\n(offset={rr.offset}, len={len(rr.data)}, eof={rr.eof}, truncated={rr.truncated})"
+            )
     return 0
 
 
@@ -182,12 +195,18 @@ def cmd_read_all(args) -> int:
                 return 2
 
             if not status_ok(pkt):
-                print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
+                print(
+                    f"Device status={pkt.params[0] if pkt.params else '??'}",
+                    file=sys.stderr,
+                )
                 return 1
 
             rr = fp.parse_read_resp(pkt.payload)
             if rr.offset != offset:
-                print(f"Offset echo mismatch: expected {offset}, got {rr.offset}", file=sys.stderr)
+                print(
+                    f"Offset echo mismatch: expected {offset}, got {rr.offset}",
+                    file=sys.stderr,
+                )
                 return 1
 
             if out_path:
@@ -201,7 +220,9 @@ def cmd_read_all(args) -> int:
             offset += n
 
             if args.verbose:
-                print(f"read chunk: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}")
+                print(
+                    f"read chunk: offset={rr.offset} len={n} eof={rr.eof} truncated={rr.truncated}"
+                )
 
             if rr.eof or n == 0:
                 break
@@ -229,7 +250,7 @@ def _parent_dir(path: str) -> str:
 def cmd_write(args) -> int:
     uri = _parse_uri(args.uri)
     src_path = Path(args.inp)
-    
+
     # If uri is a directory (ends with /), append the source filename
     if uri.endswith("/"):
         uri = uri + src_path.name
@@ -270,12 +291,18 @@ def cmd_write(args) -> int:
 
             # FujiBus convention: status is param[0] on responses
             if not status_ok(pkt):
-                print(f"Device status={pkt.params[0] if pkt.params else '??'}", file=sys.stderr)
+                print(
+                    f"Device status={pkt.params[0] if pkt.params else '??'}",
+                    file=sys.stderr,
+                )
                 return 1
 
             wr = fp.parse_write_resp(pkt.payload)
             if wr.offset != offset:
-                print(f"Offset echo mismatch: expected {offset}, got {wr.offset}", file=sys.stderr)
+                print(
+                    f"Offset echo mismatch: expected {offset}, got {wr.offset}",
+                    file=sys.stderr,
+                )
                 return 1
 
             wrote = int(wr.written)
@@ -283,7 +310,9 @@ def cmd_write(args) -> int:
                 wrote = 0
 
             if args.verbose:
-                print(f"write chunk: offset={offset} requested={len(chunk)} written={wrote}")
+                print(
+                    f"write chunk: offset={offset} requested={len(chunk)} written={wrote}"
+                )
 
             total_written += wrote
             offset += wrote
@@ -324,10 +353,16 @@ def register_subcommands(subparsers) -> None:
     pra.add_argument("uri", help="URI (e.g., tnfs://host:port/file, /path, sd0:/path)")
     pra.set_defaults(fn=cmd_read_all)
 
-    pw = subparsers.add_parser("write", help="Write a local file to the remote path in chunks")
+    pw = subparsers.add_parser(
+        "write", help="Write a local file to the remote path in chunks"
+    )
     pw.add_argument("--offset", type=int, default=0)
     pw.add_argument("--chunk", type=int, default=512)
-    pw.add_argument("--mkdirs", action="store_true", help="Create parent directories if needed (mkdir -p)")
+    pw.add_argument(
+        "--mkdirs",
+        action="store_true",
+        help="Create parent directories if needed (mkdir -p)",
+    )
     pw.add_argument("uri", help="URI (e.g., tnfs://host:port/file, /path, sd0:/path)")
     pw.add_argument("inp", help="Local input file")
     pw.set_defaults(fn=cmd_write)

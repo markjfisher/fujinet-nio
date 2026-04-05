@@ -51,6 +51,7 @@ def _check_version(payload: bytes, off: int = 0) -> int:
 
 # -------- Requests --------
 
+
 def build_mount_req(
     *,
     slot: int,
@@ -125,7 +126,9 @@ def build_write_sector_req(*, slot: int, lba: int, data: bytes) -> bytes:
         raise ValueError("lba must fit u32")
     if len(data) > 0xFFFF:
         raise ValueError("data too large for u16 length")
-    return bytes([DISKPROTO_VERSION, slot & 0xFF]) + u32le(lba) + u16le(len(data)) + data
+    return (
+        bytes([DISKPROTO_VERSION, slot & 0xFF]) + u32le(lba) + u16le(len(data)) + data
+    )
 
 
 # Create:
@@ -175,6 +178,7 @@ def build_create_req(
 
 
 # -------- Responses --------
+
 
 @dataclass
 class MountResp:
@@ -303,4 +307,6 @@ def parse_create_resp(payload: bytes) -> CreateResp:
     img_type, off = read_u8(payload, off)
     sector_size, off = read_u16le(payload, off)
     sector_count, off = read_u32le(payload, off)
-    return CreateResp(img_type=img_type, sector_size=sector_size, sector_count=sector_count)
+    return CreateResp(
+        img_type=img_type, sector_size=sector_size, sector_count=sector_count
+    )

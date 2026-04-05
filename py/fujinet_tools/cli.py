@@ -19,7 +19,9 @@ def main() -> None:
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument("--timeout", type=float, default=5)
     p.add_argument("--read-max", type=int, default=2048)
-    p.add_argument("-d", "--debug", action="store_true", help="Dump raw FujiBus packets")
+    p.add_argument(
+        "-d", "--debug", action="store_true", help="Dump raw FujiBus packets"
+    )
     p.add_argument("-v", "--verbose", action="store_true")
 
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -33,13 +35,34 @@ def main() -> None:
     analyze_capture_cmds.register_subcommands(sub)
 
     pm = sub.add_parser("monitor", help="Live FujiBus-over-SLIP serial monitor")
-    pm.add_argument("--timeout", type=float, default=0.01, help="Serial read timeout for incremental reads")
-    pm.add_argument("--ascii", action="store_true", help="Include short ASCII payload preview")
-    pm.add_argument("--hex", action="store_true", help="Include short payload hex preview")
-    pm.add_argument("--full-hex", action="store_true", help="Include full decoded FujiBus payload hex")
-    pm.add_argument("--decoded-hex", action="store_true", help="Print full decoded FujiBus packet hex")
-    pm.add_argument("--raw", action="store_true", help="Print full raw SLIP frame bytes")
-    pm.add_argument("--json", action="store_true", help="Emit one JSON object per frame (JSONL)")
+    pm.add_argument(
+        "--timeout",
+        type=float,
+        default=0.01,
+        help="Serial read timeout for incremental reads",
+    )
+    pm.add_argument(
+        "--ascii", action="store_true", help="Include short ASCII payload preview"
+    )
+    pm.add_argument(
+        "--hex", action="store_true", help="Include short payload hex preview"
+    )
+    pm.add_argument(
+        "--full-hex",
+        action="store_true",
+        help="Include full decoded FujiBus payload hex",
+    )
+    pm.add_argument(
+        "--decoded-hex",
+        action="store_true",
+        help="Print full decoded FujiBus packet hex",
+    )
+    pm.add_argument(
+        "--raw", action="store_true", help="Print full raw SLIP frame bytes"
+    )
+    pm.add_argument(
+        "--json", action="store_true", help="Emit one JSON object per frame (JSONL)"
+    )
     pm.set_defaults(
         fn=lambda args: monitor_cmds.monitor_port(
             port=args.port,

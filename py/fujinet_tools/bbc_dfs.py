@@ -50,7 +50,9 @@ def _bcd_to_int(x: int) -> int:
     return ((x >> 4) & 0x0F) * 10 + (x & 0x0F)
 
 
-def parse_dfs_catalogue_090(*, sector0: bytes, sector1: bytes) -> tuple[DfsDiskDescriptor, List[DfsFileEntry]]:
+def parse_dfs_catalogue_090(
+    *, sector0: bytes, sector1: bytes
+) -> tuple[DfsDiskDescriptor, List[DfsFileEntry]]:
     """
     Parse the standard Acorn DFS catalogue (2 sectors) for DFS 0.90 style discs.
 
@@ -159,5 +161,3 @@ def find_entry(entries: List[DfsFileEntry], name: str) -> Optional[DfsFileEntry]
         if e.directory == d and e.name == n:
             return e
     return None
-
-

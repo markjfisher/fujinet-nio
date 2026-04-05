@@ -17,14 +17,14 @@ class TestBbcDfs090BitPacking(unittest.TestCase):
 
         # Entry 0 filename+dir lives at sector0 offset 8
         s0[8:15] = b"HELLO  "  # 7 bytes (space padded)
-        s0[15] = ord("$")      # directory, unlocked
+        s0[15] = ord("$")  # directory, unlocked
 
         # Choose values that exercise the top-bit packing:
         # load/exec/len: 18-bit, start sector: 10-bit.
-        load = 0x34567   # top2 = 3
+        load = 0x34567  # top2 = 3
         exec_ = 0x21234  # top2 = 2
-        length = 0x1ABCD # top2 = 1
-        start = 0x2AA    # top2 = 2
+        length = 0x1ABCD  # top2 = 1
+        start = 0x2AA  # top2 = 2
 
         off = 8
         s1[off + 0] = load & 0xFF
@@ -35,9 +35,9 @@ class TestBbcDfs090BitPacking(unittest.TestCase):
         s1[off + 5] = (length >> 8) & 0xFF
 
         b14 = 0
-        b14 |= ((start >> 8) & 0x03) << 0   # b1..b0
-        b14 |= ((load >> 16) & 0x03) << 2   # b3..b2
-        b14 |= ((length >> 16) & 0x03) << 4 # b5..b4
+        b14 |= ((start >> 8) & 0x03) << 0  # b1..b0
+        b14 |= ((load >> 16) & 0x03) << 2  # b3..b2
+        b14 |= ((length >> 16) & 0x03) << 4  # b5..b4
         b14 |= ((exec_ >> 16) & 0x03) << 6  # b7..b6
         s1[off + 6] = b14
         s1[off + 7] = start & 0xFF
@@ -58,5 +58,3 @@ class TestBbcDfs090BitPacking(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
