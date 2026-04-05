@@ -728,10 +728,10 @@ def cmd_net_tcp_connect(args) -> int:
     with open_serial(port=args.port, baud=args.baud, timeout_s=args.timeout) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
         url = args.url
-        if args.host and args.port:
+        if args.host and args.tcp_port:
             url = _tcp_url_with_opts(
                 args.host,
-                args.port,
+                args.tcp_port,
                 connect_timeout_ms=args.connect_timeout_ms,
                 nodelay=args.nodelay,
                 keepalive=args.keepalive,
@@ -887,7 +887,7 @@ def register_tcp_subcommands(nsub) -> None:
     pc = tsub.add_parser("connect", help="Open a tcp:// URL and print the handle")
     pc.add_argument("url", nargs="?", help="tcp://host:port[?opts]")
     pc.add_argument("--host", help="Alternative to url: host")
-    pc.add_argument("--port", type=int, help="Alternative to url: port")
+    pc.add_argument("--tcp-port", type=int, help="Alternative to url: port")
     pc.add_argument("--connect-timeout-ms", type=int, default=None)
     pc.add_argument("--nodelay", type=int, choices=[0, 1], default=None)
     pc.add_argument("--keepalive", type=int, choices=[0, 1], default=None)
