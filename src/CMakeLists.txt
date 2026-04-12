@@ -91,13 +91,13 @@ idf_component_register(
         platform/esp32/fuji_device_factory.cpp
         platform/esp32/hardware_caps.cpp
         platform/esp32/http_network_protocol_espidf.cpp
-        platform/esp32/iwm_bus_hardware.cpp
         platform/esp32/led_manager.cpp
+        platform/esp32/legacy/iwm_bus_hardware.cpp
+        platform/esp32/legacy/sio_bus_hardware.cpp
         platform/esp32/log_output_tinyusb.cpp
         platform/esp32/logging.cpp
         platform/esp32/network_registry.cpp
         platform/esp32/pinmap.cpp
-        platform/esp32/sio_bus_hardware.cpp
         platform/esp32/sntp_service.cpp
         platform/esp32/tcp_channel.cpp
         platform/esp32/tcp_network_protocol_espidf.cpp

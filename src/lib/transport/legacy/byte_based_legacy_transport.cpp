@@ -3,7 +3,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "byte_legacy";
+static constexpr const char* TAG = "l_byte";
 
 ByteBasedLegacyTransport::ByteBasedLegacyTransport(
     Channel& channel,

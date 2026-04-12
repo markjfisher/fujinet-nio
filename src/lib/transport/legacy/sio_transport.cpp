@@ -9,7 +9,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "sio";
+static constexpr const char* TAG = "l_sio";
 
 // SIO timing constants
 static constexpr std::uint32_t DELAY_T4 = 850; // microseconds

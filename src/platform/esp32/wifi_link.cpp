@@ -16,7 +16,7 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "nio-wifi";
+static constexpr const char* TAG = "nio-wifi";
 static constexpr int MAX_RETRIES = 5;
 
 static bool is_same_ssid(const std::string& a, const std::string& b)

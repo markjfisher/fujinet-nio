@@ -5,7 +5,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "iwm";
+static constexpr const char* TAG = "l_iwm";
 
 IwmTransport::IwmTransport(Channel& channel)
     : PacketBasedLegacyTransport(channel, make_iwm_traits())

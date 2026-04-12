@@ -3,7 +3,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "netsio";
+static constexpr const char* TAG = "l_netsio";
 
 NetSIOProtocol::NetSIOProtocol()
 {

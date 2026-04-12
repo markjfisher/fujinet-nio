@@ -22,7 +22,7 @@ using fujinet::platform::get_timezone;
 using fujinet::platform::validate_timezone;
 using fujinet::platform::sync_network_time;
 
-static const char* TAG = "clock";
+static constexpr const char* TAG = "clock";
 
 ClockDevice::ClockDevice(config::FujiConfigStore* configStore)
     : _configStore(configStore)

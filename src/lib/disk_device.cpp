@@ -17,7 +17,7 @@ using fujinet::disk::MountOptions;
 using fujinet::io::protocol::DiskCommand;
 using fujinet::io::protocol::to_disk_command;
 
-static const char* TAG = "disk";
+static constexpr const char* TAG = "disk";
 
 static StatusCode map_disk_error(DiskError e) noexcept
 {

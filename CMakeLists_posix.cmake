@@ -180,11 +180,11 @@ target_sources(fujinet-nio
         src/platform/posix/fuji_device_factory.cpp
         src/platform/posix/hardware_caps.cpp
         src/platform/posix/http_network_protocol_curl.cpp
-        src/platform/posix/iwm_bus_hardware.cpp
+        src/platform/posix/legacy/iwm_bus_hardware.cpp
+        src/platform/posix/legacy/netsio_bus_hardware.cpp
+        src/platform/posix/legacy/sio_bus_hardware.cpp
         src/platform/posix/logging.cpp
-        src/platform/posix/netsio_bus_hardware.cpp
         src/platform/posix/network_registry.cpp
-        src/platform/posix/sio_bus_hardware.cpp
         src/platform/posix/tcp_channel.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
         src/platform/posix/tcp_socket_ops_default.cpp

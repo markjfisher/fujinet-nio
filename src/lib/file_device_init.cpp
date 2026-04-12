@@ -12,7 +12,7 @@ using fujinet::io::DeviceID;
 using fujinet::io::protocol::WireDeviceId;
 using fujinet::io::protocol::to_device_id;
 
-static const char* TAG = "core";
+static constexpr const char* TAG = "core";
 
 void register_file_device(FujinetCore& core)
 {

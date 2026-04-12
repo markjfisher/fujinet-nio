@@ -12,7 +12,7 @@ using fujinet::io::ModemDevice;
 using fujinet::io::protocol::WireDeviceId;
 using fujinet::io::protocol::to_device_id;
 
-static const char* TAG = "core";
+static constexpr const char* TAG = "core";
 
 void register_modem_device(FujinetCore& core)
 {

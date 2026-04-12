@@ -9,7 +9,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "iwm_hw";
+static constexpr const char* TAG = "l_iwm_hw";
 
 // ESP32 IWM hardware implementation
 // This is a placeholder that will use SPI + GPIO for phase lines

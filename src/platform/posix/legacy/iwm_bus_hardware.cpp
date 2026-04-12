@@ -7,7 +7,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "iwm_hw";
+static constexpr const char* TAG = "l_iwm_hw";
 
 // POSIX IWM hardware implementation
 // For POSIX, this typically works with SLIP relay or emulation

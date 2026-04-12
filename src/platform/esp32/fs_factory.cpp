@@ -11,7 +11,7 @@ namespace fujinet::platform::esp32 {
 
 using fujinet::fs::FileSystemKind;
 
-static const char* TAG = "fs";
+static constexpr const char* TAG = "fs";
 
 std::unique_ptr<fujinet::fs::IFileSystem> create_flash_filesystem()
 {

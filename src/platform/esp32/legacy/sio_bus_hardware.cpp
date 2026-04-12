@@ -12,7 +12,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "sio_hw";
+static constexpr const char* TAG = "l_sio_hw";
 
 // ESP32 SIO hardware implementation
 // This is a placeholder that uses the Channel interface

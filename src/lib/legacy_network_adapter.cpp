@@ -23,7 +23,7 @@
 
 namespace fujinet::io::legacy {
 
-static constexpr const char* TAG = "legacy_net_adapter";
+static constexpr const char* TAG = "l_netadpt";
 
 using fujinet::io::netproto::Reader;
 using fujinet::io::protocol::NetworkCommand;

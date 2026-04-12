@@ -39,7 +39,7 @@ namespace fujinet {
 using namespace fujinet;
 using namespace fujinet::io::protocol;
 
-static const char* TAG = "nio";
+static constexpr const char* TAG = "nio";
 
 // Helper: run a std::function once after a delay (no templates; keeps loop clean).
 struct DeferredOnce {

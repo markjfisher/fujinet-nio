@@ -22,7 +22,7 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-// static const char* TAG = "platform";
+// static constexpr const char* TAG = "platform";
 
 UsbCdcChannel::UsbCdcChannel()
 {

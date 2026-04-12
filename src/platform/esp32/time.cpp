@@ -12,7 +12,7 @@
 
 namespace fujinet::platform {
 
-static const char* TAG = "platform";
+static constexpr const char* TAG = "platform";
 
 std::uint64_t unix_time_seconds()
 {

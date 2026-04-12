@@ -8,7 +8,7 @@
 
 namespace fujinet::net {
 
-static const char* TAG = "events";
+static constexpr const char* TAG = "events";
 
 
 /**

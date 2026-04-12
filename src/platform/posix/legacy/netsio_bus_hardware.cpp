@@ -11,7 +11,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "netsio";
+static constexpr const char* TAG = "l_netsio";
 
 // NetSIO bus hardware implementation
 // Wraps UDP channel + NetSIO protocol to provide BusHardware interface

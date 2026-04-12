@@ -7,7 +7,7 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "service";
+static constexpr const char* TAG = "service";
 
 SntpService* SntpService::_instance = nullptr;
 

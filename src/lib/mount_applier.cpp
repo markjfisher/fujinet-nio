@@ -8,7 +8,7 @@
 
 namespace fujinet {
 
-static const char* TAG = "mount";
+static constexpr const char* TAG = "mount";
 
 std::size_t apply_config_mounts(
     disk::DiskService& diskService,

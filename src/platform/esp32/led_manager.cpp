@@ -8,7 +8,7 @@
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "led";
+static constexpr const char* TAG = "led";
 
 // Blink duration in milliseconds
 static constexpr int BLINK_TIME_MS = 100;

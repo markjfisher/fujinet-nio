@@ -16,7 +16,7 @@ extern "C" {
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "platform";
+static constexpr const char* TAG = "platform";
 
 #if CONFIG_TINYUSB_CDC_ENABLED
 static bool s_driver_inited = false;

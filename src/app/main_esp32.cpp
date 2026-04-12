@@ -41,7 +41,7 @@ extern "C" {
 #include <memory>
 #include <unistd.h>
 
-static const char* TAG = "nio";
+static constexpr const char* TAG = "nio";
 
 using namespace fujinet;
 using namespace fujinet::io::protocol;
@@ -309,28 +309,35 @@ extern "C" void app_main(void)
     esp_log_level_set("*", ESP_LOG_ERROR);
 
     // Turn our own tags back up a bit
-    esp_log_level_set("config",      ESP_LOG_INFO);
+    esp_log_level_set("button",      ESP_LOG_INFO);
     esp_log_level_set("clock",       ESP_LOG_INFO);
+    esp_log_level_set("config",      ESP_LOG_INFO);
+    esp_log_level_set("console",     ESP_LOG_INFO);
     esp_log_level_set("core",        ESP_LOG_INFO);
-    esp_log_level_set("events",      ESP_LOG_INFO);
+    esp_log_level_set("disk",        ESP_LOG_INFO);
     esp_log_level_set("fs",          ESP_LOG_INFO);
+    esp_log_level_set("fujibus",     ESP_LOG_INFO);
     esp_log_level_set("io",          ESP_LOG_INFO);
+    esp_log_level_set("led",         ESP_LOG_INFO);
+    esp_log_level_set("mount",       ESP_LOG_INFO);
     esp_log_level_set("nio",         ESP_LOG_INFO);
     esp_log_level_set("nio-wifi",    ESP_LOG_INFO);
     esp_log_level_set("platform",    ESP_LOG_INFO);
     esp_log_level_set("service",     ESP_LOG_INFO);
-
-    // legacy testing
-    esp_log_level_set("byte_legacy", ESP_LOG_INFO);
-    esp_log_level_set("packet_legacy", ESP_LOG_INFO);
-    esp_log_level_set("sio",         ESP_LOG_INFO);
-    esp_log_level_set("netsio",      ESP_LOG_INFO);
-    esp_log_level_set("iwm_hw",      ESP_LOG_INFO);
-    esp_log_level_set("sio_hw",      ESP_LOG_INFO);
-    esp_log_level_set("button",      ESP_LOG_INFO);
-    esp_log_level_set("led",         ESP_LOG_INFO);
-    esp_log_level_set("tnfs",        ESP_LOG_INFO);
+    esp_log_level_set("tcp",         ESP_LOG_INFO);
     esp_log_level_set("tnfs_fs",     ESP_LOG_INFO);
+    esp_log_level_set("uart_ch",     ESP_LOG_INFO);
+    esp_log_level_set("udp",         ESP_LOG_INFO);
+    
+    // legacy testing
+    esp_log_level_set("l_byte",      ESP_LOG_INFO);
+    esp_log_level_set("l_iwm",       ESP_LOG_INFO);
+    esp_log_level_set("l_iwm_hw",    ESP_LOG_INFO);
+    esp_log_level_set("l_netadpt",   ESP_LOG_INFO);
+    esp_log_level_set("l_netsio",    ESP_LOG_INFO);
+    esp_log_level_set("l_packet",    ESP_LOG_INFO);
+    esp_log_level_set("l_sio",       ESP_LOG_INFO);
+    esp_log_level_set("l_sio_hw",    ESP_LOG_INFO);
 
     // Silence noisy ESP components we care about:
     esp_log_level_set("heap_init",   ESP_LOG_ERROR);

@@ -10,7 +10,7 @@
 
 namespace fujinet::platform::esp32 {
 
-static const char* TAG = "button";
+static constexpr const char* TAG = "button";
 
 ButtonManager::ButtonManager()
 {

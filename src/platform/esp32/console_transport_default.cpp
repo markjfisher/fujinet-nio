@@ -8,7 +8,7 @@ extern "C" {
 
 namespace fujinet::console {
 
-static const char* TAG = "console";
+static constexpr const char* TAG = "console";
 
 // Implemented in console_transport_uart.cpp (only referenced when needed).
 #if !CONFIG_FN_CONSOLE_TRANSPORT_USB_CDC || CONFIG_FN_CONSOLE_ALLOW_UART_FALLBACK

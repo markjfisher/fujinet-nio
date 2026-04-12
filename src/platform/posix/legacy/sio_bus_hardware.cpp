@@ -10,7 +10,7 @@
 
 namespace fujinet::io::transport::legacy {
 
-static constexpr const char* TAG = "sio_hw";
+static constexpr const char* TAG = "l_sio_hw";
 
 // Forward declaration
 std::unique_ptr<BusHardware> make_netsio_bus_hardware(fujinet::io::Channel& channel, const fujinet::config::NetSioConfig& netsioConfig);

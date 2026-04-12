@@ -16,7 +16,7 @@ namespace fujinet::platform::esp32 {
 
 namespace {
 
-static const char* TAG = "uart_channel";
+static constexpr const char* TAG = "uart_ch";
 
 static constexpr int UART_RX_BUF_SIZE = 2048;
 static constexpr int UART_TX_BUF_SIZE = 0;  // 0 = TX buffer not used, blocking write
