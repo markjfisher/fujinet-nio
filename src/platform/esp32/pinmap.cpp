@@ -9,6 +9,7 @@ namespace fujinet::platform::esp32 {
 #define FN_PINMAP_FUJINET_S3_REV_A  3
 #define FN_PINMAP_ATARIV1           4
 #define FN_PINMAP_RS232             5
+#define FN_PINMAP_RS232_REV0        6
 // Add more here as they are used. These ensure we don't get weird macro expansions.
 
 // Ensure at least one of FN_PINMAP or FN_PINMAP_DEFAULT is defined
@@ -77,6 +78,37 @@ static constexpr PinMap BOARD_PINMAP{
     .led = LedPins{
         .wifi = 14,     // GPIO_NUM_14 (PIN_LED_WIFI)
         .bus = 12,      // GPIO_NUM_12 (PIN_LED_BUS)
+    },
+    .button = ButtonPins{
+        .a = 0,         // GPIO_NUM_0 (PIN_BUTTON_A)
+        .b = -1,        // No Button B on RS232 board
+        .c = 39,        // GPIO_NUM_39 (PIN_BUTTON_C - Safe Reset)
+    },
+};
+#elif FN_PINMAP == FN_PINMAP_RS232_REV0
+// FujiNet RS232 Rev0 8Mb ESP32 (not S3)
+// Based on rs232_rev0.h and common.h from fujinet-firmware
+static constexpr PinMap BOARD_PINMAP{
+    .sd = SdSpiPins{
+        .mosi = 23,     // GPIO_NUM_23 (PIN_SD_HOST_MOSI)
+        .miso = 19,     // GPIO_NUM_19 (PIN_SD_HOST_MISO)
+        .sck = 18,      // GPIO_NUM_18 (PIN_SD_HOST_SCK)
+        .cs = 5,        // GPIO_NUM_5  (PIN_SD_HOST_CS)
+    },
+    .sio = {},          // RS232 board has no SIO pins
+    .rs232 = Rs232Pins{
+        .uart = UartPins{ .rx = 13, .tx = 21 },  // UART1 for RS232 data
+        .ri  = 32,      // GPIO_NUM_32 (PIN_RS232_RI)
+        .dcd = 22,      // GPIO_NUM_22 (PIN_RS232_DCD)
+        .rts = 33,      // GPIO_NUM_33 (PIN_RS232_RTS)
+        .cts = 26,      // GPIO_NUM_26 (PIN_RS232_CTS)
+        .dtr = 27,      // GPIO_NUM_27 (PIN_RS232_DTR)
+        .dsr = 4,       // GPIO_NUM_4  (PIN_RS232_DSR)
+        .invalid = 36,  // GPIO_NUM_36 (PIN_RS232_INVALID)
+    },
+    .led = LedPins{
+        .wifi = 14,     // GPIO_NUM_14 (PIN_LED_WIFI)
+        .bus  = 12,     // GPIO_NUM_12 (PIN_LED_BUS)
     },
     .button = ButtonPins{
         .a = 0,         // GPIO_NUM_0 (PIN_BUTTON_A)
