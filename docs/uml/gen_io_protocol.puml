@@ -9,15 +9,6 @@ DiskService
 NetworkService
 FileService
 }
-enum "io::protocol::NetworkCommand" as C_0007700754280455587098
-enum C_0007700754280455587098 {
-Open
-Read
-Write
-Close
-Info
-InfoRead
-}
 enum "io::protocol::FileCommand" as C_0003895064208135060769
 enum C_0003895064208135060769 {
 Stat
@@ -26,6 +17,13 @@ ReadFile
 WriteFile
 ResolvePath
 MakeDirectory
+}
+enum "io::protocol::ModemCommand" as C_0010997942004027913014
+enum C_0010997942004027913014 {
+Write
+Read
+Status
+Control
 }
 enum "io::protocol::SlipByte" as C_0010627602090167488081
 enum C_0010627602090167488081 {
@@ -77,13 +75,6 @@ __
 -_device : WireDeviceId
 -_params : std::vector<PacketParam>
 }
-enum "io::protocol::ModemCommand" as C_0010997942004027913014
-enum C_0010997942004027913014 {
-Write
-Read
-Status
-Control
-}
 enum "io::protocol::DiskCommand" as C_0015699043703645047876
 enum C_0015699043703645047876 {
 Mount
@@ -93,6 +84,15 @@ WriteSector
 Info
 ClearChanged
 Create
+}
+enum "io::protocol::NetworkCommand" as C_0007700754280455587098
+enum C_0007700754280455587098 {
+Open
+Read
+Write
+Close
+Info
+InfoRead
 }
 enum "io::protocol::FujiCommand" as C_0004628219160953719395
 enum C_0004628219160953719395 {

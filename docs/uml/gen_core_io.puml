@@ -1,33 +1,5 @@
 @startuml
 title Core + IO (auto-gen from clang-uml)
-class "fs::StorageManager" as C_0001279065520068563954
-class C_0001279065520068563954 {
-+StorageManager() = default : void
-+StorageManager(const StorageManager &) = deleted : void
-+~StorageManager() = default : void
-..
-+operator=(const StorageManager &) = deleted : StorageManager &
-..
-+get(const std::string & name) : IFileSystem *
-+get(const std::string & name) const : const IFileSystem *
-+getByScheme(const std::string & scheme) : IFileSystem *
-+getByScheme(const std::string & scheme) const : const IFileSystem *
-+listNames() const : std::vector<std::string>
-+registerFileSystem(std::unique_ptr<IFileSystem> fs) : bool
-+resolveUri(const std::string & uri) : std::pair<IFileSystem *,std::string>
-+unregisterFileSystem(const std::string & name) : bool
-__
--_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
-}
-abstract "io::Channel" as C_0008542343802949846318
-abstract C_0008542343802949846318 {
-+~Channel() constexpr = default : void
-..
-{abstract} +available() = 0 : bool
-{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
-{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
-__
-}
 enum "io::RequestType" as C_0015173710654558847960
 enum C_0015173710654558847960 {
 Command
@@ -67,15 +39,6 @@ __
 +id : RequestID
 +payload : std::vector<std::uint8_t>
 +status : StatusCode
-}
-abstract "io::ITransport" as C_0015529497257294770104
-abstract C_0015529497257294770104 {
-+~ITransport() constexpr = default : void
-..
-+poll() : void
-{abstract} +receive(IORequest & outReq) = 0 : bool
-{abstract} +send(const IOResponse & resp) = 0 : void
-__
 }
 enum "io::transport::legacy::ResponseStyle" as C_0013970161679530750266
 enum C_0013970161679530750266 {
@@ -130,6 +93,22 @@ WaitingForCommand
 WaitingForData
 SendingResponse
 }
+abstract "io::transport::legacy::ByteBasedLegacyTransport" as C_0014645015375049587372
+abstract C_0014645015375049587372 {
++ByteBasedLegacyTransport(Channel & channel, const BusTraits & traits) : void
++~ByteBasedLegacyTransport() : void
+..
+#expectedDataFrameLength(const cmdFrame_t & frame) const : std::size_t
+{abstract} #readDataFrame(std::uint8_t * buf, std::size_t len) = 0 : std::size_t
++receive(IORequest & outReq) : bool
++send(const IOResponse & resp) : void
+{abstract} #sendAck() = 0 : void
+{abstract} #sendComplete() = 0 : void
+{abstract} #sendError() = 0 : void
+{abstract} #sendNak() = 0 : void
+{abstract} #writeDataFrame(const std::uint8_t * buf, std::size_t len) = 0 : void
+__
+}
 abstract "io::transport::legacy::PacketBasedLegacyTransport" as C_0007145399192091431715
 abstract C_0007145399192091431715 {
 +PacketBasedLegacyTransport(Channel & channel, const BusTraits & traits) : void
@@ -183,22 +162,6 @@ __
 -_syncRequestNum : std::uint8_t
 -_txBuffer : std::vector<std::uint8_t>
 }
-abstract "io::transport::legacy::ByteBasedLegacyTransport" as C_0014645015375049587372
-abstract C_0014645015375049587372 {
-+ByteBasedLegacyTransport(Channel & channel, const BusTraits & traits) : void
-+~ByteBasedLegacyTransport() : void
-..
-#expectedDataFrameLength(const cmdFrame_t & frame) const : std::size_t
-{abstract} #readDataFrame(std::uint8_t * buf, std::size_t len) = 0 : std::size_t
-+receive(IORequest & outReq) : bool
-+send(const IOResponse & resp) : void
-{abstract} #sendAck() = 0 : void
-{abstract} #sendComplete() = 0 : void
-{abstract} #sendError() = 0 : void
-{abstract} #sendNak() = 0 : void
-{abstract} #writeDataFrame(const std::uint8_t * buf, std::size_t len) = 0 : void
-__
-}
 abstract "io::transport::legacy::BusHardware" as C_0018172480942667473236
 abstract C_0018172480942667473236 {
 +~BusHardware() constexpr = default : void
@@ -216,6 +179,26 @@ abstract C_0018172480942667473236 {
 {abstract} +write(const std::uint8_t * buf, std::size_t len) = 0 : void
 {abstract} +write(std::uint8_t byte) = 0 : void
 __
+}
+class "io::transport::legacy::SioTransport" as C_0007384888606456233527
+class C_0007384888606456233527 {
++SioTransport(Channel & channel, const build::BuildProfile & profile, const config::NetSioConfig * netsioConfig = nullptr) : void
++~SioTransport() = default : void
+..
+#commandNeedsData(std::uint8_t command) const : bool
+#expectedDataFrameLength(const cmdFrame_t & frame) const : std::size_t
++poll() : void
+#readCommandFrame(cmdFrame_t & frame) : bool
+#readDataFrame(std::uint8_t * buf, std::size_t len) : std::size_t
+-readDataFrameWithChecksum(std::uint8_t * buf, std::size_t len) : std::size_t
+#sendAck() : void
+#sendComplete() : void
+#sendError() : void
+#sendNak() : void
+#writeDataFrame(const std::uint8_t * buf, std::size_t len) : void
+-writeDataFrameWithChecksum(const std::uint8_t * buf, std::size_t len) : void
+__
+-_hardware : std::unique_ptr<BusHardware>
 }
 class "io::transport::legacy::IwmTransport" as C_0009446685585853408367
 class C_0009446685585853408367 {
@@ -239,85 +222,50 @@ Idle
 Reset
 Enable
 }
-class "io::transport::legacy::SioTransport" as C_0007384888606456233527
-class C_0007384888606456233527 {
-+SioTransport(Channel & channel, const build::BuildProfile & profile, const config::NetSioConfig * netsioConfig = nullptr) : void
-+~SioTransport() = default : void
+abstract "io::Channel" as C_0008542343802949846318
+abstract C_0008542343802949846318 {
++~Channel() constexpr = default : void
 ..
-#commandNeedsData(std::uint8_t command) const : bool
-#expectedDataFrameLength(const cmdFrame_t & frame) const : std::size_t
+{abstract} +available() = 0 : bool
+{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
+{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
+__
+}
+abstract "io::ITransport" as C_0015529497257294770104
+abstract C_0015529497257294770104 {
++~ITransport() constexpr = default : void
+..
 +poll() : void
-#readCommandFrame(cmdFrame_t & frame) : bool
-#readDataFrame(std::uint8_t * buf, std::size_t len) : std::size_t
--readDataFrameWithChecksum(std::uint8_t * buf, std::size_t len) : std::size_t
-#sendAck() : void
-#sendComplete() : void
-#sendError() : void
-#sendNak() : void
-#writeDataFrame(const std::uint8_t * buf, std::size_t len) : void
--writeDataFrameWithChecksum(const std::uint8_t * buf, std::size_t len) : void
+{abstract} +receive(IORequest & outReq) = 0 : bool
+{abstract} +send(const IOResponse & resp) = 0 : void
 __
--_hardware : std::unique_ptr<BusHardware>
 }
-class "io::ProtocolRegistry" as C_0011868125949252482179
-class C_0011868125949252482179 {
-+create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
-+register_scheme(std::string schemeLower, Factory factory) : bool
-__
--_factories : std::unordered_map<std::string,Factory>
-}
-class "io::NetworkOpenRequest" as C_0001159279330674149840
-class C_0001159279330674149840 {
-__
-+bodyLenHint : std::uint32_t
-+flags : std::uint8_t
-+headers : std::vector<std::pair<std::string,std::string>>
-+method : std::uint8_t
-+responseHeaderNamesLower : std::vector<std::string>
-+url : std::string
-}
-class "io::NetworkInfo" as C_0007100525671922339382
-class C_0007100525671922339382 {
-__
-+contentLength : std::uint64_t
-+hasContentLength : bool
-+hasHttpStatus : bool
-+headersBlock : std::string
-+httpStatus : std::uint16_t
-}
-abstract "io::INetworkProtocol" as C_0010613333864250568344
-abstract C_0010613333864250568344 {
-+~INetworkProtocol() constexpr = default : void
+class "io::FujiDevice" as C_0016024516082849980408
+class C_0016024516082849980408 {
++FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
 ..
-{abstract} +close() = 0 : void
-{abstract} +info(NetworkInfo & out) = 0 : StatusCode
-+is_streaming() const : bool
-{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
-{abstract} +poll() = 0 : void
-{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
-+requires_sequential_read() const : bool
-+requires_sequential_write() const : bool
-{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
++config() const : const config::FujiConfig &
++config_mut() : config::FujiConfig &
++config_store() : config::FujiConfigStore *
+{static} -encode_mount_record(std::uint8_t slotIndex, const std::string & uri, const std::string & mode, bool enabled) : std::vector<std::uint8_t>
+-find_mount_by_slot_number(int slot) : config::MountConfig *
+-find_mount_by_slot_number(int slot) const : const config::MountConfig *
++handle(const IORequest & request) : IOResponse
+-handle_get_mount(const IORequest & request) : IOResponse
+-handle_get_mounts(const IORequest & request) : IOResponse
+-handle_reset(const IORequest & request) : IOResponse
+-handle_set_mount(const IORequest & request) : IOResponse
+-handle_unknown(const IORequest & request) : IOResponse
+{static} -is_valid_mount_slot_index(std::uint8_t slotIndex) : bool
+-load_config() : void
++poll() : void
+-save_config() : void
++start() : void
 __
-}
-enum "io::ClockCommand" as C_0006646916694369797139
-enum C_0006646916694369797139 {
-GetTime
-SetTime
-GetTimeFormat
-GetTimezone
-SetTimezone
-SetTimezoneSave
-SyncNetworkTime
-}
-enum "io::TimeFormat" as C_0000686565705824050672
-enum C_0000686565705824050672 {
-SimpleBinary
-ProDOSBinary
-ApeTimeBinary
-TzIsoString
-UtcIsoString
-Apple3SosBinary
+-_config : config::FujiConfig
+-_configStore : std::unique_ptr<config::FujiConfigStore>
+-_resetHandler : ResetHandler
+-_storage : fs::StorageManager &
 }
 abstract "io::IRequestHandler" as C_0007350464861923755413
 abstract C_0007350464861923755413 {
@@ -377,6 +325,47 @@ __
 -_handler : IRequestHandler &
 -_transports : std::vector<ITransport *>
 }
+class "io::NetworkOpenRequest" as C_0001159279330674149840
+class C_0001159279330674149840 {
+__
++bodyLenHint : std::uint32_t
++flags : std::uint8_t
++headers : std::vector<std::pair<std::string,std::string>>
++method : std::uint8_t
++responseHeaderNamesLower : std::vector<std::string>
++url : std::string
+}
+class "io::NetworkInfo" as C_0007100525671922339382
+class C_0007100525671922339382 {
+__
++contentLength : std::uint64_t
++hasContentLength : bool
++hasHttpStatus : bool
++headersBlock : std::string
++httpStatus : std::uint16_t
+}
+abstract "io::INetworkProtocol" as C_0010613333864250568344
+abstract C_0010613333864250568344 {
++~INetworkProtocol() constexpr = default : void
+..
+{abstract} +close() = 0 : void
+{abstract} +info(NetworkInfo & out) = 0 : StatusCode
++is_streaming() const : bool
+{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
+{abstract} +poll() = 0 : void
+{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
++requires_sequential_read() const : bool
++requires_sequential_write() const : bool
+{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
+__
+}
+class "io::ProtocolRegistry" as C_0011868125949252482179
+class C_0011868125949252482179 {
++create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
++register_scheme(std::string schemeLower, Factory factory) : bool
+__
+-_factories : std::unordered_map<std::string,Factory>
+}
 class "io::NetworkDevice" as C_0006245826437162508923
 class C_0006245826437162508923 {
 +NetworkDevice(ProtocolRegistry registry) : void
@@ -422,71 +411,20 @@ class C_0010580021346264420268 {
 {static} +sessions(const NetworkDevice & dev) : std::vector<SessionRow>
 __
 }
-class "io::DiskDevice" as C_0005932353517374970487
-class C_0005932353517374970487 {
-+DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
-+DiskDevice(fs::StorageManager & storage) : void
-..
-+disk_service() : disk::DiskService &
-+disk_service() const : const disk::DiskService &
-+handle(const IORequest & request) : IOResponse
-+poll() : void
+class "io::NetworkDeviceDiagnosticsAccessor::SessionRow" as C_0007753937317853453679
+class C_0007753937317853453679 {
 __
-{static} -DISKPROTO_VERSION : const std::uint8_t
--_storage : fs::StorageManager &
--_svc : disk::DiskService
-}
-class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
-class C_0016910926688454257733 {
-{static} +slots(const DiskDevice & dev) : std::vector<disk::DiskSlotInfo>
-__
-}
-class "io::FujiDevice" as C_0016024516082849980408
-class C_0016024516082849980408 {
-+FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
-..
-+config() const : const config::FujiConfig &
-+config_mut() : config::FujiConfig &
-+config_store() : config::FujiConfigStore *
-{static} -encode_mount_record(std::uint8_t slotIndex, const std::string & uri, const std::string & mode, bool enabled) : std::vector<std::uint8_t>
--find_mount_by_slot_number(int slot) : config::MountConfig *
--find_mount_by_slot_number(int slot) const : const config::MountConfig *
-+handle(const IORequest & request) : IOResponse
--handle_get_mount(const IORequest & request) : IOResponse
--handle_get_mounts(const IORequest & request) : IOResponse
--handle_reset(const IORequest & request) : IOResponse
--handle_set_mount(const IORequest & request) : IOResponse
--handle_unknown(const IORequest & request) : IOResponse
-{static} -is_valid_mount_slot_index(std::uint8_t slotIndex) : bool
--load_config() : void
-+poll() : void
--save_config() : void
-+start() : void
-__
--_config : config::FujiConfig
--_configStore : std::unique_ptr<config::FujiConfigStore>
--_resetHandler : ResetHandler
--_storage : fs::StorageManager &
-}
-class "io::bytecodec::Reader" as C_0001552565821524910243
-class C_0001552565821524910243 {
-+Reader(const std::uint8_t * data, std::size_t size) : void
-..
-+ok() const : bool
-+pos() const : std::size_t
-+read_bytes(const std::uint8_t *& ptr, std::size_t n) : bool
-+read_lp_u16_string(std::string_view & out) : bool
-+read_sv(std::string_view & out, std::size_t n) : bool
-+read_u16le(std::uint16_t & out) : bool
-+read_u32le(std::uint32_t & out) : bool
-+read_u64le(std::uint64_t & out) : bool
-+read_u8(std::uint8_t & out) : bool
-+remaining() const : std::size_t
-+skip(std::size_t n) : bool
-__
--_begin : const std::uint8_t *
--_end : const std::uint8_t *
--_p : const std::uint8_t *
++active : bool
++awaitingBody : bool
++completed : bool
++createdTick : std::uint64_t
++expectedBodyLen : std::uint32_t
++flags : std::uint8_t
++handle : std::uint16_t
++lastActivityTick : std::uint64_t
++method : std::uint8_t
++receivedBodyLen : std::uint32_t
++url : std::string
 }
 class "io::FileDevice" as C_0018348317585229177251
 class C_0018348317585229177251 {
@@ -502,38 +440,6 @@ class C_0018348317585229177251 {
 +poll() : void
 __
 -_storage : fs::StorageManager &
-}
-class "io::ListDirectoryCache" as C_0015963199091497182148
-class C_0015963199091497182148 {
-__
-+entries : std::vector<FileInfo>
-+expires_at : std::chrono::steady_clock::time_point
-+uri : std::string
-+valid : bool
-}
-class "io::CommonPrefix" as C_0010415374062290681357
-class C_0010415374062290681357 {
-__
-+uri : std::string
-}
-class "io::ResolvePathRequest" as C_0016209491923540983265
-class C_0016209491923540983265 {
-__
-+arg : std::string
-+base_uri : std::string
-}
-class "io::FujiBusTransport" as C_0003433839086217597071
-class C_0003433839086217597071 {
-+FujiBusTransport(Channel & channel) : void
-..
-+poll() : void
-+receive(IORequest & outReq) : bool
-+receiveResponse(IOResponse & outResp) : bool
-+send(const IOResponse & resp) : void
-__
--_channel : Channel &
--_nextRequestId : RequestID
--_rxBuffer : std::vector<std::uint8_t>
 }
 class "io::ModemDevice" as C_0012713930330229444348
 class C_0012713930330229444348 {
@@ -630,6 +536,77 @@ class C_0017366619222000823646 {
 {static} +state(const ModemDevice & d) noexcept : StateRow
 __
 }
+class "io::bytecodec::Reader" as C_0001552565821524910243
+class C_0001552565821524910243 {
++Reader(const std::uint8_t * data, std::size_t size) : void
+..
++ok() const : bool
++pos() const : std::size_t
++read_bytes(const std::uint8_t *& ptr, std::size_t n) : bool
++read_lp_u16_string(std::string_view & out) : bool
++read_sv(std::string_view & out, std::size_t n) : bool
++read_u16le(std::uint16_t & out) : bool
++read_u32le(std::uint32_t & out) : bool
++read_u64le(std::uint64_t & out) : bool
++read_u8(std::uint8_t & out) : bool
++remaining() const : std::size_t
++skip(std::size_t n) : bool
+__
+-_begin : const std::uint8_t *
+-_end : const std::uint8_t *
+-_p : const std::uint8_t *
+}
+class "io::ListDirectoryCache" as C_0015963199091497182148
+class C_0015963199091497182148 {
+__
++entries : std::vector<FileInfo>
++expires_at : std::chrono::steady_clock::time_point
++uri : std::string
++valid : bool
+}
+class "io::CommonPrefix" as C_0010415374062290681357
+class C_0010415374062290681357 {
+__
++uri : std::string
+}
+class "io::ResolvePathRequest" as C_0016209491923540983265
+class C_0016209491923540983265 {
+__
++arg : std::string
++base_uri : std::string
+}
+class "io::FujiBusTransport" as C_0003433839086217597071
+class C_0003433839086217597071 {
++FujiBusTransport(Channel & channel) : void
+..
++poll() : void
++receive(IORequest & outReq) : bool
++receiveResponse(IOResponse & outResp) : bool
++send(const IOResponse & resp) : void
+__
+-_channel : Channel &
+-_nextRequestId : RequestID
+-_rxBuffer : std::vector<std::uint8_t>
+}
+class "io::DiskDevice" as C_0005932353517374970487
+class C_0005932353517374970487 {
++DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
++DiskDevice(fs::StorageManager & storage) : void
+..
++disk_service() : disk::DiskService &
++disk_service() const : const disk::DiskService &
++handle(const IORequest & request) : IOResponse
++poll() : void
+__
+{static} -DISKPROTO_VERSION : const std::uint8_t
+-_storage : fs::StorageManager &
+-_svc : disk::DiskService
+}
+class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
+class C_0016910926688454257733 {
+{static} +slots(const DiskDevice & dev) : std::vector<disk::DiskSlotInfo>
+__
+}
 class "io::ModemDeviceDiagnosticsAccessor::StateRow" as C_0015390871890377655918
 class C_0015390871890377655918 {
 __
@@ -648,21 +625,6 @@ __
 +pending : bool
 +telnet : bool
 }
-class "io::NetworkDeviceDiagnosticsAccessor::SessionRow" as C_0007753937317853453679
-class C_0007753937317853453679 {
-__
-+active : bool
-+awaitingBody : bool
-+completed : bool
-+createdTick : std::uint64_t
-+expectedBodyLen : std::uint32_t
-+flags : std::uint8_t
-+handle : std::uint16_t
-+lastActivityTick : std::uint64_t
-+method : std::uint8_t
-+receivedBodyLen : std::uint32_t
-+url : std::string
-}
 class "io::ClockDevice" as C_0006193474076654383504
 class C_0006193474076654383504 {
 +ClockDevice() = default : void
@@ -672,6 +634,25 @@ class C_0006193474076654383504 {
 +poll() : void
 __
 -_configStore : config::FujiConfigStore *
+}
+enum "io::ClockCommand" as C_0006646916694369797139
+enum C_0006646916694369797139 {
+GetTime
+SetTime
+GetTimeFormat
+GetTimezone
+SetTimezone
+SetTimezoneSave
+SyncNetworkTime
+}
+enum "io::TimeFormat" as C_0000686565705824050672
+enum C_0000686565705824050672 {
+SimpleBinary
+ProDOSBinary
+ApeTimeBinary
+TzIsoString
+UtcIsoString
+Apple3SosBinary
 }
 class "io::StubNetworkProtocol" as C_0011683483391837494806
 class C_0011683483391837494806 {
@@ -688,6 +669,50 @@ __
 -_httpStatus : std::uint16_t
 -_openReq : NetworkOpenRequest
 -_requestBody : std::vector<std::uint8_t>
+}
+class "fs::StorageManager" as C_0001279065520068563954
+class C_0001279065520068563954 {
++StorageManager() = default : void
++StorageManager(const StorageManager &) = deleted : void
++~StorageManager() = default : void
+..
++operator=(const StorageManager &) = deleted : StorageManager &
+..
++get(const std::string & name) : IFileSystem *
++get(const std::string & name) const : const IFileSystem *
++getByScheme(const std::string & scheme) : IFileSystem *
++getByScheme(const std::string & scheme) const : const IFileSystem *
++listNames() const : std::vector<std::string>
++registerFileSystem(std::unique_ptr<IFileSystem> fs) : bool
++resolveUri(const std::string & uri) : std::pair<IFileSystem *,std::string>
++unregisterFileSystem(const std::string & name) : bool
+__
+-_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
+}
+class "core::FujinetCore" as C_0011474842863539673819
+class C_0011474842863539673819 {
++FujinetCore() : void
+..
++addTransport(io::ITransport * transport) : void
++deviceManager() : io::IODeviceManager &
++deviceManager() const : const io::IODeviceManager &
++events() : SystemEvents &
++events() const : const SystemEvents &
++ioService() : io::IOService &
++ioService() const : const io::IOService &
++routingManager() : io::RoutingManager &
++routingManager() const : const io::RoutingManager &
++storageManager() : fs::StorageManager &
++storageManager() const : const fs::StorageManager &
++tick() : void
++tick_count() const noexcept : std::uint64_t
+__
+-_deviceManager : io::IODeviceManager
+-_events : SystemEvents
+-_ioService : io::IOService
+-_routing : io::RoutingManager
+-_storageManager : fs::StorageManager
+-_tickCount : std::uint64_t
 }
 class "core::EventStream<EventT>" as C_0005138967228563115798
 class C_0005138967228563115798 {
@@ -728,35 +753,8 @@ __
 -_network : EventStream<net::NetworkEvent>
 -_time : EventStream<time::TimeEvent>
 }
-class "core::FujinetCore" as C_0011474842863539673819
-class C_0011474842863539673819 {
-+FujinetCore() : void
-..
-+addTransport(io::ITransport * transport) : void
-+deviceManager() : io::IODeviceManager &
-+deviceManager() const : const io::IODeviceManager &
-+events() : SystemEvents &
-+events() const : const SystemEvents &
-+ioService() : io::IOService &
-+ioService() const : const io::IOService &
-+routingManager() : io::RoutingManager &
-+routingManager() const : const io::RoutingManager &
-+storageManager() : fs::StorageManager &
-+storageManager() const : const fs::StorageManager &
-+tick() : void
-+tick_count() const noexcept : std::uint64_t
-__
--_deviceManager : io::IODeviceManager
--_events : SystemEvents
--_ioService : io::IOService
--_routing : io::RoutingManager
--_storageManager : fs::StorageManager
--_tickCount : std::uint64_t
-}
 C_0002386736627821114488 o-- C_0015173710654558847960 : +type
 C_0002942984525013396621 o-- C_0012496700434923238249 : +status
-C_0015529497257294770104 ..> C_0002386736627821114488
-C_0015529497257294770104 ..> C_0002942984525013396621
 C_0008686573398797909484 o-- C_0013970161679530750266 : +response_style
 C_0015838915725578446589 ..> C_0002386736627821114488
 C_0015838915725578446589 ..> C_0002942984525013396621
@@ -766,29 +764,31 @@ C_0015838915725578446589 o-- C_0010985663379607742420 : #_state
 C_0015838915725578446589 o-- C_0015438333988660315289 : #_pendingFrame
 C_0015529497257294770104 <|-- C_0015838915725578446589
 C_0010985663379607742420 --+ C_0015838915725578446589
-C_0007145399192091431715 ..> C_0008542343802949846318
-C_0007145399192091431715 ..> C_0008686573398797909484
-C_0007145399192091431715 ..> C_0002386736627821114488
-C_0007145399192091431715 ..> C_0002942984525013396621
-C_0015838915725578446589 <|-- C_0007145399192091431715
 C_0014645015375049587372 ..> C_0008542343802949846318
 C_0014645015375049587372 ..> C_0008686573398797909484
 C_0014645015375049587372 ..> C_0002386736627821114488
 C_0014645015375049587372 ..> C_0002942984525013396621
 C_0014645015375049587372 ..> C_0015438333988660315289
 C_0015838915725578446589 <|-- C_0014645015375049587372
+C_0007145399192091431715 ..> C_0008542343802949846318
+C_0007145399192091431715 ..> C_0008686573398797909484
+C_0007145399192091431715 ..> C_0002386736627821114488
+C_0007145399192091431715 ..> C_0002942984525013396621
+C_0015838915725578446589 <|-- C_0007145399192091431715
+C_0007384888606456233527 ..> C_0008542343802949846318
+C_0007384888606456233527 ..> C_0015438333988660315289
+C_0014645015375049587372 <|-- C_0007384888606456233527
 C_0009446685585853408367 ..> C_0008542343802949846318
 C_0009446685585853408367 ..> C_0015438333988660315289
 C_0009446685585853408367 o-- C_0008469988080401523664 : -_currentPhase
 C_0007145399192091431715 <|-- C_0009446685585853408367
 C_0008469988080401523664 --+ C_0009446685585853408367
-C_0007384888606456233527 ..> C_0008542343802949846318
-C_0007384888606456233527 ..> C_0015438333988660315289
-C_0014645015375049587372 <|-- C_0007384888606456233527
-C_0011868125949252482179 ..> C_0010613333864250568344
-C_0010613333864250568344 ..> C_0001159279330674149840
-C_0010613333864250568344 ..> C_0012496700434923238249
-C_0010613333864250568344 ..> C_0007100525671922339382
+C_0015529497257294770104 ..> C_0002386736627821114488
+C_0015529497257294770104 ..> C_0002942984525013396621
+C_0016024516082849980408 ..> C_0002386736627821114488
+C_0016024516082849980408 ..> C_0002942984525013396621
+C_0016024516082849980408 --> C_0001279065520068563954 : -_storage
+C_0010069830097413987109 <|-- C_0016024516082849980408
 C_0007350464861923755413 ..> C_0002386736627821114488
 C_0007350464861923755413 ..> C_0002942984525013396621
 C_0010069830097413987109 ..> C_0002386736627821114488
@@ -804,6 +804,10 @@ C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
 C_0007350464861923755413 <|-- C_0005273847708888915350
 C_0007645722238685656096 ..> C_0015529497257294770104
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
+C_0010613333864250568344 ..> C_0001159279330674149840
+C_0010613333864250568344 ..> C_0012496700434923238249
+C_0010613333864250568344 ..> C_0007100525671922339382
+C_0011868125949252482179 ..> C_0010613333864250568344
 C_0006245826437162508923 ..> C_0002386736627821114488
 C_0006245826437162508923 ..> C_0002942984525013396621
 C_0006245826437162508923 ..> C_0011301425670680674257
@@ -813,24 +817,11 @@ C_0010069830097413987109 <|-- C_0006245826437162508923
 C_0011301425670680674257 --+ C_0006245826437162508923
 C_0010580021346264420268 ..> C_0006245826437162508923
 C_0010580021346264420268 ..> C_0007753937317853453679
-C_0005932353517374970487 ..> C_0002386736627821114488
-C_0005932353517374970487 ..> C_0002942984525013396621
-C_0005932353517374970487 --> C_0001279065520068563954 : -_storage
-C_0005932353517374970487 <.. C_0016910926688454257733 : +<<friend>>
-C_0010069830097413987109 <|-- C_0005932353517374970487
-C_0016910926688454257733 ..> C_0005932353517374970487
-C_0016024516082849980408 ..> C_0002386736627821114488
-C_0016024516082849980408 ..> C_0002942984525013396621
-C_0016024516082849980408 --> C_0001279065520068563954 : -_storage
-C_0010069830097413987109 <|-- C_0016024516082849980408
+C_0007753937317853453679 --+ C_0010580021346264420268
 C_0018348317585229177251 ..> C_0002386736627821114488
 C_0018348317585229177251 ..> C_0002942984525013396621
 C_0018348317585229177251 --> C_0001279065520068563954 : -_storage
 C_0010069830097413987109 <|-- C_0018348317585229177251
-C_0003433839086217597071 ..> C_0002386736627821114488
-C_0003433839086217597071 ..> C_0002942984525013396621
-C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
-C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0012713930330229444348 ..> C_0002386736627821114488
 C_0012713930330229444348 ..> C_0002942984525013396621
 C_0012713930330229444348 ..> C_0012496700434923238249
@@ -842,8 +833,17 @@ C_0010884110720104182508 --+ C_0012713930330229444348
 C_0006448478138904809358 --+ C_0012713930330229444348
 C_0017366619222000823646 ..> C_0012713930330229444348
 C_0017366619222000823646 ..> C_0015390871890377655918
+C_0003433839086217597071 ..> C_0002386736627821114488
+C_0003433839086217597071 ..> C_0002942984525013396621
+C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
+C_0015529497257294770104 <|-- C_0003433839086217597071
+C_0005932353517374970487 ..> C_0002386736627821114488
+C_0005932353517374970487 ..> C_0002942984525013396621
+C_0005932353517374970487 --> C_0001279065520068563954 : -_storage
+C_0005932353517374970487 <.. C_0016910926688454257733 : +<<friend>>
+C_0010069830097413987109 <|-- C_0005932353517374970487
+C_0016910926688454257733 ..> C_0005932353517374970487
 C_0015390871890377655918 --+ C_0017366619222000823646
-C_0007753937317853453679 --+ C_0010580021346264420268
 C_0006193474076654383504 ..> C_0002386736627821114488
 C_0006193474076654383504 ..> C_0002942984525013396621
 C_0010069830097413987109 <|-- C_0006193474076654383504
@@ -851,6 +851,12 @@ C_0011683483391837494806 ..> C_0012496700434923238249
 C_0011683483391837494806 ..> C_0007100525671922339382
 C_0011683483391837494806 o-- C_0001159279330674149840 : -_openReq
 C_0010613333864250568344 <|-- C_0011683483391837494806
+C_0011474842863539673819 ..> C_0015529497257294770104
+C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
+C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
+C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
+C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
+C_0011474842863539673819 o-- C_0010820187132968979160 : -_events
 C_0005138967228563115798 ..> C_0001165583155332036678
 C_0001165583155332036678 --+ C_0005138967228563115798
 C_0006794901728867494679 --+ C_0005138967228563115798
@@ -859,12 +865,6 @@ C_0006289034866210007341 ..|> C_0005138967228563115798
 C_0010820187132968979160 ..> C_0005138967228563115798
 C_0010820187132968979160 o-- C_0002040917693353561204 : -_network
 C_0010820187132968979160 o-- C_0006289034866210007341 : -_time
-C_0011474842863539673819 ..> C_0015529497257294770104
-C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
-C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
-C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
-C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
-C_0011474842863539673819 o-- C_0010820187132968979160 : -_events
 
 'Generated with clang-uml, version 0.6.2
 'LLVM version Ubuntu clang version 18.1.3 (1ubuntu1)
