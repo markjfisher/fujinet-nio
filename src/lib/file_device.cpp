@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstring>
 #include <ctime>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -301,8 +302,14 @@ IOResponse FileDevice::handle_stat(const IORequest& request)
 // --------------------
 // ListDirectory (0x02)
 // --------------------
+// After uri + (startIndex, maxEntries), clients may send an optional u8 listFlags (if payload
+// has a byte left). listDirectory() on a filesystem has already collected the full directory
+// before this handler paginates, so sort-by-basename (flag) reorders a copy, not a stream.
 IOResponse FileDevice::handle_list_directory(const IORequest& request)
 {
+    using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
+    using fujinet::io::protocol::list_directory::kListFlagSortByName;
+
     auto resp = make_success_response(request);
 
     Reader r(request.payload.data(), request.payload.size());
@@ -319,6 +326,17 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         return resp;
     }
 
+    std::uint8_t listFlags = 0;
+    if (r.remaining() > 0) {
+        if (!r.read_u8(listFlags)) {
+            resp.status = StatusCode::InvalidRequest;
+            return resp;
+        }
+    }
+
+    const bool compact = (listFlags & kListFlagCompactOmitMetadata) != 0;
+    const bool sortName = (listFlags & kListFlagSortByName) != 0;
+
     auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
@@ -334,15 +352,27 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         store_cached_directory_entries(p.uri, entries);
     }
 
-    // Basename helper
-    auto basename = [](const std::string& s) -> std::string_view {
-        auto pos = s.find_last_of('/');
-        if (pos == std::string::npos) return std::string_view{s};
-        if (pos + 1 >= s.size()) return std::string_view{s};
+    auto basename_sv = [](const std::string& s) -> std::string_view {
+        const auto pos = s.find_last_of('/');
+        if (pos == std::string::npos) {
+            return std::string_view{s};
+        }
+        if (pos + 1 >= s.size()) {
+            return std::string_view{s};
+        }
         return std::string_view{s}.substr(pos + 1);
     };
 
-    const std::size_t total = entries.size();
+    const std::vector<FileInfo>* source = &entries;
+    std::vector<FileInfo> sorted;
+    if (sortName) {
+        sorted = entries;
+        std::sort(
+            sorted.begin(), sorted.end(), [&](const FileInfo& a, const FileInfo& b) { return basename_sv(a.path) < basename_sv(b.path); });
+        source = &sorted;
+    }
+
+    const std::size_t total = source->size();
     const std::size_t start = (startIndex < total) ? startIndex : total;
     const std::size_t end = std::min<std::size_t>(start + maxEntries, total);
     const std::uint16_t returned = static_cast<std::uint16_t>(end - start);
@@ -350,7 +380,7 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
 
     // Response:
     // u8 version
-    // u8 flags bit0=more
+    // u8 flags: bit0=more, bit1=compact (entries have no u64 size or u64 mtime)
     // u16 reserved
     // u16 returnedCount
     // entries...
@@ -358,16 +388,22 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     out.reserve(64 + returned * 32);
 
     fileproto::write_u8(out, FILEPROTO_VERSION);
-    fileproto::write_u8(out, more ? 0x01 : 0x00);
+    std::uint8_t flags = 0;
+    if (more) {
+        flags |= 0x01U;
+    }
+    if (compact) {
+        flags |= 0x02U;
+    }
+    fileproto::write_u8(out, flags);
     fileproto::write_u16le(out, 0);
     fileproto::write_u16le(out, returned);
 
     for (std::size_t i = start; i < end; ++i) {
-        const auto& e = entries[i];
-        const auto name = basename(e.path);
+        const auto& e = (*source)[i];
+        const auto name = basename_sv(e.path);
 
         std::uint8_t eflags = e.isDirectory ? 0x01 : 0x00;
-        // ... if there are more flags, then they can grow here
         fileproto::write_u8(out, eflags);
 
         const std::uint8_t nameLen =
@@ -375,8 +411,10 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         fileproto::write_u8(out, nameLen);
         fileproto::write_bytes(out, name.data(), nameLen);
 
-        fileproto::write_u64le(out, e.sizeBytes);
-        fileproto::write_u64le(out, to_unix_seconds(e.modifiedTime));
+        if (!compact) {
+            fileproto::write_u64le(out, e.sizeBytes);
+            fileproto::write_u64le(out, to_unix_seconds(e.modifiedTime));
+        }
     }
 
     resp.payload.assign(out.begin(), out.end());
