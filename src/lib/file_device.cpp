@@ -31,7 +31,7 @@ using fujinet::io::fileproto::Reader;
 // static constexpr const char* TAG = "io";
 
 static constexpr std::uint8_t FILEPROTO_VERSION = 1;
-static constexpr auto LIST_DIRECTORY_CACHE_TTL = std::chrono::seconds(20);
+static constexpr auto LIST_DIRECTORY_CACHE_TTL = std::chrono::seconds(120);
 
 struct ListDirectoryCache {
     std::string uri;
