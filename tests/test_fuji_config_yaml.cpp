@@ -74,6 +74,8 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     
     if (a.clock.enabled != b.clock.enabled) return false;
     if (a.clock.timezone != b.clock.timezone) return false;
+
+    if (a.tls.trustTestCa != b.tls.trustTestCa) return false;
     
     if (a.channel.ptyPath != b.channel.ptyPath) return false;
     if (a.channel.uart.baudRate != b.channel.uart.baudRate) return false;
@@ -111,6 +113,15 @@ devices:
     ccp_image: ""
   printer:
     enabled: false
+netsio:
+  enabled: false
+  host: "localhost"
+  port: 9997
+clock:
+  timezone: "UTC"
+  enabled: true
+tls:
+  trust_test_ca: false
 )";
 
     create_file(*primary, "/fujinet.yaml", yaml);
@@ -155,6 +166,15 @@ devices:
     ccp_image: "/cpm/ccp.img"
   printer:
     enabled: true
+netsio:
+  enabled: true
+  host: "netsio.example"
+  port: 9998
+clock:
+  timezone: "Europe/London"
+  enabled: true
+tls:
+  trust_test_ca: true
 )";
 
     create_file(*primary, "/fujinet.yaml", yaml);
@@ -186,6 +206,11 @@ devices:
     CHECK(cfg.cpm.ccpImage == "/cpm/ccp.img");
 
     CHECK(cfg.printer.enabled == true);
+    CHECK(cfg.netsio.enabled == true);
+    CHECK(cfg.netsio.host == "netsio.example");
+    CHECK(cfg.netsio.port == 9998);
+    CHECK(cfg.clock.timezone == "Europe/London");
+    CHECK(cfg.tls.trustTestCa == true);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Load from backup when primary missing")
@@ -212,6 +237,15 @@ devices:
     ccp_image: ""
   printer:
     enabled: false
+netsio:
+  enabled: false
+  host: "localhost"
+  port: 9997
+clock:
+  timezone: "UTC"
+  enabled: true
+tls:
+  trust_test_ca: false
 )";
 
     // Only backup has the file
@@ -253,6 +287,13 @@ devices:
     ccp_image: ""
   printer:
     enabled: false
+netsio:
+  enabled: false
+  host: "localhost"
+  port: 9997
+clock:
+  timezone: "UTC"
+  enabled: true
 )";
 
     // Primary has invalid YAML, backup has valid
@@ -453,6 +494,13 @@ devices:
     ccp_image: ""
   printer:
     enabled: false
+netsio:
+  enabled: false
+  host: "localhost"
+  port: 9997
+clock:
+  timezone: "UTC"
+  enabled: true
 )";
 
     create_file(*primary, "/fujinet.yaml", yamlNormal);

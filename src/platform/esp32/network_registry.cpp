@@ -7,7 +7,7 @@
 
 namespace fujinet::platform {
 
-io::ProtocolRegistry make_default_network_registry()
+io::ProtocolRegistry make_default_network_registry(const config::TlsConfig& /*tlsConfig*/)
 {
     io::ProtocolRegistry r;
 

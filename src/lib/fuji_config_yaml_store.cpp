@@ -95,6 +95,11 @@ static void from_yaml(const YAML::Node& node, ClockConfig& out)
     out.enabled  = get_or<bool>(node, "enabled", true);
 }
 
+static void from_yaml(const YAML::Node& node, TlsConfig& out)
+{
+    out.trustTestCa = get_or<bool>(node, "trust_test_ca", false);
+}
+
 static std::string yaml_lower_ascii(std::string s)
 {
     for (char& c : s) {
@@ -230,6 +235,10 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
         from_yaml(n, cfg.clock);
     }
 
+    if (auto n = root["tls"]) {
+        from_yaml(n, cfg.tls);
+    }
+
     if (auto n = root["channel"]) {
         from_yaml(n, cfg.channel);
     }
@@ -301,8 +310,13 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
      out << YAML::Key << "enabled"  << YAML::Value << cfg.clock.enabled;
      out << YAML::EndMap;
 
-     // channel:
-     out << YAML::Key << "channel" << YAML::Value << YAML::BeginMap;
+     // tls:
+     out << YAML::Key << "tls" << YAML::Value << YAML::BeginMap;
+     out << YAML::Key << "trust_test_ca" << YAML::Value << cfg.tls.trustTestCa;
+     out << YAML::EndMap;
+
+      // channel:
+      out << YAML::Key << "channel" << YAML::Value << YAML::BeginMap;
      out << YAML::Key << "pty_path" << YAML::Value << cfg.channel.ptyPath;
      out << YAML::Key << "uart" << YAML::Value << YAML::BeginMap;
      out << YAML::Key << "baud_rate"     << YAML::Value << cfg.channel.uart.baudRate;

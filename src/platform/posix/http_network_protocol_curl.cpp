@@ -17,6 +17,11 @@
 
 namespace fujinet::platform::posix {
 
+HttpNetworkProtocolCurl::HttpNetworkProtocolCurl(config::TlsConfig tlsConfig)
+    : _tlsConfig(std::move(tlsConfig))
+{
+}
+
 static void ensure_curl_global_init()
 {
     static const bool inited = []{
@@ -128,6 +133,8 @@ io::StatusCode HttpNetworkProtocolCurl::start_async()
 
     // Clear response buffers for this execution
     _httpStatus = 0;
+    _hasContentLength = false;
+    _contentLength = 0;
     _headersBlock.clear();
     _body.clear();
     _bodyBaseOffset = 0;
@@ -180,6 +187,16 @@ void HttpNetworkProtocolCurl::tick_async()
         curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &httpCode);
         _httpStatus = static_cast<std::uint16_t>(httpCode < 0 ? 0 : httpCode);
 
+        curl_off_t contentLength = -1;
+        if (curl_easy_getinfo(_curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &contentLength) == CURLE_OK &&
+            contentLength >= 0) {
+            _hasContentLength = true;
+            _contentLength = static_cast<std::uint64_t>(contentLength);
+        } else {
+            _hasContentLength = false;
+            _contentLength = 0;
+        }
+
         _finalStatus = (msg->data.result == CURLE_OK) ? io::StatusCode::Ok : io::StatusCode::IOError;
     }
 }
@@ -195,49 +212,10 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     ensure_curl_global_init();
     _req = req;
 
-    // Check for test CA flag in URL (https://host:port/path?testca=1)
-    bool use_test_ca = false;
-    std::string cleanUrl = _req.url;  // URL for curl (may have testca removed)
-    
-    size_t queryPos = _req.url.find('?');
-    if (queryPos != std::string::npos) {
-        std::string query = _req.url.substr(queryPos + 1);
-        if (query.find("testca=1") != std::string::npos) {
-            use_test_ca = true;
-            FN_LOGI("platform", "HTTPS: Using FujiNet Test CA for certificate verification");
-        }
-        
-        // Strip testca=1 from query string, keep other params
-        if (use_test_ca) {
-            std::string newQuery;
-            std::string::size_type start = 0;
-            bool first = true;
-            
-            while (start < query.size()) {
-                auto ampPos = query.find('&', start);
-                std::string param = (ampPos == std::string::npos) 
-                    ? query.substr(start) 
-                    : query.substr(start, ampPos - start);
-                
-                // Keep params that are not testca=1
-                if (param != "testca=1") {
-                    if (!first) newQuery += '&';
-                    first = false;
-                    newQuery += param;
-                }
-                
-                if (ampPos == std::string::npos) break;
-                start = ampPos + 1;
-            }
-            
-            if (newQuery.empty()) {
-                // No remaining params, strip the ? entirely
-                cleanUrl = _req.url.substr(0, queryPos);
-            } else {
-                // Rebuild URL with remaining params
-                cleanUrl = _req.url.substr(0, queryPos + 1) + newQuery;
-            }
-        }
+    const bool use_test_ca = _tlsConfig.trustTestCa;
+    const std::string& cleanUrl = _req.url;
+    if (use_test_ca) {
+        FN_LOGI("platform", "HTTPS: Using FujiNet Test CA for certificate verification");
     }
 
     const bool isPost = (_req.method == 2);
@@ -501,9 +479,13 @@ io::StatusCode HttpNetworkProtocolCurl::info(io::NetworkInfo& out)
     out.hasHttpStatus = true;
     out.httpStatus = _httpStatus;
 
-    out.hasContentLength = true;
-    // Transfer complete: total bytes received = already retired + currently buffered
-    out.contentLength = static_cast<std::uint64_t>(_bodyBaseOffset + (_body.size() - _bodyStartIndex));
+    out.hasContentLength = _hasContentLength;
+    if (_hasContentLength) {
+        out.contentLength = _contentLength;
+    } else {
+        // Transfer complete: total bytes received = already retired + currently buffered
+        out.contentLength = static_cast<std::uint64_t>(_bodyBaseOffset + (_body.size() - _bodyStartIndex));
+    }
 
     // headers already filtered.
     out.headersBlock = _headersBlock;
@@ -521,6 +503,8 @@ void HttpNetworkProtocolCurl::close()
 {
     _req = io::NetworkOpenRequest{};
     _httpStatus = 0;
+    _hasContentLength = false;
+    _contentLength = 0;
     _headersBlock.clear();
     _body.clear();
     _bodyBaseOffset = 0;
@@ -552,5 +536,3 @@ void HttpNetworkProtocolCurl::close()
 } // namespace fujinet::platform::posix
 
 #endif // FN_WITH_CURL
-
-

@@ -68,11 +68,11 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(bool useTcp) {
     return fujinet::fs::make_tnfs_filesystem(std::move(factory));
 }
 
-std::unique_ptr<fujinet::fs::IFileSystem> create_http_filesystem()
+std::unique_ptr<fujinet::fs::IFileSystem> create_http_filesystem(const fujinet::config::TlsConfig& tlsConfig)
 {
     FN_LOGI(TAG, "Registering HTTP filesystem provider (dynamic URLs)");
 
-    auto registry = std::make_shared<fujinet::io::ProtocolRegistry>(fujinet::platform::make_default_network_registry());
+    auto registry = std::make_shared<fujinet::io::ProtocolRegistry>(fujinet::platform::make_default_network_registry(tlsConfig));
     fujinet::fs::HttpProtocolFactory factory = [registry](std::string_view schemeLower)
         -> std::unique_ptr<fujinet::io::INetworkProtocol>
     {

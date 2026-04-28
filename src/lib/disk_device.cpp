@@ -19,6 +19,28 @@ using fujinet::io::protocol::to_disk_command;
 
 static constexpr const char* TAG = "disk";
 
+static const char* disk_error_name(DiskError e) noexcept
+{
+    switch (e) {
+        case DiskError::None: return "None";
+        case DiskError::InvalidSlot: return "InvalidSlot";
+        case DiskError::InvalidRequest: return "InvalidRequest";
+        case DiskError::NoSuchFileSystem: return "NoSuchFileSystem";
+        case DiskError::FileNotFound: return "FileNotFound";
+        case DiskError::AlreadyExists: return "AlreadyExists";
+        case DiskError::OpenFailed: return "OpenFailed";
+        case DiskError::UnsupportedImageType: return "UnsupportedImageType";
+        case DiskError::BadImage: return "BadImage";
+        case DiskError::InvalidGeometry: return "InvalidGeometry";
+        case DiskError::NotMounted: return "NotMounted";
+        case DiskError::ReadOnly: return "ReadOnly";
+        case DiskError::OutOfRange: return "OutOfRange";
+        case DiskError::IoError: return "IoError";
+        case DiskError::InternalError: return "InternalError";
+    }
+    return "Unknown";
+}
+
 static StatusCode map_disk_error(DiskError e) noexcept
 {
     switch (e) {
@@ -96,10 +118,30 @@ IOResponse DiskDevice::handle(const IORequest& request)
             auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
             
             if (!fs || resolvedPath.empty()) {
+                FN_LOGW(TAG,
+                        "Mount resolve failed: uri='%s' fs=%p path='%s'",
+                        uriStr.c_str(),
+                        static_cast<void*>(fs),
+                        resolvedPath.c_str());
                 return make_base_response(request, StatusCode::InvalidRequest);
             }
 
+            FN_LOGI(TAG,
+                    "Mount request: slot=%u uri='%s' fs='%s' path='%s' readonly_requested=%d type=%u sector_hint=%u",
+                    static_cast<unsigned>(slot1),
+                    uriStr.c_str(),
+                    fs->name().c_str(),
+                    resolvedPath.c_str(),
+                    opts.readOnlyRequested ? 1 : 0,
+                    static_cast<unsigned>(typeRaw),
+                    static_cast<unsigned>(sectorHint));
+
             DiskResult dr = _svc.mount(idx, fs->name(), resolvedPath, opts);
+            FN_LOGI(TAG,
+                    "Mount result: slot=%u error=%s(%u)",
+                    static_cast<unsigned>(slot1),
+                    disk_error_name(dr.error),
+                    static_cast<unsigned>(dr.error));
             IOResponse resp = make_base_response(request, map_disk_error(dr.error));
             if (resp.status != StatusCode::Ok) return resp;
 
@@ -340,5 +382,4 @@ IOResponse DiskDevice::handle(const IORequest& request)
 }
 
 } // namespace fujinet::io
-
 

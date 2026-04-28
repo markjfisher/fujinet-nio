@@ -46,6 +46,21 @@ Application bootstrap registers the provider in:
 - `src/app/main_posix.cpp`
 - `src/app/main_esp32.cpp`
 
+## HTTPS Test CA
+
+For local HTTPS testing with the FujiNet test certificate authority, configure trust in `fujinet.yaml` instead of adding URL query parameters:
+
+```yaml
+tls:
+  trust_test_ca: true
+```
+
+This applies to HTTPS validation during both `FHOST` probing and later file access. URLs remain normal resource URLs such as:
+
+- `https://192.168.1.101:18443/bbc/impetus_mode7.ssd`
+
+Using URL query parameters for trust policy is intentionally avoided because they become part of the stored path and break relative URL composition.
+
 ## URI And Path Format
 
 When using FileDevice commands, pass full HTTP or HTTPS URLs:

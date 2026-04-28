@@ -115,13 +115,6 @@ int main()
         }
         FN_LOGI(TAG, "TNFS filesystem registered as 'tnfs' (dynamic URI endpoints)");
 
-        // Register HTTP filesystem provider. Scheme/host are resolved per URL at access time.
-        auto httpFs = fujinet::platform::posix::create_http_filesystem();
-        if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
-            FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
-            return 1;
-        }
-        FN_LOGI(TAG, "HTTP filesystem registered as 'http' (dynamic URL endpoints)");
     }
 
     // Reset hook:
@@ -172,6 +165,18 @@ int main()
     FN_LOGI(TAG, "[FujiDevice] Loading config for transport setup");
     fujiConcrete->start();
     const auto& config = fujiConcrete->config();
+    core.setLoadedConfig(config);
+
+    {
+        auto httpFs = fujinet::platform::posix::create_http_filesystem(config.tls);
+        if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
+            return 1;
+        }
+        FN_LOGI(TAG,
+                "HTTP filesystem registered as 'http' (dynamic URL endpoints, trust_test_ca=%d)",
+                config.tls.trustTestCa ? 1 : 0);
+    }
 
     // Register Core Devices
     fujinet::core::register_file_device(core);

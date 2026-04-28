@@ -24,8 +24,9 @@ static constexpr const char* TAG = "platform";
 static constexpr std::size_t RX_BUFFER_SIZE = 8192;
 static constexpr int CONNECT_TIMEOUT_SEC = 10;
 
-TlsNetworkProtocolPosix::TlsNetworkProtocolPosix()
+TlsNetworkProtocolPosix::TlsNetworkProtocolPosix(fujinet::config::TlsConfig tlsConfig)
     : _rxBuffer(RX_BUFFER_SIZE)
+    , _tlsConfig(std::move(tlsConfig))
 {
     ensure_ssl_init();
 }
@@ -117,15 +118,9 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
 {
     close();
 
-    // Check for test CA flag in URL (tls://host:port?testca=1)
-    bool use_test_ca = false;
-    size_t queryPos = req.url.find('?');
-    if (queryPos != std::string::npos) {
-        std::string query = req.url.substr(queryPos + 1);
-        if (query.find("testca=1") != std::string::npos) {
-            use_test_ca = true;
-            FN_LOGI(TAG, "TLS: Using FujiNet Test CA for certificate verification");
-        }
+    const bool use_test_ca = _tlsConfig.trustTestCa;
+    if (use_test_ca) {
+        FN_LOGI(TAG, "TLS: Using FujiNet Test CA for certificate verification");
     }
 
     if (!parse_tls_url(req.url, _host, _port)) {

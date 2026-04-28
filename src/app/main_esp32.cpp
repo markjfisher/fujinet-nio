@@ -198,15 +198,6 @@ extern "C" void fujinet_core_task(void* arg)
         }
     }
 
-    // Register HTTP filesystem provider. Scheme/host are resolved from URL at access time.
-    if (auto httpFs = platform::esp32::create_http_filesystem()) {
-        if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
-            FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
-        } else {
-            FN_LOGI(TAG, "HTTP filesystem registered as 'http' (dynamic URL endpoints)");
-        }
-    }
-
     auto profile = build::current_build_profile();
 
     {
@@ -235,8 +226,19 @@ extern "C" void fujinet_core_task(void* arg)
     if (services.fuji) {
         FN_ELOG("[FujiDevice] Loading config for transport setup");
         services.fuji->start();
+        core.setLoadedConfig(services.fuji->config());
     }
     const auto& config = services.fuji ? services.fuji->config() : fujinet::config::FujiConfig{};
+
+    if (auto httpFs = platform::esp32::create_http_filesystem(config.tls)) {
+        if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
+        } else {
+            FN_LOGI(TAG,
+                    "HTTP filesystem registered as 'http' (dynamic URL endpoints, trust_test_ca=%d)",
+                    config.tls.trustTestCa ? 1 : 0);
+        }
+    }
 
     // Create a Channel appropriate for this profile (TinyUSB CDC, etc.).
     auto channel = platform::create_channel_for_profile(profile, config);

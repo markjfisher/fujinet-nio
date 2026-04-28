@@ -70,6 +70,10 @@ struct ClockConfig {
     bool        enabled{true};
 };
 
+struct TlsConfig {
+    bool trustTestCa{false};
+};
+
 /// Serial line format for ESP32 `UartGpio` / RS232 (and any future UART-backed channel).
 enum class UartParity {
     None,
@@ -115,6 +119,7 @@ struct FujiConfig {
     PrinterConfig        printer;
     NetSioConfig         netsio;
     ClockConfig          clock;
+    TlsConfig            tls;
     ChannelConfig        channel;
 };
 

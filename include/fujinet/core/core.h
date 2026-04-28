@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
+#include "fujinet/config/fuji_config.h"
 #include "fujinet/core/system_events.h"
 #include "fujinet/io/core/io_device_manager.h"
 #include "fujinet/io/core/routing_manager.h"
@@ -43,6 +45,9 @@ public:
     SystemEvents&              events()               { return _events; }
     const SystemEvents&        events()         const { return _events; }
 
+    void setLoadedConfig(const fujinet::config::FujiConfig& cfg) { _loadedConfig = cfg; }
+    const std::optional<fujinet::config::FujiConfig>& loadedConfig() const { return _loadedConfig; }
+
     // Helper to add transports to the IOService.
     void addTransport(io::ITransport* transport);
 
@@ -55,6 +60,7 @@ private:
     fs::StorageManager  _storageManager;
 
     SystemEvents        _events;
+    std::optional<fujinet::config::FujiConfig> _loadedConfig;
 };
 
 } // namespace fujinet::core

@@ -1,8 +1,33 @@
 #include "fujinet/disk/disk_service.h"
 
+#include "fujinet/core/logging.h"
 #include "fujinet/disk/raw_image.h"
 
 namespace fujinet::disk {
+
+static constexpr const char* TAG = "disk_svc";
+
+static const char* disk_error_name(DiskError e) noexcept
+{
+    switch (e) {
+        case DiskError::None: return "None";
+        case DiskError::InvalidSlot: return "InvalidSlot";
+        case DiskError::InvalidRequest: return "InvalidRequest";
+        case DiskError::NoSuchFileSystem: return "NoSuchFileSystem";
+        case DiskError::FileNotFound: return "FileNotFound";
+        case DiskError::AlreadyExists: return "AlreadyExists";
+        case DiskError::OpenFailed: return "OpenFailed";
+        case DiskError::UnsupportedImageType: return "UnsupportedImageType";
+        case DiskError::BadImage: return "BadImage";
+        case DiskError::InvalidGeometry: return "InvalidGeometry";
+        case DiskError::NotMounted: return "NotMounted";
+        case DiskError::ReadOnly: return "ReadOnly";
+        case DiskError::OutOfRange: return "OutOfRange";
+        case DiskError::IoError: return "IoError";
+        case DiskError::InternalError: return "InternalError";
+    }
+    return "Unknown";
+}
 
 DiskService::DiskService(fs::StorageManager& storage, ImageRegistry registry)
     : _storage(storage), _registry(std::move(registry))
@@ -39,6 +64,15 @@ DiskResult DiskService::mount(
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
 
+    FN_LOGI(TAG,
+            "Mount start: slot=%u fs='%s' path='%s' readonly_requested=%d type_override=%u sector_hint=%u",
+            static_cast<unsigned>(slotIndex),
+            fsName.c_str(),
+            path.c_str(),
+            opts.readOnlyRequested ? 1 : 0,
+            static_cast<unsigned>(opts.typeOverride),
+            static_cast<unsigned>(opts.sectorSizeHint));
+
     // Unmount any existing image first.
     if (s->image) {
         s->image->flush();
@@ -57,18 +91,28 @@ DiskResult DiskService::mount(
     s->path = path;
 
     auto* pfs = _storage.get(fsName);
-    if (!pfs) return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
+    if (!pfs) {
+        FN_LOGW(TAG, "Mount failed: filesystem '%s' not registered", fsName.c_str());
+        return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
+    }
 
-    if (!pfs->exists(path)) return DiskResult{set_error(slotIndex, DiskError::FileNotFound)};
+    if (!pfs->exists(path)) {
+        FN_LOGW(TAG, "Mount failed: path does not exist '%s'", path.c_str());
+        return DiskResult{set_error(slotIndex, DiskError::FileNotFound)};
+    }
 
     fs::FileInfo finfo{};
-    if (!pfs->stat(path, finfo)) return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
+    if (!pfs->stat(path, finfo)) {
+        FN_LOGW(TAG, "Mount failed: stat failed for '%s'", path.c_str());
+        return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
+    }
 
     ImageType type = opts.typeOverride;
     if (type == ImageType::Auto) {
         type = guess_type_from_path(path);
     }
     if (type == ImageType::Auto) {
+        FN_LOGW(TAG, "Mount failed: could not infer image type from '%s'", path.c_str());
         return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
     }
 
@@ -80,25 +124,47 @@ DiskResult DiskService::mount(
     } else {
         f = pfs->open(path, "r+b");
         if (!f) {
+            FN_LOGI(TAG, "Writable open failed for '%s'; retrying read-only", path.c_str());
             f = pfs->open(path, "rb");
             readOnlyEffective = true;
         }
     }
-    if (!f) return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
+    if (!f) {
+        FN_LOGW(TAG, "Mount failed: file open failed for '%s'", path.c_str());
+        return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
+    }
 
     auto img = _registry.create(type);
-    if (!img) return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
+    if (!img) {
+        FN_LOGW(TAG, "Mount failed: no image handler for type=%u", static_cast<unsigned>(type));
+        return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
+    }
 
     MountOptions eff = opts;
     eff.readOnlyRequested = readOnlyEffective;
     DiskResult r = img->mount(std::move(f), finfo.sizeBytes, eff);
-    if (!r.ok()) return DiskResult{set_error(slotIndex, r.error)};
+    if (!r.ok()) {
+        FN_LOGW(TAG,
+                "Mount failed: image mount error=%s(%u) size=%llu",
+                disk_error_name(r.error),
+                static_cast<unsigned>(r.error),
+                static_cast<unsigned long long>(finfo.sizeBytes));
+        return DiskResult{set_error(slotIndex, r.error)};
+    }
 
     s->inserted = true;
     s->readOnly = img->read_only();
     s->type = img->type();
     s->geometry = img->geometry();
     s->image = std::move(img);
+
+    FN_LOGI(TAG,
+            "Mount success: slot=%u type=%u readonly=%d sector_size=%u sector_count=%lu",
+            static_cast<unsigned>(slotIndex),
+            static_cast<unsigned>(s->type),
+            s->readOnly ? 1 : 0,
+            static_cast<unsigned>(s->geometry.sectorSize),
+            static_cast<unsigned long>(s->geometry.sectorCount));
 
     return DiskResult{DiskError::None};
 }
@@ -283,5 +349,4 @@ void DiskService::clear_pending_mount(std::size_t slotIndex)
 }
 
 } // namespace fujinet::disk
-
 
