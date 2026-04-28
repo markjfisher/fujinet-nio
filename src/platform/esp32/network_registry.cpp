@@ -7,7 +7,7 @@
 
 namespace fujinet::platform {
 
-io::ProtocolRegistry make_default_network_registry(const config::TlsConfig& /*tlsConfig*/)
+io::ProtocolRegistry make_default_network_registry(const config::TlsConfig& tlsConfig)
 {
     io::ProtocolRegistry r;
 
@@ -17,12 +17,12 @@ io::ProtocolRegistry make_default_network_registry(const config::TlsConfig& /*tl
     });
 
     // TLS over TCP (secure sockets using esp_tls)
-    r.register_scheme("tls", [] {
-        return std::make_unique<esp32::TlsNetworkProtocolEspIdf>();
+    r.register_scheme("tls", [tlsConfig] {
+        return std::make_unique<esp32::TlsNetworkProtocolEspIdf>(tlsConfig);
     });
 
-    r.register_scheme("http", [] { return std::make_unique<esp32::HttpNetworkProtocolEspIdf>(); });
-    r.register_scheme("https", [] { return std::make_unique<esp32::HttpNetworkProtocolEspIdf>(); });
+    r.register_scheme("http", [tlsConfig] { return std::make_unique<esp32::HttpNetworkProtocolEspIdf>(tlsConfig); });
+    r.register_scheme("https", [tlsConfig] { return std::make_unique<esp32::HttpNetworkProtocolEspIdf>(tlsConfig); });
 
     return r;
 }

@@ -15,7 +15,67 @@
 // curl headers are only included in curl-specific files
 #include <curl/curl.h>
 
+#if FN_WITH_OPENSSL == 1
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+#endif
+
 namespace fujinet::platform::posix {
+
+namespace {
+
+bool append_test_ca_to_ssl_ctx(SSL_CTX* sslCtx)
+{
+    BIO* bio = BIO_new_mem_buf(fujinet::net::test_ca_cert_pem, -1);
+    if (!bio) {
+        FN_LOGE("platform", "HTTPS: Failed to create BIO for test CA");
+        return false;
+    }
+
+    X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    if (!cert) {
+        FN_LOGE("platform", "HTTPS: Failed to parse test CA certificate");
+        return false;
+    }
+
+    X509_STORE* store = SSL_CTX_get_cert_store(sslCtx);
+    if (!store) {
+        X509_free(cert);
+        FN_LOGE("platform", "HTTPS: SSL_CTX has no cert store");
+        return false;
+    }
+
+    const int addOk = X509_STORE_add_cert(store, cert);
+    const unsigned long err = ERR_peek_last_error();
+    X509_free(cert);
+
+    if (addOk == 1) {
+        return true;
+    }
+
+    if (ERR_GET_LIB(err) == ERR_LIB_X509 && ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+        ERR_clear_error();
+        return true;
+    }
+
+    FN_LOGE("platform", "HTTPS: Failed to add test CA to SSL_CTX store");
+    return false;
+}
+
+CURLcode add_test_ca_sslctx_cb(CURL* curl, void* sslctx, void* /*userdata*/)
+{
+    (void)curl;
+    SSL_CTX* ctx = static_cast<SSL_CTX*>(sslctx);
+    if (!ctx) {
+        return CURLE_SSL_CERTPROBLEM;
+    }
+    return append_test_ca_to_ssl_ctx(ctx) ? CURLE_OK : CURLE_SSL_CERTPROBLEM;
+}
+
+} // namespace
 
 HttpNetworkProtocolCurl::HttpNetworkProtocolCurl(config::TlsConfig tlsConfig)
     : _tlsConfig(std::move(tlsConfig))
@@ -215,7 +275,7 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     const bool use_test_ca = _tlsConfig.trustTestCa;
     const std::string& cleanUrl = _req.url;
     if (use_test_ca) {
-        FN_LOGI("platform", "HTTPS: Using FujiNet Test CA for certificate verification");
+        FN_LOGD("platform", "HTTPS: Adding FujiNet Test CA to certificate verification store");
     }
 
     const bool isPost = (_req.method == 2);
@@ -272,22 +332,15 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
 
     // TLS verification configuration
     if (use_test_ca) {
-        // Use embedded FujiNet Test CA for self-signed cert verification
+        // Add embedded FujiNet Test CA in addition to system trust roots.
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
-        
-        // Create a blob with the test CA certificate
-        struct curl_blob ca_blob;
-        ca_blob.data = const_cast<char*>(fujinet::net::test_ca_cert_pem);
-        ca_blob.len = fujinet::net::test_ca_cert_size;
-        ca_blob.flags = CURL_BLOB_COPY;
-        curl_easy_setopt(_curl, CURLOPT_CAINFO_BLOB, &ca_blob);
-        
-        FN_LOGI("platform", "HTTPS: Loaded FujiNet Test CA certificate");
+        curl_easy_setopt(_curl, CURLOPT_SSL_CTX_FUNCTION, &add_test_ca_sslctx_cb);
     } else {
         // Normal mode: use system CA certificates
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        curl_easy_setopt(_curl, CURLOPT_SSL_CTX_FUNCTION, nullptr);
     }
 
     // Reset request-body state

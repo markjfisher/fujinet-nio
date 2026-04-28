@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 
+#include "fujinet/config/fuji_config.h"
 #include "fujinet/io/devices/network_protocol.h"
 
 namespace fujinet::platform::esp32 {
@@ -17,7 +18,7 @@ struct HttpNetworkProtocolEspIdfState;
 // - Any other offset returns StatusCode::InvalidRequest.
 class HttpNetworkProtocolEspIdf final : public fujinet::io::INetworkProtocol {
 public:
-    HttpNetworkProtocolEspIdf();
+    explicit HttpNetworkProtocolEspIdf(fujinet::config::TlsConfig tlsConfig = {});
     ~HttpNetworkProtocolEspIdf() override;
 
     fujinet::io::StatusCode open(const fujinet::io::NetworkOpenRequest& req) override;
@@ -41,8 +42,8 @@ public:
 private:
     // opaque (ESP-IDF only, defined in .cpp)
     HttpNetworkProtocolEspIdfState* _s{nullptr};
+    fujinet::config::TlsConfig _tlsConfig{};
 };
 
 } // namespace fujinet::platform::esp32
-
 

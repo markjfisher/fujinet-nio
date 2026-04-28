@@ -435,7 +435,8 @@ static void http_task_entry_after_upload(void* arg)
 
 
 
-HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
+HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf(fujinet::config::TlsConfig tlsConfig)
+    : _tlsConfig(std::move(tlsConfig))
 {
     _s = new HttpNetworkProtocolEspIdfState();
     _s->meta_mutex = xSemaphoreCreateMutexStatic(&_s->meta_mutex_storage);
@@ -525,18 +526,10 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     _s->err = ESP_OK;
     give_mutex(_s->meta_mutex);
 
-    // Check for test CA flag in URL (https://host:port/path?testca=1)
-    // This uses the embedded FujiNet Test CA for verifying self-signed certs
-    // generated with integration-tests/certs/generate_certs.sh
-    bool use_test_ca = false;
+    const bool use_test_ca = _tlsConfig.trustTestCa;
     std::string url = req.url;
-    
-    // Check for testca flag
-    size_t queryPos = url.find("?testca=1");
-    if (queryPos != std::string::npos) {
-        use_test_ca = true;
-        url = url.substr(0, queryPos);  // Remove ?testca=1 from URL
-        FN_LOGI(TAG, "HTTPS: Using FujiNet Test CA for certificate verification");
+    if (use_test_ca) {
+        FN_LOGD(TAG, "HTTPS: Enabling additive FujiNet Test CA trust");
     }
     
     esp_http_client_config_t cfg{};
@@ -554,12 +547,9 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     cfg.timeout_ms = 15000;
 
     // TLS certificate verification configuration
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
     if (use_test_ca) {
-        // Use embedded FujiNet Test CA for self-signed cert verification
-        cfg.cert_pem = fujinet::net::test_ca_cert_pem;
-    } else {
-        // Normal mode: use ESP-IDF's built-in certificate bundle (Mozilla root CAs)
-        cfg.crt_bundle_attach = esp_crt_bundle_attach;
+        cfg.use_global_ca_store = true;
     }
 
     const bool follow = (req.flags & 0x02) != 0;

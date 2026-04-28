@@ -120,7 +120,7 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
 
     const bool use_test_ca = _tlsConfig.trustTestCa;
     if (use_test_ca) {
-        FN_LOGI(TAG, "TLS: Using FujiNet Test CA for certificate verification");
+        FN_LOGD(TAG, "TLS: Adding FujiNet Test CA to certificate verification store");
     }
 
     if (!parse_tls_url(req.url, _host, _port)) {
@@ -174,11 +174,11 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
     }
 
     // Configure certificate verification
+    // Normal mode always uses system CA certificates.
+    SSL_CTX_set_verify(_ctx, SSL_VERIFY_PEER, nullptr);
+    SSL_CTX_set_default_verify_paths(_ctx);
+
     if (use_test_ca) {
-        // Use embedded FujiNet Test CA for self-signed cert verification
-        SSL_CTX_set_verify(_ctx, SSL_VERIFY_PEER, nullptr);
-        
-        // Load the test CA certificate
         BIO* bio = BIO_new_mem_buf(fujinet::net::test_ca_cert_pem, -1);
         if (!bio) {
             FN_LOGE(TAG, "TLS: Failed to create BIO for test CA");
@@ -188,10 +188,9 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
             _socket = -1;
             return fujinet::io::StatusCode::InternalError;
         }
-        
+
         X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
         BIO_free(bio);
-        
         if (!cert) {
             FN_LOGE(TAG, "TLS: Failed to parse test CA certificate");
             SSL_CTX_free(_ctx);
@@ -200,17 +199,30 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
             _socket = -1;
             return fujinet::io::StatusCode::InternalError;
         }
-        
-        X509_STORE* store = X509_STORE_new();
-        X509_STORE_add_cert(store, cert);
-        SSL_CTX_set_cert_store(_ctx, store);
+
+        X509_STORE* store = SSL_CTX_get_cert_store(_ctx);
+        if (!store) {
+            X509_free(cert);
+            FN_LOGE(TAG, "TLS: SSL_CTX has no cert store");
+            SSL_CTX_free(_ctx);
+            _ctx = nullptr;
+            ::close(_socket);
+            _socket = -1;
+            return fujinet::io::StatusCode::InternalError;
+        }
+
+        const int addOk = X509_STORE_add_cert(store, cert);
+        const unsigned long err = ERR_peek_last_error();
         X509_free(cert);
-        
-        FN_LOGI(TAG, "TLS: Loaded FujiNet Test CA certificate");
-    } else {
-        // Normal mode: use system CA certificates
-        SSL_CTX_set_verify(_ctx, SSL_VERIFY_PEER, nullptr);
-        SSL_CTX_set_default_verify_paths(_ctx);
+        if (addOk != 1 && !(ERR_GET_LIB(err) == ERR_LIB_X509 && ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE)) {
+            FN_LOGE(TAG, "TLS: Failed to add test CA certificate");
+            SSL_CTX_free(_ctx);
+            _ctx = nullptr;
+            ::close(_socket);
+            _socket = -1;
+            return fujinet::io::StatusCode::InternalError;
+        }
+        ERR_clear_error();
     }
 
     // Create SSL connection

@@ -71,11 +71,10 @@ steps:
       - 'utf8'
     timeout_s: 10
 
-  # HTTPS tests - use local HTTPS proxy with FujiNet Test CA
-  # The ?testca=1 flag tells the firmware to use the embedded FujiNet Test CA
-  # for certificate verification instead of the public CA bundle.
+  # HTTPS tests - use local HTTPS proxy with FujiNet Test CA.
+  # Trust is configured via fujinet.yaml tls.trust_test_ca, not URL parameters.
   - name: "HTTPS: GET /get (local proxy with test CA)"
-    argv: ["{CLI}", "net", "get", "{HTTPS}/get?testca=1"]
+    argv: ["{CLI}", "net", "get", "{HTTPS}/get"]
     expect:
       - '"url"'
       - "/get"
