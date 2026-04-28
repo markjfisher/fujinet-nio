@@ -484,4 +484,21 @@ TEST_CASE("FileDevice ResolvePath canonicalizes full URI when arg is empty")
     CHECK(display_path == "/root/NEXT");
 }
 
+TEST_CASE("FileDevice ResolvePath returns IOError when resolved target probe fails")
+{
+    StorageManager storage;
+    auto fs = std::make_unique<MemoryFs>("tnfs");
+    CHECK(storage.registerFileSystem(std::move(fs)));
+
+    FileDevice device(storage);
+    IORequest request{};
+    request.id = 5;
+    request.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
+    request.payload = make_resolve_request("tnfs://server/root", "NEXT");
+
+    const auto response = device.handle(request);
+    CHECK(response.status == StatusCode::IOError);
+    CHECK(response.payload.empty());
+}
+
 } // namespace

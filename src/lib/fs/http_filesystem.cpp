@@ -6,17 +6,20 @@
 
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
 namespace fujinet::fs {
 
 static constexpr const char* TAG = "http_fs";
-static constexpr std::size_t kMaxNotReadyPolls = 10000;
+static constexpr auto kHttpWaitTimeout = std::chrono::seconds(15);
+static constexpr auto kHttpPollInterval = std::chrono::milliseconds(5);
 
 namespace {
 
@@ -304,7 +307,8 @@ private:
 
     static bool wait_for_info(io::INetworkProtocol& protocol, io::NetworkInfo& outInfo)
     {
-        for (std::size_t attempts = 0; attempts < kMaxNotReadyPolls; ++attempts) {
+        const auto deadline = std::chrono::steady_clock::now() + kHttpWaitTimeout;
+        while (true) {
             protocol.poll();
 
             io::NetworkInfo info{};
@@ -316,10 +320,14 @@ private:
             if (status != io::StatusCode::NotReady) {
                 return false;
             }
-        }
 
-        FN_LOGE(TAG, "Timed out waiting for HTTP metadata");
-        return false;
+            if (std::chrono::steady_clock::now() >= deadline) {
+                FN_LOGE(TAG, "Timed out waiting for HTTP metadata");
+                return false;
+            }
+
+            std::this_thread::sleep_for(kHttpPollInterval);
+        }
     }
 
     static bool read_response_body(io::INetworkProtocol& protocol, std::vector<std::uint8_t>& outBody)
@@ -328,8 +336,9 @@ private:
 
         std::array<std::uint8_t, 1024> buffer{};
         std::uint32_t offset = 0;
+        const auto deadline = std::chrono::steady_clock::now() + kHttpWaitTimeout;
 
-        for (std::size_t attempts = 0; attempts < kMaxNotReadyPolls; ++attempts) {
+        while (true) {
             protocol.poll();
 
             std::uint16_t read = 0;
@@ -352,20 +361,20 @@ private:
                 if (eof) {
                     return true;
                 }
-
-                if (read > 0) {
-                    attempts = 0;
-                }
                 continue;
             }
 
             if (status != io::StatusCode::NotReady) {
                 return false;
             }
-        }
 
-        FN_LOGE(TAG, "Timed out reading HTTP body");
-        return false;
+            if (std::chrono::steady_clock::now() >= deadline) {
+                FN_LOGE(TAG, "Timed out reading HTTP body");
+                return false;
+            }
+
+            std::this_thread::sleep_for(kHttpPollInterval);
+        }
     }
 
     HttpProtocolFactory _protocolFactory;

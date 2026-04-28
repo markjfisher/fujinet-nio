@@ -332,10 +332,10 @@ u8[] displayPath        // user-displayable path/context string
 
 ### Status codes
 
-- `Ok`: resolution succeeded; `flags` describe the resolved target when it can be probed
+- `Ok`: resolution succeeded and target metadata probe succeeded
 - `InvalidRequest`: malformed payload or unsupported protocol version
 - `DeviceNotFound`: base URI or resolved URI could not be mapped to a registered filesystem
-- `IOError`: resolver succeeded but target metadata probing failed unexpectedly
+- `IOError`: resolver succeeded but target metadata probing failed, including remote access rejection such as HTTP `403` or missing/unreadable targets
 
 Notes:
 - `displayPath` is intended for prompt/help/status output and should not be reparsed by the host.

@@ -614,12 +614,14 @@ IOResponse FileDevice::handle_resolve_path(const IORequest& request)
 
     FileInfo info{};
     const bool exists = resolved_fs->stat(resolved_path, info);
+    if (!exists) {
+        resp.status = StatusCode::IOError;
+        return resp;
+    }
 
     std::uint8_t flags = 0;
-    if (exists) {
-        flags |= 0x02;
-        if (info.isDirectory) flags |= 0x01;
-    }
+    flags |= 0x02;
+    if (info.isDirectory) flags |= 0x01;
 
     const std::string resolved_uri = build_resolved_uri(resolved);
     const std::string display_path = build_display_path(resolved);
