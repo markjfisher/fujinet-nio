@@ -51,6 +51,9 @@ idf_component_register(
         lib/network_protocol_registry.cpp
         lib/network_protocol_stub.cpp
         lib/path_resolvers/fs_prefix_resolver.cpp
+        lib/path_resolvers/http_path_utils.cpp
+        lib/path_resolvers/http_relative_resolver.cpp
+        lib/path_resolvers/http_uri_resolver.cpp
         lib/path_resolvers/path_resolver.cpp
         lib/path_resolvers/path_resolver_utils.cpp
         lib/path_resolvers/relative_path_resolver.cpp

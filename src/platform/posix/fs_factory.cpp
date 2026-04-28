@@ -1,13 +1,17 @@
 
 #include "fujinet/platform/posix/fs_factory.h"
 #include "fujinet/fs/fs_stdio.h"
+#include "fujinet/fs/http_filesystem.h"
 #include "fujinet/fs/tnfs_filesystem.h"
 #include "fujinet/core/logging.h"
+#include "fujinet/io/devices/network_protocol.h"
+#include "fujinet/platform/network_registry.h"
 #include "fujinet/platform/posix/udp_channel.h"
 #include "fujinet/platform/posix/tcp_channel.h"
 #include "fujinet/tnfs/tnfs_protocol.h"
 
 #include <filesystem>
+#include <memory>
 #include <system_error>
 
 namespace fujinet::platform::posix {
@@ -62,5 +66,19 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(bool useTcp) {
     };
 
     return fujinet::fs::make_tnfs_filesystem(std::move(factory));
+}
+
+std::unique_ptr<fujinet::fs::IFileSystem> create_http_filesystem()
+{
+    FN_LOGI(TAG, "Registering HTTP filesystem provider (dynamic URLs)");
+
+    auto registry = std::make_shared<fujinet::io::ProtocolRegistry>(fujinet::platform::make_default_network_registry());
+    fujinet::fs::HttpProtocolFactory factory = [registry](std::string_view schemeLower)
+        -> std::unique_ptr<fujinet::io::INetworkProtocol>
+    {
+        return registry->create(schemeLower);
+    };
+
+    return fujinet::fs::make_http_filesystem(std::move(factory));
 }
 } // namespace fujinet::platform::posix

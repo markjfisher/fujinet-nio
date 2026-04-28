@@ -60,6 +60,22 @@ TEST_CASE("PathResolver resolves fs-prefixed paths")
     CHECK(out.display_path == "tnfs:tnfs://localhost:16384/file.txt");
 }
 
+TEST_CASE("PathResolver resolves HTTP URI schemes")
+{
+    PathResolver resolver;
+    ResolvedTarget out;
+    const PathContext ctx{"host", "/cwd"};
+
+    CHECK(resolver.resolve("http://example.com/files/disk.atr", ctx, out));
+    CHECK(out.fs_name == "http");
+    CHECK(out.fs_path == "http://example.com/files/disk.atr");
+    CHECK(out.display_path == "http:http://example.com/files/disk.atr");
+
+    CHECK(resolver.resolve("https://secure.example.com/demo.xex", ctx, out));
+    CHECK(out.fs_name == "http");
+    CHECK(out.fs_path == "https://secure.example.com/demo.xex");
+}
+
 TEST_CASE("PathResolver resolves relative paths from cwd")
 {
     PathResolver resolver;
@@ -72,6 +88,10 @@ TEST_CASE("PathResolver resolves relative paths from cwd")
     CHECK(resolver.resolve("next", PathContext{"tnfs", "//192.168.1.10:16384/root"}, out));
     CHECK(out.fs_name == "tnfs");
     CHECK(out.fs_path == "//192.168.1.10:16384/root/next");
+
+    CHECK(resolver.resolve("next", PathContext{"http", "http://example.com/root/base"}, out));
+    CHECK(out.fs_name == "http");
+    CHECK(out.fs_path == "http://example.com/root/base/next");
 }
 
 TEST_CASE("PathResolver resolveOrCwd falls back to cwd")

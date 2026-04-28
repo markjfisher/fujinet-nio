@@ -18,8 +18,6 @@
 #include "fujinet/diag/diagnostic_provider.h"
 #include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/filesystem.h"
-#include "fujinet/fs/tnfs_filesystem.h"
-#include "fujinet/fs/http_filesystem.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/fs/mount_applier.h"
 #include "fujinet/io/core/channel.h"
@@ -117,13 +115,13 @@ int main()
         }
         FN_LOGI(TAG, "TNFS filesystem registered as 'tnfs' (dynamic URI endpoints)");
 
-        // Register HTTP filesystem provider (placeholder)
-        auto httpFs = fujinet::fs::make_http_filesystem();
+        // Register HTTP filesystem provider. Scheme/host are resolved per URL at access time.
+        auto httpFs = fujinet::platform::posix::create_http_filesystem();
         if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
             FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
             return 1;
         }
-        FN_LOGI(TAG, "HTTP filesystem registered as 'http'");
+        FN_LOGI(TAG, "HTTP filesystem registered as 'http' (dynamic URL endpoints)");
     }
 
     // Reset hook:
@@ -236,4 +234,3 @@ int main()
     FN_LOGI(TAG, "fujinet-nio exiting.");
     return 0;
 }
-

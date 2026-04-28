@@ -1,6 +1,8 @@
 #include "fujinet/fs/path_resolvers/path_resolver.h"
 
 #include "fujinet/fs/path_resolvers/fs_prefix_resolver.h"
+#include "fujinet/fs/path_resolvers/http_relative_resolver.h"
+#include "fujinet/fs/path_resolvers/http_uri_resolver.h"
 #include "fujinet/fs/path_resolvers/relative_path_resolver.h"
 #include "fujinet/fs/path_resolvers/tnfs_prefix_resolver.h"
 #include "fujinet/fs/path_resolvers/tnfs_relative_resolver.h"
@@ -15,6 +17,8 @@ PathResolver::PathResolver()
     registerHandler(std::make_unique<TnfsUriResolver>());
     registerHandler(std::make_unique<TnfsPrefixResolver>());
     registerHandler(std::make_unique<TnfsRelativeResolver>());
+    registerHandler(std::make_unique<HttpUriResolver>());
+    registerHandler(std::make_unique<HttpRelativeResolver>());
     registerHandler(std::make_unique<FsPrefixResolver>());
     registerHandler(std::make_unique<RelativePathResolver>());
 }

@@ -229,6 +229,7 @@ The resolver is intentionally extensible:
 Current handlers include:
 
 - TNFS URI resolver (`tnfs://`, `tnfs+tcp://`, `tnfstcp://`, `tnfs-tcp://`)
+- HTTP URI resolver (`http://`, `https://`)
 - TNFS prefixed resolver (`tnfs://...` passed as `tnfs:<endpoint/path>`)
 - TNFS relative resolver (joining relative paths while preserving endpoint authority)
 - generic `<fs>:` prefixed resolver

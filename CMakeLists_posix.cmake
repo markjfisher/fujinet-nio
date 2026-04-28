@@ -144,6 +144,9 @@ target_sources(fujinet-nio
         src/lib/network_protocol_registry.cpp
         src/lib/network_protocol_stub.cpp
         src/lib/path_resolvers/fs_prefix_resolver.cpp
+        src/lib/path_resolvers/http_path_utils.cpp
+        src/lib/path_resolvers/http_relative_resolver.cpp
+        src/lib/path_resolvers/http_uri_resolver.cpp
         src/lib/path_resolvers/path_resolver.cpp
         src/lib/path_resolvers/path_resolver_utils.cpp
         src/lib/path_resolvers/relative_path_resolver.cpp

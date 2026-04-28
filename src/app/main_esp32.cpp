@@ -198,6 +198,15 @@ extern "C" void fujinet_core_task(void* arg)
         }
     }
 
+    // Register HTTP filesystem provider. Scheme/host are resolved from URL at access time.
+    if (auto httpFs = platform::esp32::create_http_filesystem()) {
+        if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
+            FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
+        } else {
+            FN_LOGI(TAG, "HTTP filesystem registered as 'http' (dynamic URL endpoints)");
+        }
+    }
+
     auto profile = build::current_build_profile();
 
     {

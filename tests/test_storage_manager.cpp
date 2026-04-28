@@ -186,6 +186,18 @@ TEST_CASE("StorageManager: resolveUri preserves authority for HTTP")
     CHECK(path == "http://example.com:8080/disks/image.dsk");
 }
 
+TEST_CASE("StorageManager: resolveUri preserves authority for HTTPS")
+{
+    StorageManager manager;
+
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("http")));
+
+    auto [fs, path] = manager.resolveUri("https://secure.example.com/disks/image.dsk");
+    CHECK(fs != nullptr);
+    CHECK(fs->name() == "http");
+    CHECK(path == "https://secure.example.com/disks/image.dsk");
+}
+
 TEST_CASE("StorageManager: resolveUri case-insensitive TNFS scheme")
 {
     StorageManager manager;

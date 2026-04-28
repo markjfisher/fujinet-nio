@@ -17,4 +17,7 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_sdcard_filesystem();
 // If useTcp is true, TCP transport is forced unless URI explicitly selects UDP.
 std::unique_ptr<fujinet::fs::IFileSystem> create_tnfs_filesystem(bool useTcp = false);
 
+// Creates an HTTP/HTTPS filesystem provider. URLs are resolved at access time.
+std::unique_ptr<fujinet::fs::IFileSystem> create_http_filesystem();
+
 } // namespace fujinet::platform::esp32

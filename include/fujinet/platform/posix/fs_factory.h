@@ -11,4 +11,7 @@ create_host_filesystem(const std::string& rootDir);
 std::unique_ptr<fujinet::fs::IFileSystem>
 create_tnfs_filesystem(bool useTcp = false);
 
+std::unique_ptr<fujinet::fs::IFileSystem>
+create_http_filesystem();
+
 } // namespace fujinet::platform::posix
