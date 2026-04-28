@@ -241,7 +241,7 @@ Mount an image into a slot using a **full URI**. The fujinet-nio parses the URI 
 ```
 u8  version
 u8  slot
-u8  flags            // bit0 = readonly_requested
+u8  flags            // bit0 = readonly_requested for this live mount request
 u8  typeOverride     // 0=Auto, 1=ATR, 2=SSD, 3=DSD, 4=Raw
 u16 sectorSizeHint   // for Raw; otherwise 0
 u16 uriLen           // LE
@@ -271,6 +271,12 @@ u32 sectorCount      // LE
 - `InvalidRequest` (bad slot, filesystem missing, file missing, malformed payload, etc.)
 - `Unsupported` (unknown/unsupported image type)
 - `IOError` (open/stat/read failures)
+
+Mount policy notes:
+
+- DiskDevice `Mount` carries the **live** access request.
+- If `bit0` is clear, the service may try writable access first and then fall back to read-only.
+- The actual outcome is reported in response `flags bit1` (`readonly_effective`).
 
 ---
 

@@ -404,7 +404,7 @@ The `MountConfig` struct in `fujinet/config/fuji_config.h` defines a mount entry
 struct MountConfig {
     int         slot;     // Slot number (1-8). 0 means unassigned.
     std::string uri;      // URI of the resource (e.g., "sd:/disks/img.atr", "tnfs://server/dir/img.atr")
-    std::string mode;    // "r", "rw", etc.
+    std::string mode;    // persisted slot policy/default, e.g. "auto", "ro"
     bool        enabled;  // Whether this mount is active
 };
 ```
@@ -435,11 +435,11 @@ The pending mount info is stored in `DiskService::Slot::pendingMount` and activa
 mounts:
   - slot: 1
     uri: "sd:/disks/boot.atr"
-    mode: "rw"
+    mode: "auto"
     enabled: true
   - slot: 2
     uri: "tnfs://192.168.1.100:16384/atari/games.atr"
-    mode: "r"
+    mode: "ro"
     enabled: true
 ```
 

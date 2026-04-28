@@ -196,6 +196,7 @@ u8[] mode
 - `slotIndex` is always **0-based on the wire**.
 - Internally, FujiDevice converts that to persisted config slot numbering using [`MountConfig::from_index()`](include/fujinet/config/fuji_config.h:42).
 - If `modeLen == 0`, the device normalizes mode to `"r"`.
+- The `mode` field is persisted slot metadata/default policy. It is distinct from the live access mode requested through DiskDevice `Mount`.
 - If `uriLen == 0`, the persisted entry for that slot is removed.
 - If `uriLen > 0`, the slot is upserted and the config is saved immediately.
 - `enabled` is only meaningful when `uriLen > 0`.
@@ -252,7 +253,7 @@ This is specifically intended to make 8-bit client code simpler while preserving
 
 The current fn-rom design uses FujiDevice for the persisted FujiNet mount table and FileDevice for path traversal:
 
-- [`*FIN`](../../bbc/fn-rom/src/commands/cmd_fin.s) writes a URI into a persisted FujiNet mount slot via `SetMount`
+- [`*FIN`](../../bbc/fn-rom/src/commands/cmd_fin.s) writes a URI into a persisted FujiNet mount slot via `SetMount`, currently storing default slot policy `auto`
 - [`*FMOUNT`](../../bbc/fn-rom/src/commands/cmd_fmount.s) bridges a FujiNet mount slot to one of the BBC’s local DFS drives
 - [`*FHOST`](../../bbc/fn-rom/src/commands/cmd_fhost.s), `*FCD`, `*FLIST`, and `*FLS` use FileDevice URI/path resolution and listing
 
