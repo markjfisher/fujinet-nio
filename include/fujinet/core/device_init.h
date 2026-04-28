@@ -17,6 +17,7 @@ void register_clock_device(FujinetCore& core);
 void register_clock_device(FujinetCore& core, config::FujiConfigStore* configStore);
 
 void register_network_device(FujinetCore& core);
+void register_network_device(FujinetCore& core, const config::TlsConfig& tlsConfig);
 void register_network_device(FujinetCore& core, io::ProtocolRegistry registry);
 void register_disk_device(FujinetCore& core);
 void register_modem_device(FujinetCore& core);

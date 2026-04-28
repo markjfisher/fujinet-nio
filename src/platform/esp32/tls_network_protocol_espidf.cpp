@@ -52,7 +52,7 @@ bool TlsNetworkProtocolEspIdf::parse_tls_url(const std::string& url,
                                              std::uint16_t& outPort)
 {
     // Expected format: tls://host:port or tls://host (default port 443)
-    // Query string (e.g., ?testca=1) is handled separately in open()
+    // Query strings are handled separately in open()
     const std::string prefix = "tls://";
     if (url.compare(0, prefix.size(), prefix) != 0) {
         return false;
@@ -113,9 +113,13 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
 
     // Configure TLS
     esp_tls_cfg_t tls_cfg{};
-    tls_cfg.crt_bundle_attach = esp_crt_bundle_attach;
     if (use_test_ca) {
-        tls_cfg.use_global_ca_store = true;
+        // esp_tls also uses either an explicit CA PEM or the built-in CRT bundle.
+        tls_cfg.crt_bundle_attach = nullptr;
+        tls_cfg.cacert_buf = reinterpret_cast<const unsigned char*>(fujinet::net::test_ca_cert_pem);
+        tls_cfg.cacert_bytes = sizeof(fujinet::net::test_ca_cert_pem);
+    } else {
+        tls_cfg.crt_bundle_attach = esp_crt_bundle_attach;
     }
     tls_cfg.timeout_ms = CONNECT_TIMEOUT_MS;
 

@@ -20,8 +20,8 @@ This directory contains self-signed certificates for HTTPS/TLS testing with Fuji
 2. **Server Certificate (`server.crt`)** is used by the nginx HTTPS proxy:
    - [`scripts/start_test_services.sh`](../../scripts/start_test_services.sh) copies these to `/tmp/fujinet-https-certs/`
 
-3. **Firmware uses the embedded CA** when URL contains `?testca=1`:
-   - `https://192.168.1.101:8443/get?testca=1`
+3. **Firmware allows the embedded CA** when configuration contains `tls.trust_test_ca=true`:
+   - `https://192.168.1.101:8443/get`
 
 ## Regenerating Certificates
 
@@ -58,7 +58,7 @@ Then update the firmware:
 
 3. Test with FujiNet (uses embedded test CA):
    ```bash
-   FN_TEST_URL="https://192.168.1.101:8443/get?testca=1" FN_PORT=/dev/ttyUSB0 ./bin/linux/http_get
+   FN_TEST_URL="https://192.168.1.101:8443/get" FN_PORT=/dev/ttyUSB0 ./bin/linux/http_get
    ```
 
 ## Security Note

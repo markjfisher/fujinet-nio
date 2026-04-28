@@ -101,7 +101,7 @@ The `scripts/fujinet` CLI tool provides direct access to FujiNet commands.
 ./scripts/fujinet -p /dev/ttyUSB0 net get "http://192.168.1.101:8080/get"
 
 # HTTPS with test CA (self-signed cert)
-./scripts/fujinet -p /dev/ttyUSB0 net get "https://192.168.1.101:8443/get?testca=1"
+./scripts/fujinet -p /dev/ttyUSB0 net get "https://192.168.1.101:8443/get"
 
 # Open connection
 ./scripts/fujinet -p /dev/ttyUSB0 net open "http://192.168.1.101:8080/get"
@@ -120,7 +120,7 @@ The `scripts/fujinet` CLI tool provides direct access to FujiNet commands.
 
 ```bash
 # Open TLS connection with test CA
-./scripts/fujinet -p /dev/ttyUSB0 net open "tls://192.168.1.101:7778?testca=1"
+./scripts/fujinet -p /dev/ttyUSB0 net open "tls://192.168.1.101:7778"
 
 # Write data
 ./scripts/fujinet -p /dev/ttyUSB0 net write 0 --data "Hello TLS!"
@@ -164,14 +164,12 @@ integration-tests/certs/
 
 ### Using Test CA
 
-Add `?testca=1` to HTTPS URLs or use `tls://` URLs with the flag:
-
 ```bash
 # HTTPS with test CA
-./scripts/fujinet -p /dev/ttyUSB0 net get "https://192.168.1.101:8443/get?testca=1"
+./scripts/fujinet -p /dev/ttyUSB0 net get "https://192.168.1.101:8443/get"
 
 # TLS with test CA
-./scripts/fujinet -p /dev/ttyUSB0 net open "tls://192.168.1.101:7778?testca=1"
+./scripts/fujinet -p /dev/ttyUSB0 net open "tls://192.168.1.101:7778"
 ```
 
 ### Regenerating Certificates
@@ -204,7 +202,7 @@ make TARGET=linux
 FN_TEST_URL="http://192.168.1.101:8080/get" FN_PORT=/dev/ttyUSB0 ./bin/linux/http_get
 
 # HTTPS with test CA
-FN_TEST_URL="https://192.168.1.101:8443/get?testca=1" FN_PORT=/dev/ttyUSB0 ./bin/linux/http_get
+FN_TEST_URL="https://192.168.1.101:8443/get" FN_PORT=/dev/ttyUSB0 ./bin/linux/http_get
 ```
 
 ## Troubleshooting
@@ -218,8 +216,7 @@ FN_TEST_URL="https://192.168.1.101:8443/get?testca=1" FN_PORT=/dev/ttyUSB0 ./bin
 ### Certificate Errors
 
 1. Ensure firmware has the embedded test CA
-2. Use `?testca=1` flag in URLs
-3. Check certificates haven't expired
+2. Check certificates haven't expired
 
 ### Timeout Errors
 

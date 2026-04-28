@@ -203,7 +203,7 @@ int main()
         }
     }
 
-    fujinet::core::register_network_device(core);
+    fujinet::core::register_network_device(core, config.tls);
     fujinet::core::register_modem_device(core);
 
     // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).

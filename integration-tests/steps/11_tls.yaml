@@ -6,7 +6,7 @@ group: tls
 
 steps:
   - name: "TLS: Open connection with test CA"
-    argv: ["{CLI}", "net", "open", "tls://{TLS_HOST}:7778?testca=1"]
+    argv: ["{CLI}", "net", "open", "tls://{TLS_HOST}:7778"]
     expect:
       - "handle="
     capture_var:

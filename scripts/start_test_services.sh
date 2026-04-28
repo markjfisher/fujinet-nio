@@ -76,13 +76,13 @@ HTTPS Testing:
   After running '$0 https', test with:
     curl -k https://localhost:${HTTPS_PORT_HOST}/get
   Or with fujinet-nio-lib:
-    make TEST_URL="\"https://192.168.1.xxx:${HTTPS_PORT_HOST}/get?testca=1\""
+    make TEST_URL="\"https://192.168.1.xxx:${HTTPS_PORT_HOST}/get\""
 
 TLS Testing:
   After running '$0 tls', test with:
     openssl s_client -connect localhost:${TLS_PORT_HOST}
   Or with fujinet-nio-lib:
-    Use URL: tls://192.168.1.xxx:${TLS_PORT_HOST}?testca=1
+    Use URL: tls://192.168.1.xxx:${TLS_PORT_HOST}
 
 Stream Testing:
   After running '$0 stream', test with:
@@ -93,10 +93,10 @@ Stream Testing:
 HTTP Filesystem Testing:
   After running '$0 http-fs', test with:
     curl http://localhost:${HTTP_FS_HTTP_PORT_HOST}/disk1.atr
-    curl -k https://localhost:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr?testca=1
+    curl -k https://localhost:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr
   Example FujiNet URLs:
     http://127.0.0.1:${HTTP_FS_HTTP_PORT_HOST}/disk1.atr
-    https://127.0.0.1:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr?testca=1
+    https://127.0.0.1:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr
 EOF
 }
 
@@ -325,7 +325,7 @@ NGINX_EOF
 
   echo "Filesystem content directory: $fs_dir"
   echo "HTTP test file:  http://${host_ip}:${HTTP_FS_HTTP_PORT_HOST}/disk1.atr"
-  echo "HTTPS test file: https://${host_ip}:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr?testca=1"
+  echo "HTTPS test file: https://${host_ip}:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr"
 }
 
 start_tcp() {
@@ -406,7 +406,7 @@ NGINX_EOF
 
   echo "TLS echo started."
   echo "Test with: openssl s_client -connect localhost:${TLS_PORT_HOST}"
-  echo "       or: use tls://${host_ip}:${TLS_PORT_HOST}?testca=1 in fujinet-nio"
+  echo "       or: use tls://${host_ip}:${TLS_PORT_HOST} in fujinet-nio"
 }
 
 start_tnfs() {

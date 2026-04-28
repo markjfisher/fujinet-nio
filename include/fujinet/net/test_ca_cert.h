@@ -9,8 +9,6 @@
  * This certificate is used to verify self-signed server certificates
  * generated for local testing (e.g., nginx HTTPS proxy).
  *
- * To use this CA, add ?testca=1 to the HTTPS URL.
- *
  * The CA certificate was generated with:
  *   integration-tests/certs/generate_certs.sh
  *

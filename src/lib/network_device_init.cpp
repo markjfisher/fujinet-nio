@@ -37,6 +37,11 @@ void register_network_device(FujinetCore& core)
     register_network_device(core, std::move(reg));
 }
 
-} // namespace fujinet::core
+void register_network_device(FujinetCore& core, const config::TlsConfig& tlsConfig)
+{
+    auto reg = fujinet::platform::make_default_network_registry(tlsConfig);
+    register_network_device(core, std::move(reg));
+}
 
+} // namespace fujinet::core
 

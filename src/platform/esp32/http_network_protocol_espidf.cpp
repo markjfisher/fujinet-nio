@@ -547,9 +547,12 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     cfg.timeout_ms = 15000;
 
     // TLS certificate verification configuration
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
     if (use_test_ca) {
-        cfg.use_global_ca_store = true;
+        // ESP-IDF's HTTPS client selects either a provided PEM CA or the CRT bundle.
+        // Use the FujiNet test CA when requested so HTTPS behavior matches the test setup.
+        cfg.cert_pem = fujinet::net::test_ca_cert_pem;
+    } else {
+        cfg.crt_bundle_attach = esp_crt_bundle_attach;
     }
 
     const bool follow = (req.flags & 0x02) != 0;

@@ -72,7 +72,7 @@ bool TlsNetworkProtocolPosix::parse_tls_url(const std::string& url,
                                             std::uint16_t& outPort)
 {
     // Expected format: tls://host:port or tls://host (default port 443)
-    // Query string (e.g., ?testca=1) is handled separately in open()
+    // Query strings are handled separately in open()
     const std::string prefix = "tls://";
     if (url.compare(0, prefix.size(), prefix) != 0) {
         return false;
