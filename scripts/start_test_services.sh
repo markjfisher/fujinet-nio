@@ -3,6 +3,8 @@ set -euo pipefail
 
 HTTP_NAME="fujinet-httpbin"
 HTTPS_NAME="fujinet-https-proxy"
+HTTP_FS_HTTP_NAME="fujinet-http-fs-http"
+HTTP_FS_HTTPS_NAME="fujinet-http-fs-https"
 TCP_NAME="fujinet-tcp-echo"
 TLS_NAME="fujinet-tls-echo"
 STREAM_NAME="fujinet-tcp-stream"
@@ -13,6 +15,12 @@ HTTP_PORT_CONT="${HTTP_PORT_CONT:-80}"
 
 HTTPS_PORT_HOST="${HTTPS_PORT_HOST:-8443}"
 HTTPS_PORT_CONT="${HTTPS_PORT_CONT:-443}"
+
+HTTP_FS_HTTP_PORT_HOST="${HTTP_FS_HTTP_PORT_HOST:-18080}"
+HTTP_FS_HTTP_PORT_CONT="${HTTP_FS_HTTP_PORT_CONT:-80}"
+
+HTTP_FS_HTTPS_PORT_HOST="${HTTP_FS_HTTPS_PORT_HOST:-18443}"
+HTTP_FS_HTTPS_PORT_CONT="${HTTP_FS_HTTPS_PORT_CONT:-443}"
 
 TCP_PORT_HOST="${TCP_PORT_HOST:-7777}"
 TCP_PORT_CONT="${TCP_PORT_CONT:-7777}"
@@ -32,24 +40,28 @@ HTTP_IMAGE="${HTTP_IMAGE:-kennethreitz/httpbin}"
 TCP_IMAGE="${TCP_IMAGE:-nicolaka/netshoot}"
 NGINX_IMAGE="${NGINX_IMAGE:-nginx:alpine}"
 TNFS_IMAGE="${TNFS_IMAGE:-zaqu/tnfsd}"
+PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-alpine}"
 
 usage() {
   cat <<EOF
 Usage:
   $0 http            Start httpbin on localhost:${HTTP_PORT_HOST}
   $0 https           Start httpbin + nginx HTTPS reverse proxy on localhost:${HTTPS_PORT_HOST}
+  $0 http-fs         Start HTTP+HTTPS static file server for filesystem testing
   $0 tcp             Start TCP echo on localhost:${TCP_PORT_HOST} (foreground with traffic logs)
   $0 tls             Start TLS echo on localhost:${TLS_PORT_HOST} (nginx stream proxy)
   $0 stream          Start TCP streaming server on localhost:${STREAM_PORT_HOST} (sends frames continuously)
   $0 tnfs            Start TNFS daemon on localhost:${TNFS_PORT_HOST} (detached)
   $0 both            Start httpbin (detached) + TCP echo (foreground)
-  $0 all             Start httpbin + HTTPS proxy + TCP echo + TLS echo + stream + tnfs (foreground)
+  $0 all             Start httpbin + HTTPS proxy + HTTP filesystem server + TCP echo + TLS echo + stream + tnfs (foreground)
   $0 stop            Stop all services
   $0 status          Show container status
-  $0 logs http|https|tcp|tls|stream|tnfs   Show logs (tcp logs are in-container stdout)
+  $0 logs http|https|http-fs-http|http-fs-https|tcp|tls|stream|tnfs   Show logs (tcp logs are in-container stdout)
 Options (env vars):
   HTTP_PORT_HOST=8080
   HTTPS_PORT_HOST=8443
+  HTTP_FS_HTTP_PORT_HOST=18080
+  HTTP_FS_HTTPS_PORT_HOST=18443
   TCP_PORT_HOST=7777
   TLS_PORT_HOST=7778
   STREAM_PORT_HOST=7779
@@ -58,6 +70,7 @@ Options (env vars):
   TCP_IMAGE=nicolaka/netshoot
   NGINX_IMAGE=nginx:alpine
   TNFS_IMAGE=zaqu/tnfsd
+  PYTHON_IMAGE=python:3.12-alpine
 
 HTTPS Testing:
   After running '$0 https', test with:
@@ -76,6 +89,14 @@ Stream Testing:
     nc localhost ${STREAM_PORT_HOST}
   Or with fujinet-nio-lib tcp_stream example:
     FN_TCP_HOST=127.0.0.1 FN_TCP_PORT=${STREAM_PORT_HOST} ./bin/linux/tcp_stream
+
+HTTP Filesystem Testing:
+  After running '$0 http-fs', test with:
+    curl http://localhost:${HTTP_FS_HTTP_PORT_HOST}/disk1.atr
+    curl -k https://localhost:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr?testca=1
+  Example FujiNet URLs:
+    http://127.0.0.1:${HTTP_FS_HTTP_PORT_HOST}/disk1.atr
+    https://127.0.0.1:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr?testca=1
 EOF
 }
 
@@ -211,6 +232,100 @@ NGINX_EOF
   echo "HTTPS proxy started."
   echo "Test with: curl -k https://localhost:${HTTPS_PORT_HOST}/get"
   echo "       or: curl -k https://${host_ip}:${HTTPS_PORT_HOST}/get"
+}
+
+prepare_http_fs_content() {
+  local fs_dir="/tmp/fujinet-http-fs"
+  mkdir -p "$fs_dir/subdir"
+
+  printf 'FUJINET HTTP FS TEST\n' > "$fs_dir/readme.txt"
+  printf 'HTTP filesystem test payload\n' > "$fs_dir/subdir/note.txt"
+
+  if [ ! -f "$fs_dir/disk1.atr" ]; then
+    dd if=/dev/zero of="$fs_dir/disk1.atr" bs=16 count=720 >/dev/null 2>&1
+  fi
+
+  if [ ! -f "$fs_dir/disk2.ssd" ]; then
+    dd if=/dev/zero of="$fs_dir/disk2.ssd" bs=256 count=800 >/dev/null 2>&1
+  fi
+
+  echo "$fs_dir"
+}
+
+start_http_fs() {
+  local fs_dir
+  fs_dir=$(prepare_http_fs_content)
+
+  local host_ip
+  host_ip=$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' | cut -d'/' -f1)
+
+  if is_running "$HTTP_FS_HTTP_NAME"; then
+    echo "HTTP filesystem server already running: http://localhost:${HTTP_FS_HTTP_PORT_HOST}"
+  else
+    echo "Starting HTTP filesystem server:"
+    echo "  Local:   http://localhost:${HTTP_FS_HTTP_PORT_HOST}"
+    echo "  Network: http://${host_ip}:${HTTP_FS_HTTP_PORT_HOST}"
+
+    docker run -d --rm \
+      --name "$HTTP_FS_HTTP_NAME" \
+      -p "0.0.0.0:${HTTP_FS_HTTP_PORT_HOST}:${HTTP_FS_HTTP_PORT_CONT}" \
+      -v "$fs_dir:/srv/http:ro" \
+      "$PYTHON_IMAGE" \
+      python -m http.server "${HTTP_FS_HTTP_PORT_CONT}" --bind 0.0.0.0 --directory /srv/http >/dev/null
+
+    echo "HTTP filesystem server started."
+  fi
+
+  if is_running "$HTTP_FS_HTTPS_NAME"; then
+    echo "HTTPS filesystem server already running: https://localhost:${HTTP_FS_HTTPS_PORT_HOST}"
+  else
+    generate_cert
+
+    local config_dir="/tmp/fujinet-http-fs-https-config"
+    mkdir -p "$config_dir"
+
+    cat > "$config_dir/nginx.conf" <<'NGINX_EOF'
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen 443 ssl;
+        server_name _;
+
+        ssl_certificate /etc/nginx/ssl/server.crt;
+        ssl_certificate_key /etc/nginx/ssl/server.key;
+
+        location / {
+            proxy_pass http://fujinet-http-fs-http:80;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+NGINX_EOF
+
+    echo "Starting HTTPS filesystem server:"
+    echo "  Local:   https://localhost:${HTTP_FS_HTTPS_PORT_HOST}"
+    echo "  Network: https://${host_ip}:${HTTP_FS_HTTPS_PORT_HOST}"
+
+    docker run -d --rm \
+      --name "$HTTP_FS_HTTPS_NAME" \
+      -p "0.0.0.0:${HTTP_FS_HTTPS_PORT_HOST}:${HTTP_FS_HTTPS_PORT_CONT}" \
+      -v /tmp/fujinet-https-certs:/etc/nginx/ssl:ro \
+      -v "$config_dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
+      --link "$HTTP_FS_HTTP_NAME:fujinet-http-fs-http" \
+      "$NGINX_IMAGE" >/dev/null
+
+    echo "HTTPS filesystem server started."
+  fi
+
+  echo "Filesystem content directory: $fs_dir"
+  echo "HTTP test file:  http://${host_ip}:${HTTP_FS_HTTP_PORT_HOST}/disk1.atr"
+  echo "HTTPS test file: https://${host_ip}:${HTTP_FS_HTTPS_PORT_HOST}/disk1.atr?testca=1"
 }
 
 start_tcp() {
@@ -363,11 +478,13 @@ start_stream() {
 
 status() {
   echo "Containers:"
-  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${TCP_NAME}|${TLS_NAME}|${STREAM_NAME}|${TNFS_NAME})" || true
+  docker ps --format '  {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "(${HTTP_NAME}|${HTTPS_NAME}|${HTTP_FS_HTTP_NAME}|${HTTP_FS_HTTPS_NAME}|${TCP_NAME}|${TLS_NAME}|${STREAM_NAME}|${TNFS_NAME})" || true
   echo
   echo "Endpoints:"
   echo "  http:   http://localhost:${HTTP_PORT_HOST}"
   echo "  https:  https://localhost:${HTTPS_PORT_HOST}"
+  echo "  http-fs-http:  http://localhost:${HTTP_FS_HTTP_PORT_HOST}"
+  echo "  http-fs-https: https://localhost:${HTTP_FS_HTTPS_PORT_HOST}"
   echo "  tcp:    tcp://127.0.0.1:${TCP_PORT_HOST}"
   echo "  tls:    tls://127.0.0.1:${TLS_PORT_HOST}"
   echo "  stream: tcp://127.0.0.1:${STREAM_PORT_HOST}"
@@ -379,11 +496,13 @@ logs_cmd() {
   case "$which" in
     http)   docker logs "$HTTP_NAME" ;;
     https)  docker logs "$HTTPS_NAME" ;;
+    http-fs-http)  docker logs "$HTTP_FS_HTTP_NAME" ;;
+    http-fs-https) docker logs "$HTTP_FS_HTTPS_NAME" ;;
     tcp)    docker logs "$TCP_NAME" ;;
     tls)    docker logs "$TLS_NAME" ;;
     stream) docker logs "$STREAM_NAME" ;;
     tnfs)   docker logs "$TNFS_NAME" ;;
-    *) echo "logs requires: http|https|tcp|tls|stream|tnfs" ; exit 2 ;;
+    *) echo "logs requires: http|https|http-fs-http|http-fs-https|tcp|tls|stream|tnfs" ; exit 2 ;;
   esac
 }
 
@@ -394,6 +513,9 @@ case "$cmd" in
     ;;
   https)
     start_https
+    ;;
+  http-fs)
+    start_http_fs
     ;;
   tcp)
     start_tcp
@@ -413,6 +535,7 @@ case "$cmd" in
     ;;
   all)
     start_https
+    start_http_fs
     start_tls
     start_stream
     start_tnfs
@@ -421,6 +544,8 @@ case "$cmd" in
     stop_one "$STREAM_NAME"
     stop_one "$TLS_NAME"
     stop_one "$TCP_NAME"
+    stop_one "$HTTP_FS_HTTPS_NAME"
+    stop_one "$HTTP_FS_HTTP_NAME"
     stop_one "$HTTPS_NAME"
     stop_one "$HTTP_NAME"
     stop_one "$TNFS_NAME"

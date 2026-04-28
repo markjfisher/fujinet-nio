@@ -157,6 +157,9 @@ TEST_CASE("HttpFileSystem: open reads fetched body and is read-only")
     CHECK(file->seek(2));
     CHECK(file->tell() == 2);
 
+    auto updateFile = fs->open("https://secure.example.com/demo.xex", "r+b");
+    REQUIRE(updateFile != nullptr);
+
     CHECK(fs->open("https://secure.example.com/demo.xex", "wb") == nullptr);
 }
 

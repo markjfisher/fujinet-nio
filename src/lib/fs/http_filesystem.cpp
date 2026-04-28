@@ -51,12 +51,11 @@ bool is_read_only_mode(const char* mode)
     }
 
     if (std::strchr(mode, 'w') != nullptr ||
-        std::strchr(mode, 'a') != nullptr ||
-        std::strchr(mode, '+') != nullptr) {
+        std::strchr(mode, 'a') != nullptr) {
         return false;
     }
 
-    return std::strchr(mode, 'r') != nullptr || std::strchr(mode, 'b') != nullptr;
+    return std::strchr(mode, 'r') != nullptr || std::strchr(mode, 'b') != nullptr || std::strchr(mode, '+') != nullptr;
 }
 
 struct ParsedHttpUri {
