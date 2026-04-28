@@ -26,6 +26,8 @@ namespace fujinet::platform::posix {
 
 namespace {
 
+#if FN_WITH_OPENSSL == 1
+
 bool append_test_ca_to_ssl_ctx(SSL_CTX* sslCtx)
 {
     BIO* bio = BIO_new_mem_buf(fujinet::net::test_ca_cert_pem, -1);
@@ -74,6 +76,8 @@ CURLcode add_test_ca_sslctx_cb(CURL* curl, void* sslctx, void* /*userdata*/)
     }
     return append_test_ca_to_ssl_ctx(ctx) ? CURLE_OK : CURLE_SSL_CERTPROBLEM;
 }
+
+#endif
 
 } // namespace
 
@@ -335,12 +339,18 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
         // Add embedded FujiNet Test CA in addition to system trust roots.
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+#if FN_WITH_OPENSSL == 1
         curl_easy_setopt(_curl, CURLOPT_SSL_CTX_FUNCTION, &add_test_ca_sslctx_cb);
+#else
+        FN_LOGW("platform", "HTTPS: trust_test_ca requested, but this curl build has no OpenSSL CA injection support");
+#endif
     } else {
         // Normal mode: use system CA certificates
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+#if FN_WITH_OPENSSL == 1
         curl_easy_setopt(_curl, CURLOPT_SSL_CTX_FUNCTION, nullptr);
+#endif
     }
 
     // Reset request-body state

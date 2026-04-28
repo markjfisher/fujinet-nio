@@ -17,6 +17,7 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
   - `docs/protocol_reference.md`
   - `docs/network_device_protocol.md` (good exemplar for a v1 binary protocol doc)
 - **Diagnostics framework**: `docs/diagnostics.md`
+- **Build feature combinations**: `docs/build_feature_matrix.md` (reference for optional backend compile matrix; keep bootstrap itself concise)
 
 ## Key concepts and where they live
 

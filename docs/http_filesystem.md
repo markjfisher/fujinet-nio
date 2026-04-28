@@ -119,3 +119,5 @@ Relevant tests:
    - `./build.sh -cp fujibus-pty-debug`
 3. Build ESP32 target:
    - `./build.sh -b`
+
+For optional POSIX feature-toggle build combinations (`FN_WITH_CURL`, `FN_WITH_OPENSSL`), see `docs/build_feature_matrix.md`.
