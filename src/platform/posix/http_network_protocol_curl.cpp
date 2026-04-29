@@ -81,11 +81,6 @@ CURLcode add_test_ca_sslctx_cb(CURL* curl, void* sslctx, void* /*userdata*/)
 
 } // namespace
 
-HttpNetworkProtocolCurl::HttpNetworkProtocolCurl(config::TlsConfig tlsConfig)
-    : _tlsConfig(std::move(tlsConfig))
-{
-}
-
 static void ensure_curl_global_init()
 {
     static const bool inited = []{
@@ -276,7 +271,7 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
     ensure_curl_global_init();
     _req = req;
 
-    const bool use_test_ca = _tlsConfig.trustTestCa;
+    const bool use_test_ca = true;
     const std::string& cleanUrl = _req.url;
     if (use_test_ca) {
         FN_LOGD("platform", "HTTPS: Adding FujiNet Test CA to certificate verification store");
@@ -342,7 +337,7 @@ io::StatusCode HttpNetworkProtocolCurl::open(const io::NetworkOpenRequest& req)
 #if FN_WITH_OPENSSL == 1
         curl_easy_setopt(_curl, CURLOPT_SSL_CTX_FUNCTION, &add_test_ca_sslctx_cb);
 #else
-        FN_LOGW("platform", "HTTPS: trust_test_ca requested, but this curl build has no OpenSSL CA injection support");
+        FN_LOGW("platform", "HTTPS: FujiNet test CA additive trust is unavailable in this curl build without OpenSSL support");
 #endif
     } else {
         // Normal mode: use system CA certificates

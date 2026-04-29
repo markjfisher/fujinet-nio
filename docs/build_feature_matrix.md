@@ -12,19 +12,12 @@ It is intended as a concise engineering reference and CI/local verification chec
   - Enables the POSIX TLS stream backend (`TlsNetworkProtocolPosix`)
   - Also enables POSIX additive FujiNet test-CA injection for the curl HTTPS backend
 
-## Config-Driven TLS Trust
+## FujiNet Test CA Trust
 
-HTTPS/TLS trust policy is runtime-configured in `fujinet.yaml`:
+HTTPS/TLS trust for the FujiNet test CA is now built into the supported runtime paths:
 
-```yaml
-tls:
-  trust_test_ca: true
-```
-
-Semantics:
-
-- POSIX with OpenSSL: the FujiNet test CA is added to the normal trust store
-- ESP32: the same config flag is used so POSIX and ESP32 follow the same external behavior
+- POSIX: additive trust, alongside normal/public trust roots
+- ESP32: built-in test-CA trust path for local FujiNet test services
 - URL query hacks such as `?testca=1` are intentionally not part of the supported workflow
 
 ## POSIX Compile Matrix
@@ -38,7 +31,7 @@ Useful compile combinations to keep healthy:
 2. `FN_WITH_CURL=1`, `FN_WITH_OPENSSL=0`
    - HTTP/HTTPS backend enabled
    - TLS stream backend disabled
-   - `trust_test_ca` cannot inject the FujiNet test CA into curl in this build; runtime logs warn if requested
+   - FujiNet test-CA additive injection for curl HTTPS is unavailable in this build
 
 3. `FN_WITH_CURL=0`, `FN_WITH_OPENSSL=1`
    - No POSIX HTTP/HTTPS backend

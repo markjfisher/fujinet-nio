@@ -24,9 +24,8 @@ static constexpr const char* TAG = "platform";
 static constexpr std::size_t RX_BUFFER_SIZE = 8192;
 static constexpr int CONNECT_TIMEOUT_SEC = 10;
 
-TlsNetworkProtocolPosix::TlsNetworkProtocolPosix(fujinet::config::TlsConfig tlsConfig)
+TlsNetworkProtocolPosix::TlsNetworkProtocolPosix()
     : _rxBuffer(RX_BUFFER_SIZE)
-    , _tlsConfig(std::move(tlsConfig))
 {
     ensure_ssl_init();
 }
@@ -118,7 +117,7 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::open(const fujinet::io::Network
 {
     close();
 
-    const bool use_test_ca = _tlsConfig.trustTestCa;
+    const bool use_test_ca = true;
     if (use_test_ca) {
         FN_LOGD(TAG, "TLS: Adding FujiNet Test CA to certificate verification store");
     }

@@ -19,9 +19,8 @@ static constexpr std::size_t RX_BUFFER_SIZE = 8192;
 static constexpr int CONNECT_TIMEOUT_MS = 10000;
 static constexpr int IO_TIMEOUT_MS = 100;
 
-TlsNetworkProtocolEspIdf::TlsNetworkProtocolEspIdf(fujinet::config::TlsConfig tlsConfig)
+TlsNetworkProtocolEspIdf::TlsNetworkProtocolEspIdf()
     : _rxBuffer(RX_BUFFER_SIZE)
-    , _tlsConfig(std::move(tlsConfig))
 {
 }
 
@@ -98,7 +97,7 @@ fujinet::io::StatusCode TlsNetworkProtocolEspIdf::open(const fujinet::io::Networ
 {
     close();
 
-    const bool use_test_ca = _tlsConfig.trustTestCa;
+    const bool use_test_ca = true;
     if (use_test_ca) {
         FN_LOGD(TAG, "TLS: Enabling additive FujiNet Test CA trust");
     }

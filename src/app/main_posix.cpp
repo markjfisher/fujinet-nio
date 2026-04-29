@@ -165,17 +165,14 @@ int main()
     FN_LOGI(TAG, "[FujiDevice] Loading config for transport setup");
     fujiConcrete->start();
     const auto& config = fujiConcrete->config();
-    core.setLoadedConfig(config);
 
     {
-        auto httpFs = fujinet::platform::posix::create_http_filesystem(config.tls);
+        auto httpFs = fujinet::platform::posix::create_http_filesystem();
         if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
             FN_LOGE(TAG, "StorageManager refused to register 'http' filesystem");
             return 1;
         }
-        FN_LOGI(TAG,
-                "HTTP filesystem registered as 'http' (dynamic URL endpoints, trust_test_ca=%d)",
-                config.tls.trustTestCa ? 1 : 0);
+        FN_LOGI(TAG, "HTTP filesystem registered as 'http' (dynamic URL endpoints)");
     }
 
     // Register Core Devices
@@ -203,7 +200,7 @@ int main()
         }
     }
 
-    fujinet::core::register_network_device(core, config.tls);
+    fujinet::core::register_network_device(core);
     fujinet::core::register_modem_device(core);
 
     // Create a Channel appropriate for this profile (PTY, FujiBus, etc.).

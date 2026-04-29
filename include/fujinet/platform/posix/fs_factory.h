@@ -2,7 +2,6 @@
 
 #include <string>
 
-#include "fujinet/config/fuji_config.h"
 #include "fujinet/fs/filesystem.h"
 
 namespace fujinet::platform::posix {
@@ -14,6 +13,6 @@ std::unique_ptr<fujinet::fs::IFileSystem>
 create_tnfs_filesystem(bool useTcp = false);
 
 std::unique_ptr<fujinet::fs::IFileSystem>
-create_http_filesystem(const fujinet::config::TlsConfig& tlsConfig = {});
+create_http_filesystem();
 
 } // namespace fujinet::platform::posix

@@ -48,14 +48,7 @@ Application bootstrap registers the provider in:
 
 ## HTTPS Test CA
 
-For local HTTPS testing with the FujiNet test certificate authority, configure trust in `fujinet.yaml` instead of adding URL query parameters:
-
-```yaml
-tls:
-  trust_test_ca: true
-```
-
-This applies to HTTPS validation during both `FHOST` probing and later file access. URLs remain normal resource URLs such as:
+For local HTTPS testing with the FujiNet test certificate authority, the firmware/runtime trusts the embedded FujiNet test CA directly. No URL query parameters or config switches are required. URLs remain normal resource URLs such as:
 
 - `https://192.168.1.101:18443/bbc/impetus_mode7.ssd`
 

@@ -435,8 +435,7 @@ static void http_task_entry_after_upload(void* arg)
 
 
 
-HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf(fujinet::config::TlsConfig tlsConfig)
-    : _tlsConfig(std::move(tlsConfig))
+HttpNetworkProtocolEspIdf::HttpNetworkProtocolEspIdf()
 {
     _s = new HttpNetworkProtocolEspIdfState();
     _s->meta_mutex = xSemaphoreCreateMutexStatic(&_s->meta_mutex_storage);
@@ -526,7 +525,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::open(const fujinet::io::Netwo
     _s->err = ESP_OK;
     give_mutex(_s->meta_mutex);
 
-    const bool use_test_ca = _tlsConfig.trustTestCa;
+    const bool use_test_ca = true;
     std::string url = req.url;
     if (use_test_ca) {
         FN_LOGD(TAG, "HTTPS: Enabling additive FujiNet Test CA trust");

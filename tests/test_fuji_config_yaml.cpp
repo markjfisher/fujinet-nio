@@ -75,8 +75,6 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.clock.enabled != b.clock.enabled) return false;
     if (a.clock.timezone != b.clock.timezone) return false;
 
-    if (a.tls.trustTestCa != b.tls.trustTestCa) return false;
-    
     if (a.channel.ptyPath != b.channel.ptyPath) return false;
     if (a.channel.uart.baudRate != b.channel.uart.baudRate) return false;
     if (a.channel.uart.dataBits != b.channel.uart.dataBits) return false;
@@ -120,8 +118,6 @@ netsio:
 clock:
   timezone: "UTC"
   enabled: true
-tls:
-  trust_test_ca: false
 )";
 
     create_file(*primary, "/fujinet.yaml", yaml);
@@ -173,8 +169,6 @@ netsio:
 clock:
   timezone: "Europe/London"
   enabled: true
-tls:
-  trust_test_ca: true
 )";
 
     create_file(*primary, "/fujinet.yaml", yaml);
@@ -210,7 +204,6 @@ tls:
     CHECK(cfg.netsio.host == "netsio.example");
     CHECK(cfg.netsio.port == 9998);
     CHECK(cfg.clock.timezone == "Europe/London");
-    CHECK(cfg.tls.trustTestCa == true);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Load from backup when primary missing")
@@ -244,8 +237,6 @@ netsio:
 clock:
   timezone: "UTC"
   enabled: true
-tls:
-  trust_test_ca: false
 )";
 
     // Only backup has the file

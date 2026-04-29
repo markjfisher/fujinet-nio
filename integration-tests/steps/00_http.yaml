@@ -71,8 +71,7 @@ steps:
       - 'utf8'
     timeout_s: 10
 
-  # HTTPS tests - use local HTTPS proxy with FujiNet Test CA.
-  # Trust is configured via fujinet.yaml tls.trust_test_ca, not URL parameters.
+  # HTTPS tests - use local HTTPS proxy with the embedded FujiNet test CA.
   - name: "HTTPS: GET /get (local proxy with test CA)"
     argv: ["{CLI}", "net", "get", "{HTTPS}/get"]
     expect:

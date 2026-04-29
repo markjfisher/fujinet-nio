@@ -1,6 +1,5 @@
 #pragma once
 
-#include "fujinet/config/fuji_config.h"
 #include "fujinet/io/devices/network_protocol.h"
 
 #include <cstdint>
@@ -18,7 +17,7 @@ namespace fujinet::platform::esp32 {
 // URL format: tls://host:port
 class TlsNetworkProtocolEspIdf final : public fujinet::io::INetworkProtocol {
 public:
-    explicit TlsNetworkProtocolEspIdf(fujinet::config::TlsConfig tlsConfig = {});
+    TlsNetworkProtocolEspIdf();
     ~TlsNetworkProtocolEspIdf() override;
 
     fujinet::io::StatusCode open(const fujinet::io::NetworkOpenRequest& req) override;
@@ -77,7 +76,6 @@ private:
     // Error tracking
     int _lastError{0};
     bool _peerClosed{false};
-    fujinet::config::TlsConfig _tlsConfig{};
 };
 
 } // namespace fujinet::platform::esp32

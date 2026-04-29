@@ -1,6 +1,5 @@
 #pragma once
 
-#include "fujinet/config/fuji_config.h"
 #include "fujinet/io/devices/network_protocol.h"
 
 #if FN_WITH_CURL == 1
@@ -14,8 +13,6 @@ namespace fujinet::platform::posix {
 
 class HttpNetworkProtocolCurl final : public io::INetworkProtocol {
 public:
-    explicit HttpNetworkProtocolCurl(config::TlsConfig tlsConfig = {});
-
     io::StatusCode open(const io::NetworkOpenRequest& req) override;
 
     io::StatusCode write_body(std::uint32_t offset,
@@ -62,7 +59,6 @@ private:
     // offset as the host reads sequentially, so we don't grow without bound.
     std::uint32_t _bodyBaseOffset = 0;
     std::size_t _bodyStartIndex = 0;
-    config::TlsConfig _tlsConfig{};
 
 };
 
