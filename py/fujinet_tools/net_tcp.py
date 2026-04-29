@@ -90,6 +90,7 @@ def _send_retry(
     retries: int,
     sleep_s: float,
     cmd_txt: str = "",
+    accept=None,
 ):
     """
     Send a FujiBus command and wait for the matching response packet.
@@ -97,12 +98,16 @@ def _send_retry(
     Retries on:
       - NotReady (4)
       - DeviceBusy (3)
-      - None (no response packet within per-attempt timeout)
 
     Uses FujiBusSession.send_command_expect(), which:
       - sends the request
       - reads SLIP frames until it sees (expect_device, expect_command)
       - stashes other packets
+
+    Important for cursor-based network operations:
+      - do not resend the same request merely because no packet arrived quickly
+      - a duplicate READ/WRITE at the same offset can become InvalidRequest
+        after the original request succeeds on the device
     """
     deadline = time.monotonic() + max(timeout, 0.0)
     backoff = max(0.001, sleep_s)
@@ -117,25 +122,19 @@ def _send_retry(
         if remaining <= 0:
             return None
 
-        # keep each attempt short so we can handle NotReady/DeviceBusy with backoff
-        per_attempt_timeout = min(0.10, remaining)
-
         pkt = bus.send_command_expect(
             device=device,
             command=command,
             payload=payload,
             expect_device=device,
             expect_command=command,
-            timeout=per_attempt_timeout,
+            timeout=remaining,
             cmd_txt=cmd_txt,
+            accept=accept,
         )
 
         if pkt is None:
-            if attempt >= retries or time.monotonic() >= deadline:
-                return None
-            time.sleep(backoff)
-            backoff = min(backoff_max, backoff * 1.5)
-            continue
+            return None
 
         sc = _pkt_status_code(pkt)
         if sc not in (3, 4):  # DeviceBusy, NotReady
@@ -146,6 +145,38 @@ def _send_retry(
 
         time.sleep(backoff)
         backoff = min(backoff_max, backoff * 1.5)
+
+
+def _accept_read_packet(expected_handle: int, expected_offset: int):
+    def _accept(pkt) -> bool:
+        code = _pkt_status_code(pkt)
+        if code in (3, 4):
+            return True
+        if code != 0:
+            return True
+        try:
+            rr = np.parse_read_resp(pkt.payload)
+        except Exception:
+            return False
+        return rr.handle == expected_handle and rr.offset == expected_offset
+
+    return _accept
+
+
+def _accept_write_packet(expected_handle: int, expected_offset: int):
+    def _accept(pkt) -> bool:
+        code = _pkt_status_code(pkt)
+        if code in (3, 4):
+            return True
+        if code != 0:
+            return True
+        try:
+            wr = np.parse_write_resp(pkt.payload)
+        except Exception:
+            return False
+        return wr.handle == expected_handle and wr.offset == expected_offset
+
+    return _accept
 
 
 def _tcp_url_with_opts(
@@ -310,6 +341,7 @@ def tcp_send(
             retries=5000,
             sleep_s=0.001,
             cmd_txt="WRITE",
+            accept=_accept_write_packet(sess.handle, sess.write_offset),
         )
         if wpkt is None:
             raise RuntimeError("No response to Write")
@@ -346,6 +378,7 @@ def tcp_halfclose(
         retries=200,
         sleep_s=0.01,
         cmd_txt="WRITE",
+        accept=_accept_write_packet(sess.handle, sess.write_offset),
     )
     if wpkt is None:
         raise RuntimeError("No response to halfclose Write")
@@ -378,6 +411,7 @@ def tcp_recv_some(
         retries=200,
         sleep_s=0.005,
         cmd_txt="READ",
+        accept=_accept_read_packet(sess.handle, sess.read_offset),
     )
     if rpkt is None:
         raise RuntimeError("No response to Read")
