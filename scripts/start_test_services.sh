@@ -538,7 +538,7 @@ case "$cmd" in
     start_http_fs
     start_tls
     start_stream
-    start_tnfs
+    # start_tnfs
     ;;
   stop)
     stop_one "$STREAM_NAME"

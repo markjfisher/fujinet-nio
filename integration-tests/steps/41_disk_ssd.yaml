@@ -35,7 +35,7 @@ steps:
       - "sector_count=400"
     timeout_s: 10
 
-  - name: "Disk SSD: read sector 0 (verify pattern)"
+  - name: "Disk SSD: read sector 0 (verify DFS header)"
     only_mode: "esp32"
     argv:
       - "{CLI}"
@@ -53,7 +53,7 @@ steps:
       path: "{CAPTURED_OUT}"
       size_exact: 256
       contains_bytes_hex:
-        - "112233445566778899aabbccddeeff00"
+        - "424c414e4b"
     timeout_s: 10
 
   - name: "Disk SSD: write sector 10"
@@ -110,5 +110,4 @@ steps:
       - "unmounted=1"
       - "slot=1"
     timeout_s: 10
-
 

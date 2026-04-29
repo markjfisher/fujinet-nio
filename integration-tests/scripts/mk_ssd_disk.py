@@ -5,22 +5,33 @@ import os
 import pathlib
 
 
+SECTOR_SIZE = 256
+SECTOR_COUNT_40_TRACK = 400
+SSD_HEADER_MIN_BYTES = 0x108
+SSD_SECTOR_COUNT_OFF_HI = 0x106
+SSD_SECTOR_COUNT_OFF_LO = 0x107
+
+
+def make_minimal_ssd_image() -> bytearray:
+    # Minimal DFS catalogue header spanning sectors 0 and 1.
+    image = bytearray(SSD_HEADER_MIN_BYTES)
+    image[0:5] = b"BLANK"
+    image[SSD_SECTOR_COUNT_OFF_HI] = (SECTOR_COUNT_40_TRACK >> 8) & 0x03
+    image[SSD_SECTOR_COUNT_OFF_LO] = SECTOR_COUNT_40_TRACK & 0xFF
+    return image
+
+
 def main() -> int:
     step = pathlib.Path(os.environ["STEP_TMP"])
     step.mkdir(parents=True, exist_ok=True)
 
     img = step / "test.ssd"
 
-    # 40-track SSD: 400 sectors * 256 bytes = 102400 bytes
-    data = bytearray(400 * 256)
-
-    # Put a recognizable pattern at the start of sector 0
-    data[0:16] = bytes.fromhex("112233445566778899aabbccddeeff00")
-    img.write_bytes(data)
+    img.write_bytes(make_minimal_ssd_image())
 
     # Sector-10 write payload (used by integration step)
     w = step / "w10.bin"
-    w.write_bytes(bytes([0x5A]) * 256)
+    w.write_bytes(bytes([0x5A]) * SECTOR_SIZE)
 
     print(str(img))
     return 0
@@ -28,5 +39,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-

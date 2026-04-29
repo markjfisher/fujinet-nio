@@ -15,8 +15,10 @@ steps:
             root = pathlib.Path(host_root)
             root.mkdir(parents=True, exist_ok=True)
             img = root / "test.ssd"
-            data = bytearray(400 * 256)
-            data[0:16] = bytes.fromhex("112233445566778899aabbccddeeff00")
+            data = bytearray(0x108)
+            data[0:5] = b"BLANK"
+            data[0x106] = (400 >> 8) & 0x03
+            data[0x107] = 400 & 0xFF
             img.write_bytes(data)
             w = root / "w10.bin"
             w.write_bytes(bytes([0x5A]) * 256)
@@ -81,5 +83,4 @@ steps:
       contains_bytes_hex:
         - "5a5a5a5a"
     timeout_s: 10
-
 
