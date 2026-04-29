@@ -240,6 +240,40 @@ abstract C_0015529497257294770104 {
 {abstract} +send(const IOResponse & resp) = 0 : void
 __
 }
+class "io::NetworkOpenRequest" as C_0001159279330674149840
+class C_0001159279330674149840 {
+__
++bodyLenHint : std::uint32_t
++flags : std::uint8_t
++headers : std::vector<std::pair<std::string,std::string>>
++method : std::uint8_t
++responseHeaderNamesLower : std::vector<std::string>
++url : std::string
+}
+class "io::NetworkInfo" as C_0007100525671922339382
+class C_0007100525671922339382 {
+__
++contentLength : std::uint64_t
++hasContentLength : bool
++hasHttpStatus : bool
++headersBlock : std::string
++httpStatus : std::uint16_t
+}
+abstract "io::INetworkProtocol" as C_0010613333864250568344
+abstract C_0010613333864250568344 {
++~INetworkProtocol() constexpr = default : void
+..
+{abstract} +close() = 0 : void
+{abstract} +info(NetworkInfo & out) = 0 : StatusCode
++is_streaming() const : bool
+{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
+{abstract} +poll() = 0 : void
+{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
++requires_sequential_read() const : bool
++requires_sequential_write() const : bool
+{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
+__
+}
 class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
 +FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
@@ -324,40 +358,6 @@ class C_0007645722238685656096 {
 __
 -_handler : IRequestHandler &
 -_transports : std::vector<ITransport *>
-}
-class "io::NetworkOpenRequest" as C_0001159279330674149840
-class C_0001159279330674149840 {
-__
-+bodyLenHint : std::uint32_t
-+flags : std::uint8_t
-+headers : std::vector<std::pair<std::string,std::string>>
-+method : std::uint8_t
-+responseHeaderNamesLower : std::vector<std::string>
-+url : std::string
-}
-class "io::NetworkInfo" as C_0007100525671922339382
-class C_0007100525671922339382 {
-__
-+contentLength : std::uint64_t
-+hasContentLength : bool
-+hasHttpStatus : bool
-+headersBlock : std::string
-+httpStatus : std::uint16_t
-}
-abstract "io::INetworkProtocol" as C_0010613333864250568344
-abstract C_0010613333864250568344 {
-+~INetworkProtocol() constexpr = default : void
-..
-{abstract} +close() = 0 : void
-{abstract} +info(NetworkInfo & out) = 0 : StatusCode
-+is_streaming() const : bool
-{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
-{abstract} +poll() = 0 : void
-{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
-+requires_sequential_read() const : bool
-+requires_sequential_write() const : bool
-{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
-__
 }
 class "io::ProtocolRegistry" as C_0011868125949252482179
 class C_0011868125949252482179 {
@@ -785,6 +785,9 @@ C_0007145399192091431715 <|-- C_0009446685585853408367
 C_0008469988080401523664 --+ C_0009446685585853408367
 C_0015529497257294770104 ..> C_0002386736627821114488
 C_0015529497257294770104 ..> C_0002942984525013396621
+C_0010613333864250568344 ..> C_0001159279330674149840
+C_0010613333864250568344 ..> C_0012496700434923238249
+C_0010613333864250568344 ..> C_0007100525671922339382
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
 C_0016024516082849980408 --> C_0001279065520068563954 : -_storage
@@ -804,9 +807,6 @@ C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
 C_0007350464861923755413 <|-- C_0005273847708888915350
 C_0007645722238685656096 ..> C_0015529497257294770104
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
-C_0010613333864250568344 ..> C_0001159279330674149840
-C_0010613333864250568344 ..> C_0012496700434923238249
-C_0010613333864250568344 ..> C_0007100525671922339382
 C_0011868125949252482179 ..> C_0010613333864250568344
 C_0006245826437162508923 ..> C_0002386736627821114488
 C_0006245826437162508923 ..> C_0002942984525013396621

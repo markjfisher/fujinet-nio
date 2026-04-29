@@ -133,6 +133,21 @@ abstract C_0015529497257294770104 {
 {abstract} +send(const IOResponse & resp) = 0 : void
 __
 }
+abstract "io::INetworkProtocol" as C_0010613333864250568344
+abstract C_0010613333864250568344 {
++~INetworkProtocol() constexpr = default : void
+..
+{abstract} +close() = 0 : void
+{abstract} +info(NetworkInfo & out) = 0 : StatusCode
++is_streaming() const : bool
+{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
+{abstract} +poll() = 0 : void
+{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
++requires_sequential_read() const : bool
++requires_sequential_write() const : bool
+{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
+__
+}
 class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
 +FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
@@ -217,21 +232,6 @@ class C_0007645722238685656096 {
 __
 -_handler : IRequestHandler &
 -_transports : std::vector<ITransport *>
-}
-abstract "io::INetworkProtocol" as C_0010613333864250568344
-abstract C_0010613333864250568344 {
-+~INetworkProtocol() constexpr = default : void
-..
-{abstract} +close() = 0 : void
-{abstract} +info(NetworkInfo & out) = 0 : StatusCode
-+is_streaming() const : bool
-{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
-{abstract} +poll() = 0 : void
-{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof) = 0 : StatusCode
-+requires_sequential_read() const : bool
-+requires_sequential_write() const : bool
-{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
-__
 }
 class "io::ProtocolRegistry" as C_0011868125949252482179
 class C_0011868125949252482179 {
@@ -618,18 +618,27 @@ __
 }
 class "fs::HttpFileSystem" as C_0017926825113595461604
 class C_0017926825113595461604 {
-+createDirectory(const std::string & path) : bool
++HttpFileSystem(HttpProtocolFactory protocolFactory) : void
+..
++createDirectory(const std::string &) : bool
 +exists(const std::string & path) : bool
-+isDirectory(const std::string & path) : bool
++isDirectory(const std::string &) : bool
 +kind() const : FileSystemKind
-+listDirectory(const std::string & path, std::vector<FileInfo> & outEntries) : bool
++listDirectory(const std::string &, std::vector<FileInfo> & outEntries) : bool
 +name() const : std::string
 +open(const std::string & path, const char * mode) : std::unique_ptr<IFile>
-+removeDirectory(const std::string & path) : bool
-+removeFile(const std::string & path) : bool
-+rename(const std::string & from, const std::string & to) : bool
+-perform_get(const std::string & path, HttpTransferResult & out) : bool
+-perform_head(const std::string & path, HttpTransferResult & out) : bool
+-perform_request(const std::string & path, std::uint8_t method, bool readBody, HttpTransferResult & out) : bool
+{static} -read_response_body(io::INetworkProtocol & protocol, std::vector<std::uint8_t> & outBody) : bool
++removeDirectory(const std::string &) : bool
++removeFile(const std::string &) : bool
++rename(const std::string &, const std::string &) : bool
 +stat(const std::string & path, FileInfo & outInfo) : bool
++supportsScheme(std::string_view scheme) const : bool
+{static} -wait_for_info(io::INetworkProtocol & protocol, io::NetworkInfo & outInfo) : bool
 __
+-_protocolFactory : HttpProtocolFactory
 }
 class "fs::TnfsFileSystem" as C_0004815503964018113655
 class C_0004815503964018113655 {
@@ -1176,6 +1185,7 @@ C_0007145399192091431715 ..> C_0002942984525013396621
 C_0015838915725578446589 <|-- C_0007145399192091431715
 C_0015529497257294770104 ..> C_0002386736627821114488
 C_0015529497257294770104 ..> C_0002942984525013396621
+C_0010613333864250568344 ..> C_0012496700434923238249
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
 C_0016024516082849980408 ..> C_0013943630642961179492
@@ -1199,7 +1209,6 @@ C_0005273847708888915350 o-- C_0007350464861923755413 : -_overrideOwned
 C_0007350464861923755413 <|-- C_0005273847708888915350
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
 C_0007645722238685656096 --> C_0015529497257294770104 : -_transports
-C_0010613333864250568344 ..> C_0012496700434923238249
 C_0011868125949252482179 ..> C_0010613333864250568344
 C_0011868125949252482179 ..> C_0010613333864250568344 : -_factories
 C_0006245826437162508923 ..> C_0002386736627821114488
@@ -1267,6 +1276,8 @@ C_0001279065520068563954 o-- C_0012397556205933868732 : -_fileSystems
 C_0017926825113595461604 ..> C_0014883681608496495557
 C_0017926825113595461604 ..> C_0014904826619290153445
 C_0017926825113595461604 ..> C_0007646493544420080876
+C_0017926825113595461604 ..> C_0010613333864250568344
+C_0017926825113595461604 ..> C_0010613333864250568344 : -_protocolFactory
 C_0012397556205933868732 <|-- C_0017926825113595461604
 C_0004815503964018113655 ..> C_0014883681608496495557
 C_0004815503964018113655 ..> C_0014904826619290153445
