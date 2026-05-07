@@ -28,6 +28,23 @@ bool is_tnfs_endpoint_path(std::string_view p)
 
 std::string tnfs_join_relative(std::string_view base, std::string_view rel)
 {
+    if (rel == "..") {
+        if (std::size_t scheme_pos = base.find("://"); scheme_pos != std::string_view::npos) {
+            const std::size_t authority_start = scheme_pos + 3;
+            const std::size_t path_start = base.find('/', authority_start);
+            if (path_start == std::string_view::npos) {
+                return std::string(base) + "/";
+            }
+
+            std::string prefix(base.substr(0, path_start));
+            std::string path = fs_norm(fs_join(base.substr(path_start), rel));
+            if (path == "/") {
+                return prefix + "/";
+            }
+            return prefix + path;
+        }
+    }
+
     std::size_t scheme_pos = base.find("://");
     if (scheme_pos != std::string_view::npos) {
         std::size_t authority_start = scheme_pos + 3;
