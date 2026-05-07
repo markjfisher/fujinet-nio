@@ -218,3 +218,14 @@ TEST_CASE("StorageManager: resolveUri case-insensitive TNFS scheme")
     CHECK(fs3 != nullptr);
     CHECK(fs3->name() == "tnfs");
 }
+
+TEST_CASE("StorageManager: resolveUri canonicalizes TNFS parent segments")
+{
+    StorageManager manager;
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("tnfs")));
+
+    auto [fs, path] = manager.resolveUri("tnfs://192.168.1.101/bbc/fish/../openbas.ssd");
+    CHECK(fs != nullptr);
+    CHECK(fs->name() == "tnfs");
+    CHECK(path == "tnfs://192.168.1.101/bbc/openbas.ssd");
+}
