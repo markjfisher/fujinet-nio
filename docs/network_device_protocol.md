@@ -161,10 +161,14 @@ repeat respHeaderCount times:
   u16  nameLen         // LE
   u8[] name            // length nameLen (header name, ASCII; case-insensitive)
 
-u8   translationType   // 0=None, 1=Json, 2=Xml, 3=Rss
-u8   translationFlags  // translator-specific, 0 for now
-u16  selectorLen       // LE; 0 = no selector
-u8[] selector          // length selectorLen
+[optional if more bytes remain]
+u32  openExtFlags      // LE; presence bits for extension blocks
+
+if (openExtFlags bit0 set):
+  u8   translationType   // 0=None, 1=Json, 2=Xml, 3=Rss
+  u8   translationFlags  // translator-specific, 0 for now
+  u16  selectorLen       // LE; 0 = no selector
+  u8[] selector          // length selectorLen
 ```
 
 ### Open flags (u8)
@@ -222,13 +226,23 @@ Notes:
 Open can optionally configure a translated response view. The transport backend still
 fetches raw bytes; the device applies translation before exposing data via `Read`.
 
+To preserve compatibility with older clients, the extension area is optional. If the
+Open payload ends immediately after the response-header list, the device behaves as if
+`openExtFlags == 0` and no translation is requested.
+
 Wire fields:
 
 ```
-u8   translationType
-u8   translationFlags
-lp_u16 selector
+u32  openExtFlags
+
+if openExtFlags & 0x00000001:
+  u8   translationType
+  u8   translationFlags
+  lp_u16 selector
 ```
+
+Defined open extension flags:
+- bit 0 = translation block present
 
 Defined types:
 - `0` = `None`

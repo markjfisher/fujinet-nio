@@ -131,6 +131,29 @@ static bool read_translation_config(Reader& r, TranslationConfig& config)
     return true;
 }
 
+static bool read_optional_open_extensions(Reader& r, TranslationConfig& translation)
+{
+    translation = TranslationConfig{};
+
+    if (r.remaining() == 0) {
+        return true;
+    }
+
+    std::uint32_t extFlags = 0;
+    if (!r.read_u32le(extFlags)) {
+        return false;
+    }
+
+    if ((extFlags & NETWORK_OPEN_EXT_TRANSLATION) != 0) {
+        if (!read_translation_config(r, translation)) {
+            return false;
+        }
+    }
+
+    const std::uint32_t knownFlags = NETWORK_OPEN_EXT_TRANSLATION;
+    return (extFlags & ~knownFlags) == 0;
+}
+
 bool NetworkDevice::translation_enabled(const Session& s) noexcept
 {
     return s.translation.enabled() && static_cast<bool>(s.translator);
@@ -376,7 +399,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
 
             TranslationConfig translation;
-            if (!read_translation_config(r, translation)) {
+            if (!read_optional_open_extensions(r, translation)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }

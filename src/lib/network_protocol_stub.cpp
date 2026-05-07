@@ -48,7 +48,9 @@ StatusCode StubNetworkProtocol::open(const NetworkOpenRequest& req)
     }
     
     std::string bodyStr;
-    if (_openReq.url.find("/json") != std::string::npos) {
+    if (_openReq.url.find("/json-array") != std::string::npos) {
+        bodyStr = "{\"items\":[\"alpha\",\"beta\",\"gamma\"]}";
+    } else if (_openReq.url.find("/json") != std::string::npos) {
         const std::string host = extract_host(_openReq.url);
         bodyStr = std::string("{\"url\":\"") + _openReq.url + "\",\"headers\":{\"Host\":\"" + host + "\"}}";
     } else {
@@ -145,4 +147,3 @@ void StubNetworkProtocol::close()
 }
 
 } // namespace fujinet::io
-

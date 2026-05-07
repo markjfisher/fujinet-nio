@@ -291,9 +291,6 @@ TEST_CASE("NetworkDevice v1: Write (POST) returns writtenLen via stub backend")
         netproto::write_u16le(p, 0); // headerCount
         netproto::write_u32le(p, 4); // bodyLenHint
         netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
-        netproto::write_u8(p, 0); // translationType=None
-        netproto::write_u8(p, 0); // translationFlags
-        netproto::write_u16le(p, 0); // translationSelector len
 
         IORequest req{};
         req.id = 10;
@@ -447,9 +444,6 @@ TEST_CASE("Conformance: Open malformed URL => InvalidRequest")
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 0);
     netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
-    netproto::write_u8(p, 0); // translationType=None
-    netproto::write_u8(p, 0); // translationFlags
-    netproto::write_u16le(p, 0); // translationSelector len
 
     IORequest req{};
     req.id = 600;
@@ -476,9 +470,6 @@ TEST_CASE("Conformance: Open unsupported scheme => Unsupported")
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 0);
     netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
-    netproto::write_u8(p, 0); // translationType=None
-    netproto::write_u8(p, 0); // translationFlags
-    netproto::write_u16le(p, 0); // translationSelector len
 
     IORequest req{};
     req.id = 700;
@@ -513,9 +504,6 @@ TEST_CASE("Conformance: capacity strict (allow_evict=0) => 5th Open returns Devi
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 0);
     netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
-    netproto::write_u8(p, 0); // translationType=None
-    netproto::write_u8(p, 0); // translationFlags
-    netproto::write_u16le(p, 0); // translationSelector len
 
     IORequest req{};
     req.id = 999;
@@ -628,9 +616,6 @@ TEST_CASE("HTTP body lifecycle: bodyLenHint>0 on non-POST/PUT => InvalidRequest"
     netproto::write_u16le(p, 0);
     netproto::write_u32le(p, 4); // bodyLenHint on GET => InvalidRequest
     netproto::write_u16le(p, 0); // respHeaderCount (store no response headers)
-    netproto::write_u8(p, 0); // translationType=None
-    netproto::write_u8(p, 0); // translationFlags
-    netproto::write_u16le(p, 0); // translationSelector len
 
     IORequest req{};
     req.id = 1234;
@@ -786,6 +771,57 @@ TEST_CASE("NetworkDevice v1: JSON compatibility command reuses cached body")
     const std::uint8_t* secondPtr = nullptr;
     REQUIRE(secondR.read_bytes(secondPtr, srLen));
     CHECK(std::string(reinterpret_cast<const char*>(secondPtr), srLen) == "example.com");
+
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}
+
+TEST_CASE("NetworkDevice v1: JSON array elements can be fetched by indexed path")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    const std::uint16_t handle = open_handle_stub(dev, deviceId, "http://example.com/json-array");
+
+    auto configure_and_read = [&](std::string_view selector) {
+        std::string qp;
+        netproto::write_u8(qp, V);
+        netproto::write_u16le(qp, handle);
+        netproto::write_u8(qp, 1); // translationType=Json
+        netproto::write_u8(qp, 0); // translationFlags
+        netproto::write_lp_u16_string(qp, selector);
+
+        IORequest qreq{};
+        qreq.id = 950;
+        qreq.deviceId = deviceId;
+        qreq.command = 0x07;
+        qreq.payload = to_vec(qp);
+
+        IOResponse qresp = dev.handle(qreq);
+        REQUIRE(qresp.status == StatusCode::Ok);
+
+        IOResponse rresp = read_req(dev, deviceId, handle, 0, 128);
+        REQUIRE(rresp.status == StatusCode::Ok);
+
+        netproto::Reader rr(rresp.payload.data(), rresp.payload.size());
+        std::uint8_t rver = 0, rflags = 0;
+        std::uint16_t rres = 0, rhandle = 0, dataLen = 0;
+        std::uint32_t offEcho = 0;
+        REQUIRE(rr.read_u8(rver));
+        REQUIRE(rr.read_u8(rflags));
+        REQUIRE(rr.read_u16le(rres));
+        REQUIRE(rr.read_u16le(rhandle));
+        REQUIRE(rr.read_u32le(offEcho));
+        REQUIRE(rr.read_u16le(dataLen));
+
+        const std::uint8_t* dataPtr = nullptr;
+        REQUIRE(rr.read_bytes(dataPtr, dataLen));
+        return std::string(reinterpret_cast<const char*>(dataPtr), dataLen);
+    };
+
+    CHECK(configure_and_read("/items/0") == "alpha");
+    CHECK(configure_and_read("/items/1") == "beta");
+    CHECK(configure_and_read("/items/2") == "gamma");
 
     CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
 }

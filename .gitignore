@@ -21,6 +21,7 @@ CMakeFiles/
 /.ruff_cache/
 /.cache/
 /Testing/
+/build-kilo/
 
 # a file for dumping ideas and thoughts that shouldn't go into repo
 /docs/todo.txt

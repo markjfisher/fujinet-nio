@@ -40,6 +40,8 @@ TRANSLATION_JSON = 1
 TRANSLATION_XML = 2
 TRANSLATION_RSS = 3
 
+OPEN_EXT_TRANSLATION = 1 << 0
+
 
 def _check_version(payload: bytes, off: int = 0) -> int:
     ver, off = read_u8(payload, off)
@@ -69,9 +71,8 @@ def build_open_req(
       u16 headerCount; repeated (lp_u16 key, lp_u16 value)
       u32 bodyLenHint
       u16 respHeaderCount; repeated lp_u16 name
-      u8  translationType
-      u8  translationFlags
-      lp_u16 translationSelector
+      [optional] u32 openExtFlags
+      [if OPEN_EXT_TRANSLATION] u8 translationType, u8 translationFlags, lp_u16 translationSelector
     """
     if headers is None:
         headers = []
@@ -121,9 +122,17 @@ def build_open_req(
         nb = name.encode("utf-8")
         out += u16le(min(len(nb), 0xFFFF)) + nb[:0xFFFF]
 
-    out.append(translation_type & 0xFF)
-    out.append(translation_flags & 0xFF)
-    out += u16le(len(selector_b)) + selector_b
+    open_ext_flags = 0
+    if translation_type != TRANSLATION_NONE or translation_flags != 0 or selector_b:
+        open_ext_flags |= OPEN_EXT_TRANSLATION
+
+    if open_ext_flags:
+        out += u32le(open_ext_flags)
+
+    if open_ext_flags & OPEN_EXT_TRANSLATION:
+        out.append(translation_type & 0xFF)
+        out.append(translation_flags & 0xFF)
+        out += u16le(len(selector_b)) + selector_b
 
     return bytes(out)
 

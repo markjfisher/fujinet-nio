@@ -12,6 +12,8 @@ enum class ContentTranslationType : std::uint8_t {
     Rss = 3,
 };
 
+constexpr std::uint32_t NETWORK_OPEN_EXT_TRANSLATION = 1u << 0;
+
 struct TranslationConfig {
     ContentTranslationType type{ContentTranslationType::None};
     std::string selector;

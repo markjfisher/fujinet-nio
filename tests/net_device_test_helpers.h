@@ -70,9 +70,15 @@ inline std::uint16_t open_handle_stub(
         netproto::write_lp_u16_string(p, h);
     }
 
-    netproto::write_u8(p, static_cast<std::uint8_t>(translationType));
-    netproto::write_u8(p, translationFlags);
-    netproto::write_lp_u16_string(p, translationSelector);
+    const bool translationEnabled = translationType != fujinet::io::ContentTranslationType::None
+                                 || translationFlags != 0
+                                 || !translationSelector.empty();
+    if (translationEnabled) {
+        netproto::write_u32le(p, fujinet::io::NETWORK_OPEN_EXT_TRANSLATION);
+        netproto::write_u8(p, static_cast<std::uint8_t>(translationType));
+        netproto::write_u8(p, translationFlags);
+        netproto::write_lp_u16_string(p, translationSelector);
+    }
 
     IORequest req{};
     req.id = 100;
@@ -213,9 +219,6 @@ static std::uint16_t send_open(NetworkDevice& dev, std::uint16_t deviceId, const
     netproto::write_u32le(p, 0); // bodyLenHint
 
     // NEW: response header allowlist = empty (store none)
-    netproto::write_u16le(p, 0);
-    netproto::write_u8(p, static_cast<std::uint8_t>(fujinet::io::ContentTranslationType::None));
-    netproto::write_u8(p, 0);
     netproto::write_u16le(p, 0);
 
     IORequest req{};
