@@ -51,7 +51,9 @@ def cmd_list(args) -> int:
     uri = _parse_uri(args.uri)
     start = args.start
     all_entries: list[fp.ListEntry] = []
-    list_flags = fp.LIST_FLAG_COMPACT if args.compact else 0
+    list_flags = fp.LIST_FLAG_SORT_BY_NAME
+    if args.compact:
+        list_flags |= fp.LIST_FLAG_COMPACT
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)

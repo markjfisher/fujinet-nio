@@ -404,8 +404,9 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         const auto& e = (*source)[i];
         const auto name = basename_sv(e.path);
 
+        // allow some room for other bytes in the response and ensure entire thing is not go over 256
         const std::uint8_t nameLen =
-            static_cast<std::uint8_t>(std::min<std::size_t>(name.size(), 255));
+            static_cast<std::uint8_t>(std::min<std::size_t>(name.size(), 220));
         const std::size_t entryBytes = 2U + static_cast<std::size_t>(nameLen) + (compact ? 0U : 16U);
         const std::size_t entriesUsed = out.size() - entriesStart;
         if (entriesUsed + entryBytes > maxPayloadBytes) {
