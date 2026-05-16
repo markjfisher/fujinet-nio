@@ -9,6 +9,7 @@
 #include <vector>
 #include <memory>
 #include <sys/stat.h>
+#include <unistd.h>   // mkdir/rmdir/remove on POSIX and ESP-IDF newlib
 #include <dirent.h>   // ESP-IDF provides this via newlib too
 #include <errno.h>
 
