@@ -16,6 +16,11 @@ HEADER_SIZE = 6  # device(1), command(1), length(2), checksum(1), descr(1)
 FIELD_SIZE_TABLE = [0, 1, 1, 1, 1, 2, 2, 4]
 NUM_FIELDS_TABLE = [0, 1, 2, 3, 4, 1, 2, 1]
 
+FUJI_DESCR_EXCEEDS_U8 = 0x04
+FUJI_DESCR_EXCEEDS_U16 = 0x02
+FUJI_DESCR_ADDTL_MASK = 0x80
+MAX_BYTES_PER_DESCR = 4
+
 
 @dataclass
 class FujiPacket:
@@ -180,18 +185,96 @@ def parse_fuji_packet_ex(decoded: bytes) -> ParseResult:
     )
 
 
-def build_fuji_packet(device: int, command: int, payload: bytes) -> bytes:
-    length = HEADER_SIZE + len(payload)
-    pkt = bytearray(length)
-    pkt[0] = device & 0xFF
-    pkt[1] = command & 0xFF
-    pkt[2] = length & 0xFF
-    pkt[3] = (length >> 8) & 0xFF
-    pkt[4] = 0
-    pkt[5] = 0
-    pkt[HEADER_SIZE:] = payload
-    pkt[4] = calc_checksum(pkt)
-    return slip_encode(pkt)
+def _write_le(buf: bytearray, value: int, size: int) -> None:
+    for i in range(size):
+        buf.append((value >> (8 * i)) & 0xFF)
+
+
+def build_fuji_packet_decoded(
+    device: int,
+    command: int,
+    payload: bytes = b"",
+    params: list[tuple[int, int]] | None = None,
+) -> bytes:
+    """
+    Build a decoded FujiBus packet (matches FujiBusPacket::serialize() pre-SLIP).
+
+    params: list of (value, byte_width) with byte_width in {1, 2, 4}.
+    """
+    params = list(params or [])
+    output = bytearray(HEADER_SIZE)
+
+    if params:
+        descr_bytes: list[int] = []
+        idx = 0
+        while idx < len(params):
+            field_size = 0
+            count = 0
+            while idx + count < len(params):
+                val, size = params[idx + count]
+                if field_size != 0 and field_size != size:
+                    break
+                bytes_written = sum(params[idx + i][1] for i in range(count))
+                if count > 0 and bytes_written >= MAX_BYTES_PER_DESCR:
+                    break
+                field_size = size
+                _write_le(output, val, size)
+                count += 1
+
+            field_descr = count
+            if field_size > 1:
+                field_descr |= FUJI_DESCR_EXCEEDS_U8
+            if field_size > 2:
+                field_descr |= FUJI_DESCR_EXCEEDS_U16
+            descr_bytes.append(field_descr | FUJI_DESCR_ADDTL_MASK)
+            idx += count
+
+        descr_bytes[-1] &= ~FUJI_DESCR_ADDTL_MASK
+        output[5] = descr_bytes[0]
+        if len(descr_bytes) > 1:
+            for i, dbyte in enumerate(descr_bytes[1:]):
+                output.insert(HEADER_SIZE + i, dbyte)
+
+    if payload:
+        output.extend(payload)
+
+    length = len(output)
+    output[0] = device & 0xFF
+    output[1] = command & 0xFF
+    output[2] = length & 0xFF
+    output[3] = (length >> 8) & 0xFF
+    output[4] = 0
+    output[4] = calc_checksum(output)
+    return bytes(output)
+
+
+def build_fuji_packet(
+    device: int,
+    command: int,
+    payload: bytes = b"",
+    params: list[tuple[int, int]] | None = None,
+) -> bytes:
+    """Build a SLIP-framed FujiBus packet ready for the serial wire."""
+    return slip_encode(build_fuji_packet_decoded(device, command, payload, params))
+
+
+def build_fuji_response_wire(
+    device: int, command: int, status: int, payload: bytes
+) -> bytes:
+    """SLIP frame for a FujiNet response (status in FujiBus param[0])."""
+    return build_fuji_packet(
+        device, command, payload, params=[(status & 0xFF, 1)]
+    )
+
+
+def build_fuji_request_wire(
+    device: int,
+    command: int,
+    payload: bytes,
+    params: list[tuple[int, int]] | None = None,
+) -> bytes:
+    """SLIP frame for a host request (device payload only, unless params given)."""
+    return build_fuji_packet(device, command, payload, params=params)
 
 
 def pretty_hex(data: bytes) -> str:

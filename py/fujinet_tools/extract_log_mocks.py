@@ -12,14 +12,21 @@ from . import modemproto as mp
 from . import netproto as np
 from .analyze_capture import COMMAND_NAMES
 from .byte_proto import read_lp_u16_str, read_u32le, read_u16le, read_u8
+from .fujibus import (
+    build_fuji_request_wire,
+    build_fuji_response_wire,
+    parse_fuji_packet,
+    slip_decode,
+)
 
 _RECEIVE_RE = re.compile(
-    r"receive:\s+id=\d+\s+dev=(0x[0-9A-Fa-f]+)\s+cmd=(0x[0-9A-Fa-f]+).*?\bpayload=(\d+)"
+    r"receive:\s+id=\d+\s+dev=(0x[0-9A-Fa-f]+)\s+cmd=(0x[0-9A-Fa-f]+)\s+params=(\d+)\s+payload=(\d+)"
 )
 _SEND_RE = re.compile(
-    r"send:\s+dev=(0x[0-9A-Fa-f]+)\s+status=\d+\s+cmd=(0x[0-9A-Fa-f]+)\s+payload=(\d+)"
+    r"send:\s+dev=(0x[0-9A-Fa-f]+)\s+status=(\d+)\s+cmd=(0x[0-9A-Fa-f]+)\s+payload=(\d+)"
 )
 _PAYLOAD_HDR_RE = re.compile(r"payload\s+\((\d+)\s+bytes\)")
+_PARAM_LINE_RE = re.compile(r"\[(\d+)\]\s*=\s*0x([0-9A-Fa-f]+)")
 _HEX_LINE_RE = re.compile(
     r"(?<![0-9a-fA-F])(?P<off>[0-9a-fA-F]{4}):\s+(?P<hex>(?:[0-9a-fA-F]{2}\s*)+)"
 )
@@ -30,6 +37,8 @@ class PendingReceive:
     line_no: int
     device: int
     command: int
+    param_count: int
+    params: list[int]
     payload: bytes
 
 
@@ -41,7 +50,11 @@ class ExtractedMock:
     command: int
     request_payload: bytes
     response_payload: bytes
-    filename: str
+    request_wire: bytes
+    response_wire: bytes
+    response_status: int
+    filename_base: str
+    wire_warning: str | None = None
 
 
 def _parse_int_hex(s: str) -> int:
@@ -72,6 +85,33 @@ def _uri_basename(uri: str) -> str:
     if "/" in path:
         path = path.rsplit("/", 1)[-1]
     return path or "root"
+
+
+def _infer_fujibus_param_sizes(
+    device: int, command: int, values: list[int]
+) -> list[int] | None:
+    """Best-effort param widths when debug logs omit them."""
+    if not values:
+        return []
+    if device == fp.FILE_DEVICE_ID and command == fp.CMD_LIST and len(values) == 2:
+        return [2, 2]
+    if device == np.NETWORK_DEVICE_ID and command == np.CMD_READ and len(values) == 2:
+        return [1, 4]
+    if device == np.NETWORK_DEVICE_ID and command == np.CMD_WRITE and len(values) == 2:
+        return [1, 4]
+    if len(values) == 1:
+        if values[0] <= 0xFF:
+            return [1]
+        if values[0] <= 0xFFFF:
+            return [2]
+        return [4]
+    if all(v <= 0xFF for v in values):
+        return [1] * len(values)
+    if all(v <= 0xFFFF for v in values):
+        return [2] * len(values)
+    if all(v <= 0xFFFFFFFF for v in values):
+        return [4] * len(values)
+    return None
 
 
 def _request_filename_suffix(device: int, command: int, payload: bytes) -> str:
@@ -158,14 +198,12 @@ def _request_filename_suffix(device: int, command: int, payload: bytes) -> str:
     return ""
 
 
-def _build_filename(
-    seq: int, device: int, command: int, request_payload: bytes
-) -> str:
+def _filename_base(seq: int, device: int, command: int, request_payload: bytes) -> str:
     op = _op_slug(device, command)
     suffix = _request_filename_suffix(device, command, request_payload)
     if suffix:
-        return f"{seq:03d}_{op}_{suffix}.bin"
-    return f"{seq:03d}_{op}.bin"
+        return f"{seq:03d}_{op}_{suffix}"
+    return f"{seq:03d}_{op}"
 
 
 def _parse_hex_line(line: str) -> list[int]:
@@ -193,17 +231,56 @@ def _collect_payload_lines(
 
 
 def _find_payload_header(lines: list[str], start_idx: int) -> tuple[int, int] | None:
-    for i in range(start_idx, min(start_idx + 4, len(lines))):
+    for i in range(start_idx, min(start_idx + 6, len(lines))):
         m = _PAYLOAD_HDR_RE.search(lines[i])
         if m:
             return int(m.group(1)), i + 1
     return None
 
 
-def iter_log_exchanges(path: Path) -> Iterator[tuple[PendingReceive | None, bytes, int]]:
+def _collect_param_values(
+    lines: list[str], start_idx: int, expected_count: int
+) -> tuple[list[int], int]:
+    values: list[int | None] = [None] * expected_count
+    i = start_idx
+    while i < len(lines) and any(v is None for v in values):
+        m = _PARAM_LINE_RE.search(lines[i])
+        if m:
+            idx = int(m.group(1))
+            if 0 <= idx < expected_count:
+                values[idx] = int(m.group(2), 16)
+        elif _PAYLOAD_HDR_RE.search(lines[i]) or _RECEIVE_RE.search(lines[i]) or _SEND_RE.search(lines[i]):
+            break
+        i += 1
+    if any(v is None for v in values):
+        return [], start_idx
+    return [int(v) for v in values], i
+
+
+def _build_request_wire(
+    device: int, command: int, param_count: int, params: list[int], payload: bytes
+) -> tuple[bytes, str | None]:
+    if param_count == 0:
+        return build_fuji_request_wire(device, command, payload), None
+    if len(params) != param_count:
+        return build_fuji_request_wire(device, command, payload), (
+            f"request has params={param_count} but log lacks param values; "
+            "wire frame omits FujiBus params"
+        )
+    sizes = _infer_fujibus_param_sizes(device, command, params)
+    if sizes is None:
+        return build_fuji_request_wire(device, command, payload), (
+            "could not infer FujiBus param widths; wire frame omits params"
+        )
+    wire_params = [(v, s) for v, s in zip(params, sizes)]
+    return build_fuji_request_wire(device, command, payload, params=wire_params), None
+
+
+def iter_log_exchanges(
+    path: Path,
+) -> Iterator[tuple[PendingReceive | None, bytes, int, int]]:
     """
-    Yield (pending_receive_or_none, response_payload, send_line_no) for each
-    fujibus send block in a text log file.
+    Yield (pending_receive_or_none, response_payload, response_status, send_line_no).
     """
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     pending: PendingReceive | None = None
@@ -214,28 +291,36 @@ def iter_log_exchanges(path: Path) -> Iterator[tuple[PendingReceive | None, byte
         if recv_m:
             device = _parse_int_hex(recv_m.group(1))
             command = _parse_int_hex(recv_m.group(2))
-            expected_len = int(recv_m.group(3))
+            param_count = int(recv_m.group(3))
+            expected_len = int(recv_m.group(4))
+            params: list[int] = []
             payload = b""
+            scan = i + 1
+            if param_count > 0:
+                params, scan = _collect_param_values(lines, scan, param_count)
             if expected_len > 0:
-                hdr = _find_payload_header(lines, i + 1)
+                hdr = _find_payload_header(lines, scan)
                 if hdr is not None:
                     hdr_len, data_start = hdr
                     if hdr_len != expected_len:
                         expected_len = hdr_len
-                    payload, _ = _collect_payload_lines(lines, data_start, expected_len)
+                    payload, scan = _collect_payload_lines(lines, data_start, expected_len)
             pending = PendingReceive(
                 line_no=i + 1,
                 device=device,
                 command=command,
+                param_count=param_count,
+                params=params,
                 payload=payload,
             )
-            i += 1
+            i = max(i + 1, scan)
             continue
 
         send_m = _SEND_RE.search(line)
         if send_m:
             send_line_no = i + 1
-            expected_len = int(send_m.group(3))
+            status = int(send_m.group(2))
+            expected_len = int(send_m.group(4))
             response = b""
             next_i = i + 1
             if expected_len > 0:
@@ -247,7 +332,7 @@ def iter_log_exchanges(path: Path) -> Iterator[tuple[PendingReceive | None, byte
                     response, next_i = _collect_payload_lines(
                         lines, data_start, expected_len
                     )
-            yield pending, response, send_line_no
+            yield pending, response, status, send_line_no
             pending = None
             i = next_i
             continue
@@ -258,10 +343,21 @@ def iter_log_exchanges(path: Path) -> Iterator[tuple[PendingReceive | None, byte
 def extract_mocks_from_log(path: Path) -> list[ExtractedMock]:
     mocks: list[ExtractedMock] = []
     seq = 0
-    for pending, response, line_no in iter_log_exchanges(path):
+    for pending, response, status, line_no in iter_log_exchanges(path):
         if pending is None:
             continue
         seq += 1
+        req_wire, req_warn = _build_request_wire(
+            pending.device,
+            pending.command,
+            pending.param_count,
+            pending.params,
+            pending.payload,
+        )
+        resp_wire = build_fuji_response_wire(
+            pending.device, pending.command, status, response
+        )
+        base = _filename_base(seq, pending.device, pending.command, pending.payload)
         mocks.append(
             ExtractedMock(
                 seq=seq,
@@ -270,7 +366,11 @@ def extract_mocks_from_log(path: Path) -> list[ExtractedMock]:
                 command=pending.command,
                 request_payload=pending.payload,
                 response_payload=response,
-                filename=_build_filename(seq, pending.device, pending.command, pending.payload),
+                request_wire=req_wire,
+                response_wire=resp_wire,
+                response_status=status,
+                filename_base=base,
+                wire_warning=req_warn,
             )
         )
     return mocks
@@ -310,33 +410,48 @@ def extract_log_mocks(args: argparse.Namespace) -> int:
 
     written = 0
     for mock in mocks:
-        out_path = out_dir / mock.filename
+        if args.inner_payload_only:
+            req_name = f"{mock.filename_base}_req.bin"
+            resp_name = f"{mock.filename_base}_resp.bin"
+            req_data = mock.request_payload
+            resp_data = mock.response_payload
+        else:
+            req_name = f"{mock.filename_base}_req.bin"
+            resp_name = f"{mock.filename_base}_resp.bin"
+            req_data = mock.request_wire
+            resp_data = mock.response_wire
+
         print(
             f"{mock.seq:03d} line={mock.line_no} "
             f"dev=0x{mock.device:02X} cmd=0x{mock.command:02X} "
-            f"req={len(mock.request_payload)}B resp={len(mock.response_payload)}B "
-            f"-> {out_path.name}"
+            f"req_inner={len(mock.request_payload)}B req_wire={len(mock.request_wire)}B "
+            f"resp_inner={len(mock.response_payload)}B resp_wire={len(mock.response_wire)}B "
+            f"status={mock.response_status} -> {req_name} {resp_name}"
         )
+        if mock.wire_warning:
+            print(f"      warn: {mock.wire_warning}")
         if args.dry_run:
             continue
-        out_path.write_bytes(mock.response_payload)
-        written += 1
+        (out_dir / req_name).write_bytes(req_data)
+        (out_dir / resp_name).write_bytes(resp_data)
+        written += 2
 
-    print(f"extracted {written} mock file(s) to {out_dir}")
+    unit = "file(s)" if args.inner_payload_only else "wire frame file(s)"
+    print(f"extracted {written} {unit} to {out_dir}")
     return 0
 
 
 def register_subcommands(subparsers) -> None:
     pe = subparsers.add_parser(
         "extract-log-mocks",
-        help="Extract fujibus response payloads from a text log into binary mock files",
+        help="Extract fujibus request/response wire frames from a text log",
     )
     pe.add_argument("log", help="Path to fujinet text log (fujibus receive/send lines)")
     pe.add_argument(
         "-o",
         "--output",
         required=True,
-        help="Directory to write extracted .bin mock payloads",
+        help="Directory to write extracted .bin mock files",
     )
     pe.add_argument(
         "--device",
@@ -351,6 +466,11 @@ def register_subcommands(subparsers) -> None:
         help="Only extract responses for this command id (e.g. 0x03)",
     )
     pe.add_argument(
+        "--inner-payload-only",
+        action="store_true",
+        help="Write device-protocol payloads only (no SLIP/FujiBus framing)",
+    )
+    pe.add_argument(
         "--dry-run",
         action="store_true",
         help="Print planned output files without writing them",
@@ -360,17 +480,18 @@ def register_subcommands(subparsers) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Extract fujibus response payloads from text logs into binary mocks"
+        description="Extract fujibus wire frames from text logs into binary mocks"
     )
     p.add_argument("log", help="Path to fujinet text log")
     p.add_argument(
         "-o",
         "--output",
         required=True,
-        help="Directory to write extracted .bin mock payloads",
+        help="Directory to write extracted .bin mock files",
     )
     p.add_argument("--device", type=lambda s: int(s, 0), default=None)
     p.add_argument("--command", type=lambda s: int(s, 0), default=None)
+    p.add_argument("--inner-payload-only", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     return p
 
