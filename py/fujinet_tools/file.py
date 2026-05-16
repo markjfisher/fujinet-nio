@@ -49,40 +49,58 @@ def _mkdir_p(*, args, bus: FujiBusSession, uri: str) -> bool:
 
 def cmd_list(args) -> int:
     uri = _parse_uri(args.uri)
-    req = fp.build_list_req(uri, args.start, args.max)
+    start = args.start
+    all_entries: list[fp.ListEntry] = []
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
-        pkt = bus.send_command_expect(
-            device=fp.FILE_DEVICE_ID,
-            command=fp.CMD_LIST,
-            payload=req,
-            expect_device=fp.FILE_DEVICE_ID,
-            expect_command=fp.CMD_LIST,
-            timeout=args.timeout,
-            cmd_txt="LIST",
-        )
-        if pkt is None:
-            print("No response", file=sys.stderr)
-            return 2
-
-        # FujiBus convention: status is param[0] on responses
-        if not status_ok(pkt):
-            print(
-                f"Device status={pkt.params[0] if pkt.params else '??'}",
-                file=sys.stderr,
+        while True:
+            req = fp.build_list_req(uri, start, args.max_payload)
+            pkt = bus.send_command_expect(
+                device=fp.FILE_DEVICE_ID,
+                command=fp.CMD_LIST,
+                payload=req,
+                expect_device=fp.FILE_DEVICE_ID,
+                expect_command=fp.CMD_LIST,
+                timeout=args.timeout,
+                cmd_txt="LIST",
             )
-            return 1
+            if pkt is None:
+                print("No response", file=sys.stderr)
+                return 2
 
-        lr = fp.parse_list_resp(pkt.payload)
+            if not status_ok(pkt):
+                print(
+                    f"Device status={pkt.params[0] if pkt.params else '??'}",
+                    file=sys.stderr,
+                )
+                return 1
 
-        print(f"{args.uri} (more={lr.more}, count={len(lr.entries)})")
-        for e in lr.entries:
-            kind = "DIR " if e.is_dir else "FILE"
-            print(
-                f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}"
-            )
+            lr = fp.parse_list_resp(pkt.payload)
+            if lr.start_index != start:
+                print(
+                    f"startIndex echo mismatch: expected {start}, got {lr.start_index}",
+                    file=sys.stderr,
+                )
+                return 1
+
+            all_entries.extend(lr.entries)
+            start += lr.entry_count
+
+            if args.verbose:
+                print(
+                    f"list chunk: start={lr.start_index} count={lr.entry_count} "
+                    f"bytes={lr.entries_len} more={lr.more}"
+                )
+
+            if not lr.more:
+                break
+
+    print(f"{args.uri} (entries={len(all_entries)})")
+    for e in all_entries:
+        kind = "DIR " if e.is_dir else "FILE"
+        print(f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}")
 
     return 0
 
@@ -332,7 +350,13 @@ def register_subcommands(subparsers) -> None:
     """Register FileDevice commands (list/stat/read/read-all/write) on a top-level subparser."""
     pl = subparsers.add_parser("list", help="List directory entries via FileDevice")
     pl.add_argument("--start", type=int, default=0)
-    pl.add_argument("--max", type=int, default=64)
+    pl.add_argument(
+        "--max-payload",
+        type=int,
+        default=512,
+        help="Max bytes for the variable entries blob per request",
+    )
+    pl.add_argument("--verbose", action="store_true")
     pl.add_argument("uri", help="URI (e.g., tnfs://host:port/, /path, sd0:/path)")
     pl.set_defaults(fn=cmd_list)
 

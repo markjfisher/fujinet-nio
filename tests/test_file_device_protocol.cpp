@@ -28,7 +28,8 @@ using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
 using fujinet::io::protocol::list_directory::kListFlagSortByName;
 
 constexpr std::uint8_t kVersion = 1;
-constexpr std::size_t kListDirHeaderBytes = 6;
+constexpr std::size_t kListDirHeaderBytes = 10;
+constexpr std::uint16_t kListMaxPayloadBytes = 512;
 
 void append_u8(std::vector<std::uint8_t>& out, std::uint8_t value) { out.push_back(value); }
 
@@ -63,18 +64,22 @@ std::vector<std::uint8_t> make_uri_request(std::string_view uri)
     return payload;
 }
 
-std::vector<std::uint8_t> make_list_request(std::string_view uri, std::uint16_t start, std::uint16_t max)
+std::vector<std::uint8_t> make_list_request(
+    std::string_view uri, std::uint16_t start, std::uint16_t max_payload_bytes)
 {
     auto payload = make_uri_request(uri);
     append_u16le(payload, start);
-    append_u16le(payload, max);
+    append_u16le(payload, max_payload_bytes);
     return payload;
 }
 
 std::vector<std::uint8_t> make_list_request_with_flags(
-    std::string_view uri, std::uint16_t start, std::uint16_t max, std::uint8_t list_flags)
+    std::string_view uri,
+    std::uint16_t start,
+    std::uint16_t max_payload_bytes,
+    std::uint8_t list_flags)
 {
-    auto payload = make_list_request(uri, start, max);
+    auto payload = make_list_request(uri, start, max_payload_bytes);
     append_u8(payload, list_flags);
     return payload;
 }
@@ -226,14 +231,15 @@ TEST_CASE("FileDevice ListDirectory accepts full URI requests")
     IORequest request{};
     request.id = 1;
     request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
-    request.payload = make_list_request(kDir, 0, 8);
+    request.payload = make_list_request(kDir, 0, kListMaxPayloadBytes);
 
     const auto response = device.handle(request);
     CHECK(response.status == StatusCode::Ok);
-    REQUIRE(response.payload.size() >= 5);
+    REQUIRE(response.payload.size() >= kListDirHeaderBytes);
     CHECK(response.payload[0] == kVersion);
     CHECK(response.payload[1] == 0);
-    CHECK(read_u16le(response.payload, 4) == 2);
+    CHECK(read_u16le(response.payload, 4) == 0);
+    CHECK(read_u16le(response.payload, 6) == 2);
 }
 
 TEST_CASE("FileDevice ListDirectory without listFlags uses full entries and clears compact in response")
@@ -250,20 +256,21 @@ TEST_CASE("FileDevice ListDirectory without listFlags uses full entries and clea
     FileDevice device(storage);
     IORequest request{};
     request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
-    request.payload = make_list_request(kDir, 0, 8);
+    request.payload = make_list_request(kDir, 0, kListMaxPayloadBytes);
 
     const auto response = device.handle(request);
     CHECK(response.status == StatusCode::Ok);
     REQUIRE(response.payload.size() >= kListDirHeaderBytes);
     CHECK(response.payload[0] == kVersion);
     CHECK((response.payload[1] & 0x02U) == 0);
-    CHECK(read_u16le(response.payload, 4) == 2);
+    CHECK(read_u16le(response.payload, 6) == 2);
 
     const std::uint8_t len0 = response.payload[kListDirHeaderBytes + 1];
     const std::uint8_t len1 = response.payload[kListDirHeaderBytes + list_entry_span_bytes(len0, false) + 1];
-    const std::size_t expected =
-        kListDirHeaderBytes + list_entry_span_bytes(len0, false) + list_entry_span_bytes(len1, false);
-    CHECK(response.payload.size() == expected);
+    const std::size_t entries_len =
+        list_entry_span_bytes(len0, false) + list_entry_span_bytes(len1, false);
+    CHECK(read_u16le(response.payload, 8) == static_cast<std::uint16_t>(entries_len));
+    CHECK(response.payload.size() == kListDirHeaderBytes + entries_len);
 }
 
 TEST_CASE("FileDevice ListDirectory compact request sets compact flag and omits per-entry metadata")
@@ -280,22 +287,23 @@ TEST_CASE("FileDevice ListDirectory compact request sets compact flag and omits 
     FileDevice device(storage);
     IORequest request{};
     request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
-    request.payload =
-        make_list_request_with_flags(kDir, 0, 8, kListFlagCompactOmitMetadata);
+    request.payload = make_list_request_with_flags(
+        kDir, 0, kListMaxPayloadBytes, kListFlagCompactOmitMetadata);
 
     const auto response = device.handle(request);
     CHECK(response.status == StatusCode::Ok);
     REQUIRE(response.payload.size() >= kListDirHeaderBytes);
     CHECK(response.payload[0] == kVersion);
     CHECK((response.payload[1] & 0x02U) == 0x02U);
-    CHECK(read_u16le(response.payload, 4) == 2);
+    CHECK(read_u16le(response.payload, 6) == 2);
 
     const std::uint8_t len0 = response.payload[kListDirHeaderBytes + 1];
     const std::uint8_t len1 =
         response.payload[kListDirHeaderBytes + list_entry_span_bytes(len0, true) + 1];
-    const std::size_t expected =
-        kListDirHeaderBytes + list_entry_span_bytes(len0, true) + list_entry_span_bytes(len1, true);
-    CHECK(response.payload.size() == expected);
+    const std::size_t entries_len =
+        list_entry_span_bytes(len0, true) + list_entry_span_bytes(len1, true);
+    CHECK(read_u16le(response.payload, 8) == static_cast<std::uint16_t>(entries_len));
+    CHECK(response.payload.size() == kListDirHeaderBytes + entries_len);
 }
 
 TEST_CASE("FileDevice ListDirectory sort-by-name request reorders by basename")
@@ -314,14 +322,15 @@ TEST_CASE("FileDevice ListDirectory sort-by-name request reorders by basename")
 
     IORequest unsorted{};
     unsorted.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
-    unsorted.payload = make_list_request(kDir, 0, 8);
+    unsorted.payload = make_list_request(kDir, 0, kListMaxPayloadBytes);
     const auto r0 = device.handle(unsorted);
     CHECK(r0.status == StatusCode::Ok);
     CHECK(first_list_entry_name(r0.payload) == "zebra.txt");
 
     IORequest sorted{};
     sorted.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
-    sorted.payload = make_list_request_with_flags(kDir, 0, 8, kListFlagSortByName);
+    sorted.payload =
+        make_list_request_with_flags(kDir, 0, kListMaxPayloadBytes, kListFlagSortByName);
     const auto r1 = device.handle(sorted);
     CHECK(r1.status == StatusCode::Ok);
     CHECK((r1.payload[1] & 0x02U) == 0);
@@ -343,7 +352,10 @@ TEST_CASE("FileDevice ListDirectory compact and sort flags combine")
     IORequest request{};
     request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
     request.payload = make_list_request_with_flags(
-        kDir, 0, 8, static_cast<std::uint8_t>(kListFlagCompactOmitMetadata | kListFlagSortByName));
+        kDir,
+        0,
+        kListMaxPayloadBytes,
+        static_cast<std::uint8_t>(kListFlagCompactOmitMetadata | kListFlagSortByName));
 
     const auto response = device.handle(request);
     CHECK(response.status == StatusCode::Ok);
@@ -368,13 +380,38 @@ TEST_CASE("FileDevice ListDirectory sets more flag when another page exists")
     FileDevice device(storage);
     IORequest request{};
     request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
-    request.payload = make_list_request(kDir, 0, 1);
+    request.payload = make_list_request_with_flags(kDir, 0, 3, kListFlagCompactOmitMetadata);
 
     const auto response = device.handle(request);
     CHECK(response.status == StatusCode::Ok);
     REQUIRE(response.payload.size() >= kListDirHeaderBytes);
     CHECK((response.payload[1] & 0x01U) == 0x01U);
-    CHECK(read_u16le(response.payload, 4) == 1);
+    CHECK(read_u16le(response.payload, 6) == 1);
+    CHECK(read_u16le(response.payload, 8) == 3);
+}
+
+TEST_CASE("FileDevice ListDirectory respects maxPayloadBytes for long names")
+{
+    constexpr const char* kDir = "tnfs://server/ld-long";
+    StorageManager storage;
+    auto fs = std::make_unique<MemoryFs>("tnfs");
+    fs->set_directory(kDir, {
+        FileInfo{std::string(kDir) + "/short", false, 1, {}},
+        FileInfo{std::string(kDir) + "/this_name_is_longer_than_twenty_six_chars.txt", false, 1, {}},
+    });
+    CHECK(storage.registerFileSystem(std::move(fs)));
+
+    FileDevice device(storage);
+    IORequest request{};
+    request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
+    request.payload = make_list_request_with_flags(kDir, 0, 30, kListFlagCompactOmitMetadata);
+
+    const auto response = device.handle(request);
+    CHECK(response.status == StatusCode::Ok);
+    CHECK(read_u16le(response.payload, 6) == 1);
+    CHECK(first_list_entry_name(response.payload) == "short");
+    CHECK((response.payload[1] & 0x01U) == 0x01U);
+    CHECK(read_u16le(response.payload, 8) <= 30);
 }
 
 TEST_CASE("FileDevice ListDirectory caches listing and skips repeated filesystem reads")
@@ -397,23 +434,23 @@ TEST_CASE("FileDevice ListDirectory caches listing and skips repeated filesystem
     IORequest req{};
     req.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
 
-    req.payload = make_list_request(kDirA, 0, 8);
+    req.payload = make_list_request(kDirA, 0, kListMaxPayloadBytes);
     CHECK(device.handle(req).status == StatusCode::Ok);
     CHECK(spy->list_directory_calls() == 1);
 
-    req.payload = make_list_request(kDirA, 0, 8);
+    req.payload = make_list_request(kDirA, 0, kListMaxPayloadBytes);
     CHECK(device.handle(req).status == StatusCode::Ok);
     CHECK(spy->list_directory_calls() == 1);
 
-    req.payload = make_list_request(kDirB, 0, 8);
+    req.payload = make_list_request(kDirB, 0, kListMaxPayloadBytes);
     CHECK(device.handle(req).status == StatusCode::Ok);
     CHECK(spy->list_directory_calls() == 2);
 
-    req.payload = make_list_request(kDirB, 0, 8);
+    req.payload = make_list_request(kDirB, 0, kListMaxPayloadBytes);
     CHECK(device.handle(req).status == StatusCode::Ok);
     CHECK(spy->list_directory_calls() == 2);
 
-    req.payload = make_list_request(kDirA, 0, 8);
+    req.payload = make_list_request(kDirA, 0, kListMaxPayloadBytes);
     CHECK(device.handle(req).status == StatusCode::Ok);
     CHECK(spy->list_directory_calls() == 3);
 }

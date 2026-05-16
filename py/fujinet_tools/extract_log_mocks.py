@@ -158,8 +158,8 @@ def _request_filename_suffix(device: int, command: int, payload: bytes) -> str:
                 return f"{base}_{offset}"
             if command == fp.CMD_LIST and len(payload) >= off + 4:
                 start, off = read_u16le(payload, off)
-                max_entries, _ = read_u16le(payload, off)
-                return f"{base}_start{start}_max{max_entries}"
+                max_payload, _ = read_u16le(payload, off)
+                return f"{base}_start{start}_maxpayload{max_payload}"
             if command in (fp.CMD_STAT, fp.CMD_MAKE_DIRECTORY):
                 return base
 

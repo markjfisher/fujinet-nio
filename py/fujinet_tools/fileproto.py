@@ -67,20 +67,30 @@ def build_stat_req(uri: str) -> bytes:
     return build_uri_request(uri)
 
 
-def build_list_req(uri: str, start: int, max_entries: int) -> bytes:
+def build_list_req(
+    uri: str,
+    start: int,
+    max_payload_bytes: int,
+    *,
+    list_flags: int = 0,
+) -> bytes:
     """
     Build a list directory request.
 
     Args:
         uri: Full URI for directory
-        start: Starting index
-        max_entries: Maximum entries to return
+        start: Starting index (entry offset in the directory listing)
+        max_payload_bytes: Maximum bytes for the variable entries blob in the response
+        list_flags: Optional ListDirectory flags (compact, sort-by-name)
     """
     if not (0 <= start <= 0xFFFF):
         raise ValueError("start must fit u16")
-    if not (1 <= max_entries <= 0xFFFF):
-        raise ValueError("max_entries must fit u16 and be >0")
-    return build_uri_request(uri) + u16le(start) + u16le(max_entries)
+    if not (1 <= max_payload_bytes <= 0xFFFF):
+        raise ValueError("max_payload_bytes must fit u16 and be >0")
+    req = build_uri_request(uri) + u16le(start) + u16le(max_payload_bytes)
+    if list_flags:
+        req += bytes([list_flags & 0xFF])
+    return req
 
 
 def build_read_req(uri: str, offset: int, max_bytes: int) -> bytes:
@@ -200,6 +210,10 @@ class ListEntry:
 @dataclass
 class ListResp:
     more: bool
+    compact: bool
+    start_index: int
+    entry_count: int
+    entries_len: int
     entries: List[ListEntry]
 
 
@@ -248,9 +262,13 @@ def parse_list_resp(payload: bytes) -> ListResp:
     off = _check_version(payload, off)
     flags, off = read_u8(payload, off)
     _reserved, off = read_u16le(payload, off)
+    start_index, off = read_u16le(payload, off)
     count, off = read_u16le(payload, off)
+    entries_len, off = read_u16le(payload, off)
 
     more = bool(flags & 0x01)
+    compact = bool(flags & 0x02)
+    entries_start = off
     entries: List[ListEntry] = []
 
     for _ in range(count):
@@ -261,8 +279,12 @@ def parse_list_resp(payload: bytes) -> ListResp:
         name = payload[off : off + name_len].decode("utf-8", errors="replace")
         off += name_len
 
-        size, off = read_u64le(payload, off)
-        mtime, off = read_u64le(payload, off)
+        if compact:
+            size = 0
+            mtime = 0
+        else:
+            size, off = read_u64le(payload, off)
+            mtime, off = read_u64le(payload, off)
 
         entries.append(
             ListEntry(
@@ -273,7 +295,19 @@ def parse_list_resp(payload: bytes) -> ListResp:
             )
         )
 
-    return ListResp(more=more, entries=entries)
+    if off - entries_start != entries_len:
+        raise ValueError(
+            f"entriesLen mismatch: parsed {off - entries_start}, header says {entries_len}"
+        )
+
+    return ListResp(
+        more=more,
+        compact=compact,
+        start_index=start_index,
+        entry_count=count,
+        entries_len=entries_len,
+        entries=entries,
+    )
 
 
 def parse_read_resp(payload: bytes) -> ReadResp:

@@ -302,9 +302,10 @@ IOResponse FileDevice::handle_stat(const IORequest& request)
 // --------------------
 // ListDirectory (0x02)
 // --------------------
-// After uri + (startIndex, maxEntries), clients may send an optional u8 listFlags (if payload
-// has a byte left). listDirectory() on a filesystem has already collected the full directory
-// before this handler paginates, so sort-by-basename (flag) reorders a copy, not a stream.
+// After uri + (startIndex, maxPayloadBytes), clients may send an optional u8 listFlags (if
+// payload has a byte left). listDirectory() on a filesystem has already collected the full
+// directory before this handler paginates, so sort-by-basename (flag) reorders a copy, not a
+// stream. maxPayloadBytes caps the variable entries blob; only whole entries are encoded.
 IOResponse FileDevice::handle_list_directory(const IORequest& request)
 {
     using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
@@ -320,8 +321,8 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     }
 
     std::uint16_t startIndex = 0;
-    std::uint16_t maxEntries = 0;
-    if (!r.read_u16le(startIndex) || !r.read_u16le(maxEntries) || maxEntries == 0) {
+    std::uint16_t maxPayloadBytes = 0;
+    if (!r.read_u16le(startIndex) || !r.read_u16le(maxPayloadBytes) || maxPayloadBytes == 0) {
         resp.status = StatusCode::InvalidRequest;
         return resp;
     }
@@ -374,40 +375,45 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
 
     const std::size_t total = source->size();
     const std::size_t start = (startIndex < total) ? startIndex : total;
-    const std::size_t end = std::min<std::size_t>(start + maxEntries, total);
-    const std::uint16_t returned = static_cast<std::uint16_t>(end - start);
-    const bool more = (end < total);
 
     // Response:
     // u8 version
     // u8 flags: bit0=more, bit1=compact (entries have no u64 size or u64 mtime)
     // u16 reserved
-    // u16 returnedCount
+    // u16 startIndex (echo)
+    // u16 entryCount
+    // u16 entriesLen
     // entries...
     std::string out;
-    out.reserve(64 + returned * 32);
+    out.reserve(64 + maxPayloadBytes);
 
     fileproto::write_u8(out, FILEPROTO_VERSION);
-    std::uint8_t flags = 0;
-    if (more) {
-        flags |= 0x01U;
-    }
-    if (compact) {
-        flags |= 0x02U;
-    }
-    fileproto::write_u8(out, flags);
+    fileproto::write_u8(out, 0); // flags placeholder
     fileproto::write_u16le(out, 0);
-    fileproto::write_u16le(out, returned);
+    fileproto::write_u16le(out, startIndex);
 
-    for (std::size_t i = start; i < end; ++i) {
+    const std::size_t entryCountPos = out.size();
+    fileproto::write_u16le(out, 0); // entryCount placeholder
+    const std::size_t entriesLenPos = out.size();
+    fileproto::write_u16le(out, 0); // entriesLen placeholder
+
+    const std::size_t entriesStart = out.size();
+    std::uint16_t returned = 0;
+
+    for (std::size_t i = start; i < total; ++i) {
         const auto& e = (*source)[i];
         const auto name = basename_sv(e.path);
 
-        std::uint8_t eflags = e.isDirectory ? 0x01 : 0x00;
-        fileproto::write_u8(out, eflags);
-
         const std::uint8_t nameLen =
             static_cast<std::uint8_t>(std::min<std::size_t>(name.size(), 255));
+        const std::size_t entryBytes = 2U + static_cast<std::size_t>(nameLen) + (compact ? 0U : 16U);
+        const std::size_t entriesUsed = out.size() - entriesStart;
+        if (entriesUsed + entryBytes > maxPayloadBytes) {
+            break;
+        }
+
+        std::uint8_t eflags = e.isDirectory ? 0x01 : 0x00;
+        fileproto::write_u8(out, eflags);
         fileproto::write_u8(out, nameLen);
         fileproto::write_bytes(out, name.data(), nameLen);
 
@@ -415,7 +421,25 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
             fileproto::write_u64le(out, e.sizeBytes);
             fileproto::write_u64le(out, to_unix_seconds(e.modifiedTime));
         }
+        ++returned;
     }
+
+    const std::size_t entriesLen = out.size() - entriesStart;
+    const bool more = (start + returned < total);
+
+    std::uint8_t flags = 0;
+    if (more) {
+        flags |= 0x01U;
+    }
+    if (compact) {
+        flags |= 0x02U;
+    }
+    out[1] = static_cast<char>(flags);
+
+    out[entryCountPos + 0] = static_cast<char>(returned & 0xFF);
+    out[entryCountPos + 1] = static_cast<char>((returned >> 8) & 0xFF);
+    out[entriesLenPos + 0] = static_cast<char>(entriesLen & 0xFF);
+    out[entriesLenPos + 1] = static_cast<char>((entriesLen >> 8) & 0xFF);
 
     resp.payload.assign(out.begin(), out.end());
     return resp;

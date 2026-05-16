@@ -58,11 +58,11 @@ TEST_CASE("FujiBusTransport: request params are NOT status (receive maps params 
     FujiBusTransport t(ch);
 
     // Build a request packet with *two params* that are meaningful to the request
-    // (e.g. startIndex, maxEntries). These must not be treated as status.
+    // (e.g. startIndex, maxPayloadBytes). These must not be treated as status.
     const WireDeviceId dev = static_cast<WireDeviceId>(0xFE);
     const std::uint8_t cmd = 0x02; // e.g. FileCommand::ListDirectory
 
-    // Params: startIndex=0, maxEntries=64
+    // Params: startIndex=0, maxPayloadBytes=64
     FujiBusPacket reqPkt(dev, cmd,
                          static_cast<std::uint16_t>(0),
                          static_cast<std::uint16_t>(64),

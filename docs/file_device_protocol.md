@@ -181,36 +181,46 @@ Enumerates entries of a directory in chunks to avoid fixed size limits.
 ```
 [Common Request Prefix]
 u16  startIndex         // LE; index of first entry to return
-u16  maxEntries         // LE; max number of entries to return in this response
+u16  maxPayloadBytes    // LE; max bytes for the variable entries blob in the response
+u8   listFlags          // optional; present if payload has a byte remaining after the fields above
 ```
+
+`listFlags` bits (optional byte):
+
+- bit0: compact — omit `sizeBytes` and `modifiedUnixTime` per entry
+- bit1: sort by basename before paging (device collects the full directory first)
 
 ### Response
 
 ```
 u8   version            // = 1
-u8   flags              // bit0=more (there are more entries after this chunk)
+u8   flags              // bit0=more, bit1=compact (entries omit u64 size+mtime)
 u16  reserved           // = 0
-u16  returnedCount      // LE; number of entries encoded below
+u16  startIndex         // LE; echoed from request
+u16  entryCount         // LE; number of complete entries encoded below
+u16  entriesLen         // LE; byte length of the entries blob that follows
 
-repeat returnedCount times:
+entries blob (entriesLen bytes):
+repeat entryCount times:
   u8   entryFlags       // bit0=isDir
   u8   nameLen          // basename length (0..255)
   u8[] name             // basename only (no directory prefix)
-  u64  sizeBytes        // LE (0 for directories)
-  u64  modifiedUnixTime // LE seconds since epoch; 0 if unavailable
+  u64  sizeBytes        // LE (0 for directories); omitted when compact
+  u64  modifiedUnixTime // LE seconds since epoch; 0 if unavailable; omitted when compact
 ```
 
 ### Status codes
 
-- `Ok`: listing chunk returned (possibly `returnedCount=0`)
-- `InvalidRequest`: malformed payload, `maxEntries=0`
+- `Ok`: listing chunk returned (possibly `entryCount=0`)
+- `InvalidRequest`: malformed payload, `maxPayloadBytes=0`
 - `DeviceNotFound`: filesystem name not found
 - `IOError`: listDirectory failed (nonexistent directory, permission, etc.)
 
 Notes:
 - Basename-only avoids repeating the directory path per entry.
-- `startIndex`/`maxEntries` make this **stateless** for the device.
-- Ordering is filesystem-defined; v1 does not guarantee stable ordering across calls.
+- `startIndex`/`maxPayloadBytes` make this **stateless** for the device; only **whole** entries are encoded so clients can cap response size regardless of name lengths.
+- If `maxPayloadBytes` is too small for even one entry, the device returns `entryCount=0` with `more=1` when additional entries exist.
+- Ordering is filesystem-defined unless `listFlags` bit1 requests basename sort.
 - This command already accepts a full URI, so it provides the minimal list contract needed by fn-rom `*FLIST`.
 
 ---
