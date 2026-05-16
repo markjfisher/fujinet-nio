@@ -5,15 +5,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from . import diskproto as dp
-from . import fileproto as fp
-from .extract_log_mocks import (
+from fujinet_tools import diskproto as dp
+from fujinet_tools import fileproto as fp
+from fujinet_tools.extract_log_mocks import (
     _filename_base,
     _request_filename_suffix,
-    extract_mocks_from_log,
     extract_log_mocks,
+    extract_mocks_from_log,
 )
-from .fujibus import parse_fuji_packet, slip_decode
+from fujinet_tools.fujibus import parse_fuji_packet, slip_decode
 
 _FIXTURE = Path(__file__).resolve().parents[1] / "unittest_data" / "cat01.txt"
 
@@ -104,7 +104,3 @@ class TestExtractLogMocks(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual((out / "001_read_sector_0_req.bin").stat().st_size, 8)
             self.assertEqual((out / "001_read_sector_0_resp.bin").stat().st_size, 267)
-
-
-if __name__ == "__main__":
-    unittest.main()

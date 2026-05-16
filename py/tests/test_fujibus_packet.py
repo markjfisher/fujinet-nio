@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from .fujibus import (
+from fujinet_tools.fujibus import (
     build_fuji_packet,
     build_fuji_packet_decoded,
     build_fuji_response_wire,
@@ -59,7 +59,3 @@ class TestFujiBusPacketBuild(unittest.TestCase):
         decoded = build_fuji_packet_decoded(0xFC, 0x03, b"\x01\x02")
         self.assertEqual(len(decoded), 6 + 2)
         self.assertEqual(decoded[2] | (decoded[3] << 8), len(decoded))
-
-
-if __name__ == "__main__":
-    unittest.main()

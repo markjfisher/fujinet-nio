@@ -1,9 +1,8 @@
-# py/fujinet_tools/test_bbc_dfs.py
 from __future__ import annotations
 
 import unittest
 
-from .bbc_dfs import parse_dfs_catalogue_090
+from fujinet_tools.bbc_dfs import parse_dfs_catalogue_090
 
 
 class TestBbcDfs090BitPacking(unittest.TestCase):
@@ -54,7 +53,3 @@ class TestBbcDfs090BitPacking(unittest.TestCase):
         self.assertEqual(e.exec_addr, exec_)
         self.assertEqual(e.length, length)
         self.assertEqual(e.start_sector, start)
-
-
-if __name__ == "__main__":
-    unittest.main()

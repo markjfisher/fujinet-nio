@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY_ROOT="${ROOT}/py"
+TEST_DIR="${PY_ROOT}/tests"
+
+export PYTHONPATH="${PY_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+
+# Prefer project venv when present (same layout as scripts/fujinet).
+PYTHON="${ROOT}/build/.venv/bin/python"
+if [[ ! -x "${PYTHON}" ]]; then
+  PYTHON="${PYTHON:-python3}"
+fi
+
+exec "${PYTHON}" -m unittest discover -s "${TEST_DIR}" -v "$@"

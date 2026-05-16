@@ -30,7 +30,7 @@ if(Python3_Interpreter_FOUND)
         NAME fujinet-tools-python-tests
         COMMAND ${CMAKE_COMMAND} -E env
             PYTHONPATH=${CMAKE_SOURCE_DIR}/py
-            ${Python3_EXECUTABLE} -m unittest -q fujinet_tools.test_bbc_dfs
+            ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_SOURCE_DIR}/py/tests -q
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 endif()
