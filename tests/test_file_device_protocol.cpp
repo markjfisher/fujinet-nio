@@ -25,6 +25,7 @@ using fujinet::io::IORequest;
 using fujinet::io::StatusCode;
 using fujinet::io::protocol::FileCommand;
 using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
+using fujinet::io::protocol::list_directory::kListFlagFormattedLines;
 using fujinet::io::protocol::list_directory::kListFlagSortByName;
 
 constexpr std::uint8_t kVersion = 1;
@@ -77,10 +78,14 @@ std::vector<std::uint8_t> make_list_request_with_flags(
     std::string_view uri,
     std::uint16_t start,
     std::uint16_t max_payload_bytes,
-    std::uint8_t list_flags)
+    std::uint8_t list_flags,
+    std::uint8_t line_width = 0)
 {
     auto payload = make_list_request(uri, start, max_payload_bytes);
     append_u8(payload, list_flags);
+    if ((list_flags & kListFlagFormattedLines) != 0) {
+        append_u8(payload, line_width);
+    }
     return payload;
 }
 
@@ -335,6 +340,43 @@ TEST_CASE("FileDevice ListDirectory sort-by-name request reorders by basename")
     CHECK(r1.status == StatusCode::Ok);
     CHECK((r1.payload[1] & 0x02U) == 0);
     CHECK(first_list_entry_name(r1.payload) == "alpha.txt");
+}
+
+TEST_CASE("FileDevice ListDirectory formatted request returns ls-style text lines")
+{
+    constexpr const char* kDir = "tnfs://server/ld-formatted";
+    StorageManager storage;
+    auto fs = std::make_unique<MemoryFs>("tnfs");
+    fs->set_directory(kDir, {
+        FileInfo{std::string(kDir) + "/atari", true, 4096, {}},
+        FileInfo{std::string(kDir) + "/test.txt", false, 18, {}},
+    });
+    CHECK(storage.registerFileSystem(std::move(fs)));
+
+    FileDevice device(storage);
+    IORequest request{};
+    request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
+    request.payload = make_list_request_with_flags(
+        kDir,
+        0,
+        kListMaxPayloadBytes,
+        static_cast<std::uint8_t>(kListFlagSortByName | kListFlagFormattedLines),
+        80);
+
+    const auto response = device.handle(request);
+    CHECK(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= kListDirHeaderBytes);
+    CHECK((response.payload[1] & 0x04U) == 0x04U);
+    CHECK(read_u16le(response.payload, 6) == 2);
+
+    const std::uint16_t entries_len = read_u16le(response.payload, 8);
+    const std::string_view text{
+        reinterpret_cast<const char*>(response.payload.data() + kListDirHeaderBytes),
+        entries_len};
+    CHECK(text.find("atari") != std::string_view::npos);
+    CHECK(text.find("test.txt") != std::string_view::npos);
+    CHECK(text.find('\n') != std::string_view::npos);
+    CHECK(text[0] == 'd');
 }
 
 TEST_CASE("FileDevice ListDirectory compact and sort flags combine")

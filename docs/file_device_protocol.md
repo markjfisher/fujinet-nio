@@ -187,26 +187,31 @@ u8   listFlags          // optional; present if payload has a byte remaining aft
 
 `listFlags` bits (optional byte):
 
-- bit0: compact — omit `sizeBytes` and `modifiedUnixTime` per entry
+- bit0: compact — omit `sizeBytes` and `modifiedUnixTime` per entry (binary entries blob)
 - bit1: sort by basename before paging (device collects the full directory first)
+- bit2: formatted — entries blob is UTF-8 text, one directory line per entry, separated by `\n` (whole lines only; incompatible with bit0). When bit2 is set, a following u8 `lineWidth` (20..120) is required.
 
 ### Response
 
 ```
 u8   version            // = 1
-u8   flags              // bit0=more, bit1=compact (entries omit u64 size+mtime)
+u8   flags              // bit0=more, bit1=compact, bit2=formatted text lines
 u16  reserved           // = 0
 u16  startIndex         // LE; echoed from request
 u16  entryCount         // LE; number of complete entries encoded below
 u16  entriesLen         // LE; byte length of the entries blob that follows
 
 entries blob (entriesLen bytes):
-repeat entryCount times:
+
+When **compact** or default binary (flags bit2 clear): repeat `entryCount` times:
+
   u8   entryFlags       // bit0=isDir
   u8   nameLen          // basename length (0..255)
   u8[] name             // basename only (no directory prefix)
   u64  sizeBytes        // LE (0 for directories); omitted when compact
   u64  modifiedUnixTime // LE seconds since epoch; 0 if unavailable; omitted when compact
+
+When **formatted** (flags bit2 set): UTF-8 text, `entryCount` complete lines separated by `\n` (no `\r`). Each line is ls-style: type (`d` or `-`), size with thousands separators, date (`Mon dd HH:MM` in the current year, else `Mon dd  YYYY`), and basename, padded/truncated to `lineWidth` from the request.
 ```
 
 ### Status codes

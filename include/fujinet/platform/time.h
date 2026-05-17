@@ -25,6 +25,9 @@ bool format_time_utc_iso8601(std::uint64_t unix_seconds, char* out, std::size_t 
 // Format UTC unix seconds into "Mon dd HH:MM" (ls-style). Returns false if unavailable.
 bool format_time_utc_ls(std::uint64_t unix_seconds, char* out, std::size_t out_len);
 
+// Format local unix seconds ls-style: "Mon dd HH:MM" this year, else "Mon dd  YYYY".
+bool format_time_local_ls(std::uint64_t unix_seconds, char* out, std::size_t out_len);
+
 // ============================================================================
 // Timezone Support
 // ============================================================================

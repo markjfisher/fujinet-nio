@@ -10,6 +10,7 @@
 // Binary codec
 #include "fujinet/io/devices/file_codec.h"
 #include "fujinet/fs/path_resolvers/path_resolver.h"
+#include "fujinet/io/list_directory_format.h"
 
 #include <algorithm>
 #include <chrono>
@@ -309,7 +310,9 @@ IOResponse FileDevice::handle_stat(const IORequest& request)
 IOResponse FileDevice::handle_list_directory(const IORequest& request)
 {
     using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
+    using fujinet::io::protocol::list_directory::kListFlagFormattedLines;
     using fujinet::io::protocol::list_directory::kListFlagSortByName;
+    using fujinet::io::protocol::list_directory::kListResponseFlagFormatted;
 
     auto resp = make_success_response(request);
 
@@ -335,8 +338,21 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         }
     }
 
+    std::uint8_t lineWidth = 0;
+    const bool formatted = (listFlags & kListFlagFormattedLines) != 0;
     const bool compact = (listFlags & kListFlagCompactOmitMetadata) != 0;
     const bool sortName = (listFlags & kListFlagSortByName) != 0;
+
+    if (formatted) {
+        if (compact) {
+            resp.status = StatusCode::InvalidRequest;
+            return resp;
+        }
+        if (r.remaining() == 0 || !r.read_u8(lineWidth) || lineWidth < 20 || lineWidth > 120) {
+            resp.status = StatusCode::InvalidRequest;
+            return resp;
+        }
+    }
 
     auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
     if (!fs) {
@@ -400,29 +416,48 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     const std::size_t entriesStart = out.size();
     std::uint16_t returned = 0;
 
-    for (std::size_t i = start; i < total; ++i) {
-        const auto& e = (*source)[i];
-        const auto name = basename_sv(e.path);
-
-        // allow some room for other bytes in the response and ensure entire thing is not go over 256
-        const std::uint8_t nameLen =
-            static_cast<std::uint8_t>(std::min<std::size_t>(name.size(), 220));
-        const std::size_t entryBytes = 2U + static_cast<std::size_t>(nameLen) + (compact ? 0U : 16U);
-        const std::size_t entriesUsed = out.size() - entriesStart;
-        if (entriesUsed + entryBytes > maxPayloadBytes) {
-            break;
+    if (formatted) {
+        for (std::size_t i = start; i < total; ++i) {
+            const auto& e = (*source)[i];
+            const auto name = basename_sv(e.path);
+            std::string line = format_list_directory_line(e, name, lineWidth);
+            const std::size_t extra =
+                (returned == 0) ? 0U : 1U; // newline between lines
+            const std::size_t entriesUsed = out.size() - entriesStart;
+            if (entriesUsed + extra + line.size() > maxPayloadBytes) {
+                break;
+            }
+            if (returned != 0) {
+                out.push_back('\n');
+            }
+            out.append(line);
+            ++returned;
         }
+    } else {
+        for (std::size_t i = start; i < total; ++i) {
+            const auto& e = (*source)[i];
+            const auto name = basename_sv(e.path);
 
-        std::uint8_t eflags = e.isDirectory ? 0x01 : 0x00;
-        fileproto::write_u8(out, eflags);
-        fileproto::write_u8(out, nameLen);
-        fileproto::write_bytes(out, name.data(), nameLen);
+            const std::uint8_t nameLen =
+                static_cast<std::uint8_t>(std::min<std::size_t>(name.size(), 220));
+            const std::size_t entryBytes =
+                2U + static_cast<std::size_t>(nameLen) + (compact ? 0U : 16U);
+            const std::size_t entriesUsed = out.size() - entriesStart;
+            if (entriesUsed + entryBytes > maxPayloadBytes) {
+                break;
+            }
 
-        if (!compact) {
-            fileproto::write_u64le(out, e.sizeBytes);
-            fileproto::write_u64le(out, to_unix_seconds(e.modifiedTime));
+            std::uint8_t eflags = e.isDirectory ? 0x01 : 0x00;
+            fileproto::write_u8(out, eflags);
+            fileproto::write_u8(out, nameLen);
+            fileproto::write_bytes(out, name.data(), nameLen);
+
+            if (!compact) {
+                fileproto::write_u64le(out, e.sizeBytes);
+                fileproto::write_u64le(out, to_unix_seconds(e.modifiedTime));
+            }
+            ++returned;
         }
-        ++returned;
     }
 
     const std::size_t entriesLen = out.size() - entriesStart;
@@ -434,6 +469,9 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     }
     if (compact) {
         flags |= 0x02U;
+    }
+    if (formatted) {
+        flags |= kListResponseFlagFormatted;
     }
     out[1] = static_cast<char>(flags);
 

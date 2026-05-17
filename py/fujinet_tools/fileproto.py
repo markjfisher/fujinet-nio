@@ -32,6 +32,8 @@ CMD_MKDIR = CMD_MAKE_DIRECTORY  # backward-compatible alias
 # ListDirectory listFlags (matches file_commands.h)
 LIST_FLAG_COMPACT = 0x01
 LIST_FLAG_SORT_BY_NAME = 0x02
+LIST_FLAG_FORMATTED = 0x04
+LIST_RESP_FLAG_FORMATTED = 0x04
 
 
 def _lp_u16(s: str) -> bytes:
@@ -77,6 +79,7 @@ def build_list_req(
     max_payload_bytes: int,
     *,
     list_flags: int = 0,
+    line_width: int = 0,
 ) -> bytes:
     """
     Build a list directory request.
@@ -85,7 +88,8 @@ def build_list_req(
         uri: Full URI for directory
         start: Starting index (entry offset in the directory listing)
         max_payload_bytes: Maximum bytes for the variable entries blob in the response
-        list_flags: Optional ListDirectory flags (compact, sort-by-name)
+        list_flags: Optional ListDirectory flags (compact, sort-by-name, formatted)
+        line_width: Line width (20..120) when LIST_FLAG_FORMATTED is set
     """
     if not (0 <= start <= 0xFFFF):
         raise ValueError("start must fit u16")
@@ -94,6 +98,10 @@ def build_list_req(
     req = build_uri_request(uri) + u16le(start) + u16le(max_payload_bytes)
     if list_flags:
         req += bytes([list_flags & 0xFF])
+        if list_flags & LIST_FLAG_FORMATTED:
+            if not (20 <= line_width <= 120):
+                raise ValueError("line_width must be 20..120 for formatted listings")
+            req += bytes([line_width & 0xFF])
     return req
 
 
@@ -215,10 +223,12 @@ class ListEntry:
 class ListResp:
     more: bool
     compact: bool
+    formatted: bool
     start_index: int
     entry_count: int
     entries_len: int
     entries: List[ListEntry]
+    text: str
 
 
 @dataclass
@@ -272,8 +282,27 @@ def parse_list_resp(payload: bytes) -> ListResp:
 
     more = bool(flags & 0x01)
     compact = bool(flags & 0x02)
+    formatted = bool(flags & LIST_RESP_FLAG_FORMATTED)
     entries_start = off
     entries: List[ListEntry] = []
+    text = ""
+
+    if formatted:
+        blob = payload[entries_start : entries_start + entries_len]
+        text = blob.decode("utf-8", errors="replace")
+        if count != text.count("\n") + (1 if text and not text.endswith("\n") else 0):
+            # entry_count is the number of lines in this chunk
+            pass
+        return ListResp(
+            more=more,
+            compact=False,
+            formatted=True,
+            start_index=start_index,
+            entry_count=count,
+            entries_len=entries_len,
+            entries=[],
+            text=text,
+        )
 
     for _ in range(count):
         eflags, off = read_u8(payload, off)
@@ -307,10 +336,12 @@ def parse_list_resp(payload: bytes) -> ListResp:
     return ListResp(
         more=more,
         compact=compact,
+        formatted=False,
         start_index=start_index,
         entry_count=count,
         entries_len=entries_len,
         entries=entries,
+        text="",
     )
 
 

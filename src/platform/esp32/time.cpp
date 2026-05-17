@@ -107,6 +107,36 @@ bool format_time_utc_ls(std::uint64_t unix_seconds, char* out, std::size_t out_l
     return ::strftime(out, out_len, "%b %e %H:%M", &tm) != 0;
 }
 
+static bool localtime_from_unix(std::uint64_t unix_seconds, tm& out_tm)
+{
+    const time_t t = static_cast<time_t>(unix_seconds);
+    tm tmp{};
+    if (::localtime_r(&t, &tmp) == nullptr) {
+        return false;
+    }
+    out_tm = tmp;
+    return true;
+}
+
+bool format_time_local_ls(std::uint64_t unix_seconds, char* out, std::size_t out_len)
+{
+    if (!out || out_len == 0 || unix_seconds == 0) return false;
+
+    tm file_tm{};
+    if (!localtime_from_unix(unix_seconds, file_tm)) return false;
+
+    const time_t now_t = ::time(nullptr);
+    tm now_tm{};
+    if (!localtime_from_unix(static_cast<std::uint64_t>(now_t), now_tm)) {
+        return ::strftime(out, out_len, "%b %e %H:%M", &file_tm) != 0;
+    }
+
+    if (file_tm.tm_year == now_tm.tm_year) {
+        return ::strftime(out, out_len, "%b %e %H:%M", &file_tm) != 0;
+    }
+    return ::strftime(out, out_len, "%b %e  %Y", &file_tm) != 0;
+}
+
 // ============================================================================
 // Timezone Support
 // ============================================================================

@@ -52,15 +52,23 @@ def cmd_list(args) -> int:
     start = args.start
     all_entries: list[fp.ListEntry] = []
     list_flags = fp.LIST_FLAG_SORT_BY_NAME
+    line_width = 0
     if args.compact:
         list_flags |= fp.LIST_FLAG_COMPACT
+    elif args.width:
+        list_flags |= fp.LIST_FLAG_FORMATTED
+        line_width = args.width
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
 
         while True:
             req = fp.build_list_req(
-                uri, start, args.max_payload, list_flags=list_flags
+                uri,
+                start,
+                args.max_payload,
+                list_flags=list_flags,
+                line_width=line_width,
             )
             pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
@@ -90,28 +98,34 @@ def cmd_list(args) -> int:
                 )
                 return 1
 
-            all_entries.extend(lr.entries)
-            start += lr.entry_count
+            if lr.formatted:
+                print(lr.text, end="" if lr.text.endswith("\n") else "\n")
+                start += lr.entry_count
+            else:
+                all_entries.extend(lr.entries)
+                start += lr.entry_count
 
             if args.verbose:
                 print(
                     f"list chunk: start={lr.start_index} count={lr.entry_count} "
-                    f"bytes={lr.entries_len} more={lr.more} compact={lr.compact}"
+                    f"bytes={lr.entries_len} more={lr.more} compact={lr.compact} "
+                    f"formatted={lr.formatted}"
                 )
 
             if not lr.more:
                 break
 
-    mode = "compact" if args.compact else "long"
-    print(f"{args.uri} (entries={len(all_entries)}, {mode})")
-    for e in all_entries:
-        kind = "DIR " if e.is_dir else "FILE"
-        if args.compact:
-            print(f"{kind} {e.name}")
-        else:
-            print(
-                f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}"
-            )
+    if not args.width:
+        mode = "compact" if args.compact else "binary"
+        print(f"{args.uri} (entries={len(all_entries)}, {mode})")
+        for e in all_entries:
+            kind = "DIR " if e.is_dir else "FILE"
+            if args.compact:
+                print(f"{kind} {e.name}")
+            else:
+                print(
+                    f"{kind} {e.size_bytes:10d}  {fp.fmt_utc(e.mtime_unix):>20}  {e.name}"
+                )
 
     return 0
 
@@ -371,6 +385,13 @@ def register_subcommands(subparsers) -> None:
         "--compact",
         action="store_true",
         help="Omit per-entry size and mtime (names and dir/file type only)",
+    )
+    pl.add_argument(
+        "--width",
+        type=int,
+        default=0,
+        metavar="COLS",
+        help="Request ls-style formatted lines at this width (20..120, e.g. 80)",
     )
     pl.add_argument("--verbose", action="store_true")
     pl.add_argument("uri", help="URI (e.g., tnfs://host:port/, /path, sd0:/path)")

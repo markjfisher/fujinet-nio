@@ -44,6 +44,7 @@ idf_component_register(
         lib/io_service.cpp
         lib/json_content_translator.cpp
         lib/legacy_network_adapter.cpp
+        lib/list_directory_format.cpp
         lib/modem_device.cpp
         lib/modem_device_init.cpp
         lib/mount_applier.cpp
