@@ -11,6 +11,17 @@
 namespace fujinet::io {
 namespace {
 
+constexpr std::size_t kSizeFieldWidth = 7;  // e.g. "1000.0G"
+constexpr std::size_t kDateFieldWidth = 12;
+
+std::string pad_left(std::string_view value, std::size_t width)
+{
+    if (value.size() >= width) {
+        return std::string(value.substr(0, width));
+    }
+    return std::string(width - value.size(), ' ') + std::string(value);
+}
+
 std::string format_size_readable(std::uint64_t bytes)
 {
     if (bytes == 0) {
@@ -21,15 +32,16 @@ std::string format_size_readable(std::uint64_t bytes)
     int unit_index = 0;
     double size = static_cast<double>(bytes);
 
-    while (size >= 1024.0 && unit_index < 4) {
+    // Scale like ls -h: divide by 1024 while >= 1024, or roll up at 1000 in the
+    // current unit (so 1000M becomes 1.0G instead of staying at 1000M).
+    while (unit_index < 4 && (size >= 1024.0 || size >= 1000.0)) {
         size /= 1024.0;
-        unit_index++;
+        ++unit_index;
     }
 
-    // Format to 1 decimal place for values with decimals, or no decimals for whole numbers
     char buffer[32];
-    if (size == static_cast<int>(size)) {
-        std::snprintf(buffer, sizeof(buffer), "%.0f%s", size, units[unit_index]);
+    if (unit_index == 0) {
+        std::snprintf(buffer, sizeof(buffer), "%.0f%s", size, units[0]);
     } else {
         std::snprintf(buffer, sizeof(buffer), "%.1f%s", size, units[unit_index]);
     }
@@ -58,17 +70,21 @@ std::string format_list_directory_line(
     std::string_view basename)
 {
     const char type_ch = entry.isDirectory ? 'd' : '-';
-    const std::string size_field = format_size_readable(entry.sizeBytes);
+    const std::string size_field =
+        pad_left(format_size_readable(entry.sizeBytes), kSizeFieldWidth);
     const std::string date_field =
-        format_mtime_ls(entry.modifiedTime);
+        pad_left(format_mtime_ls(entry.modifiedTime), kDateFieldWidth);
 
     std::string name(basename);
+    if (entry.isDirectory && (name.empty() || name.back() != '/')) {
+        name.push_back('/');
+    }
     std::string line;
     line.reserve(100); // Reasonable estimate for line length
     line.push_back(type_ch);
     line.push_back(' ');
     line.append(size_field);
-    line.append("  ");
+    line.append(" ");
     line.append(date_field);
     line.push_back(' ');
     line.append(name);
