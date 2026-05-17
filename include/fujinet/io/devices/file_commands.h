@@ -17,8 +17,8 @@ enum class FileCommand : std::uint8_t {
 // variable entries blob in the response (complete entries only).
 // Bit 0: compact — omit u64 size+mtime per entry (binary entries blob).
 // Bit 1: sort by basename (full directory is collected before paging).
-// Bit 2: formatted — entries blob is UTF-8 text lines (newline-separated, whole lines only).
-//   When bit 2 is set, a u8 `lineWidth` (20..120) must follow listFlags. Incompatible with bit 0.
+// Bit 2: formatted — entries blob is UTF-8 text lines (newline-terminated, whole lines only).
+//   Incompatible with bit 0.
 namespace list_directory {
 inline constexpr std::uint8_t kListFlagCompactOmitMetadata = 0x01U;
 inline constexpr std::uint8_t kListFlagSortByName        = 0x02U;

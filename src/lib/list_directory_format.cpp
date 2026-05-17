@@ -11,46 +11,31 @@
 namespace fujinet::io {
 namespace {
 
-constexpr std::size_t kMinLineWidth = 20;
-constexpr std::size_t kMaxLineWidth = 120;
-constexpr std::size_t kSizeFieldWidth = 11;
-constexpr std::size_t kDateFieldWidth = 12;
-constexpr std::size_t kPrefixWidth = 2; // "d " or "- "
-
-std::string format_size_commas(std::uint64_t bytes)
+std::string format_size_readable(std::uint64_t bytes)
 {
-    char raw[32];
-    std::snprintf(raw, sizeof(raw), "%llu", static_cast<unsigned long long>(bytes));
-    std::string s(raw);
-    const std::size_t first_group = s.size() % 3;
-    std::string out;
-    out.reserve(s.size() + s.size() / 3);
-    std::size_t i = 0;
-    if (first_group != 0) {
-        out.append(s, 0, first_group);
-        i = first_group;
-        if (i < s.size()) {
-            out.push_back(',');
-        }
+    if (bytes == 0) {
+        return "0";
     }
-    while (i < s.size()) {
-        out.append(s, i, 3);
-        i += 3;
-        if (i < s.size()) {
-            out.push_back(',');
-        }
-    }
-    return out;
-}
 
-std::string pad_left(std::string_view value, std::size_t width)
-{
-    if (value.size() >= width) {
-        return std::string(value.substr(0, width));
-    }
-    return std::string(width - value.size(), ' ') + std::string(value);
-}
+    const char* units[] = {"B", "K", "M", "G", "T"};
+    int unit_index = 0;
+    double size = static_cast<double>(bytes);
 
+    while (size >= 1024.0 && unit_index < 4) {
+        size /= 1024.0;
+        unit_index++;
+    }
+
+    // Format to 1 decimal place for values with decimals, or no decimals for whole numbers
+    char buffer[32];
+    if (size == static_cast<int>(size)) {
+        std::snprintf(buffer, sizeof(buffer), "%.0f%s", size, units[unit_index]);
+    } else {
+        std::snprintf(buffer, sizeof(buffer), "%.1f%s", size, units[unit_index]);
+    }
+
+    return std::string(buffer);
+}
 std::string format_mtime_ls(std::chrono::system_clock::time_point tp)
 {
     if (tp == std::chrono::system_clock::time_point{}) {
@@ -70,28 +55,16 @@ std::string format_mtime_ls(std::chrono::system_clock::time_point tp)
 
 std::string format_list_directory_line(
     const fujinet::fs::FileInfo& entry,
-    std::string_view basename,
-    std::uint8_t line_width)
+    std::string_view basename)
 {
-    const std::size_t width =
-        std::clamp<std::size_t>(line_width, kMinLineWidth, kMaxLineWidth);
-    const std::size_t name_width =
-        (width > kPrefixWidth + kSizeFieldWidth + 2 + kDateFieldWidth + 1)
-            ? width - (kPrefixWidth + kSizeFieldWidth + 2 + kDateFieldWidth + 1)
-            : 1;
-
     const char type_ch = entry.isDirectory ? 'd' : '-';
-    const std::string size_field = pad_left(format_size_commas(entry.sizeBytes), kSizeFieldWidth);
+    const std::string size_field = format_size_readable(entry.sizeBytes);
     const std::string date_field =
-        pad_left(format_mtime_ls(entry.modifiedTime), kDateFieldWidth);
+        format_mtime_ls(entry.modifiedTime);
 
     std::string name(basename);
-    if (name.size() > name_width) {
-        name.resize(name_width);
-    }
-
     std::string line;
-    line.reserve(width);
+    line.reserve(100); // Reasonable estimate for line length
     line.push_back(type_ch);
     line.push_back(' ');
     line.append(size_field);
@@ -99,10 +72,9 @@ std::string format_list_directory_line(
     line.append(date_field);
     line.push_back(' ');
     line.append(name);
-    if (line.size() < width) {
-        line.append(width - line.size(), ' ');
-    }
+    line.push_back('\n');
     return line;
 }
 
 } // namespace fujinet::io
+

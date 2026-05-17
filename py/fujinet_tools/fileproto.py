@@ -79,7 +79,6 @@ def build_list_req(
     max_payload_bytes: int,
     *,
     list_flags: int = 0,
-    line_width: int = 0,
 ) -> bytes:
     """
     Build a list directory request.
@@ -89,7 +88,6 @@ def build_list_req(
         start: Starting index (entry offset in the directory listing)
         max_payload_bytes: Maximum bytes for the variable entries blob in the response
         list_flags: Optional ListDirectory flags (compact, sort-by-name, formatted)
-        line_width: Line width (20..120) when LIST_FLAG_FORMATTED is set
     """
     if not (0 <= start <= 0xFFFF):
         raise ValueError("start must fit u16")
@@ -98,10 +96,6 @@ def build_list_req(
     req = build_uri_request(uri) + u16le(start) + u16le(max_payload_bytes)
     if list_flags:
         req += bytes([list_flags & 0xFF])
-        if list_flags & LIST_FLAG_FORMATTED:
-            if not (20 <= line_width <= 120):
-                raise ValueError("line_width must be 20..120 for formatted listings")
-            req += bytes([line_width & 0xFF])
     return req
 
 

@@ -52,12 +52,10 @@ def cmd_list(args) -> int:
     start = args.start
     all_entries: list[fp.ListEntry] = []
     list_flags = fp.LIST_FLAG_SORT_BY_NAME
-    line_width = 0
     if args.compact:
         list_flags |= fp.LIST_FLAG_COMPACT
-    elif args.width:
+    elif args.long:
         list_flags |= fp.LIST_FLAG_FORMATTED
-        line_width = args.width
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
@@ -68,7 +66,6 @@ def cmd_list(args) -> int:
                 start,
                 args.max_payload,
                 list_flags=list_flags,
-                line_width=line_width,
             )
             pkt = bus.send_command_expect(
                 device=fp.FILE_DEVICE_ID,
@@ -115,7 +112,7 @@ def cmd_list(args) -> int:
             if not lr.more:
                 break
 
-    if not args.width:
+    if not args.long:
         mode = "compact" if args.compact else "binary"
         print(f"{args.uri} (entries={len(all_entries)}, {mode})")
         for e in all_entries:
@@ -381,17 +378,16 @@ def register_subcommands(subparsers) -> None:
         default=512,
         help="Max bytes for the variable entries blob per request",
     )
-    pl.add_argument(
+    list_mode = pl.add_mutually_exclusive_group()
+    list_mode.add_argument(
         "--compact",
         action="store_true",
         help="Omit per-entry size and mtime (names and dir/file type only)",
     )
-    pl.add_argument(
-        "--width",
-        type=int,
-        default=0,
-        metavar="COLS",
-        help="Request ls-style formatted lines at this width (20..120, e.g. 80)",
+    list_mode.add_argument(
+        "--long",
+        action="store_true",
+        help="Request ls-style formatted lines (variable width, like ls -l)",
     )
     pl.add_argument("--verbose", action="store_true")
     pl.add_argument("uri", help="URI (e.g., tnfs://host:port/, /path, sd0:/path)")

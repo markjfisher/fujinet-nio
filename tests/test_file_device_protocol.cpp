@@ -78,14 +78,10 @@ std::vector<std::uint8_t> make_list_request_with_flags(
     std::string_view uri,
     std::uint16_t start,
     std::uint16_t max_payload_bytes,
-    std::uint8_t list_flags,
-    std::uint8_t line_width = 0)
+    std::uint8_t list_flags)
 {
     auto payload = make_list_request(uri, start, max_payload_bytes);
     append_u8(payload, list_flags);
-    if ((list_flags & kListFlagFormattedLines) != 0) {
-        append_u8(payload, line_width);
-    }
     return payload;
 }
 
@@ -360,8 +356,7 @@ TEST_CASE("FileDevice ListDirectory formatted request returns ls-style text line
         kDir,
         0,
         kListMaxPayloadBytes,
-        static_cast<std::uint8_t>(kListFlagSortByName | kListFlagFormattedLines),
-        80);
+        static_cast<std::uint8_t>(kListFlagSortByName | kListFlagFormattedLines));
 
     const auto response = device.handle(request);
     CHECK(response.status == StatusCode::Ok);

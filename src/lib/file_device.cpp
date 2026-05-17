@@ -338,20 +338,13 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         }
     }
 
-    std::uint8_t lineWidth = 0;
     const bool formatted = (listFlags & kListFlagFormattedLines) != 0;
     const bool compact = (listFlags & kListFlagCompactOmitMetadata) != 0;
     const bool sortName = (listFlags & kListFlagSortByName) != 0;
 
-    if (formatted) {
-        if (compact) {
-            resp.status = StatusCode::InvalidRequest;
-            return resp;
-        }
-        if (r.remaining() == 0 || !r.read_u8(lineWidth) || lineWidth < 20 || lineWidth > 120) {
-            resp.status = StatusCode::InvalidRequest;
-            return resp;
-        }
+    if (formatted && compact) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
     }
 
     auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
@@ -420,15 +413,10 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         for (std::size_t i = start; i < total; ++i) {
             const auto& e = (*source)[i];
             const auto name = basename_sv(e.path);
-            std::string line = format_list_directory_line(e, name, lineWidth);
-            const std::size_t extra =
-                (returned == 0) ? 0U : 1U; // newline between lines
+            const std::string line = format_list_directory_line(e, name);
             const std::size_t entriesUsed = out.size() - entriesStart;
-            if (entriesUsed + extra + line.size() > maxPayloadBytes) {
+            if (entriesUsed + line.size() > maxPayloadBytes) {
                 break;
-            }
-            if (returned != 0) {
-                out.push_back('\n');
             }
             out.append(line);
             ++returned;
