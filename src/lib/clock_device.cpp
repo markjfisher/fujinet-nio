@@ -146,14 +146,28 @@ IOResponse ClockDevice::handle(const IORequest& request)
             // Get timezone from request or use current system timezone
             std::string tz = "UTC";
             std::uint8_t tz_len = 0;
-            if (r.read_u8(tz_len) && tz_len > 0) {
-                std::string_view tz_view;
-                if (r.read_sv(tz_view, tz_len)) {
+            if (r.remaining() > 0) {
+                if (!r.read_u8(tz_len) || tz_len > MAX_TIMEZONE_LEN) {
+                    resp.status = StatusCode::InvalidRequest;
+                    return resp;
+                }
+
+                if (tz_len > 0) {
+                    std::string_view tz_view;
+                    if (!r.read_sv(tz_view, tz_len)) {
+                        resp.status = StatusCode::InvalidRequest;
+                        return resp;
+                    }
                     tz = std::string(tz_view);
                 }
             } else {
                 // Use current system timezone
                 tz = get_timezone();
+            }
+
+            if (r.remaining() != 0) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
             }
 
             // Validate timezone
