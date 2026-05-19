@@ -80,6 +80,7 @@ idf_component_register(
         lib/transport/legacy/sio_traits.cpp
         lib/transport/legacy/sio_transport.cpp
         lib/udp_channel.cpp
+        lib/uri_display_formatter.cpp
         lib/uri_parser.cpp
         lib/utils.cpp
         platform/esp32/button_manager.cpp

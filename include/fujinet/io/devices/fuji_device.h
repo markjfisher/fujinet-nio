@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/fs/storage_manager.h"
@@ -47,6 +48,10 @@ private:
                                                          const std::string& uri,
                                                          const std::string& mode,
                                                          bool enabled);
+    static std::string format_mount_line(int slotNumber,
+                                         std::string_view uri,
+                                         std::string_view mode,
+                                         bool enabled);
 
     void load_config();
     void save_config();

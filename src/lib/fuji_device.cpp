@@ -5,9 +5,45 @@
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/core/logging.h"
 #include "fujinet/config/fuji_config.h"
+#include "fujinet/io/uri_display_formatter.h"
 
 #include <algorithm>
+#include <cctype>
 #include <limits>
+
+namespace {
+
+constexpr std::uint8_t kGetMountsFlagFormatted = 0x01U;
+constexpr std::uint8_t kGetMountsResponseFlagFormatted = 0x01U;
+
+struct GetMountsRequest {
+    std::uint8_t flags{0};
+    int firstSlot{-1};
+    int lastSlot{-1};
+};
+
+bool parse_get_mounts_request(const std::vector<std::uint8_t>& payload, GetMountsRequest& out)
+{
+    if (payload.empty()) {
+        return true;
+    }
+
+    if (payload.size() != 5) {
+        return false;
+    }
+
+    out.flags = payload[0];
+    out.firstSlot = static_cast<int>(payload[1] | (static_cast<std::uint16_t>(payload[2]) << 8));
+    out.lastSlot = static_cast<int>(payload[3] | (static_cast<std::uint16_t>(payload[4]) << 8));
+    return true;
+}
+
+bool mount_record_less(const fujinet::config::MountConfig* lhs, const fujinet::config::MountConfig* rhs)
+{
+    return lhs->slot < rhs->slot;
+}
+
+} // namespace
 
 namespace fujinet::io {
 
@@ -54,39 +90,129 @@ IOResponse FujiDevice::handle(const IORequest& request)
 
 IOResponse FujiDevice::handle_get_mounts(const IORequest& request)
 {
-    IOResponse resp = make_success_response(request);
+    GetMountsRequest parsed;
+    if (!parse_get_mounts_request(request.payload, parsed)) {
+        return make_base_response(request, StatusCode::InvalidRequest);
+    }
 
-    // Format: [count][mount1][mount2]...
-    // Mount format: [slot_index][flags][uri_len][uri][mode_len][mode]
-    std::vector<std::uint8_t> payload;
+    IOResponse resp = make_success_response(request);
 
     std::vector<const fujinet::config::MountConfig*> persisted;
     persisted.reserve(_config.mounts.size());
     for (const auto& mount : _config.mounts) {
-        if (mount.effective_slot() < 0) {
+        if (mount.slot <= 0) {
             continue;
         }
         persisted.push_back(&mount);
     }
 
-    std::sort(persisted.begin(), persisted.end(), [](const auto* lhs, const auto* rhs) {
-        return lhs->slot < rhs->slot;
-    });
+    std::sort(persisted.begin(), persisted.end(), mount_record_less);
 
-    if (persisted.size() > std::numeric_limits<std::uint8_t>::max()) {
-        return make_base_response(request, StatusCode::InternalError);
+    if (request.payload.empty()) {
+        // Legacy response: [count][mount1][mount2]... with 0-based slot indices.
+        std::vector<std::uint8_t> payload;
+
+        std::vector<const fujinet::config::MountConfig*> legacy;
+        legacy.reserve(persisted.size());
+        for (const auto* mount : persisted) {
+            if (mount->effective_slot() < 0) {
+                continue;
+            }
+            legacy.push_back(mount);
+        }
+
+        if (legacy.size() > std::numeric_limits<std::uint8_t>::max()) {
+            return make_base_response(request, StatusCode::InternalError);
+        }
+
+        payload.push_back(static_cast<std::uint8_t>(legacy.size()));
+
+        for (const auto* mount : legacy) {
+            auto record = encode_mount_record(
+                static_cast<std::uint8_t>(mount->effective_slot()),
+                mount->uri,
+                mount->mode,
+                mount->enabled);
+            payload.insert(payload.end(), record.begin(), record.end());
+        }
+
+        resp.payload = std::move(payload);
+        return resp;
     }
 
-    payload.push_back(static_cast<std::uint8_t>(persisted.size()));
-
-    for (const auto* mount : persisted) {
-        auto record = encode_mount_record(
-            static_cast<std::uint8_t>(mount->effective_slot()),
-            mount->uri,
-            mount->mode,
-            mount->enabled);
-        payload.insert(payload.end(), record.begin(), record.end());
+    if (persisted.empty()) {
+        if ((parsed.flags & kGetMountsFlagFormatted) != 0) {
+            resp.payload = {0x01U, kGetMountsResponseFlagFormatted, 0x00U, 0x00U, 0x00U, 0x00U};
+        } else {
+            resp.payload = {0x01U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
+        }
+        return resp;
     }
+
+    const int configuredFirst = persisted.front()->slot;
+    const int configuredLast = persisted.back()->slot;
+
+    const int firstSlot = (parsed.firstSlot == 0) ? configuredFirst : parsed.firstSlot;
+    const int lastSlot = (parsed.lastSlot == 0) ? configuredLast : parsed.lastSlot;
+
+    if (firstSlot <= 0 || lastSlot <= 0 || firstSlot > lastSlot) {
+        return make_base_response(request, StatusCode::InvalidRequest);
+    }
+
+    const auto lower = std::lower_bound(
+        persisted.begin(), persisted.end(), firstSlot,
+        [](const auto* mount, int slot) { return mount->slot < slot; });
+    const auto upper = std::upper_bound(
+        persisted.begin(), persisted.end(), lastSlot,
+        [](int slot, const auto* mount) { return slot < mount->slot; });
+
+    const bool formatted = (parsed.flags & kGetMountsFlagFormatted) != 0;
+    std::vector<std::uint8_t> payload;
+
+    // Extended response header:
+    // [version][flags][first_slot_le16][entry_count_le16][data...]
+    payload.reserve(6);
+    payload.push_back(0x01U);
+    payload.push_back(formatted ? kGetMountsResponseFlagFormatted : 0x00U);
+    payload.push_back(static_cast<std::uint8_t>(firstSlot & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>((firstSlot >> 8) & 0xFF));
+
+    const std::size_t entryCountOffset = payload.size();
+    payload.push_back(0x00U);
+    payload.push_back(0x00U);
+
+    std::uint16_t entryCount = 0;
+    if (formatted) {
+        std::string lines;
+        for (auto it = lower; it != upper; ++it) {
+            lines += format_mount_line((*it)->slot, (*it)->uri, (*it)->mode, (*it)->enabled);
+            ++entryCount;
+        }
+        payload.insert(payload.end(), lines.begin(), lines.end());
+    } else {
+        for (auto it = lower; it != upper; ++it) {
+            const auto* mount = *it;
+            if (mount->slot > std::numeric_limits<std::uint16_t>::max()) {
+                return make_base_response(request, StatusCode::InternalError);
+            }
+            if (mount->uri.size() > std::numeric_limits<std::uint8_t>::max() ||
+                mount->mode.size() > std::numeric_limits<std::uint8_t>::max()) {
+                return make_base_response(request, StatusCode::InternalError);
+            }
+
+            payload.push_back(static_cast<std::uint8_t>(mount->slot & 0xFF));
+            payload.push_back(static_cast<std::uint8_t>((mount->slot >> 8) & 0xFF));
+            payload.push_back(mount->enabled ? 0x01U : 0x00U);
+            payload.push_back(static_cast<std::uint8_t>(mount->uri.size()));
+            payload.insert(payload.end(), mount->uri.begin(), mount->uri.end());
+            payload.push_back(static_cast<std::uint8_t>(mount->mode.size()));
+            payload.insert(payload.end(), mount->mode.begin(), mount->mode.end());
+            ++entryCount;
+        }
+    }
+
+    payload[entryCountOffset] = static_cast<std::uint8_t>(entryCount & 0xFF);
+    payload[entryCountOffset + 1] = static_cast<std::uint8_t>((entryCount >> 8) & 0xFF);
 
     resp.payload = std::move(payload);
     return resp;
@@ -273,6 +399,34 @@ std::vector<std::uint8_t> FujiDevice::encode_mount_record(std::uint8_t slotIndex
     payload.push_back(static_cast<std::uint8_t>(mode.size()));
     payload.insert(payload.end(), mode.begin(), mode.end());
     return payload;
+}
+
+std::string FujiDevice::format_mount_line(int slotNumber,
+                                          std::string_view uri,
+                                          std::string_view mode,
+                                          bool enabled)
+{
+    const auto display = format_uri_for_display(uri);
+
+    std::string line;
+    line.reserve(display.summary.size() + display.detail.size() + mode.size() + 40);
+    line += std::to_string(slotNumber);
+    line += enabled ? ":* " : ":  ";
+    if (!mode.empty()) {
+        line += "[";
+        for (char ch : mode) {
+            line.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+        }
+        line += "] ";
+    }
+    line += display.summary;
+    line.push_back('\n');
+    if (!display.detail.empty()) {
+        line += "  path: ";
+        line += display.detail;
+        line.push_back('\n');
+    }
+    return line;
 }
 
 } // namespace fujinet::io

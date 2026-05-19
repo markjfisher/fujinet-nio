@@ -7,6 +7,26 @@
 
 #include <memory>
 
+namespace {
+
+constexpr std::uint8_t kGetMountsFlagFormatted = 0x01U;
+
+std::vector<std::uint8_t> get_mounts_payload(std::uint8_t flags, std::uint16_t firstSlot, std::uint16_t lastSlot)
+{
+    return {
+        flags,
+        static_cast<std::uint8_t>(firstSlot & 0xFF),
+        static_cast<std::uint8_t>((firstSlot >> 8) & 0xFF),
+        static_cast<std::uint8_t>(lastSlot & 0xFF),
+        static_cast<std::uint8_t>((lastSlot >> 8) & 0xFF),
+    };
+}
+
+std::uint16_t read_u16le(const std::vector<std::uint8_t>& payload, std::size_t offset)
+{
+    return static_cast<std::uint16_t>(payload[offset] | (static_cast<std::uint16_t>(payload[offset + 1]) << 8));
+}
+
 using fujinet::config::FujiConfig;
 using fujinet::config::FujiConfigStore;
 using fujinet::config::MountConfig;
@@ -14,8 +34,6 @@ using fujinet::io::FujiDevice;
 using fujinet::io::IORequest;
 using fujinet::io::StatusCode;
 using fujinet::io::protocol::FujiCommand;
-
-namespace {
 
 class MemoryFujiConfigStore final : public FujiConfigStore {
 public:
@@ -128,6 +146,119 @@ TEST_CASE("FujiDevice returns sorted persisted mount table with 0-based indices"
     const auto secondOffset = static_cast<std::size_t>(4 + firstUriLen + 1 + resp.payload[4 + firstUriLen]);
     REQUIRE(secondOffset < resp.payload.size());
     CHECK(resp.payload[secondOffset] == 2);
+}
+
+TEST_CASE("FujiDevice returns extended binary mount table with slot range filtering")
+{
+    FujiConfig initial;
+    initial.mounts.push_back(MountConfig{2, "tnfs://server/game1.atr", "r", true});
+    initial.mounts.push_back(MountConfig{11, "host:/images/game2.atr", "rw", false});
+    initial.mounts.push_back(MountConfig{300, "sd:/archive/game3.atr", "r", true});
+
+    auto store = std::make_unique<MemoryFujiConfigStore>(initial);
+    fujinet::fs::StorageManager storage;
+    FujiDevice device(nullptr, std::move(store), storage);
+    device.start();
+
+    IORequest req{};
+    req.id = 1;
+    req.deviceId = 0x70;
+    req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
+    req.payload = get_mounts_payload(0x00, 10, 300);
+
+    auto resp = device.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+    REQUIRE(resp.payload.size() > 6);
+    CHECK(resp.payload[0] == 0x01);
+    CHECK(resp.payload[1] == 0x00);
+    CHECK(read_u16le(resp.payload, 2) == 10);
+    CHECK(read_u16le(resp.payload, 4) == 2);
+
+    std::size_t offset = 6;
+    CHECK(read_u16le(resp.payload, offset) == 11);
+    offset += 2;
+    CHECK(resp.payload[offset++] == 0x00);
+    const auto firstUriLen = resp.payload[offset++];
+    CHECK(std::string(resp.payload.begin() + offset, resp.payload.begin() + offset + firstUriLen) == "host:/images/game2.atr");
+    offset += firstUriLen;
+    const auto firstModeLen = resp.payload[offset++];
+    CHECK(std::string(resp.payload.begin() + offset, resp.payload.begin() + offset + firstModeLen) == "rw");
+    offset += firstModeLen;
+
+    CHECK(read_u16le(resp.payload, offset) == 300);
+    offset += 2;
+    CHECK(resp.payload[offset++] == 0x01);
+    const auto secondUriLen = resp.payload[offset++];
+    CHECK(std::string(resp.payload.begin() + offset, resp.payload.begin() + offset + secondUriLen) == "sd:/archive/game3.atr");
+}
+
+TEST_CASE("FujiDevice returns formatted mount lines for extended requests")
+{
+    FujiConfig initial;
+    initial.mounts.push_back(MountConfig{2, "tnfs://server/game1.atr", "r", true});
+    initial.mounts.push_back(MountConfig{11, "host:/images/game2.atr", "rw", false});
+
+    auto store = std::make_unique<MemoryFujiConfigStore>(initial);
+    fujinet::fs::StorageManager storage;
+    FujiDevice device(nullptr, std::move(store), storage);
+    device.start();
+
+    IORequest req{};
+    req.id = 1;
+    req.deviceId = 0x70;
+    req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
+    req.payload = get_mounts_payload(kGetMountsFlagFormatted, 0, 0);
+
+    auto resp = device.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+    REQUIRE(resp.payload.size() >= 6);
+    CHECK(resp.payload[0] == 0x01);
+    CHECK(resp.payload[1] == kGetMountsFlagFormatted);
+    CHECK(read_u16le(resp.payload, 2) == 2);
+    CHECK(read_u16le(resp.payload, 4) == 2);
+
+    const std::string text(resp.payload.begin() + 6, resp.payload.end());
+    CHECK(text == "2:* [R] tnfs://server\n  path: /game1.atr\n11:  [RW] host:\n  path: /images/game2.atr\n");
+}
+
+TEST_CASE("FujiDevice defaults extended mount range to configured bounds")
+{
+    FujiConfig initial;
+    initial.mounts.push_back(MountConfig{25, "tnfs://server/game1.atr", "r", true});
+    initial.mounts.push_back(MountConfig{1200, "host:/images/game2.atr", "rw", true});
+
+    auto store = std::make_unique<MemoryFujiConfigStore>(initial);
+    fujinet::fs::StorageManager storage;
+    FujiDevice device(nullptr, std::move(store), storage);
+    device.start();
+
+    IORequest req{};
+    req.id = 1;
+    req.deviceId = 0x70;
+    req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
+    req.payload = get_mounts_payload(0x00, 0, 0);
+
+    auto resp = device.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+    CHECK(read_u16le(resp.payload, 2) == 25);
+    CHECK(read_u16le(resp.payload, 4) == 2);
+}
+
+TEST_CASE("FujiDevice rejects malformed extended get mounts requests")
+{
+    auto store = std::make_unique<MemoryFujiConfigStore>(FujiConfig{});
+    fujinet::fs::StorageManager storage;
+    FujiDevice device(nullptr, std::move(store), storage);
+    device.start();
+
+    IORequest req{};
+    req.id = 1;
+    req.deviceId = 0x70;
+    req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
+    req.payload = {0x00, 0x01, 0x00};
+
+    auto resp = device.handle(req);
+    CHECK(resp.status == StatusCode::InvalidRequest);
 }
 
 TEST_CASE("FujiDevice clears a persisted mount when URI is empty")

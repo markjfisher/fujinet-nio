@@ -10,7 +10,7 @@ unset VIRTUAL_ENV
 
 # Ensure uv is available
 ensure_uv() {
-  if ! uv --version &> /dev/null; then
+  if ! uv -q --version &> /dev/null; then
     echo "[fujinet] uv is required but not found. Installing..."
     if ! pipx install uv &> /dev/null; then
       echo "[fujinet] ERROR: pipx is required to install uv. Install with: python3 -m pip install --user pipx"
@@ -24,7 +24,7 @@ ensure_venv() {
   if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
     echo "[fujinet] creating venv at ${VENV_DIR}"
     mkdir -p "$(dirname "${VENV_DIR}")"
-    uv venv "${VENV_DIR}"
+    uv -q venv "${VENV_DIR}"
   fi
 }
 
@@ -49,7 +49,7 @@ ensure_synced() {
   # Install into build/.venv (not the default project-root .venv).
   export UV_PROJECT="${ROOT}"
   export UV_PROJECT_ENVIRONMENT="${VENV_DIR}"
-  uv sync >/dev/null
+  uv -q sync >/dev/null
   repair_editable_if_stale
 }
 

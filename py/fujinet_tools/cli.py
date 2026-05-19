@@ -12,6 +12,7 @@ from . import modem as modem_cmds
 from . import monitor as monitor_cmds
 from . import analyze_capture as analyze_capture_cmds
 from . import extract_log_mocks as extract_log_mocks_cmds
+from . import fuji as fuji_cmds
 
 
 def main() -> None:
@@ -38,6 +39,7 @@ def main() -> None:
     disk_cmds.register_subcommands(sub)
     bbc_cmds.register_subcommands(sub)
     modem_cmds.register_subcommands(sub)
+    fuji_cmds.register_subcommands(sub)
     analyze_capture_cmds.register_subcommands(sub)
     extract_log_mocks_cmds.register_subcommands(sub)
 

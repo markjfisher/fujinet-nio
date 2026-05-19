@@ -173,6 +173,7 @@ target_sources(fujinet-nio
         src/lib/transport/legacy/sio_traits.cpp
         src/lib/transport/legacy/sio_transport.cpp
         src/lib/udp_channel.cpp
+        src/lib/uri_display_formatter.cpp
         src/lib/uri_parser.cpp
         src/lib/utils.cpp
         src/platform/posix/channel_factory.cpp
