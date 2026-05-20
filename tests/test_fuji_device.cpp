@@ -10,8 +10,15 @@
 namespace {
 
 constexpr std::uint8_t kGetMountsFlagFormatted = 0x01U;
+constexpr std::uint8_t kGetMountsRespFlagMore = 0x01U;
+constexpr std::uint8_t kGetMountsRespFlagFormatted = 0x02U;
 
-std::vector<std::uint8_t> get_mounts_payload(std::uint8_t flags, std::uint16_t firstSlot, std::uint16_t lastSlot)
+std::vector<std::uint8_t> get_mounts_payload(
+    std::uint8_t flags,
+    std::uint16_t firstSlot,
+    std::uint16_t lastSlot,
+    std::uint16_t startIndex,
+    std::uint16_t maxPayloadBytes)
 {
     return {
         flags,
@@ -19,6 +26,10 @@ std::vector<std::uint8_t> get_mounts_payload(std::uint8_t flags, std::uint16_t f
         static_cast<std::uint8_t>((firstSlot >> 8) & 0xFF),
         static_cast<std::uint8_t>(lastSlot & 0xFF),
         static_cast<std::uint8_t>((lastSlot >> 8) & 0xFF),
+        static_cast<std::uint8_t>(startIndex & 0xFF),
+        static_cast<std::uint8_t>((startIndex >> 8) & 0xFF),
+        static_cast<std::uint8_t>(maxPayloadBytes & 0xFF),
+        static_cast<std::uint8_t>((maxPayloadBytes >> 8) & 0xFF),
     };
 }
 
@@ -164,17 +175,18 @@ TEST_CASE("FujiDevice returns extended binary mount table with slot range filter
     req.id = 1;
     req.deviceId = 0x70;
     req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
-    req.payload = get_mounts_payload(0x00, 10, 300);
+    req.payload = get_mounts_payload(0x00, 10, 300, 0, 512);
 
     auto resp = device.handle(req);
     REQUIRE(resp.status == StatusCode::Ok);
-    REQUIRE(resp.payload.size() > 6);
+    REQUIRE(resp.payload.size() > 10);
     CHECK(resp.payload[0] == 0x01);
     CHECK(resp.payload[1] == 0x00);
     CHECK(read_u16le(resp.payload, 2) == 10);
-    CHECK(read_u16le(resp.payload, 4) == 2);
+    CHECK(read_u16le(resp.payload, 4) == 0);
+    CHECK(read_u16le(resp.payload, 6) == 2);
 
-    std::size_t offset = 6;
+    std::size_t offset = 10;
     CHECK(read_u16le(resp.payload, offset) == 11);
     offset += 2;
     CHECK(resp.payload[offset++] == 0x00);
@@ -207,18 +219,56 @@ TEST_CASE("FujiDevice returns formatted mount lines for extended requests")
     req.id = 1;
     req.deviceId = 0x70;
     req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
-    req.payload = get_mounts_payload(kGetMountsFlagFormatted, 0, 0);
+    req.payload = get_mounts_payload(kGetMountsFlagFormatted, 0, 0, 0, 512);
 
     auto resp = device.handle(req);
     REQUIRE(resp.status == StatusCode::Ok);
-    REQUIRE(resp.payload.size() >= 6);
+    REQUIRE(resp.payload.size() >= 10);
     CHECK(resp.payload[0] == 0x01);
-    CHECK(resp.payload[1] == kGetMountsFlagFormatted);
+    CHECK(resp.payload[1] == kGetMountsRespFlagFormatted);
     CHECK(read_u16le(resp.payload, 2) == 2);
-    CHECK(read_u16le(resp.payload, 4) == 2);
+    CHECK(read_u16le(resp.payload, 4) == 0);
+    CHECK(read_u16le(resp.payload, 6) == 2);
 
-    const std::string text(resp.payload.begin() + 6, resp.payload.end());
+    const auto entriesLen = read_u16le(resp.payload, 8);
+    CHECK(entriesLen == resp.payload.size() - 10);
+    const std::string text(resp.payload.begin() + 10, resp.payload.end());
     CHECK(text == "2:* [R] tnfs://server\n  path: /game1.atr\n11:  [RW] host:\n  path: /images/game2.atr\n");
+}
+
+TEST_CASE("FujiDevice paginates formatted mount lines when max payload is small")
+{
+    FujiConfig initial;
+    initial.mounts.push_back(MountConfig{2, "tnfs://server/game1.atr", "r", true});
+    initial.mounts.push_back(MountConfig{11, "host:/images/game2.atr", "rw", false});
+
+    auto store = std::make_unique<MemoryFujiConfigStore>(initial);
+    fujinet::fs::StorageManager storage;
+    FujiDevice device(nullptr, std::move(store), storage);
+    device.start();
+
+    IORequest req{};
+    req.id = 1;
+    req.deviceId = 0x70;
+    req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
+    req.payload = get_mounts_payload(kGetMountsFlagFormatted, 0, 0, 0, 48);
+
+    auto first = device.handle(req);
+    REQUIRE(first.status == StatusCode::Ok);
+    CHECK((first.payload[1] & kGetMountsRespFlagFormatted) != 0);
+    CHECK((first.payload[1] & kGetMountsRespFlagMore) != 0);
+    CHECK(read_u16le(first.payload, 4) == 0);
+    CHECK(read_u16le(first.payload, 6) == 1);
+    CHECK(read_u16le(first.payload, 8) > 0);
+
+    req.payload = get_mounts_payload(kGetMountsFlagFormatted, 0, 0, 1, 48);
+    auto second = device.handle(req);
+    REQUIRE(second.status == StatusCode::Ok);
+    CHECK((second.payload[1] & kGetMountsRespFlagFormatted) != 0);
+    CHECK((second.payload[1] & kGetMountsRespFlagMore) == 0);
+    CHECK(read_u16le(second.payload, 4) == 1);
+    CHECK(read_u16le(second.payload, 6) == 1);
+    CHECK(read_u16le(second.payload, 8) > 0);
 }
 
 TEST_CASE("FujiDevice defaults extended mount range to configured bounds")
@@ -236,12 +286,13 @@ TEST_CASE("FujiDevice defaults extended mount range to configured bounds")
     req.id = 1;
     req.deviceId = 0x70;
     req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
-    req.payload = get_mounts_payload(0x00, 0, 0);
+    req.payload = get_mounts_payload(0x00, 0, 0, 0, 512);
 
     auto resp = device.handle(req);
     REQUIRE(resp.status == StatusCode::Ok);
     CHECK(read_u16le(resp.payload, 2) == 25);
-    CHECK(read_u16le(resp.payload, 4) == 2);
+    CHECK(read_u16le(resp.payload, 4) == 0);
+    CHECK(read_u16le(resp.payload, 6) == 2);
 }
 
 TEST_CASE("FujiDevice rejects malformed extended get mounts requests")
@@ -256,6 +307,23 @@ TEST_CASE("FujiDevice rejects malformed extended get mounts requests")
     req.deviceId = 0x70;
     req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
     req.payload = {0x00, 0x01, 0x00};
+
+    auto resp = device.handle(req);
+    CHECK(resp.status == StatusCode::InvalidRequest);
+}
+
+TEST_CASE("FujiDevice rejects extended get mounts requests with zero max payload")
+{
+    auto store = std::make_unique<MemoryFujiConfigStore>(FujiConfig{});
+    fujinet::fs::StorageManager storage;
+    FujiDevice device(nullptr, std::move(store), storage);
+    device.start();
+
+    IORequest req{};
+    req.id = 1;
+    req.deviceId = 0x70;
+    req.command = static_cast<std::uint16_t>(FujiCommand::GetMounts);
+    req.payload = get_mounts_payload(kGetMountsFlagFormatted, 0, 0, 0, 0);
 
     auto resp = device.handle(req);
     CHECK(resp.status == StatusCode::InvalidRequest);

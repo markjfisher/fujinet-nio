@@ -14,12 +14,15 @@
 namespace {
 
 constexpr std::uint8_t kGetMountsFlagFormatted = 0x01U;
-constexpr std::uint8_t kGetMountsResponseFlagFormatted = 0x01U;
+constexpr std::uint8_t kGetMountsResponseFlagMore = 0x01U;
+constexpr std::uint8_t kGetMountsResponseFlagFormatted = 0x02U;
 
 struct GetMountsRequest {
     std::uint8_t flags{0};
     int firstSlot{-1};
     int lastSlot{-1};
+    std::uint16_t startIndex{0};
+    std::uint16_t maxPayloadBytes{0};
 };
 
 bool parse_get_mounts_request(const std::vector<std::uint8_t>& payload, GetMountsRequest& out)
@@ -28,13 +31,15 @@ bool parse_get_mounts_request(const std::vector<std::uint8_t>& payload, GetMount
         return true;
     }
 
-    if (payload.size() != 5) {
+    if (payload.size() != 9) {
         return false;
     }
 
     out.flags = payload[0];
     out.firstSlot = static_cast<int>(payload[1] | (static_cast<std::uint16_t>(payload[2]) << 8));
     out.lastSlot = static_cast<int>(payload[3] | (static_cast<std::uint16_t>(payload[4]) << 8));
+    out.startIndex = static_cast<std::uint16_t>(payload[5] | (static_cast<std::uint16_t>(payload[6]) << 8));
+    out.maxPayloadBytes = static_cast<std::uint16_t>(payload[7] | (static_cast<std::uint16_t>(payload[8]) << 8));
     return true;
 }
 
@@ -140,11 +145,17 @@ IOResponse FujiDevice::handle_get_mounts(const IORequest& request)
         return resp;
     }
 
+    if (parsed.maxPayloadBytes == 0) {
+        return make_base_response(request, StatusCode::InvalidRequest);
+    }
+
     if (persisted.empty()) {
         if ((parsed.flags & kGetMountsFlagFormatted) != 0) {
-            resp.payload = {0x01U, kGetMountsResponseFlagFormatted, 0x00U, 0x00U, 0x00U, 0x00U};
+            resp.payload = {0x01U, kGetMountsResponseFlagFormatted, 0x00U, 0x00U, 0x00U,
+                            0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
         } else {
-            resp.payload = {0x01U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
+            resp.payload = {0x01U, 0x00U, 0x00U, 0x00U, 0x00U,
+                            0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
         }
         return resp;
     }
@@ -167,37 +178,55 @@ IOResponse FujiDevice::handle_get_mounts(const IORequest& request)
         [](int slot, const auto* mount) { return slot < mount->slot; });
 
     const bool formatted = (parsed.flags & kGetMountsFlagFormatted) != 0;
+    const std::size_t total = static_cast<std::size_t>(upper - lower);
+    const std::size_t start = (parsed.startIndex < total) ? parsed.startIndex : total;
+
     std::vector<std::uint8_t> payload;
 
     // Extended response header:
-    // [version][flags][first_slot_le16][entry_count_le16][data...]
-    payload.reserve(6);
+    // [version][flags][first_slot_le16][start_index_le16][entry_count_le16][entries_len_le16][data...]
+    payload.reserve(10 + parsed.maxPayloadBytes);
     payload.push_back(0x01U);
-    payload.push_back(formatted ? kGetMountsResponseFlagFormatted : 0x00U);
+    payload.push_back(0x00U);
     payload.push_back(static_cast<std::uint8_t>(firstSlot & 0xFF));
     payload.push_back(static_cast<std::uint8_t>((firstSlot >> 8) & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>(parsed.startIndex & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>((parsed.startIndex >> 8) & 0xFF));
 
     const std::size_t entryCountOffset = payload.size();
+    payload.push_back(0x00U);
+    payload.push_back(0x00U);
+    const std::size_t entriesLenOffset = payload.size();
     payload.push_back(0x00U);
     payload.push_back(0x00U);
 
     std::uint16_t entryCount = 0;
     if (formatted) {
-        std::string lines;
-        for (auto it = lower; it != upper; ++it) {
-            lines += format_mount_line((*it)->slot, (*it)->uri, (*it)->mode, (*it)->enabled);
+        for (std::size_t i = start; i < total; ++i) {
+            const auto* mount = *(lower + static_cast<std::ptrdiff_t>(i));
+            const std::string line = format_mount_line(mount->slot, mount->uri, mount->mode, mount->enabled);
+            const std::size_t entriesUsed = payload.size() - (entriesLenOffset + 2);
+            if (entriesUsed + line.size() > parsed.maxPayloadBytes) {
+                break;
+            }
+            payload.insert(payload.end(), line.begin(), line.end());
             ++entryCount;
         }
-        payload.insert(payload.end(), lines.begin(), lines.end());
     } else {
-        for (auto it = lower; it != upper; ++it) {
-            const auto* mount = *it;
+        for (std::size_t i = start; i < total; ++i) {
+            const auto* mount = *(lower + static_cast<std::ptrdiff_t>(i));
             if (mount->slot > std::numeric_limits<std::uint16_t>::max()) {
                 return make_base_response(request, StatusCode::InternalError);
             }
             if (mount->uri.size() > std::numeric_limits<std::uint8_t>::max() ||
                 mount->mode.size() > std::numeric_limits<std::uint8_t>::max()) {
                 return make_base_response(request, StatusCode::InternalError);
+            }
+
+            const std::size_t entryBytes = 2U + 1U + 1U + mount->uri.size() + mount->mode.size();
+            const std::size_t entriesUsed = payload.size() - (entriesLenOffset + 2);
+            if (entriesUsed + entryBytes > parsed.maxPayloadBytes) {
+                break;
             }
 
             payload.push_back(static_cast<std::uint8_t>(mount->slot & 0xFF));
@@ -211,8 +240,22 @@ IOResponse FujiDevice::handle_get_mounts(const IORequest& request)
         }
     }
 
+    const std::size_t entriesLen = payload.size() - (entriesLenOffset + 2);
+    const bool more = (start + entryCount < total);
+
+    std::uint8_t responseFlags = 0;
+    if (more) {
+        responseFlags |= kGetMountsResponseFlagMore;
+    }
+    if (formatted) {
+        responseFlags |= kGetMountsResponseFlagFormatted;
+    }
+    payload[1] = responseFlags;
+
     payload[entryCountOffset] = static_cast<std::uint8_t>(entryCount & 0xFF);
     payload[entryCountOffset + 1] = static_cast<std::uint8_t>((entryCount >> 8) & 0xFF);
+    payload[entriesLenOffset] = static_cast<std::uint8_t>(entriesLen & 0xFF);
+    payload[entriesLenOffset + 1] = static_cast<std::uint8_t>((entriesLen >> 8) & 0xFF);
 
     resp.payload = std::move(payload);
     return resp;
