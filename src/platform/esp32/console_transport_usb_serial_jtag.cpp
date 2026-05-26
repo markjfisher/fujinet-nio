@@ -70,7 +70,8 @@ public:
     void write(std::string_view s) override
     {
         if (!s.empty()) {
-            usb_serial_jtag_write_bytes(s.data(), static_cast<size_t>(s.size()), 0);
+            (void)usb_serial_jtag_write_bytes(
+                s.data(), static_cast<size_t>(s.size()), pdMS_TO_TICKS(1000));
         }
     }
 

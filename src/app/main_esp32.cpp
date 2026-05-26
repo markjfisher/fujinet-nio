@@ -66,6 +66,28 @@ struct Esp32Services {
 
     bool phase1_started{false};
 
+    fujinet::net::INetworkLink* ensure_wifi(bool connect_from_config = false)
+    {
+        if (!events) {
+            return nullptr;
+        }
+
+        if (!wifi) {
+            wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
+            wifi->init();
+            wifiMon = std::make_unique<fujinet::net::NetworkLinkMonitor>(*events, *wifi);
+        }
+
+        if (connect_from_config && fuji) {
+            const auto& cfg = fuji->config();
+            if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
+                wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
+            }
+        }
+
+        return wifi.get();
+    }
+
     void init_phase0(fujinet::core::FujinetCore& core)
     {
         events = &core.events();
@@ -109,12 +131,7 @@ struct Esp32Services {
         const auto& cfg = fuji->config();
 
         if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
-            wifi = std::make_unique<fujinet::platform::esp32::Esp32WifiLink>();
-            wifi->init();
-            wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
-
-            // Monitor publishes NetworkEvent transitions based on wifi state/ip.
-            wifiMon = std::make_unique<fujinet::net::NetworkLinkMonitor>(*events, *wifi);
+            ensure_wifi(true);
         }
 
         // start all the devices that can be delayed
@@ -143,7 +160,8 @@ extern "C" void fujinet_core_task(void* arg)
     // Diagnostics + console (cooperative; keep in the core task to avoid races).
     fujinet::diag::DiagnosticRegistry diagRegistry;
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
-    auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
+    auto wifiDiagCtx = std::make_shared<fujinet::diag::NetworkDiagWifiContext>();
+    auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core, wifiDiagCtx);
     auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
     auto modemDiag = fujinet::diag::create_modem_diagnostic_provider(core);
     std::unique_ptr<fujinet::diag::IDiagnosticProvider> uartChannelDiag;
@@ -206,6 +224,10 @@ extern "C" void fujinet_core_task(void* arg)
         // Keep a non-owning pointer for phase-1 start.
         if (auto* fuji = dynamic_cast<fujinet::io::FujiDevice*>(dev.get())) {
             services.fuji = fuji;
+            wifiDiagCtx->fuji = fuji;
+            wifiDiagCtx->ensure_wifi = [&services]() {
+                return services.ensure_wifi(false);
+            };
         } else {
             FN_LOGE(TAG, "create_fuji_device() did not return a FujiDevice; Wi-Fi/config start disabled");
             services.fuji = nullptr;

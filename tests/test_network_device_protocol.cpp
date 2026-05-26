@@ -825,3 +825,89 @@ TEST_CASE("NetworkDevice v1: JSON array elements can be fetched by indexed path"
 
     CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
 }
+
+TEST_CASE("NetworkDevice v1: Open content profile injects request Content-Type")
+{
+    fujinet::io::StubNetworkProtocol* lastStub = nullptr;
+    fujinet::io::ProtocolRegistry reg;
+    reg.register_scheme("http", [&] {
+        auto p = std::make_unique<fujinet::io::StubNetworkProtocol>();
+        lastStub = p.get();
+        return p;
+    });
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    const std::uint16_t handle = open_handle_stub(
+        dev,
+        deviceId,
+        "http://example.com/post",
+        /*method=*/2,
+        /*flags=*/0,
+        /*bodyLenHint=*/4,
+        {},
+        fujinet::io::ContentTranslationType::None,
+        {},
+        0,
+        fujinet::io::RequestContentProfile::JsonBody);
+    REQUIRE(lastStub != nullptr);
+
+    bool foundJson = false;
+    for (const auto& kv : lastStub->openRequest().headers) {
+        if (kv.first == "Content-Type" && kv.second == "application/json") {
+            foundJson = true;
+        }
+    }
+    CHECK(foundJson);
+
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}
+
+TEST_CASE("NetworkDevice v1: Open content profile does not override explicit Content-Type")
+{
+    fujinet::io::StubNetworkProtocol* lastStub = nullptr;
+    fujinet::io::ProtocolRegistry reg;
+    reg.register_scheme("http", [&] {
+        auto p = std::make_unique<fujinet::io::StubNetworkProtocol>();
+        lastStub = p.get();
+        return p;
+    });
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    std::string p;
+    netproto::write_u8(p, V);
+    netproto::write_u8(p, 2); // POST
+    netproto::write_u8(p, 0); // flags
+    netproto::write_lp_u16_string(p, "http://example.com/post");
+    netproto::write_u16le(p, 1); // one explicit header
+    netproto::write_lp_u16_string(p, "Content-Type");
+    netproto::write_lp_u16_string(p, "text/custom");
+    netproto::write_u32le(p, 0);
+    netproto::write_u16le(p, 0);
+    netproto::write_u32le(p, fujinet::io::NETWORK_OPEN_EXT_CONTENT_PROFILE);
+    netproto::write_u8(p, static_cast<std::uint8_t>(fujinet::io::RequestContentProfile::JsonBody));
+
+    IORequest req{};
+    req.id = 960;
+    req.deviceId = deviceId;
+    req.command = 0x01;
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+    REQUIRE(lastStub != nullptr);
+
+    REQUIRE(lastStub->openRequest().headers.size() == 1);
+    CHECK(lastStub->openRequest().headers[0].first == "Content-Type");
+    CHECK(lastStub->openRequest().headers[0].second == "text/custom");
+
+    netproto::Reader r(resp.payload.data(), resp.payload.size());
+    std::uint8_t ver = 0, oflags = 0;
+    std::uint16_t reserved = 0, handle = 0;
+    REQUIRE(r.read_u8(ver));
+    REQUIRE(r.read_u8(oflags));
+    REQUIRE(r.read_u16le(reserved));
+    REQUIRE(r.read_u16le(handle));
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}

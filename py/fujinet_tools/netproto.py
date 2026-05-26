@@ -41,6 +41,12 @@ TRANSLATION_XML = 2
 TRANSLATION_RSS = 3
 
 OPEN_EXT_TRANSLATION = 1 << 0
+OPEN_EXT_CONTENT_PROFILE = 1 << 1
+
+CONTENT_PROFILE_NONE = 0
+CONTENT_PROFILE_JSON = 1
+CONTENT_PROFILE_FORM = 2
+CONTENT_PROFILE_TEXT = 3
 
 
 def _check_version(payload: bytes, off: int = 0) -> int:
@@ -61,6 +67,7 @@ def build_open_req(
     translation_type: int = TRANSLATION_NONE,
     translation_flags: int = 0,
     translation_selector: str = "",
+    content_profile: int = CONTENT_PROFILE_NONE,
 ) -> bytes:
     """
     v1 (updated):
@@ -73,6 +80,7 @@ def build_open_req(
       u16 respHeaderCount; repeated lp_u16 name
       [optional] u32 openExtFlags
       [if OPEN_EXT_TRANSLATION] u8 translationType, u8 translationFlags, lp_u16 translationSelector
+      [if OPEN_EXT_CONTENT_PROFILE] u8 contentProfile
     """
     if headers is None:
         headers = []
@@ -94,6 +102,8 @@ def build_open_req(
         raise ValueError("translation_type must fit u8")
     if not (0 <= translation_flags <= 0xFF):
         raise ValueError("translation_flags must fit u8")
+    if not (0 <= content_profile <= 0xFF):
+        raise ValueError("content_profile must fit u8")
 
     selector_b = translation_selector.encode("utf-8")
     if len(selector_b) > 0xFFFF:
@@ -125,6 +135,8 @@ def build_open_req(
     open_ext_flags = 0
     if translation_type != TRANSLATION_NONE or translation_flags != 0 or selector_b:
         open_ext_flags |= OPEN_EXT_TRANSLATION
+    if content_profile != CONTENT_PROFILE_NONE:
+        open_ext_flags |= OPEN_EXT_CONTENT_PROFILE
 
     if open_ext_flags:
         out += u32le(open_ext_flags)
@@ -133,6 +145,9 @@ def build_open_req(
         out.append(translation_type & 0xFF)
         out.append(translation_flags & 0xFF)
         out += u16le(len(selector_b)) + selector_b
+
+    if open_ext_flags & OPEN_EXT_CONTENT_PROFILE:
+        out.append(content_profile & 0xFF)
 
     return bytes(out)
 

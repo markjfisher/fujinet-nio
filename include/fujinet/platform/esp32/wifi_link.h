@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "fujinet/net/network_link.h"
 
@@ -10,6 +12,19 @@ extern "C" {
 }
 
 namespace fujinet::platform::esp32 {
+
+struct WifiScanAp {
+    std::string ssid;
+    std::int8_t rssi{0};
+    std::uint8_t channel{0};
+    std::string auth; // human-readable, e.g. "wpa2_psk"
+};
+
+struct WifiScanResult {
+    std::vector<WifiScanAp> aps;
+    bool success{false};
+    std::string error;
+};
 
 class Esp32WifiLink final : public fujinet::net::INetworkLink {
 public:
@@ -29,7 +44,16 @@ public:
 
     std::string ip_address() const override;
 
+    // Blocking scan. Requires init(); starts the radio if needed.
+    WifiScanResult scan();
+
 private:
+    void prepare_for_new_connection();
+    bool try_wifi_connect();
+    bool wait_wifi_started(int timeout_ms);
+    bool wait_link_state(fujinet::net::LinkState target, int timeout_ms);
+    esp_err_t start_scan_with_retries(bool allow_disconnect_for_scan, bool& disconnected_for_scan);
+
     static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 
     void on_wifi_start();

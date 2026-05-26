@@ -169,6 +169,9 @@ if (openExtFlags bit0 set):
   u8   translationFlags  // translator-specific, 0 for now
   u16  selectorLen       // LE; 0 = no selector
   u8[] selector          // length selectorLen
+
+if (openExtFlags bit1 set):
+  u8   contentProfile    // 0=None, 1=JsonBody, 2=FormBody, 3=TextBody
 ```
 
 ### Open flags (u8)
@@ -243,6 +246,18 @@ if openExtFlags & 0x00000001:
 
 Defined open extension flags:
 - bit 0 = translation block present
+- bit 1 = request content profile block present
+
+Defined content profiles:
+- `0` = `None`
+- `1` = `JsonBody` → `Content-Type: application/json`
+- `2` = `FormBody` → `Content-Type: application/x-www-form-urlencoded`
+- `3` = `TextBody` → `Content-Type: text/plain`
+
+When a content profile is set, the device injects the corresponding request
+header before dispatching the HTTP request. Explicit headers supplied in the
+Open request take precedence; the profile is ignored for any header name the
+client already provided (case-insensitive match).
 
 Defined types:
 - `0` = `None`

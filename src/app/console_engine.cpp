@@ -33,6 +33,23 @@ static const char* status_to_str(diag::DiagStatus st)
     return "unknown";
 }
 
+static void write_diag_text(IConsoleTransport& io, std::string_view text)
+{
+    // Emit one transport line per logical line. Large multi-line blobs (e.g. Wi-Fi scan
+    // output) exceed TinyUSB CDC console write budgets when sent as a single write().
+    while (!text.empty()) {
+        std::size_t pos = 0;
+        while (pos < text.size() && text[pos] != '\n' && text[pos] != '\r') {
+            ++pos;
+        }
+        io.write_line(text.substr(0, pos));
+        text.remove_prefix(pos);
+        while (!text.empty() && (text[0] == '\n' || text[0] == '\r')) {
+            text.remove_prefix(1);
+        }
+    }
+}
+
 static void print_diagnostic_help(diag::DiagnosticRegistry& reg, IConsoleTransport& io)
 {
     std::vector<diag::DiagCommandSpec> cmds;
@@ -564,7 +581,7 @@ bool ConsoleEngine::handle_line(std::string_view line)
     _io.write_line(status_to_str(r.status));
 
     if (!r.text.empty()) {
-        _io.write_line(r.text);
+        write_diag_text(_io, r.text);
     }
     else if (!r.kv.empty()) {
         for (const auto& kv : r.kv) {

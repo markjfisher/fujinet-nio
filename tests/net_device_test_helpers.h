@@ -11,6 +11,7 @@
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/net_codec.h"
 #include "fujinet/io/devices/network_translation.h"
+#include "fujinet/io/devices/network_content_profile.h"
 #include "fujinet/io/devices/network_device.h"
 #include "fujinet/io/devices/network_protocol_registry.h"
 #include "fujinet/io/devices/network_protocol_stub.h"
@@ -53,7 +54,8 @@ inline std::uint16_t open_handle_stub(
     std::initializer_list<std::string_view> responseHeaders = {},
     fujinet::io::ContentTranslationType translationType = fujinet::io::ContentTranslationType::None,
     std::string_view translationSelector = {},
-    std::uint8_t translationFlags = 0
+    std::uint8_t translationFlags = 0,
+    fujinet::io::RequestContentProfile contentProfile = fujinet::io::RequestContentProfile::None
 ) {
     std::string p;
     netproto::write_u8(p, V);       // version
@@ -73,11 +75,25 @@ inline std::uint16_t open_handle_stub(
     const bool translationEnabled = translationType != fujinet::io::ContentTranslationType::None
                                  || translationFlags != 0
                                  || !translationSelector.empty();
-    if (translationEnabled) {
-        netproto::write_u32le(p, fujinet::io::NETWORK_OPEN_EXT_TRANSLATION);
-        netproto::write_u8(p, static_cast<std::uint8_t>(translationType));
-        netproto::write_u8(p, translationFlags);
-        netproto::write_lp_u16_string(p, translationSelector);
+    const bool contentProfileEnabled =
+        contentProfile != fujinet::io::RequestContentProfile::None;
+    if (translationEnabled || contentProfileEnabled) {
+        std::uint32_t openExtFlags = 0;
+        if (translationEnabled) {
+            openExtFlags |= fujinet::io::NETWORK_OPEN_EXT_TRANSLATION;
+        }
+        if (contentProfileEnabled) {
+            openExtFlags |= fujinet::io::NETWORK_OPEN_EXT_CONTENT_PROFILE;
+        }
+        netproto::write_u32le(p, openExtFlags);
+        if (translationEnabled) {
+            netproto::write_u8(p, static_cast<std::uint8_t>(translationType));
+            netproto::write_u8(p, translationFlags);
+            netproto::write_lp_u16_string(p, translationSelector);
+        }
+        if (contentProfileEnabled) {
+            netproto::write_u8(p, static_cast<std::uint8_t>(contentProfile));
+        }
     }
 
     IORequest req{};

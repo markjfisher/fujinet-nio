@@ -109,7 +109,8 @@ public:
         std::size_t remaining = s.size();
 
         const TickType_t start = xTaskGetTickCount();
-        const TickType_t max_wait_ticks = pdMS_TO_TICKS(250);
+        // Allow enough time for multi-line diagnostic output; 250ms was too short for scans.
+        const TickType_t max_wait_ticks = pdMS_TO_TICKS(5000);
 
         while (remaining > 0) {
             size_t queued = tinyusb_cdcacm_write_queue(_itf, p, remaining);

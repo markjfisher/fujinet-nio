@@ -3,6 +3,7 @@
 #include "fujinet/diag/diagnostic_types.h"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -13,6 +14,8 @@ namespace fujinet::io {
 class Channel;
 class FujiDevice;
 }
+
+namespace fujinet::net { class INetworkLink; }
 
 namespace fujinet::diag {
 
@@ -38,8 +41,17 @@ public:
 // Note: providers own their own state; registry stores only pointers.
 std::unique_ptr<IDiagnosticProvider> create_core_diagnostic_provider(::fujinet::core::FujinetCore& core);
 
-// Network device provider: session table and handle control.
-std::unique_ptr<IDiagnosticProvider> create_network_diagnostic_provider(::fujinet::core::FujinetCore& core);
+// Optional Wi-Fi context for `net.wifi.*` commands (ESP32). Fields may be filled in after
+// provider creation; the provider reads them on each command.
+struct NetworkDiagWifiContext {
+    fujinet::io::FujiDevice* fuji{nullptr};
+    std::function<fujinet::net::INetworkLink*()> ensure_wifi;
+};
+
+// Network device provider: session table, handle control, and optional Wi-Fi management.
+std::unique_ptr<IDiagnosticProvider> create_network_diagnostic_provider(
+    ::fujinet::core::FujinetCore& core,
+    std::shared_ptr<NetworkDiagWifiContext> wifi_ctx = nullptr);
 
 // Disk device provider: slot table (mounted images, geometry, status).
 std::unique_ptr<IDiagnosticProvider> create_disk_diagnostic_provider(::fujinet::core::FujinetCore& core);

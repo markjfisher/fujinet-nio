@@ -6,6 +6,8 @@ extern "C" {
 #include "esp_err.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lwip/inet.h" // IPSTR/IP2STR
 }
 
@@ -18,6 +20,22 @@ namespace fujinet::platform::esp32 {
 
 static constexpr const char* TAG = "nio-wifi";
 static constexpr int MAX_RETRIES = 5;
+
+static const char* auth_mode_label(wifi_auth_mode_t mode)
+{
+    switch (mode) {
+    case WIFI_AUTH_OPEN:           return "open";
+    case WIFI_AUTH_WEP:            return "wep";
+    case WIFI_AUTH_WPA_PSK:        return "wpa_psk";
+    case WIFI_AUTH_WPA2_PSK:       return "wpa2_psk";
+    case WIFI_AUTH_WPA_WPA2_PSK:   return "wpa_wpa2_psk";
+    case WIFI_AUTH_WPA2_ENTERPRISE: return "wpa2_enterprise";
+    case WIFI_AUTH_WPA3_PSK:       return "wpa3_psk";
+    case WIFI_AUTH_WPA2_WPA3_PSK:  return "wpa2_wpa3_psk";
+    case WIFI_AUTH_WAPI_PSK:       return "wapi_psk";
+    default:                       return "unknown";
+    }
+}
 
 static bool is_same_ssid(const std::string& a, const std::string& b)
 {
@@ -91,6 +109,61 @@ fujinet::net::LinkState Esp32WifiLink::state() const
     return _state;
 }
 
+void Esp32WifiLink::prepare_for_new_connection()
+{
+    if (!_inited) {
+        return;
+    }
+
+    // Suppress auto-retry while tearing down an in-flight or failed attempt.
+    _userDisconnectRequested = true;
+    _connectPending = false;
+
+    if (_wifiStarted) {
+        (void)esp_wifi_disconnect();
+        (void)wait_link_state(fujinet::net::LinkState::Disconnected, 3000);
+
+        const esp_err_t stop_err = esp_wifi_stop();
+        if (stop_err != ESP_OK && stop_err != ESP_ERR_WIFI_NOT_INIT) {
+            FN_LOGW(TAG, "esp_wifi_stop failed: %d", (int)stop_err);
+        }
+        _wifiStarted = false;
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
+    _userDisconnectRequested = false;
+    _retryCount = 0;
+    _state = fujinet::net::LinkState::Disconnected;
+    _ip.clear();
+    _ip_buf[0] = 0;
+    _ip_dirty = false;
+}
+
+bool Esp32WifiLink::try_wifi_connect()
+{
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        const esp_err_t err = esp_wifi_connect();
+        if (err == ESP_OK) {
+            _connectPending = false;
+            return true;
+        }
+
+        FN_LOGW(TAG, "esp_wifi_connect attempt %d failed: %s", attempt + 1, esp_err_to_name(err));
+
+        if (err == ESP_ERR_WIFI_CONN || err == ESP_ERR_WIFI_STATE) {
+            (void)esp_wifi_disconnect();
+            vTaskDelay(pdMS_TO_TICKS(300));
+            continue;
+        }
+
+        break;
+    }
+
+    _connectPending = false;
+    _state = fujinet::net::LinkState::Failed;
+    return false;
+}
+
 void Esp32WifiLink::connect(std::string ssid, std::string pass)
 {
     if (!_inited) {
@@ -100,13 +173,24 @@ void Esp32WifiLink::connect(std::string ssid, std::string pass)
         return;
     }
 
-    if ((_state == fujinet::net::LinkState::Connected || _state == fujinet::net::LinkState::Connecting) &&
-        is_same_ssid(_ssid, ssid)) {
+    const bool same_creds = is_same_ssid(_ssid, ssid) && _pass == pass;
+
+    if (_state == fujinet::net::LinkState::Connected && same_creds) {
         return;
     }
 
-    if (_state == fujinet::net::LinkState::Connected && !_ssid.empty() && !is_same_ssid(_ssid, ssid)) {
-        disconnect();
+    if (_state == fujinet::net::LinkState::Connecting && same_creds) {
+        return;
+    }
+
+    const bool need_teardown =
+        _state == fujinet::net::LinkState::Connected ||
+        _state == fujinet::net::LinkState::Connecting ||
+        _state == fujinet::net::LinkState::Failed ||
+        (_wifiStarted && !same_creds);
+
+    if (need_teardown) {
+        prepare_for_new_connection();
     }
 
     _ssid = std::move(ssid);
@@ -136,7 +220,7 @@ void Esp32WifiLink::connect(std::string ssid, std::string pass)
 
     FN_LOGI(TAG, "connecting to ssid='%s'", _ssid.c_str());
 
-    // Start Wi-Fi if not started yet. We’ll connect on WIFI_EVENT_STA_START.
+    // Prefer the STA_START path after a stop/start teardown; fall back if already running.
     err = esp_wifi_start();
     if (err == ESP_OK) {
         return; // wait for STA_START -> on_wifi_start() will connect
@@ -144,19 +228,14 @@ void Esp32WifiLink::connect(std::string ssid, std::string pass)
     if (err != ESP_ERR_WIFI_NOT_STOPPED) {
         FN_LOGE(TAG, "esp_wifi_start failed: %d", (int)err);
         _state = fujinet::net::LinkState::Failed;
-        return;
-    }
-
-    // Already started: connect immediately (and treat “already connecting” as OK).
-    _wifiStarted = true;
-    err = esp_wifi_connect();
-    if (err == ESP_OK || err == ESP_ERR_WIFI_CONN || err == ESP_ERR_WIFI_STATE) {
         _connectPending = false;
         return;
     }
 
-    FN_LOGE(TAG, "esp_wifi_connect failed: %d", (int)err);
-    _state = fujinet::net::LinkState::Failed;
+    _wifiStarted = true;
+    if (!try_wifi_connect()) {
+        FN_LOGE(TAG, "esp_wifi_connect failed after start");
+    }
 }
 
 void Esp32WifiLink::disconnect()
@@ -194,6 +273,159 @@ std::string Esp32WifiLink::ip_address() const
     return _ip;
 }
 
+bool Esp32WifiLink::wait_wifi_started(int timeout_ms)
+{
+    for (int elapsed = 0; elapsed < timeout_ms; elapsed += 50) {
+        if (_wifiStarted) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    return _wifiStarted;
+}
+
+bool Esp32WifiLink::wait_link_state(fujinet::net::LinkState target, int timeout_ms)
+{
+    using fujinet::net::LinkState;
+    for (int elapsed = 0; elapsed < timeout_ms; elapsed += 50) {
+        if (_state == target) {
+            return true;
+        }
+        if (target == LinkState::Disconnected &&
+            (_state == LinkState::Disconnected || _state == LinkState::Failed)) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    return _state == target;
+}
+
+esp_err_t Esp32WifiLink::start_scan_with_retries(bool allow_disconnect_for_scan, bool& disconnected_for_scan)
+{
+    disconnected_for_scan = false;
+
+    wifi_scan_config_t scan_cfg{};
+    scan_cfg.show_hidden = true;
+    scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    scan_cfg.scan_time.active.min = 120;
+    scan_cfg.scan_time.active.max = 300;
+
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        const esp_err_t err = esp_wifi_scan_start(&scan_cfg, true);
+        if (err == ESP_OK) {
+            return ESP_OK;
+        }
+
+        FN_LOGW(TAG, "esp_wifi_scan_start attempt %d failed: %s", attempt + 1, esp_err_to_name(err));
+
+        if (err == ESP_ERR_WIFI_NOT_STARTED) {
+            (void)esp_wifi_start();
+            (void)wait_wifi_started(2000);
+            continue;
+        }
+
+        if (err == ESP_ERR_WIFI_STATE || err == ESP_FAIL) {
+            if (_state == fujinet::net::LinkState::Connecting) {
+                if (!disconnected_for_scan && allow_disconnect_for_scan) {
+                    FN_LOGI(TAG, "pausing Wi-Fi connection for scan");
+                    _userDisconnectRequested = true;
+                    (void)esp_wifi_disconnect();
+                    (void)wait_link_state(fujinet::net::LinkState::Disconnected, 3000);
+                    disconnected_for_scan = true;
+                    _userDisconnectRequested = false;
+                    continue;
+                }
+                vTaskDelay(pdMS_TO_TICKS(400));
+                continue;
+            }
+        }
+
+        return err;
+    }
+
+    return ESP_FAIL;
+}
+
+WifiScanResult Esp32WifiLink::scan()
+{
+    WifiScanResult result;
+
+    if (!_inited) {
+        init();
+    }
+    if (!_inited) {
+        result.error = "Wi-Fi init failed";
+        return result;
+    }
+
+    esp_err_t err = esp_wifi_start();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STOPPED) {
+        result.error = std::string("esp_wifi_start failed: ") + esp_err_to_name(err);
+        return result;
+    }
+
+    if (!wait_wifi_started(3000)) {
+        result.error = "timed out waiting for Wi-Fi radio start";
+        return result;
+    }
+
+    const bool should_reconnect =
+        (_state == fujinet::net::LinkState::Connected || _state == fujinet::net::LinkState::Connecting) &&
+        !_ssid.empty();
+
+    bool disconnected_for_scan = false;
+    err = start_scan_with_retries(should_reconnect, disconnected_for_scan);
+    if (err != ESP_OK) {
+        result.error = std::string("esp_wifi_scan_start failed: ") + esp_err_to_name(err);
+        if (err == ESP_ERR_WIFI_STATE) {
+            result.error += " (STA was connecting; try again after net.wifi.status shows connected or failed)";
+        }
+        return result;
+    }
+
+    std::uint16_t count = 0;
+    err = esp_wifi_scan_get_ap_num(&count);
+    if (err != ESP_OK) {
+        result.error = std::string("esp_wifi_scan_get_ap_num failed: ") + esp_err_to_name(err);
+        return result;
+    }
+
+    if (count == 0) {
+        result.success = true;
+        return result;
+    }
+
+    std::vector<wifi_ap_record_t> records(count);
+    err = esp_wifi_scan_get_ap_records(&count, records.data());
+    if (err != ESP_OK) {
+        result.error = std::string("esp_wifi_scan_get_ap_records failed: ") + esp_err_to_name(err);
+        return result;
+    }
+
+    result.aps.reserve(count);
+    for (const auto& rec : records) {
+        WifiScanAp ap;
+        ap.ssid = std::string(reinterpret_cast<const char*>(rec.ssid));
+        ap.rssi = rec.rssi;
+        ap.channel = rec.primary;
+        ap.auth = auth_mode_label(rec.authmode);
+        result.aps.push_back(std::move(ap));
+    }
+
+    result.success = true;
+    FN_LOGI(TAG, "scan found %u access points", static_cast<unsigned>(result.aps.size()));
+
+    if (disconnected_for_scan && should_reconnect) {
+        _userDisconnectRequested = false;
+        _retryCount = 0;
+        _state = fujinet::net::LinkState::Connecting;
+        _connectPending = true;
+        (void)esp_wifi_connect();
+    }
+
+    return result;
+}
+
 void Esp32WifiLink::event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
     auto* self = static_cast<Esp32WifiLink*>(arg);
@@ -220,14 +452,9 @@ void Esp32WifiLink::on_wifi_start()
         return;
     }
 
-    const esp_err_t err = esp_wifi_connect();
-    if (err == ESP_OK || err == ESP_ERR_WIFI_CONN || err == ESP_ERR_WIFI_STATE) {
-        _connectPending = false;
-        return;
+    if (!try_wifi_connect()) {
+        FN_LOGE(TAG, "esp_wifi_connect (on start) failed");
     }
-
-    FN_LOGE(TAG, "esp_wifi_connect (on start) failed: %d", (int)err);
-    _state = fujinet::net::LinkState::Failed;
 }
 
 void Esp32WifiLink::on_wifi_disconnected()
@@ -250,6 +477,7 @@ void Esp32WifiLink::on_wifi_disconnected()
 
     FN_LOGE(TAG, "wifi disconnected; giving up (ssid='%s')", _ssid.c_str());
     _state = fujinet::net::LinkState::Failed;
+    _connectPending = false;
 }
 
 

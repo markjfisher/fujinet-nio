@@ -3,6 +3,7 @@
 #include "fujinet/core/logging.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/json_content_translator.h"
+#include "fujinet/io/devices/network_content_profile.h"
 
 #include "fujinet/io/devices/net_codec.h"
 #include "fujinet/io/devices/net_commands.h"
@@ -131,9 +132,14 @@ static bool read_translation_config(Reader& r, TranslationConfig& config)
     return true;
 }
 
-static bool read_optional_open_extensions(Reader& r, TranslationConfig& translation)
+struct OpenExtensions {
+    TranslationConfig translation;
+    RequestContentProfile contentProfile{RequestContentProfile::None};
+};
+
+static bool read_optional_open_extensions(Reader& r, OpenExtensions& extensions)
 {
-    translation = TranslationConfig{};
+    extensions = OpenExtensions{};
 
     if (r.remaining() == 0) {
         return true;
@@ -145,13 +151,76 @@ static bool read_optional_open_extensions(Reader& r, TranslationConfig& translat
     }
 
     if ((extFlags & NETWORK_OPEN_EXT_TRANSLATION) != 0) {
-        if (!read_translation_config(r, translation)) {
+        if (!read_translation_config(r, extensions.translation)) {
             return false;
         }
     }
 
-    const std::uint32_t knownFlags = NETWORK_OPEN_EXT_TRANSLATION;
+    if ((extFlags & NETWORK_OPEN_EXT_CONTENT_PROFILE) != 0) {
+        std::uint8_t raw = 0;
+        if (!r.read_u8(raw)) {
+            return false;
+        }
+        extensions.contentProfile = static_cast<RequestContentProfile>(raw);
+    }
+
+    const std::uint32_t knownFlags =
+        NETWORK_OPEN_EXT_TRANSLATION | NETWORK_OPEN_EXT_CONTENT_PROFILE;
     return (extFlags & ~knownFlags) == 0;
+}
+
+static bool header_name_equals_lower(std::string_view name, std::string_view nameLower)
+{
+    if (name.size() != nameLower.size()) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < name.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(name[i]))
+            != static_cast<unsigned char>(nameLower[i])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool has_request_header_lower(
+    const std::vector<std::pair<std::string, std::string>>& headers,
+    std::string_view nameLower)
+{
+    for (const auto& kv : headers) {
+        if (header_name_equals_lower(kv.first, nameLower)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void apply_content_profile_headers(
+    std::vector<std::pair<std::string, std::string>>& headers,
+    RequestContentProfile profile)
+{
+    if (profile == RequestContentProfile::None) {
+        return;
+    }
+
+    if (!has_request_header_lower(headers, "content-type")) {
+        switch (profile) {
+            case RequestContentProfile::JsonBody:
+                headers.emplace_back("Content-Type", "application/json");
+                break;
+            case RequestContentProfile::FormBody:
+                headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
+                break;
+            case RequestContentProfile::TextBody:
+                headers.emplace_back("Content-Type", "text/plain");
+                break;
+            case RequestContentProfile::None:
+                break;
+        }
+    }
 }
 
 bool NetworkDevice::translation_enabled(const Session& s) noexcept
@@ -398,8 +467,8 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 respHeaderNamesLower.emplace_back(to_lower_ascii(name));
             }
 
-            TranslationConfig translation;
-            if (!read_optional_open_extensions(r, translation)) {
+            OpenExtensions extensions;
+            if (!read_optional_open_extensions(r, extensions)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
@@ -409,7 +478,12 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            if (!is_known_translation_type(translation.type)) {
+            if (!is_known_translation_type(extensions.translation.type)) {
+                resp.status = StatusCode::InvalidRequest;
+                return resp;
+            }
+
+            if (!is_known_content_profile(extensions.contentProfile)) {
                 resp.status = StatusCode::InvalidRequest;
                 return resp;
             }
@@ -427,6 +501,8 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
         
+            apply_content_profile_headers(headers, extensions.contentProfile);
+
             NetworkOpenRequest openReq{};
             openReq.method = method;
             openReq.flags = flags;
@@ -529,7 +605,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             slot->awaitingBody    = needsBodyWrite;
             slot->bodyLenUnknown  = bodyLenUnknown;
 
-            const StatusCode translationSt = configure_translation(*slot, translation);
+            const StatusCode translationSt = configure_translation(*slot, extensions.translation);
             if (translationSt != StatusCode::Ok) {
                 close_and_free(*slot);
                 resp.status = translationSt;

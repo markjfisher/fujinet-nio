@@ -29,6 +29,11 @@ public:
     void poll() override {}
     void close() override;
 
+    [[nodiscard]] const NetworkOpenRequest& openRequest() const noexcept
+    {
+        return _openReq;
+    }
+
 private:
     NetworkOpenRequest _openReq{};
 
