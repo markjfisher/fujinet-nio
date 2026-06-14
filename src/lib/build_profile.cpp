@@ -81,6 +81,14 @@ BuildProfile current_build_profile()
         .name             = "S3 + FujiBus over GPIO (e.g. RS232)",
         .hw               = {},
     };
+#elif defined(FN_BUILD_AMIGA_RS232)
+    profile = BuildProfile{
+        .machine          = Machine::Generic,
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::SerialPort,
+        .name             = "POSIX + FujiBus over RS-232 (Amiga prototype)",
+        .hw               = {},
+    };
 #else
     // Default: POSIX-friendly profile when no explicit build profile macro is provided.
     // This keeps local/test builds working without requiring a preset.

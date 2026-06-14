@@ -73,6 +73,23 @@
       }
     },
     {
+      "name": "fujibus-rs232-debug",
+      "displayName": "FujiBus over RS-232 serial / Amiga prototype (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_DEBUG_LOG_TS": "ON",
+        "FN_BUILD_AMIGA_RS232": "ON",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "atari-pty-debug",
       "displayName": "Atari Legacy over PTY (Debug)",
       "generator": "Ninja",
@@ -151,6 +168,10 @@
     }
   ],
   "buildPresets": [
+    {
+      "name": "fujibus-rs232-debug-build",
+      "configurePreset": "fujibus-rs232-debug"
+    },
     {
       "name": "fujibus-pty-debug-build",
       "configurePreset": "fujibus-pty-debug"

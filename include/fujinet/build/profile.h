@@ -32,7 +32,8 @@ enum class ChannelKind {
     TcpSocket,
     UdpSocket,    // UDP socket (for NetSIO protocol)
     UartGpio,     // ESP32 GPIO-based UART (SIO, RS232, etc.)
-    // Future: RealTty, SpiBridge, etc.
+    SerialPort,   // POSIX serial port (RS-232 via /dev/ttyS* or /dev/ttyUSB*)
+    // Future: SpiBridge, etc.
 };
 
 // --------------------------
