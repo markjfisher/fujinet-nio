@@ -360,7 +360,8 @@ void ModemDevice::poll_tcp_rx()
 
     // Drain whatever is currently buffered by the TCP backend.
     while (true) {
-        const StatusCode st = _tcp.read_body(_netReadCursor, tmp, sizeof(tmp), n, eof);
+        bool moreAvailable = false;
+        const StatusCode st = _tcp.read_body(_netReadCursor, tmp, sizeof(tmp), n, eof, moreAvailable);
         if (st == StatusCode::NotReady) {
             break;
         }
@@ -1140,5 +1141,4 @@ IOResponse ModemDevice::handle(const IORequest& request)
 }
 
 } // namespace fujinet::io
-
 

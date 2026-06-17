@@ -179,6 +179,7 @@ bit0 = tls
 bit1 = follow_redirects
 bit2 = body_unknown_len  // POST/PUT only, bodyLenHint==0
 bit3 = allow_evict
+bit4 = stream_no_probe   // streaming-only hint: host will frame reads itself
 
 allow_evict semantics:
 - When allow_evict=0 (default), `Open` MUST return `DeviceBusy` if no free handles are available.
@@ -390,7 +391,7 @@ u16 maxBytes   // LE; requested bytes to read
 ### Response
 ```
 u8 version
-u8 flags       // bit0=eof, bit1=truncated
+u8 flags       // bit0=eof, bit1=truncated, bit2=more_available
 u16 reserved   // = 0
 u16 handle     // LE
 u32 offsetEcho // LE
@@ -408,6 +409,9 @@ Notes:
 - `eof=1` indicates end-of-response reached.
 - `truncated`: set when the device filled the requested max_bytes (i.e. caller buffer limit hit).
   It does NOT mean "server truncated the response".
+- `more_available=1` indicates additional bytes are already immediately readable for this
+  handle after the returned payload. It does not imply the peer may send more later; it is
+  strictly a local availability hint for avoiding an extra probe read.
 - The host reads until `eof=1` or `dataLen=0`.
 - `offsetEcho` MUST equal the `offset` value from the corresponding Read request.
   Hosts MUST treat a mismatch as a protocol error.

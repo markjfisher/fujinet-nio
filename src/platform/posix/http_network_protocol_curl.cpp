@@ -517,10 +517,12 @@ io::StatusCode HttpNetworkProtocolCurl::read_body(std::uint32_t offset,
                                                   std::uint8_t* out,
                                                   std::size_t outLen,
                                                   std::uint16_t& read,
-                                                  bool& eof)
+                                                  bool& eof,
+                                                  bool& more_available)
 {
     read = 0;
     eof = false;
+    more_available = false;
 
     // Make progress if caller is polling via Read() calls.
     tick_async();
@@ -556,6 +558,8 @@ io::StatusCode HttpNetworkProtocolCurl::read_body(std::uint32_t offset,
         std::memcpy(out, _body.data() + _bodyStartIndex + rel, n);
         read = static_cast<std::uint16_t>(n);
     }
+
+    more_available = ((avail - rel) > n);
 
     eof = _performed && ((rel + n) >= avail);
 

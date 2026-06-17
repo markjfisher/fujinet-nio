@@ -61,7 +61,8 @@ public:
                                       std::uint8_t* out,
                                       std::size_t outLen,
                                       std::uint16_t& read,
-                                      bool& eof);
+                                      bool& eof,
+                                      bool& more_available);
 
     fujinet::io::StatusCode info(fujinet::io::NetworkInfo& out);
 
@@ -114,4 +115,3 @@ private:
 };
 
 } // namespace fujinet::net
-

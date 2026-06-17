@@ -467,10 +467,12 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::read_body(std::uint32_t offset
                                                             std::uint8_t* out,
                                                             std::size_t outLen,
                                                             std::uint16_t& read,
-                                                            bool& eof)
+                                                            bool& eof,
+                                                            bool& more_available)
 {
     read = 0;
     eof = false;
+    more_available = false;
 
     // sequential stream cursor rule
     if (offset != _read_cursor) {
@@ -527,6 +529,7 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::read_body(std::uint32_t offset
     const std::size_t actual = n - remaining;
     _read_cursor += static_cast<std::uint32_t>(actual);
     read = static_cast<std::uint16_t>(std::min<std::size_t>(actual, 0xFFFF));
+    more_available = (rx_available() > 0);
 
     // eof only when peer closed AND buffer empty after this read
     if (_state == State::PeerClosed && rx_available() == 0) {

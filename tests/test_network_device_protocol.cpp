@@ -123,6 +123,45 @@ TEST_CASE("NetworkDevice v1: Open -> Info -> Read -> Close (stub backend)")
     }
 }
 
+TEST_CASE("NetworkDevice v1: Read sets more_available when additional bytes remain immediately readable")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+    std::uint16_t handle = open_handle_stub(
+        dev,
+        deviceId,
+        "http://example.com/chunk",
+        /*method=*/1,
+        /*flags=*/0,
+        /*bodyLenHint=*/0
+    );
+
+    IOResponse rresp = read_req(dev, deviceId, handle, 0, 4);
+    CHECK(rresp.status == StatusCode::Ok);
+
+    netproto::Reader rr(rresp.payload.data(), rresp.payload.size());
+    std::uint8_t rver = 0, rflags = 0;
+    std::uint16_t rres = 0, rhandle = 0, dataLen = 0;
+    std::uint32_t offEcho = 0;
+
+    REQUIRE(rr.read_u8(rver));
+    REQUIRE(rr.read_u8(rflags));
+    REQUIRE(rr.read_u16le(rres));
+    REQUIRE(rr.read_u16le(rhandle));
+    REQUIRE(rr.read_u32le(offEcho));
+    REQUIRE(rr.read_u16le(dataLen));
+
+    CHECK(rver == V);
+    CHECK(rhandle == handle);
+    CHECK(offEcho == 0);
+    CHECK(dataLen == 4);
+    CHECK((rflags & 0x01) == 0);
+    CHECK((rflags & 0x02) != 0);
+    CHECK((rflags & 0x04) != 0);
+}
+
 TEST_CASE("NetworkDevice v1: response headers are only returned when requested (allowlist)") {
     using namespace fujinet::tests::netdev;
 

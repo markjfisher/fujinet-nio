@@ -22,6 +22,11 @@ namespace fujinet::io {
 using fujinet::io::netproto::Reader;
 using fujinet::io::protocol::NetworkCommand;
 
+static constexpr std::uint8_t NET_OPEN_FLAG_STREAM_NO_PROBE = 0x10;
+static constexpr std::uint8_t NET_READ_FLAG_EOF = 0x01;
+static constexpr std::uint8_t NET_READ_FLAG_TRUNCATED = 0x02;
+static constexpr std::uint8_t NET_READ_FLAG_MORE_AVAILABLE = 0x04;
+
 static std::vector<std::uint8_t> to_vec(const std::string& s)
 {
     return std::vector<std::uint8_t>(s.begin(), s.end());
@@ -311,12 +316,14 @@ StatusCode NetworkDevice::buffer_translation_body(Session& s)
     while (true) {
         std::uint16_t chunk = 0;
         bool chunkEof = false;
+        bool chunkMoreAvailable = false;
         const StatusCode st = s.proto->read_body(
             static_cast<std::uint32_t>(s.responseBodyCache.size()),
             tmp,
             sizeof(tmp),
             chunk,
-            chunkEof);
+            chunkEof,
+            chunkMoreAvailable);
         if (st != StatusCode::Ok) {
             s.responseBodyBuffering = false;
             return st;
@@ -848,6 +855,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
 
             std::uint16_t n = 0;
             bool eof = false;
+            bool moreAvailable = false;
             std::string out;
             std::uint8_t flags = 0;
 
@@ -871,11 +879,14 @@ IOResponse NetworkDevice::handle(const IORequest& request)
 
                 out.reserve(1 + 1 + 2 + 2 + 4 + 2 + n);
                 if (eof) {
-                    flags |= 0x01;
+                    flags |= NET_READ_FLAG_EOF;
                     s->completed = true;
                 }
                 if (n == maxBytes && !eof) {
-                    flags |= 0x02;
+                    flags |= NET_READ_FLAG_TRUNCATED;
+                }
+                if (!eof && (offset + n) < s->translatedResultSize) {
+                    flags |= NET_READ_FLAG_MORE_AVAILABLE;
                 }
                 write_common_prefix(out, NETPROTO_VERSION, flags);
                 netproto::write_u16le(out, handle);
@@ -893,7 +904,7 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 std::vector<std::uint8_t> buf;
                 buf.resize(maxBytes);
 
-                const StatusCode st = s->proto->read_body(offset, buf.data(), buf.size(), n, eof);
+                const StatusCode st = s->proto->read_body(offset, buf.data(), buf.size(), n, eof, moreAvailable);
                 if (st != StatusCode::Ok) {
                     resp.status = st;
                     return resp;
@@ -906,11 +917,14 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 out.reserve(1 + 1 + 2 + 2 + 4 + 2 + n);
 
                 if (eof) {
-                    flags |= 0x01;
+                    flags |= NET_READ_FLAG_EOF;
                     s->completed = true;
                 }
                 if (n == maxBytes && !eof) {
-                    flags |= 0x02;
+                    flags |= NET_READ_FLAG_TRUNCATED;
+                }
+                if (moreAvailable) {
+                    flags |= NET_READ_FLAG_MORE_AVAILABLE;
                 }
 
                 write_common_prefix(out, NETPROTO_VERSION, flags);

@@ -102,10 +102,12 @@ StatusCode StubNetworkProtocol::read_body(std::uint32_t offset,
                                           std::uint8_t* out,
                                           std::size_t outLen,
                                           std::uint16_t& read,
-                                          bool& eof)
+                                          bool& eof,
+                                          bool& more_available)
 {
     read = 0;
     eof = false;
+    more_available = false;
 
     const std::size_t total = _body.size();
     const std::size_t off = (offset <= total) ? static_cast<std::size_t>(offset) : total;
@@ -119,6 +121,7 @@ StatusCode StubNetworkProtocol::read_body(std::uint32_t offset,
     }
 
     eof = (off + n) >= total;
+    more_available = (off + n) < total;
     return StatusCode::Ok;
 }
 

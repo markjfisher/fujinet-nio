@@ -342,11 +342,13 @@ private:
 
             std::uint16_t read = 0;
             bool eof = false;
+            bool more_available = false;
             const io::StatusCode status = protocol.read_body(offset,
                                                              buffer.data(),
                                                              buffer.size(),
                                                              read,
-                                                             eof);
+                                                             eof,
+                                                             more_available);
             if (status == io::StatusCode::Ok) {
                 if (read > 0) {
                     outBody.insert(outBody.end(), buffer.begin(), buffer.begin() + read);

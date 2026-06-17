@@ -25,6 +25,7 @@ FLAG_TLS = 0x01
 FLAG_FOLLOW_REDIRECTS = 0x02
 FLAG_BODY_IS_CHUNKED_OR_UNKNOWN = 0x04
 FLAG_ALLOW_EVICT = 0x08
+FLAG_STREAM_NO_PROBE = 0x10
 
 # NetworkCommand (v1)
 CMD_OPEN = 0x01
@@ -306,6 +307,7 @@ def parse_translate_configure_resp(payload: bytes) -> TranslateConfigureResp:
 class InfoReadResp:
     eof: bool
     truncated: bool
+    more_available: bool
     handle: int
     offset: int
     data: bytes
@@ -327,6 +329,40 @@ def parse_info_read_resp(payload: bytes) -> InfoReadResp:
     return InfoReadResp(
         eof=bool(flags & 0x01),
         truncated=bool(flags & 0x02),
+        more_available=bool(flags & 0x04),
+        handle=handle,
+        offset=offset,
+        data=data,
+    )
+
+
+@dataclass
+class ReadResp:
+    eof: bool
+    truncated: bool
+    more_available: bool
+    handle: int
+    offset: int
+    data: bytes
+
+
+def parse_read_resp(payload: bytes) -> ReadResp:
+    off = _check_version(payload, 0)
+    flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    handle, off = read_u16le(payload, off)
+    offset, off = read_u32le(payload, off)
+    data_len, off = read_u16le(payload, off)
+    if off + data_len > len(payload):
+        raise ValueError("read data out of bounds")
+    data = payload[off : off + data_len]
+    off += data_len
+    if off != len(payload):
+        raise ValueError("trailing bytes in read response")
+    return ReadResp(
+        eof=bool(flags & 0x01),
+        truncated=bool(flags & 0x02),
+        more_available=bool(flags & 0x04),
         handle=handle,
         offset=offset,
         data=data,

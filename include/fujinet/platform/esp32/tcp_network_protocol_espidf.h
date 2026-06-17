@@ -24,7 +24,8 @@ public:
                                       std::uint8_t* out,
                                       std::size_t outLen,
                                       std::uint16_t& read,
-                                      bool& eof) override;
+                                      bool& eof,
+                                      bool& more_available) override;
     fujinet::io::StatusCode info(fujinet::io::NetworkInfo& out) override;
     void poll() override;
     void close() override;

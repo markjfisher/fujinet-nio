@@ -376,10 +376,12 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::read_body(std::uint32_t offset,
                                                            std::uint8_t* out,
                                                            std::size_t outLen,
                                                            std::uint16_t& read,
-                                                           bool& eof)
+                                                           bool& eof,
+                                                           bool& more_available)
 {
     read = 0;
     eof = false;
+    more_available = false;
 
     if (_state == State::Idle) {
         return fujinet::io::StatusCode::InvalidRequest;
@@ -469,6 +471,7 @@ fujinet::io::StatusCode TlsNetworkProtocolPosix::read_body(std::uint32_t offset,
         _rxAvailable -= toCopy;
         read = static_cast<std::uint16_t>(toCopy);
         _readCursor += read;
+        more_available = (_rxAvailable > 0);
     }
 
     // Check for EOF condition

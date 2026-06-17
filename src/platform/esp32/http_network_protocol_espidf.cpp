@@ -840,10 +840,12 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
                                                              std::uint8_t *out,
                                                              std::size_t outLen,
                                                              std::uint16_t &read,
-                                                             bool &eof)
+                                                             bool &eof,
+                                                             bool &more_available)
 {
     read = 0;
     eof = false;
+    more_available = false;
 
     if (!_s || !out)
     {
@@ -884,6 +886,7 @@ fujinet::io::StatusCode HttpNetworkProtocolEspIdf::read_body(std::uint32_t offse
     {
         _s->read_cursor += static_cast<std::uint32_t>(n);
         read = static_cast<std::uint16_t>(n);
+        more_available = (xStreamBufferBytesAvailable(_s->stream) > 0);
 
         // If we just drained the buffer, check if the transfer is finished.
         // There is a race: the producer may not have set done=true yet.

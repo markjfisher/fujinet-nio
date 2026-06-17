@@ -22,7 +22,8 @@ public:
                          std::uint8_t* out,
                          std::size_t outLen,
                          std::uint16_t& read,
-                         bool& eof) override;
+                         bool& eof,
+                         bool& more_available) override;
 
     StatusCode info(NetworkInfo& out) override;
 
@@ -47,5 +48,4 @@ private:
 };
 
 } // namespace fujinet::io
-
 

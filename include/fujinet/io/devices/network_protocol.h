@@ -13,7 +13,7 @@ namespace fujinet::io {
 struct NetworkOpenRequest {
     std::uint8_t method{0}; // 1=GET,2=POST,3=PUT,4=DELETE,5=HEAD
 
-    // bit0=tls, bit1=follow_redirects
+    // bit0=tls, bit1=follow_redirects, bit4=stream_no_probe
     std::uint8_t flags{0};
 
     std::string url;
@@ -57,7 +57,8 @@ public:
                                  std::uint8_t* out,
                                  std::size_t outLen,
                                  std::uint16_t& read,
-                                 bool& eof) = 0;
+                                 bool& eof,
+                                 bool& more_available) = 0;
 
     // Fetch response metadata (may become available over time).
     virtual StatusCode info(NetworkInfo& out) = 0;

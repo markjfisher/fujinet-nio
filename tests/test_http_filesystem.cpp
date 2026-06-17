@@ -54,10 +54,12 @@ public:
                                       std::uint8_t* out,
                                       std::size_t outLen,
                                       std::uint16_t& read,
-                                      bool& eof) override
+                                      bool& eof,
+                                      bool& more_available) override
     {
         read = 0;
         eof = false;
+        more_available = false;
 
         if (_openReq.method == 5) {
             eof = true;
@@ -74,6 +76,7 @@ public:
             read = static_cast<std::uint16_t>(n);
         }
         eof = (offset + n) >= _body.size();
+        more_available = (offset + n) < _body.size();
         return fujinet::io::StatusCode::Ok;
     }
 

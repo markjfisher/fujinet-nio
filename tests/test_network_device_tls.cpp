@@ -91,7 +91,8 @@ TEST_CASE("TLS: operations before open fail")
     std::uint8_t buf[64];
     std::uint16_t read = 0;
     bool eof = false;
-    auto result = proto.read_body(0, buf, sizeof(buf), read, eof);
+    bool more_available = false;
+    auto result = proto.read_body(0, buf, sizeof(buf), read, eof, more_available);
     CHECK(result == io::StatusCode::InvalidRequest);
     
     // Try to write before open

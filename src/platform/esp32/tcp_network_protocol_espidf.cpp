@@ -29,12 +29,13 @@ fujinet::io::StatusCode TcpNetworkProtocolEspIdf::write_body(std::uint32_t offse
 }
 
 fujinet::io::StatusCode TcpNetworkProtocolEspIdf::read_body(std::uint32_t offset,
-                                                             std::uint8_t* out,
-                                                             std::size_t outLen,
-                                                             std::uint16_t& read,
-                                                             bool& eof)
+                                                            std::uint8_t* out,
+                                                            std::size_t outLen,
+                                                            std::uint16_t& read,
+                                                            bool& eof,
+                                                            bool& more_available)
 {
-    return _common.read_body(offset, out, outLen, read, eof);
+    return _common.read_body(offset, out, outLen, read, eof, more_available);
 }
 
 fujinet::io::StatusCode TcpNetworkProtocolEspIdf::info(fujinet::io::NetworkInfo& out)
