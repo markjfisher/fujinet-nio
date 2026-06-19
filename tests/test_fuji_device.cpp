@@ -233,7 +233,7 @@ TEST_CASE("FujiDevice returns formatted mount lines for extended requests")
     const auto entriesLen = read_u16le(resp.payload, 8);
     CHECK(entriesLen == resp.payload.size() - 10);
     const std::string text(resp.payload.begin() + 10, resp.payload.end());
-    CHECK(text == "2:* [R] tnfs://server\n  path: /game1.atr\n11:  [RW] host:\n  path: /images/game2.atr\n");
+    CHECK(text == "1:* [R] tnfs://server\n  path: /game1.atr\n11:  [RW] host:\n  path: /images/game2.atr\n");
 }
 
 TEST_CASE("FujiDevice paginates formatted mount lines when max payload is small")

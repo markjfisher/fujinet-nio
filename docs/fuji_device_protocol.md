@@ -132,6 +132,41 @@ Notes:
 - Only valid persisted mount entries are returned.
 - Slot indices are translated from persisted [`MountConfig::slot`](include/fujinet/config/fuji_config.h:29) values into **0-based wire indices**.
 
+### Extended request/response
+
+The extended `GetMounts` request supports binary and formatted output. The
+request range uses persisted 1-based slot numbers because it filters persisted
+configuration entries:
+
+```text
+u8  flags             // bit0=formatted text response
+u16 firstSlot         // persisted 1-based slot number; 0=device default
+u16 lastSlot          // persisted 1-based slot number; 0=device default
+u16 startIndex        // pagination index within filtered entries
+u16 maxPayloadBytes   // max bytes for binary/formatted entries
+```
+
+The extended response header echoes the persisted 1-based range start:
+
+```text
+u8  version           // 1
+u8  flags             // bit0=more, bit1=formatted
+u16 firstSlot         // persisted 1-based slot number used for filtering
+u16 startIndex
+u16 entryCount
+u16 entriesLen
+u8[] entries
+```
+
+For binary extended responses, each entry starts with the persisted 1-based slot
+number. This keeps the binary extended API aligned with persisted config.
+
+For formatted extended responses, the leading text label is presentation, not a
+binary API field. Valid runtime mounts (`MountConfig::slot` 1..8) are displayed
+using the 0-based runtime/wire slot index so 8-bit client UX can match commands
+such as `GetMount`, `SetMount`, and BBC `*FMOUNT`. Persisted entries outside the
+runtime range are displayed with their persisted slot number.
+
 ---
 
 ## Command: GetMount (`0xFB`)
@@ -230,8 +265,11 @@ The persisted mount data is stored in [`FujiConfig::mounts`](include/fujinet/con
 
 Important mapping rules:
 
-- wire protocol slot index: `0..7`
+- runtime/wire slot index: `0..7`
 - persisted config slot number: `1..8`
+- variable names should make this explicit:
+  - `slotIndex` means runtime/wire 0-based
+  - `slotNumber`, `slot1`, or `MountConfig::slot` means persisted/config 1-based
 - conversion helpers:
   - [`MountConfig::effective_slot()`](include/fujinet/config/fuji_config.h:35) maps persisted `1..8` → wire/runtime `0..7`
   - [`MountConfig::from_index()`](include/fujinet/config/fuji_config.h:42) maps wire/runtime `0..7` → persisted `1..8`

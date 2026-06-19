@@ -41,14 +41,15 @@ private:
     IOResponse handle_get_mount(const IORequest& request);
     IOResponse handle_set_mount(const IORequest& request);
 
-    config::MountConfig* find_mount_by_slot_number(int slot);
-    const config::MountConfig* find_mount_by_slot_number(int slot) const;
+    config::MountConfig* find_mount_by_slot_number(int slotNumber);
+    const config::MountConfig* find_mount_by_slot_number(int slotNumber) const;
     static bool is_valid_mount_slot_index(std::uint8_t slotIndex);
     static std::vector<std::uint8_t> encode_mount_record(std::uint8_t slotIndex,
                                                          const std::string& uri,
                                                          const std::string& mode,
                                                          bool enabled);
-    static std::string format_mount_line(int slotNumber,
+    static int formatted_mount_slot_label(const config::MountConfig& mount);
+    static std::string format_mount_line(int slotLabel,
                                          std::string_view uri,
                                          std::string_view mode,
                                          bool enabled);

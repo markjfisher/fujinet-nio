@@ -204,7 +204,11 @@ IOResponse FujiDevice::handle_get_mounts(const IORequest& request)
     if (formatted) {
         for (std::size_t i = start; i < total; ++i) {
             const auto* mount = *(lower + static_cast<std::ptrdiff_t>(i));
-            const std::string line = format_mount_line(mount->slot, mount->uri, mount->mode, mount->enabled);
+            const std::string line = format_mount_line(
+                formatted_mount_slot_label(*mount),
+                mount->uri,
+                mount->mode,
+                mount->enabled);
             const std::size_t entriesUsed = payload.size() - (entriesLenOffset + 2);
             if (entriesUsed + line.size() > parsed.maxPayloadBytes) {
                 break;
@@ -404,17 +408,17 @@ void FujiDevice::save_config()
     }
 }
 
-fujinet::config::MountConfig* FujiDevice::find_mount_by_slot_number(int slot)
+fujinet::config::MountConfig* FujiDevice::find_mount_by_slot_number(int slotNumber)
 {
     auto it = std::find_if(_config.mounts.begin(), _config.mounts.end(),
-        [slot](const fujinet::config::MountConfig& m) { return m.slot == slot; });
+        [slotNumber](const fujinet::config::MountConfig& m) { return m.slot == slotNumber; });
     return (it == _config.mounts.end()) ? nullptr : &(*it);
 }
 
-const fujinet::config::MountConfig* FujiDevice::find_mount_by_slot_number(int slot) const
+const fujinet::config::MountConfig* FujiDevice::find_mount_by_slot_number(int slotNumber) const
 {
     auto it = std::find_if(_config.mounts.begin(), _config.mounts.end(),
-        [slot](const fujinet::config::MountConfig& m) { return m.slot == slot; });
+        [slotNumber](const fujinet::config::MountConfig& m) { return m.slot == slotNumber; });
     return (it == _config.mounts.end()) ? nullptr : &(*it);
 }
 
@@ -444,7 +448,13 @@ std::vector<std::uint8_t> FujiDevice::encode_mount_record(std::uint8_t slotIndex
     return payload;
 }
 
-std::string FujiDevice::format_mount_line(int slotNumber,
+int FujiDevice::formatted_mount_slot_label(const fujinet::config::MountConfig& mount)
+{
+    const int slotIndex = mount.effective_slot();
+    return (slotIndex >= 0) ? slotIndex : mount.slot;
+}
+
+std::string FujiDevice::format_mount_line(int slotLabel,
                                           std::string_view uri,
                                           std::string_view mode,
                                           bool enabled)
@@ -453,7 +463,7 @@ std::string FujiDevice::format_mount_line(int slotNumber,
 
     std::string line;
     line.reserve(display.summary.size() + display.detail.size() + mode.size() + 40);
-    line += std::to_string(slotNumber);
+    line += std::to_string(slotLabel);
     line += enabled ? ":* " : ":  ";
     if (!mode.empty()) {
         line += "[";
