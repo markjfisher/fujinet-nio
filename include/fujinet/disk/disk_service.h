@@ -53,6 +53,12 @@ public:
 
     DiskResult read_sector(std::size_t slotIndex, std::uint32_t lba, std::uint8_t* dst, std::size_t dstBytes);
     DiskResult write_sector(std::size_t slotIndex, std::uint32_t lba, const std::uint8_t* src, std::size_t srcBytes);
+    DiskResult read_sectors(std::size_t slotIndex, std::uint32_t lba, std::uint16_t count, std::uint8_t* dst, std::size_t dstBytes);
+    DiskResult write_sectors(std::size_t slotIndex, std::uint32_t lba, std::uint16_t count, const std::uint8_t* src, std::size_t srcBytes);
+
+    // Activate a pending lazy mount for the slot, if one exists.
+    // Returns NotMounted when no image is mounted and no pending mount exists.
+    DiskResult ensure_mounted(std::size_t slotIndex);
 
     DiskSlotInfo info(std::size_t slotIndex) const;
 
@@ -98,6 +104,7 @@ private:
     };
 
     DiskError set_error(std::size_t slotIndex, DiskError e);
+    DiskResult activate_pending_mount(std::size_t slotIndex);
     Slot*       slot_ptr(std::size_t slotIndex);
     const Slot* slot_ptr(std::size_t slotIndex) const;
 
@@ -107,4 +114,3 @@ private:
 };
 
 } // namespace fujinet::disk
-

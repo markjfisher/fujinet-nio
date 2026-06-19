@@ -12,6 +12,8 @@ enum class DiskCommand : std::uint8_t {
     Info         = 0x05,
     ClearChanged = 0x06,
     Create       = 0x07,
+    ReadSectors  = 0x08,
+    WriteSectors = 0x09,
 };
 
 inline DiskCommand to_disk_command(std::uint16_t raw)
@@ -20,5 +22,4 @@ inline DiskCommand to_disk_command(std::uint16_t raw)
 }
 
 } // namespace fujinet::io::protocol
-
 

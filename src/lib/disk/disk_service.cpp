@@ -225,24 +225,8 @@ DiskResult DiskService::read_sector(std::size_t slotIndex, std::uint32_t lba, st
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
 
-    // Lazy mount: if there's a pending mount but no image, activate it now
-    if (!s->image && s->pendingMount) {
-        // Resolve the pending mount
-        auto [fs, resolvedPath] = _storage.resolveUri(s->pendingMount->uri);
-        if (!fs) {
-            return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
-        }
-
-        MountOptions opts{};
-        opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
-        opts.sectorSizeHint = s->pendingMount->sectorSizeHint;
-
-        // Attempt to mount
-        auto mountResult = mount(slotIndex, fs->name(), resolvedPath, opts);
-        if (!mountResult.ok()) {
-            return mountResult;
-        }
-    }
+    auto mountResult = ensure_mounted(slotIndex);
+    if (!mountResult.ok()) return mountResult;
 
     if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
 
@@ -256,24 +240,8 @@ DiskResult DiskService::write_sector(std::size_t slotIndex, std::uint32_t lba, c
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
 
-    // Lazy mount: if there's a pending mount but no image, activate it now
-    if (!s->image && s->pendingMount) {
-        // Resolve the pending mount
-        auto [fs, resolvedPath] = _storage.resolveUri(s->pendingMount->uri);
-        if (!fs) {
-            return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
-        }
-
-        MountOptions opts{};
-        opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
-        opts.sectorSizeHint = s->pendingMount->sectorSizeHint;
-
-        // Attempt to mount
-        auto mountResult = mount(slotIndex, fs->name(), resolvedPath, opts);
-        if (!mountResult.ok()) {
-            return mountResult;
-        }
-    }
+    auto mountResult = ensure_mounted(slotIndex);
+    if (!mountResult.ok()) return mountResult;
 
     if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
 
@@ -284,6 +252,95 @@ DiskResult DiskService::write_sector(std::size_t slotIndex, std::uint32_t lba, c
         set_error(slotIndex, r.error);
     }
     return r;
+}
+
+DiskResult DiskService::read_sectors(std::size_t slotIndex, std::uint32_t lba, std::uint16_t count, std::uint8_t* dst, std::size_t dstBytes)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return DiskResult{DiskError::InvalidSlot};
+    if (count == 0 || !dst) return DiskResult{DiskError::InvalidRequest};
+
+    auto mountResult = ensure_mounted(slotIndex);
+    if (!mountResult.ok()) return mountResult;
+    if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    if (s->geometry.sectorSize == 0) return DiskResult{set_error(slotIndex, DiskError::BadImage)};
+    if (lba >= s->geometry.sectorCount || count > (s->geometry.sectorCount - lba)) {
+        return DiskResult{set_error(slotIndex, DiskError::OutOfRange)};
+    }
+
+    const std::size_t sectorSize = s->geometry.sectorSize;
+    const std::size_t totalBytes = static_cast<std::size_t>(count) * sectorSize;
+    if (dstBytes < totalBytes) return DiskResult{DiskError::InvalidRequest};
+
+    std::size_t bytes = 0;
+    for (std::uint16_t i = 0; i < count; ++i) {
+        DiskResult r = s->image->read_sector(lba + i, dst + bytes, sectorSize);
+        if (!r.ok()) {
+            set_error(slotIndex, r.error);
+            return r;
+        }
+        bytes += r.bytes ? r.bytes : sectorSize;
+    }
+    return DiskResult{DiskError::None, static_cast<std::uint16_t>(bytes)};
+}
+
+DiskResult DiskService::write_sectors(std::size_t slotIndex, std::uint32_t lba, std::uint16_t count, const std::uint8_t* src, std::size_t srcBytes)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return DiskResult{DiskError::InvalidSlot};
+    if (count == 0 || !src) return DiskResult{DiskError::InvalidRequest};
+
+    auto mountResult = ensure_mounted(slotIndex);
+    if (!mountResult.ok()) return mountResult;
+    if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    if (s->readOnly) return DiskResult{set_error(slotIndex, DiskError::ReadOnly)};
+    if (s->geometry.sectorSize == 0) return DiskResult{set_error(slotIndex, DiskError::BadImage)};
+    if (lba >= s->geometry.sectorCount || count > (s->geometry.sectorCount - lba)) {
+        return DiskResult{set_error(slotIndex, DiskError::OutOfRange)};
+    }
+
+    const std::size_t sectorSize = s->geometry.sectorSize;
+    const std::size_t totalBytes = static_cast<std::size_t>(count) * sectorSize;
+    if (srcBytes < totalBytes) return DiskResult{DiskError::InvalidRequest};
+
+    std::size_t bytes = 0;
+    for (std::uint16_t i = 0; i < count; ++i) {
+        DiskResult r = s->image->write_sector(lba + i, src + bytes, sectorSize);
+        if (!r.ok()) {
+            set_error(slotIndex, r.error);
+            return r;
+        }
+        bytes += r.bytes ? r.bytes : sectorSize;
+    }
+    s->dirty = true;
+    return DiskResult{DiskError::None, static_cast<std::uint16_t>(bytes)};
+}
+
+DiskResult DiskService::ensure_mounted(std::size_t slotIndex)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return DiskResult{DiskError::InvalidSlot};
+    if (s->image) return DiskResult{DiskError::None};
+    if (!s->pendingMount) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    return activate_pending_mount(slotIndex);
+}
+
+DiskResult DiskService::activate_pending_mount(std::size_t slotIndex)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return DiskResult{DiskError::InvalidSlot};
+    if (!s->pendingMount) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+
+    auto [fs, resolvedPath] = _storage.resolveUri(s->pendingMount->uri);
+    if (!fs) {
+        return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
+    }
+
+    MountOptions opts{};
+    opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
+    opts.sectorSizeHint = s->pendingMount->sectorSizeHint;
+
+    return mount(slotIndex, fs->name(), resolvedPath, opts);
 }
 
 DiskSlotInfo DiskService::info(std::size_t slotIndex) const

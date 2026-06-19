@@ -106,7 +106,7 @@ ImageType guess_type_from_path(std::string_view path)
     if (ext == "atr") return ImageType::Atr;
     if (ext == "ssd") return ImageType::Ssd;
     if (ext == "dsd") return ImageType::Dsd;
-    if (ext == "img" || ext == "raw") return ImageType::Raw;
+    if (ext == "img" || ext == "ima" || ext == "raw") return ImageType::Raw;
     return ImageType::Auto;
 }
 
@@ -135,5 +135,4 @@ ImageRegistry make_default_image_registry()
 }
 
 } // namespace fujinet::disk
-
 

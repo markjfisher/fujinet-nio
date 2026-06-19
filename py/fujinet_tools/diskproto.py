@@ -25,6 +25,8 @@ CMD_WRITE_SECTOR = 0x04
 CMD_INFO = 0x05
 CMD_CLEAR_CHANGED = 0x06
 CMD_CREATE = 0x07
+CMD_READ_SECTORS = 0x08
+CMD_WRITE_SECTORS = 0x09
 
 
 # ImageType (matches C++ disk::ImageType)
@@ -119,6 +121,23 @@ def build_read_sector_req(*, slot: int, lba: int, max_bytes: int) -> bytes:
     return bytes([DISKPROTO_VERSION, slot & 0xFF]) + u32le(lba) + u16le(max_bytes)
 
 
+def build_read_sectors_req(*, slot: int, lba: int, count: int, max_bytes: int) -> bytes:
+    if not (1 <= slot <= 255):
+        raise ValueError("slot must be 1..255")
+    if not (0 <= lba <= 0xFFFFFFFF):
+        raise ValueError("lba must fit u32")
+    if not (1 <= count <= 0xFFFF):
+        raise ValueError("count must fit u16 and be >0")
+    if not (1 <= max_bytes <= 0xFFFF):
+        raise ValueError("max_bytes must fit u16 and be >0")
+    return (
+        bytes([DISKPROTO_VERSION, slot & 0xFF])
+        + u32le(lba)
+        + u16le(count)
+        + u16le(max_bytes)
+    )
+
+
 def build_write_sector_req(*, slot: int, lba: int, data: bytes) -> bytes:
     if not (1 <= slot <= 255):
         raise ValueError("slot must be 1..255")
@@ -128,6 +147,24 @@ def build_write_sector_req(*, slot: int, lba: int, data: bytes) -> bytes:
         raise ValueError("data too large for u16 length")
     return (
         bytes([DISKPROTO_VERSION, slot & 0xFF]) + u32le(lba) + u16le(len(data)) + data
+    )
+
+
+def build_write_sectors_req(*, slot: int, lba: int, count: int, data: bytes) -> bytes:
+    if not (1 <= slot <= 255):
+        raise ValueError("slot must be 1..255")
+    if not (0 <= lba <= 0xFFFFFFFF):
+        raise ValueError("lba must fit u32")
+    if not (1 <= count <= 0xFFFF):
+        raise ValueError("count must fit u16 and be >0")
+    if len(data) > 0xFFFF:
+        raise ValueError("data too large for u16 length")
+    return (
+        bytes([DISKPROTO_VERSION, slot & 0xFF])
+        + u32le(lba)
+        + u16le(count)
+        + u16le(len(data))
+        + data
     )
 
 
@@ -212,9 +249,26 @@ class ReadSectorResp:
 
 
 @dataclass
+class ReadSectorsResp:
+    truncated: bool
+    slot: int
+    lba: int
+    count: int
+    data: bytes
+
+
+@dataclass
 class WriteSectorResp:
     slot: int
     lba: int
+    written_len: int
+
+
+@dataclass
+class WriteSectorsResp:
+    slot: int
+    lba: int
+    count: int
     written_len: int
 
 
@@ -288,6 +342,27 @@ def parse_read_sector_resp(payload: bytes) -> ReadSectorResp:
     )
 
 
+def parse_read_sectors_resp(payload: bytes) -> ReadSectorsResp:
+    off = 0
+    off = _check_version(payload, off)
+    flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    slot, off = read_u8(payload, off)
+    lba, off = read_u32le(payload, off)
+    count, off = read_u16le(payload, off)
+    data_len, off = read_u16le(payload, off)
+    if off + data_len > len(payload):
+        raise ValueError("read sectors data out of bounds")
+    data = payload[off : off + data_len]
+    return ReadSectorsResp(
+        truncated=bool(flags & 0x01),
+        slot=slot,
+        lba=lba,
+        count=count,
+        data=data,
+    )
+
+
 def parse_write_sector_resp(payload: bytes) -> WriteSectorResp:
     off = 0
     off = _check_version(payload, off)
@@ -297,6 +372,18 @@ def parse_write_sector_resp(payload: bytes) -> WriteSectorResp:
     lba, off = read_u32le(payload, off)
     written_len, off = read_u16le(payload, off)
     return WriteSectorResp(slot=slot, lba=lba, written_len=written_len)
+
+
+def parse_write_sectors_resp(payload: bytes) -> WriteSectorsResp:
+    off = 0
+    off = _check_version(payload, off)
+    _flags, off = read_u8(payload, off)
+    _reserved, off = read_u16le(payload, off)
+    slot, off = read_u8(payload, off)
+    lba, off = read_u32le(payload, off)
+    count, off = read_u16le(payload, off)
+    written_len, off = read_u16le(payload, off)
+    return WriteSectorsResp(slot=slot, lba=lba, count=count, written_len=written_len)
 
 
 def parse_create_resp(payload: bytes) -> CreateResp:

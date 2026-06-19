@@ -115,6 +115,75 @@ TEST_CASE("DiskService: config pending raw mount uses sector size hint")
     CHECK(info.geometry.sectorCount == 2);
 }
 
+TEST_CASE("DiskDevice v1: ReadSector activates config pending raw mount")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+
+    const std::string path = "/disks/fn-dos.img";
+    auto& bytes = memfs->file_bytes(path);
+    bytes.resize(2 * 512);
+    bytes[0] = 0xEB;
+    bytes[1] = 0x3C;
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    fujinet::config::MountConfig mount{};
+    mount.slot = 1;
+    mount.uri = "mem:/disks/fn-dos.img";
+    mount.mode = "rw";
+    mount.enabled = true;
+    mount.sectorSizeHint = 512;
+
+    REQUIRE(fujinet::apply_config_mounts(dev.disk_service(), sm, {mount}) == 1);
+    CHECK_FALSE(dev.disk_service().info(0).inserted);
+
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 1);
+    diskproto::write_u32le(p, 0);
+    diskproto::write_u16le(p, 512);
+
+    IORequest req{};
+    req.id = 3;
+    req.deviceId = deviceId;
+    req.command = 0x03; // ReadSector
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+
+    diskproto::Reader r(resp.payload.data(), resp.payload.size());
+    std::uint8_t ver = 0, flags = 0, slot = 0;
+    std::uint16_t reserved = 0, dataLen = 0;
+    std::uint32_t lba = 0;
+    const std::uint8_t* data = nullptr;
+
+    REQUIRE(r.read_u8(ver));
+    REQUIRE(r.read_u8(flags));
+    REQUIRE(r.read_u16le(reserved));
+    REQUIRE(r.read_u8(slot));
+    REQUIRE(r.read_u32le(lba));
+    REQUIRE(r.read_u16le(dataLen));
+    REQUIRE(r.read_bytes(data, dataLen));
+
+    CHECK(ver == V);
+    CHECK(flags == 0);
+    CHECK(slot == 1);
+    CHECK(lba == 0);
+    CHECK(dataLen == 512);
+    CHECK(data[0] == 0xEB);
+    CHECK(data[1] == 0x3C);
+
+    auto info = dev.disk_service().info(0);
+    CHECK(info.inserted);
+    CHECK(info.geometry.sectorSize == 512);
+    CHECK(info.geometry.sectorCount == 2);
+}
+
 TEST_CASE("DiskDevice v1: Mount -> Info -> ReadSector -> WriteSector -> Close")
 {
     fujinet::fs::StorageManager sm;
@@ -479,4 +548,3 @@ TEST_CASE("AtrDiskImage: 256-byte ATR has 128-byte first three sectors")
     CHECK(rr4.bytes == 256);
     CHECK(buf[0] == 0x22);
 }
-
