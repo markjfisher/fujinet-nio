@@ -65,6 +65,14 @@ BuildProfile current_build_profile()
         .name             = "POSIX + FujiBus over PTY",
         .hw               = {},
     };
+#elif defined(FN_BUILD_FUJIBUS_TCP)
+    profile = BuildProfile{
+        .machine          = Machine::Generic,
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::TcpSocket,
+        .name             = "POSIX + FujiBus over TCP serial",
+        .hw               = {},
+    };
 #elif defined(FN_BUILD_ESP32_FUJIBUS_GPIO)
     profile = BuildProfile{
         .machine          = Machine::FujiNetESP32,

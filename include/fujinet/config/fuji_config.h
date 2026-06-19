@@ -30,6 +30,7 @@ struct MountConfig {
     std::string uri;                // URI of the resource to mount (e.g., "sd:/disks/img.ssd", "tnfs://server/dir/img.atr")
     std::string mode{"r"};          // "r", "rw", etc.
     bool        enabled{true};      // Whether this mount is active
+    std::uint16_t sectorSizeHint{0}; // Optional hint for raw images; 0 uses image default.
 
     // Get effective slot index (0-7) or -1 if unassigned
     int effective_slot() const {
@@ -100,6 +101,8 @@ struct UartConfig {
 /// `uart` on ESP32 UartGpio, etc.).
 struct ChannelConfig {
     std::string ptyPath{};  // POSIX PTY device path; empty = kernel-assigned
+    std::string tcpHost{"127.0.0.1"}; // POSIX TCP serial bind/connect host
+    std::uint16_t tcpPort{65504};      // POSIX TCP serial port for QEMU-style clients
     UartConfig  uart{};     // ESP32 host UART (baud, framing, optional RTS/CTS)
 };
 

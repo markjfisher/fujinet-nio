@@ -58,6 +58,7 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
         if (a.mounts[i].uri != b.mounts[i].uri) return false;
         if (a.mounts[i].mode != b.mounts[i].mode) return false;
         if (a.mounts[i].enabled != b.mounts[i].enabled) return false;
+        if (a.mounts[i].sectorSizeHint != b.mounts[i].sectorSizeHint) return false;
     }
 
     if (a.modem.enabled != b.modem.enabled) return false;
@@ -76,6 +77,8 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.clock.timezone != b.clock.timezone) return false;
 
     if (a.channel.ptyPath != b.channel.ptyPath) return false;
+    if (a.channel.tcpHost != b.channel.tcpHost) return false;
+    if (a.channel.tcpPort != b.channel.tcpPort) return false;
     if (a.channel.uart.baudRate != b.channel.uart.baudRate) return false;
     if (a.channel.uart.dataBits != b.channel.uart.dataBits) return false;
     if (a.channel.uart.parity != b.channel.uart.parity) return false;
@@ -150,6 +153,7 @@ mounts:
   - slot: 1
     uri: "sd:/disks"
     mode: "rw"
+    sector_size_hint: 512
   - slot: 2
     uri: "tnfs://fujinet.online/atari"
     mode: "r"
@@ -188,10 +192,12 @@ clock:
     CHECK(cfg.mounts[0].slot == 1);
     CHECK(cfg.mounts[0].uri == "sd:/disks");
     CHECK(cfg.mounts[0].mode == "rw");
+    CHECK(cfg.mounts[0].sectorSizeHint == 512);
 
     CHECK(cfg.mounts[1].slot == 2);
     CHECK(cfg.mounts[1].uri == "tnfs://fujinet.online/atari");
     CHECK(cfg.mounts[1].mode == "r");
+    CHECK(cfg.mounts[1].sectorSizeHint == 0);
 
     CHECK(cfg.modem.enabled == true);
     CHECK(cfg.modem.snifferEnabled == true);
@@ -336,6 +342,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Save to primary only")
     mount1.slot = 1;
     mount1.uri = "sd:/disks";
     mount1.mode = "rw";
+    mount1.sectorSizeHint = 512;
     cfg.mounts.push_back(mount1);
 
     cfg.modem.enabled = true;
@@ -395,6 +402,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load")
     m1.slot = 1;
     m1.uri = "sd:/disks";
     m1.mode = "rw";
+    m1.sectorSizeHint = 512;
     original.mounts.push_back(m1);
 
     MountConfig m2{};
@@ -722,6 +730,45 @@ channel:
     CHECK(cfg.wifi.enabled == false);
     CHECK(cfg.mounts.empty());
     CHECK(cfg.channel.ptyPath == "/dev/fujinet-pty");
+    CHECK(cfg.channel.tcpHost == "127.0.0.1");
+    CHECK(cfg.channel.tcpPort == 65504);
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Channel tcp config")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    const std::string yaml = R"(
+fujinet:
+  device_name: "test-device"
+  boot_mode: "normal"
+  alt_config_file: ""
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+mounts: []
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+channel:
+  tcp_host: "0.0.0.0"
+  tcp_port: 65505
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    CHECK(cfg.channel.tcpHost == "0.0.0.0");
+    CHECK(cfg.channel.tcpPort == 65505);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Channel uart nested map")
@@ -842,6 +889,8 @@ devices:
     CHECK(cfg.wifi.enabled == false);
     CHECK(cfg.mounts.empty());
     CHECK(cfg.channel.ptyPath.empty());  // Should be empty by default
+    CHECK(cfg.channel.tcpHost == "127.0.0.1");
+    CHECK(cfg.channel.tcpPort == 65504);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load with ptyPath")

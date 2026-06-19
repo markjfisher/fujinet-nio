@@ -235,6 +235,7 @@ DiskResult DiskService::read_sector(std::size_t slotIndex, std::uint32_t lba, st
 
         MountOptions opts{};
         opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
+        opts.sectorSizeHint = s->pendingMount->sectorSizeHint;
 
         // Attempt to mount
         auto mountResult = mount(slotIndex, fs->name(), resolvedPath, opts);
@@ -265,6 +266,7 @@ DiskResult DiskService::write_sector(std::size_t slotIndex, std::uint32_t lba, c
 
         MountOptions opts{};
         opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
+        opts.sectorSizeHint = s->pendingMount->sectorSizeHint;
 
         // Attempt to mount
         auto mountResult = mount(slotIndex, fs->name(), resolvedPath, opts);
@@ -312,12 +314,18 @@ void DiskService::clear_changed(std::size_t slotIndex)
     }
 }
 
-void DiskService::set_pending_mount(std::size_t slotIndex, const std::string& uri, const std::string& mode, bool enabled)
+void DiskService::set_pending_mount(
+    std::size_t slotIndex,
+    const std::string& uri,
+    const std::string& mode,
+    bool enabled,
+    std::uint16_t sectorSizeHint
+)
 {
     auto* s = slot_ptr(slotIndex);
     if (!s) return;
     
-    s->pendingMount = PendingMountInfo{uri, mode, enabled};
+    s->pendingMount = PendingMountInfo{uri, mode, enabled, sectorSizeHint};
     
     // Also store fsName and path for display purposes (will be updated on actual mount)
     // Parse the URI to extract filesystem name
@@ -349,4 +357,3 @@ void DiskService::clear_pending_mount(std::size_t slotIndex)
 }
 
 } // namespace fujinet::disk
-

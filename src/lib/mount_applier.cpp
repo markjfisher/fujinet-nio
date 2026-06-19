@@ -63,14 +63,19 @@ std::size_t apply_config_mounts(
         // Store the mount config as pending - this is LAZY, not eager!
         // The actual mount will happen on first read/write access.
         // This allows TNFS servers to be unavailable at startup without blocking.
-        FN_LOGI(TAG, "Setting pending mount: slot %d, uri='%s', mode='%s', enabled=%d",
-                slotIndex, mount.uri.c_str(), mount.mode.c_str(), mount.enabled);
+        FN_LOGI(TAG, "Setting pending mount: slot %d, uri='%s', mode='%s', enabled=%d sector_size_hint=%u",
+                slotIndex,
+                mount.uri.c_str(),
+                mount.mode.c_str(),
+                mount.enabled,
+                static_cast<unsigned>(mount.sectorSizeHint));
 
         diskService.set_pending_mount(
             static_cast<std::size_t>(slotIndex), 
             mount.uri, 
             mount.mode, 
-            mount.enabled
+            mount.enabled,
+            mount.sectorSizeHint
         );
 
         applied++;

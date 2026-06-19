@@ -3,6 +3,7 @@
 #include "fake_fs.h"
 
 #include "fujinet/disk/disk_service.h"
+#include "fujinet/fs/mount_applier.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/disk_codec.h"
@@ -71,6 +72,47 @@ TEST_CASE("DiskService: mount raw + read/write sector")
     CHECK(svc.info(0).dirty);
     REQUIRE(svc.unmount(0).ok());
     CHECK(!svc.info(0).inserted);
+}
+
+TEST_CASE("DiskService: config pending raw mount uses sector size hint")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+
+    const std::string path = "/disks/fn-dos.img";
+    auto& bytes = memfs->file_bytes(path);
+    bytes.resize(2 * 512);
+    bytes[0] = 0xEB;
+    bytes[1] = 0x3C;
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+
+    fujinet::config::MountConfig mount{};
+    mount.slot = 1;
+    mount.uri = "mem:/disks/fn-dos.img";
+    mount.mode = "rw";
+    mount.enabled = true;
+    mount.sectorSizeHint = 512;
+
+    REQUIRE(fujinet::apply_config_mounts(svc, sm, {mount}) == 1);
+
+    auto pending = svc.get_pending_mount(0);
+    REQUIRE(pending.has_value());
+    CHECK(pending->sectorSizeHint == 512);
+
+    std::vector<std::uint8_t> sec(512);
+    auto rr = svc.read_sector(0, 0, sec.data(), sec.size());
+    REQUIRE(rr.ok());
+    CHECK(rr.bytes == 512);
+    CHECK(sec[0] == 0xEB);
+    CHECK(sec[1] == 0x3C);
+
+    auto info = svc.info(0);
+    CHECK(info.inserted);
+    CHECK(info.geometry.sectorSize == 512);
+    CHECK(info.geometry.sectorCount == 2);
 }
 
 TEST_CASE("DiskDevice v1: Mount -> Info -> ReadSector -> WriteSector -> Close")
@@ -437,5 +479,4 @@ TEST_CASE("AtrDiskImage: 256-byte ATR has 128-byte first three sectors")
     CHECK(rr4.bytes == 256);
     CHECK(buf[0] == 0x22);
 }
-
 

@@ -39,6 +39,40 @@
       }
     },
     {
+      "name": "fujibus-tcp-debug",
+      "displayName": "FujiBus over TCP serial (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_DEBUG_LOG_TS": "ON",
+        "FN_HTTPS_TEST_CA_ADDITIVE": "ON",
+        "FN_BUILD_FUJIBUS_TCP": "ON",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "fujibus-tcp-release",
+      "displayName": "FujiBus over TCP serial (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FN_BUILD_FUJIBUS_TCP": "ON",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
       "name": "atari-pty-debug",
       "displayName": "Atari Legacy over PTY (Debug)",
       "generator": "Ninja",
@@ -124,6 +158,14 @@
     {
       "name": "fujibus-pty-release-build",
       "configurePreset": "fujibus-pty-release"
+    },
+    {
+      "name": "fujibus-tcp-debug-build",
+      "configurePreset": "fujibus-tcp-debug"
+    },
+    {
+      "name": "fujibus-tcp-release-build",
+      "configurePreset": "fujibus-tcp-release"
     },
     {
       "name": "atari-pty-debug-build",

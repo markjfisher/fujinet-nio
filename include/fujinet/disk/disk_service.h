@@ -17,6 +17,7 @@ struct PendingMountInfo {
     std::string uri;       // Original URI from config
     std::string mode;     // Requested mode (r, rw)
     bool enabled;         // Whether this mount is active
+    std::uint16_t sectorSizeHint{0}; // Optional hint for raw images; 0 uses image default.
 };
 
 // Forward declaration
@@ -60,7 +61,13 @@ public:
     // Set a pending (lazy) mount for a slot. The mount will be activated
     // on first access (read/write). This allows config-defined mounts without
     // immediate I/O at startup.
-    void set_pending_mount(std::size_t slotIndex, const std::string& uri, const std::string& mode, bool enabled);
+    void set_pending_mount(
+        std::size_t slotIndex,
+        const std::string& uri,
+        const std::string& mode,
+        bool enabled,
+        std::uint16_t sectorSizeHint = 0
+    );
 
     // Get the pending mount config for a slot (if any).
     std::optional<PendingMountInfo> get_pending_mount(std::size_t slotIndex) const;
@@ -100,5 +107,4 @@ private:
 };
 
 } // namespace fujinet::disk
-
 
