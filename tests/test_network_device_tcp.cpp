@@ -23,6 +23,60 @@ namespace fujinet::tests {
 
 using namespace fujinet::tests::netdev;
 
+struct MemoryTcpSocketOps final : fujinet::net::ITcpSocketOps {
+    std::vector<std::uint8_t> rx;
+    std::size_t rx_pos = 0;
+    int last_error = 0;
+
+    int socket(int, int, int) override { return 1; }
+    void close(int) override {}
+    int connect(int, const struct sockaddr*, fujinet::net::SockLen) override { return 0; }
+    int bind(int, const struct sockaddr*, fujinet::net::SockLen) override { return 0; }
+    int listen(int, int) override { return 0; }
+    int accept(int, struct sockaddr*, fujinet::net::SockLen*) override { return -1; }
+    int set_nonblocking(int) override { return 0; }
+    bool poll_connect_complete(int) override { return true; }
+    fujinet::net::SSize send(int, const void*, std::size_t len) override
+    {
+        return static_cast<fujinet::net::SSize>(len);
+    }
+    fujinet::net::SSize recv(int, void* buf, std::size_t len) override
+    {
+        const std::size_t remain = rx.size() - rx_pos;
+        if (remain == 0) {
+            last_error = 11;
+            return -1;
+        }
+        const std::size_t n = std::min(remain, len);
+        std::memcpy(buf, rx.data() + rx_pos, n);
+        rx_pos += n;
+        return static_cast<fujinet::net::SSize>(n);
+    }
+    int shutdown_write(int) override { return 0; }
+    int get_so_error(int) override { return 0; }
+    int setsockopt(int, int, int, const void*, fujinet::net::SockLen) override { return 0; }
+    void apply_stream_socket_options(int, bool, bool) override {}
+    void apply_listen_socket_options(int) override {}
+    int getaddrinfo(const char*, const char*, const void*, fujinet::net::AddrInfo**) override { return -1; }
+    const void* tcp_stream_addrinfo_hints() const noexcept override { return nullptr; }
+    const void* tcp_stream_passive_addrinfo_hints() const noexcept override { return nullptr; }
+    void freeaddrinfo(fujinet::net::AddrInfo*) override {}
+    fujinet::net::AddrInfo* addrinfo_next(fujinet::net::AddrInfo*) override { return nullptr; }
+    int addrinfo_family(fujinet::net::AddrInfo*) override { return 0; }
+    int addrinfo_socktype(fujinet::net::AddrInfo*) override { return 0; }
+    int addrinfo_protocol(fujinet::net::AddrInfo*) override { return 0; }
+    const struct sockaddr* addrinfo_addr(fujinet::net::AddrInfo*, fujinet::net::SockLen*) override { return nullptr; }
+    std::uint64_t now_ms() override { return 0; }
+    int last_errno() override { return last_error; }
+    const char* err_string(int) override { return "memory socket"; }
+    bool is_would_block(int errno_val) const noexcept override { return errno_val == 11; }
+    bool is_in_progress(int) const noexcept override { return false; }
+    bool is_peer_gone(int) const noexcept override { return false; }
+    int err_timed_out() const noexcept override { return 110; }
+    int err_conn_refused() const noexcept override { return 111; }
+    int err_host_unreach() const noexcept override { return 113; }
+};
+
 // ------------------------
 // Minimal local echo server
 // ------------------------
@@ -169,6 +223,15 @@ struct ReadParsed {
     std::vector<std::uint8_t> bytes;
 };
 
+struct WriteParsed {
+    std::uint8_t  ver = 0;
+    std::uint8_t  flags = 0;
+    std::uint16_t reserved = 0;
+    std::uint16_t handle = 0;
+    std::uint32_t offset = 0;
+    std::uint16_t written = 0;
+};
+
 static bool parse_read_response(const IOResponse& resp, ReadParsed& out)
 {
     netproto::Reader r(resp.payload.data(), resp.payload.size());
@@ -184,6 +247,19 @@ static bool parse_read_response(const IOResponse& resp, ReadParsed& out)
     if (!r.read_bytes(p, out.len)) return false;
 
     out.bytes.assign(p, p + out.len);
+    return r.remaining() == 0;
+}
+
+static bool parse_write_response(const IOResponse& resp, WriteParsed& out)
+{
+    netproto::Reader r(resp.payload.data(), resp.payload.size());
+
+    if (!r.read_u8(out.ver)) return false;
+    if (!r.read_u8(out.flags)) return false;
+    if (!r.read_u16le(out.reserved)) return false;
+    if (!r.read_u16le(out.handle)) return false;
+    if (!r.read_u32le(out.offset)) return false;
+    if (!r.read_u16le(out.written)) return false;
     return r.remaining() == 0;
 }
 
@@ -262,6 +338,51 @@ static bool spin_poll_until(NetworkDevice& dev, Pred pred, int timeout_ms = 500)
 // ------------------------
 // Tests
 // ------------------------
+
+TEST_CASE("TCP common: ring read across 64K boundary preserves bytes")
+{
+    std::vector<std::uint8_t> marker = {
+        0x0e, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x11, 0x40, 0x01, 0x00, 0x00
+    };
+
+    MemoryTcpSocketOps ops;
+    ops.rx.assign(0xffffu, 0x55);
+    ops.rx.insert(ops.rx.end(), marker.begin(), marker.end());
+
+    fujinet::net::TcpNetworkProtocolCommon proto(ops);
+    fujinet::net::TcpNetworkProtocolCommon::Options opt{};
+    opt.rx_buf = 65536;
+    REQUIRE(proto.adopt_connected_socket(1, opt, "memory", 1) == StatusCode::Ok);
+
+    std::uint32_t offset = 0;
+    std::uint8_t buf[4096];
+    while (offset < 0xffffu) {
+        const std::size_t want = std::min<std::uint32_t>(sizeof(buf), 0xffffu - offset);
+        std::uint16_t read = 0;
+        bool eof = false;
+        bool more = false;
+        REQUIRE(proto.read_body(offset, buf, want, read, eof, more) == StatusCode::Ok);
+        REQUIRE(read > 0);
+        bool allFiller = true;
+        for (std::uint16_t i = 0; i < read; ++i) {
+            allFiller = allFiller && buf[i] == 0x55;
+        }
+        CHECK(allFiller);
+        offset += read;
+    }
+
+    std::uint8_t got[16] = {};
+    std::uint16_t read = 0;
+    bool eof = false;
+    bool more = false;
+    REQUIRE(proto.read_body(offset, got, marker.size(), read, eof, more) == StatusCode::Ok);
+    REQUIRE(read == marker.size());
+    for (std::size_t i = 0; i < marker.size(); ++i) {
+        CAPTURE(i);
+        CHECK(got[i] == marker[i]);
+    }
+}
 
 TEST_CASE("TCP: Open + Write + Read echoes bytes (sequential offsets)")
 {
@@ -435,6 +556,141 @@ TEST_CASE("TCP: Write enforces sequential offset (mismatch => InvalidRequest)")
         }
 
         CHECK(w.status == StatusCode::InvalidRequest);
+    }
+
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}
+
+TEST_CASE("TCP: Read preserves bytes across 64K stream and ring boundary")
+{
+    LocalEchoServer srv;
+    REQUIRE(srv.start());
+
+    auto reg = make_registry_tcp_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    const std::string url = "tcp://127.0.0.1:" + std::to_string(srv.port) + "?rx_buf=65536";
+    const std::uint16_t handle = open_handle_stub(dev, deviceId, url, 1, 0, 0);
+
+    REQUIRE(spin_poll_until(dev, [&] {
+        auto ir = info_req(dev, deviceId, handle);
+        if (ir.status != StatusCode::Ok) return false;
+
+        InfoParsed ip;
+        if (!parse_info_response(ir, ip)) return false;
+        std::string headers;
+        if (!fetch_info_headers(dev, deviceId, handle, ip.hdrLen, headers)) return false;
+        return headers.find("X-FujiNet-Connected: 1") != std::string::npos;
+    }, 1500));
+
+    std::string marker;
+    marker.push_back('\x0e');
+    marker.push_back('\x00');
+    marker.push_back('\x20');
+    marker.push_back('\x00');
+    marker.push_back('\x00');
+    marker.push_back('\x00');
+    marker.push_back('\x00');
+    marker.push_back('\x00');
+    marker.push_back('\x00');
+    marker.push_back('\x11');
+    marker.push_back('\x40');
+    marker.push_back('\x01');
+    marker.push_back('\x00');
+    marker.push_back('\x00');
+
+    std::uint32_t writeOff = 0;
+    std::string chunk(4096, '\x55');
+    while (writeOff < 0xffffu) {
+        const std::uint32_t remain = 0xffffu - writeOff;
+        const std::size_t n = std::min<std::size_t>(chunk.size(), remain);
+        std::size_t chunkOff = 0;
+        while (chunkOff < n) {
+            IOResponse w = write_req(dev,
+                                     deviceId,
+                                     handle,
+                                     writeOff,
+                                     std::string_view(chunk.data() + chunkOff, n - chunkOff));
+            if (w.status == StatusCode::DeviceBusy) {
+                dev.poll();
+                continue;
+            }
+            REQUIRE(w.status == StatusCode::Ok);
+            WriteParsed wp;
+            REQUIRE(parse_write_response(w, wp));
+            REQUIRE(wp.written > 0);
+            CHECK(wp.offset == writeOff);
+            chunkOff += wp.written;
+            writeOff += wp.written;
+            dev.poll();
+        }
+    }
+
+    std::size_t markerOff = 0;
+    while (markerOff < marker.size()) {
+        IOResponse w = write_req(dev,
+                                 deviceId,
+                                 handle,
+                                 writeOff,
+                                 std::string_view(marker.data() + markerOff, marker.size() - markerOff));
+        if (w.status == StatusCode::DeviceBusy) {
+            dev.poll();
+            continue;
+        }
+        REQUIRE(w.status == StatusCode::Ok);
+        WriteParsed wp;
+        REQUIRE(parse_write_response(w, wp));
+        REQUIRE(wp.written > 0);
+        CHECK(wp.offset == writeOff);
+        markerOff += wp.written;
+        writeOff += wp.written;
+        dev.poll();
+    }
+
+    std::uint32_t readOff = 0;
+    while (readOff < 0xffffu) {
+        const std::uint16_t want = static_cast<std::uint16_t>(
+            std::min<std::uint32_t>(4096u, 0xffffu - readOff));
+        IOResponse rr = read_req(dev, deviceId, handle, readOff, want);
+
+        if (rr.status == StatusCode::NotReady) {
+            dev.poll();
+            continue;
+        }
+
+        REQUIRE(rr.status == StatusCode::Ok);
+        ReadParsed rp;
+        REQUIRE(parse_read_response(rr, rp));
+        REQUIRE(rp.len > 0);
+        CHECK(rp.offset == readOff);
+        CHECK(rp.bytes.size() == rp.len);
+        bool allFiller = true;
+        for (std::uint8_t b : rp.bytes) {
+            allFiller = allFiller && b == 0x55;
+        }
+        CHECK(allFiller);
+        readOff += rp.len;
+        dev.poll();
+    }
+
+    ReadParsed rp;
+    REQUIRE(spin_poll_until(dev, [&] {
+        IOResponse rr = read_req(dev, deviceId, handle, readOff, static_cast<std::uint16_t>(marker.size()));
+        if (rr.status == StatusCode::NotReady) {
+            return false;
+        }
+        REQUIRE(rr.status == StatusCode::Ok);
+        REQUIRE(parse_read_response(rr, rp));
+        return rp.len == marker.size();
+    }, 1500));
+
+    CHECK(rp.offset == 0xffffu);
+    CHECK(rp.bytes == std::vector<std::uint8_t>(marker.begin(), marker.end()));
+    REQUIRE(rp.bytes.size() == marker.size());
+    for (std::size_t i = 0; i < marker.size(); ++i) {
+        CAPTURE(i);
+        CHECK(rp.bytes[i] == static_cast<std::uint8_t>(marker[i]));
     }
 
     CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);

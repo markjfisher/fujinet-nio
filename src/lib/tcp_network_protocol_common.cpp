@@ -511,10 +511,12 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::read_body(std::uint32_t offset
     // read n bytes from ring (may wrap)
     std::size_t remaining = n;
     while (remaining > 0) {
-        const std::size_t contig =
-            (_rx_tail >= _rx_head || _rx_full)
-                ? std::min(remaining, _rx.size() - _rx_head)
-                : std::min(remaining, _rx_tail - _rx_head);
+        std::size_t contig = 0;
+        if (_rx_full || _rx_tail < _rx_head) {
+            contig = std::min(remaining, _rx.size() - _rx_head);
+        } else {
+            contig = std::min(remaining, _rx_tail - _rx_head);
+        }
 
         if (contig == 0) break;
 
