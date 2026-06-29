@@ -131,6 +131,10 @@ Rules:
 - `offset` must equal `write_cursor`
 - Partial writes are allowed
 - `write_cursor` advances by the number of bytes successfully written
+- A repeated `Write(handle, offset, data)` for the immediately previous
+  successful write may replay the cached NetworkDevice response when the data
+  bytes are identical. This recovers from a lost lower-transport response
+  without sending the same TCP bytes twice.
 
 Return behavior:
 - `Ok` – one or more bytes written
@@ -148,6 +152,22 @@ If `halfclose=1`, a zero-length write:
 causes the backend to call `shutdown(SHUT_WR)`, signaling end-of-stream
 to the peer while still allowing reads.
 
+### Duplicate Write Replay
+
+TCP backends still enforce sequential cursors. The write replay cache sits at
+the NetworkDevice layer above the backend:
+
+1. A valid write at offset `N` sends bytes and returns an accepted length.
+2. NetworkDevice stores the exact request bytes and response payload.
+3. If the host repeats the same write because the response was lost below the
+   NetworkDevice protocol, the stored response is returned again and the TCP
+   backend is not called.
+4. A same-offset write with different bytes is not replayed and remains an
+   invalid cursor/request state.
+
+Hosts must not use this as an application-level duplicate-send mechanism. It is
+only a transport-loss recovery rule for the most recent write response.
+
 ---
 
 ## 6. Read Semantics (recv)
@@ -158,6 +178,11 @@ Rules:
 - `offset` must equal `read_cursor`
 - Reads are non-blocking
 - Data may come from an internal receive buffer
+- A repeated `Read(handle, offset, maxBytes)` for the immediately previous
+  successful read offset and byte count may replay the cached NetworkDevice
+  response. This exists so hosts can recover when the lower transport loses the
+  response after TCP bytes have already been consumed. It is a one-response
+  idempotency cache, not TCP seek support.
 
 Return behavior:
 - `Ok` with `dataLen > 0` – bytes returned
@@ -168,6 +193,21 @@ Return behavior:
 
 EOF is only reported **after** the peer has closed and all buffered data
 has been consumed.
+
+### Duplicate Read Replay
+
+TCP backends still enforce sequential cursors. The replay cache sits at the
+NetworkDevice layer above the backend:
+
+1. A valid read at offset `N` consumes TCP bytes and returns data.
+2. NetworkDevice stores the exact response payload for that `(handle, N)`.
+3. If the host repeats the same read because the response was lost below the
+   NetworkDevice protocol, the stored response is returned again.
+4. A read at any older offset, future offset, or different handle is still
+   invalid unless it is the backend's current cursor.
+
+Hosts must not use this as an application-level rewind mechanism. It is only a
+transport-loss recovery rule for the most recent read response.
 
 ---
 
@@ -245,4 +285,3 @@ The TCP protocol is fully compatible with NetworkDevice v1:
 
 Future extensions (e.g. TLS via `tls://`) can be introduced as new schemes
 without breaking v1 compatibility.
-

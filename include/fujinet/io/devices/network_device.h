@@ -67,6 +67,16 @@ private:
         bool responseBodyBuffering{false};
         bool translationReady{false};
         std::uint64_t translatedResultSize{0};
+
+        bool lastReadValid{false};
+        std::uint32_t lastReadOffset{0};
+        std::uint16_t lastReadMaxBytes{0};
+        std::vector<std::uint8_t> lastReadPayload;
+
+        bool lastWriteValid{false};
+        std::uint32_t lastWriteOffset{0};
+        std::vector<std::uint8_t> lastWriteData;
+        std::vector<std::uint8_t> lastWritePayload;
     };
 
     std::array<Session, MAX_SESSIONS> _sessions{};
@@ -115,6 +125,14 @@ private:
         s.responseBodyBuffering = false;
         s.translationReady = false;
         s.translatedResultSize = 0;
+        s.lastReadValid = false;
+        s.lastReadOffset = 0;
+        s.lastReadMaxBytes = 0;
+        s.lastReadPayload.clear();
+        s.lastWriteValid = false;
+        s.lastWriteOffset = 0;
+        s.lastWriteData.clear();
+        s.lastWritePayload.clear();
     }
 
     // Pick a victim to evict (LRU) if we want to recover from leaky clients.

@@ -97,12 +97,24 @@ If offsets are enforced:
 - the backend returns `InvalidRequest`
 - the host learns immediately that it is out of sync
 
+The current NetworkDevice implementation adds one narrow recovery rule above
+the backend:
+
+- the most recent successful Write request and response are cached per handle
+- if the host repeats the same `(handle, offset, data)`, NetworkDevice replays
+  the cached response without calling the backend again
+- if the same offset is reused with different data, normal cursor enforcement
+  still applies
+
+This allows a host to recover from a lost response after TCP bytes have already
+been sent, without sending those bytes to the peer a second time.
+
 ### Case B: Duplicate read request
 
 Suppose the host asks to read at offset 1000, gets data, but due to a retry bug
 asks again at offset 1000.
 
-If offsets are ignored:
+If offsets are ignored by the stream backend:
 
 - TCP cannot replay the old bytes
 - the backend will return the next bytes currently available
@@ -110,10 +122,24 @@ If offsets are ignored:
   consumed later data
 - host state and stream state diverge silently
 
-If offsets are enforced:
+If offsets are enforced without any response replay:
 
 - the second request is rejected
 - the host knows it must not repeat an already-consumed read position
+
+The current NetworkDevice implementation adds one narrow recovery rule above
+the backend:
+
+- the most recent successful Read response is cached per handle
+- if the host repeats that same `(handle, offset, maxBytes)`, NetworkDevice
+  replays the cached response without calling the backend again
+- if the host asks for an older offset, a gap, or a different handle, normal
+  cursor enforcement still applies
+
+This protects low-level transports where the device can successfully consume
+TCP bytes, but the response packet back to the host is lost. It does not make
+TCP seekable, and it does not remove the host's responsibility to advance its
+cursor only after validating a response.
 
 ### Case C: Out-of-order requests
 
@@ -270,6 +296,11 @@ If the provided offset does not match the expected cursor, the backend returns:
     StatusCode::InvalidRequest
 
 This is intentionally strict. It makes stream misuse visible immediately.
+
+The NetworkDevice layer may also retain the immediately previous successful
+Read response and replay it for an exact duplicate `(handle, offset, maxBytes)`
+request. That replay is a transport recovery mechanism for lost responses; it
+does not permit arbitrary rewinds or out-of-order reads.
 
 ---
 

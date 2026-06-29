@@ -260,6 +260,10 @@ void NetworkDevice::reset_translation(Session& s) noexcept
     s.responseBodyBuffering = false;
     s.translationReady = false;
     s.translatedResultSize = 0;
+    s.lastReadValid = false;
+    s.lastReadOffset = 0;
+    s.lastReadMaxBytes = 0;
+    s.lastReadPayload.clear();
 }
 
 StatusCode NetworkDevice::configure_translation(Session& s, const TranslationConfig& config)
@@ -847,6 +851,12 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             }
             touch(*s);
 
+            if (s->lastReadValid && offset == s->lastReadOffset &&
+                maxBytes == s->lastReadMaxBytes) {
+                resp.payload = s->lastReadPayload;
+                return resp;
+            }
+
             // If request body hasn't been fully uploaded, response is not available yet.
             if (s->awaitingBody) {
                 resp.status = StatusCode::NotReady;
@@ -896,6 +906,10 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                     netproto::write_bytes(out, translatedBuf.data(), n);
                 }
                 resp.payload = to_vec(out);
+                s->lastReadValid = true;
+                s->lastReadOffset = offset;
+                s->lastReadMaxBytes = maxBytes;
+                s->lastReadPayload = resp.payload;
                 return resp;
             }
 
@@ -936,6 +950,10 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 }
 
                 resp.payload = to_vec(out);
+                s->lastReadValid = true;
+                s->lastReadOffset = offset;
+                s->lastReadMaxBytes = maxBytes;
+                s->lastReadPayload = resp.payload;
                 return resp;
             }
         }
@@ -968,6 +986,13 @@ IOResponse NetworkDevice::handle(const IORequest& request)
                 return resp;
             }
             touch(*s);
+
+            if (s->lastWriteValid && offset == s->lastWriteOffset &&
+                s->lastWriteData.size() == dataLen &&
+                std::equal(s->lastWriteData.begin(), s->lastWriteData.end(), dataPtr)) {
+                resp.payload = s->lastWritePayload;
+                return resp;
+            }
 
             // Enforce sequential streaming semantics for HTTP request bodies.
             // (Keeps device simple; avoids random-access uploads.)
@@ -1034,6 +1059,14 @@ IOResponse NetworkDevice::handle(const IORequest& request)
             netproto::write_u32le(out, offset);
             netproto::write_u16le(out, written);
             resp.payload = to_vec(out);
+            s->lastWriteValid = true;
+            s->lastWriteOffset = offset;
+            if (dataLen > 0) {
+                s->lastWriteData.assign(dataPtr, dataPtr + dataLen);
+            } else {
+                s->lastWriteData.clear();
+            }
+            s->lastWritePayload = resp.payload;
             return resp;
         }
 

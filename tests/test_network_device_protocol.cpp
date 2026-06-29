@@ -162,6 +162,114 @@ TEST_CASE("NetworkDevice v1: Read sets more_available when additional bytes rema
     CHECK((rflags & 0x04) != 0);
 }
 
+TEST_CASE("NetworkDevice v1: duplicate Read at last offset replays the cached response")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+    std::uint16_t handle = open_handle_stub(
+        dev,
+        deviceId,
+        "http://example.com/replay",
+        /*method=*/1,
+        /*flags=*/0,
+        /*bodyLenHint=*/0
+    );
+
+    IOResponse first = read_req(dev, deviceId, handle, 0, 8);
+    REQUIRE(first.status == StatusCode::Ok);
+
+    IOResponse replay = read_req(dev, deviceId, handle, 0, 8);
+    REQUIRE(replay.status == StatusCode::Ok);
+    CHECK(replay.payload == first.payload);
+
+    IOResponse differentLimit = read_req(dev, deviceId, handle, 0, 4);
+    REQUIRE(differentLimit.status == StatusCode::Ok);
+    CHECK(differentLimit.payload != first.payload);
+
+    netproto::Reader rr(first.payload.data(), first.payload.size());
+    std::uint8_t ver = 0, flags = 0;
+    std::uint16_t reserved = 0, returnedHandle = 0, dataLen = 0;
+    std::uint32_t offEcho = 0;
+    REQUIRE(rr.read_u8(ver));
+    REQUIRE(rr.read_u8(flags));
+    REQUIRE(rr.read_u16le(reserved));
+    REQUIRE(rr.read_u16le(returnedHandle));
+    REQUIRE(rr.read_u32le(offEcho));
+    REQUIRE(rr.read_u16le(dataLen));
+    CHECK(ver == V);
+    CHECK(returnedHandle == handle);
+    CHECK(offEcho == 0);
+    REQUIRE(dataLen == 8);
+
+    IOResponse next = read_req(dev, deviceId, handle, dataLen, 8);
+    REQUIRE(next.status == StatusCode::Ok);
+
+    netproto::Reader nr(next.payload.data(), next.payload.size());
+    std::uint8_t nver = 0, nflags = 0;
+    std::uint16_t nreserved = 0, nhandle = 0, ndataLen = 0;
+    std::uint32_t noffEcho = 0;
+    REQUIRE(nr.read_u8(nver));
+    REQUIRE(nr.read_u8(nflags));
+    REQUIRE(nr.read_u16le(nreserved));
+    REQUIRE(nr.read_u16le(nhandle));
+    REQUIRE(nr.read_u32le(noffEcho));
+    REQUIRE(nr.read_u16le(ndataLen));
+    CHECK(nver == V);
+    CHECK(nhandle == handle);
+    CHECK(noffEcho == dataLen);
+    CHECK(ndataLen > 0);
+
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}
+
+TEST_CASE("NetworkDevice v1: duplicate Write at last offset replays only for identical data")
+{
+    auto reg = make_stub_registry_http_only();
+    NetworkDevice dev(std::move(reg));
+
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+    std::uint16_t handle = open_handle_stub(
+        dev,
+        deviceId,
+        "http://example.com/post",
+        /*method=*/2,
+        /*flags=*/0,
+        /*bodyLenHint=*/6
+    );
+
+    IOResponse first = write_req(dev, deviceId, handle, 0, "ABC");
+    REQUIRE(first.status == StatusCode::Ok);
+
+    IOResponse replay = write_req(dev, deviceId, handle, 0, "ABC");
+    REQUIRE(replay.status == StatusCode::Ok);
+    CHECK(replay.payload == first.payload);
+
+    IOResponse changed = write_req(dev, deviceId, handle, 0, "ABD");
+    CHECK(changed.status == StatusCode::InvalidRequest);
+
+    IOResponse next = write_req(dev, deviceId, handle, 3, "DEF");
+    REQUIRE(next.status == StatusCode::Ok);
+
+    netproto::Reader nr(next.payload.data(), next.payload.size());
+    std::uint8_t ver = 0, flags = 0;
+    std::uint16_t reserved = 0, returnedHandle = 0, written = 0;
+    std::uint32_t offEcho = 0;
+    REQUIRE(nr.read_u8(ver));
+    REQUIRE(nr.read_u8(flags));
+    REQUIRE(nr.read_u16le(reserved));
+    REQUIRE(nr.read_u16le(returnedHandle));
+    REQUIRE(nr.read_u32le(offEcho));
+    REQUIRE(nr.read_u16le(written));
+    CHECK(ver == V);
+    CHECK(returnedHandle == handle);
+    CHECK(offEcho == 3);
+    CHECK(written == 3);
+
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}
+
 TEST_CASE("NetworkDevice v1: response headers are only returned when requested (allowlist)") {
     using namespace fujinet::tests::netdev;
 

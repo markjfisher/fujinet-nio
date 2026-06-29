@@ -374,6 +374,17 @@ shutdown of the socket write side (e.g. `shutdown(SHUT_WR)`).
 
 See docs/network_device_tcp.md for details.
 
+### Duplicate write replay
+
+A duplicate Write request for the most recently successful `(handle, offset,
+data)` MAY be answered by replaying the cached prior response. The replay is
+allowed only when the payload bytes are identical. A same-offset Write with
+different data MUST NOT be replayed and should fail according to the normal
+cursor rules.
+
+This makes response loss on a lower transport idempotent without duplicating
+application bytes on non-seekable streams.
+
 ---
 
 ## Command: Read (0x02)
@@ -415,6 +426,11 @@ Notes:
 - The host reads until `eof=1` or `dataLen=0`.
 - `offsetEcho` MUST equal the `offset` value from the corresponding Read request.
   Hosts MUST treat a mismatch as a protocol error.
+- A duplicate Read request for the most recently successful `(handle, offset,
+  maxBytes)` MAY be answered by replaying the cached prior response. This makes
+  response loss on a lower transport idempotent without changing the wire format.
+  The replayed response MUST be byte-for-byte equivalent at the NetworkDevice
+  payload level, including `offsetEcho`, `dataLen`, flags, and data.
 
 
 ### Offset semantics (important)
@@ -429,6 +445,9 @@ The meaning of `offset` depends on the protocol bound to the handle:
   - Offset represents a **monotonic read cursor** (bytes delivered so far).
   - The device/backend MUST require strictly sequential offsets:
     - If `offset` is a rewind or gap, return `InvalidRequest`.
+  - Exception: NetworkDevice may replay the immediately previous successful
+    Read response when the host repeats the same `offset` and `maxBytes`. This
+    is for bus or serial response-loss recovery only; it is not random access.
 
 ### Offset semantics (scheme-dependent)
 
@@ -454,6 +473,14 @@ Backends may be synchronous (POSIX curl) or streaming/asynchronous (ESP32, TCP).
 - If data is not yet available, READ may return `NotReady`.
 - A READ returning `Ok` with `read_len == 0` is only valid when `eof == true` (transfer complete / peer closed).
 - Hosts should treat `NotReady` as "try again soon", not a fatal error.
+- Hosts may retry the same Read request after a transport timeout or lost
+  response. The device may replay the last successful Read response for that
+  handle and offset. Hosts must still advance their local offset only after
+  receiving and validating the response.
+- Hosts may retry the same Write request after a transport timeout or lost
+  response. The device may replay the last successful Write response only when
+  handle, offset, length, and data bytes match exactly. Hosts must still advance
+  their local write offset only after receiving and validating the response.
 - Transport-layer framing limits (e.g. USB, SLIP, CDC buffers) MUST NOT affect protocol semantics.
   Hosts should assume that large responses require multiple Read calls.
 
