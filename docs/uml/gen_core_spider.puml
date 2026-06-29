@@ -572,6 +572,14 @@ __
 +flags : std::uint8_t
 +generation : std::uint8_t
 +lastActivityTick : std::uint64_t
++lastReadMaxBytes : std::uint16_t
++lastReadOffset : std::uint32_t
++lastReadPayload : std::vector<std::uint8_t>
++lastReadValid : bool
++lastWriteData : std::vector<std::uint8_t>
++lastWriteOffset : std::uint32_t
++lastWritePayload : std::vector<std::uint8_t>
++lastWriteValid : bool
 +method : std::uint8_t
 +nextBodyOffset : std::uint32_t
 +proto : std::unique_ptr<INetworkProtocol>
