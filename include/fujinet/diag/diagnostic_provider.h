@@ -59,6 +59,9 @@ std::unique_ptr<IDiagnosticProvider> create_disk_diagnostic_provider(::fujinet::
 // Modem device provider: AT command injection + status/control.
 std::unique_ptr<IDiagnosticProvider> create_modem_diagnostic_provider(::fujinet::core::FujinetCore& core);
 
+// Application storage provider: namespaced key/value inspection and maintenance.
+std::unique_ptr<IDiagnosticProvider> create_app_store_diagnostic_provider(::fujinet::core::FujinetCore& core);
+
 // ESP32 UartChannel: inspect/change host UART (FujiBus) settings. Returns nullptr on POSIX or non-UART channel.
 std::unique_ptr<IDiagnosticProvider> create_uart_channel_diagnostic_provider(
     ::fujinet::io::Channel* channel,

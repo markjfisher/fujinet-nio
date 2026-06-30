@@ -11,10 +11,12 @@ idf_component_register(
         app/console_fs_shell.cpp
         app/console_parse.cpp
         app/main_esp32.cpp
+        lib/app_store.cpp
         lib/bootstrap.cpp
         lib/build_profile.cpp
         lib/clock_device.cpp
         lib/clock_device_init.cpp
+        lib/diagnostic_app_store_provider.cpp
         lib/diagnostic_core_provider.cpp
         lib/diagnostic_disk_provider.cpp
         lib/diagnostic_modem_provider.cpp

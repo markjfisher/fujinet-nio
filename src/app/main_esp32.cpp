@@ -164,11 +164,13 @@ extern "C" void fujinet_core_task(void* arg)
     auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core, wifiDiagCtx);
     auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
     auto modemDiag = fujinet::diag::create_modem_diagnostic_provider(core);
+    auto appStoreDiag = fujinet::diag::create_app_store_diagnostic_provider(core);
     std::unique_ptr<fujinet::diag::IDiagnosticProvider> uartChannelDiag;
     diagRegistry.add_provider(*coreDiag);
     diagRegistry.add_provider(*netDiag);
     diagRegistry.add_provider(*diskDiag);
     diagRegistry.add_provider(*modemDiag);
+    diagRegistry.add_provider(*appStoreDiag);
 
     std::unique_ptr<fujinet::console::IConsoleTransport> consoleTransport;
     std::unique_ptr<fujinet::console::ConsoleEngine> console;

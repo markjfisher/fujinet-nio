@@ -112,10 +112,12 @@ target_compile_definitions(fujinet-nio
 target_sources(fujinet-nio
     PRIVATE
 # __TARGET_SOURCES_START__
+        src/lib/app_store.cpp
         src/lib/bootstrap.cpp
         src/lib/build_profile.cpp
         src/lib/clock_device.cpp
         src/lib/clock_device_init.cpp
+        src/lib/diagnostic_app_store_provider.cpp
         src/lib/diagnostic_core_provider.cpp
         src/lib/diagnostic_disk_provider.cpp
         src/lib/diagnostic_modem_provider.cpp

@@ -21,6 +21,11 @@ private:
     IOResponse handle_write_file(const IORequest& request);
     IOResponse handle_resolve_path(const IORequest& request);
     IOResponse handle_make_directory(const IORequest& request);
+    IOResponse handle_app_store_stat(const IORequest& request);
+    IOResponse handle_app_store_read(const IORequest& request);
+    IOResponse handle_app_store_write(const IORequest& request);
+    IOResponse handle_app_store_delete(const IORequest& request);
+    IOResponse handle_app_store_list(const IORequest& request);
 };
 
 } // namespace fujinet::io

@@ -69,10 +69,12 @@ int main()
     auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
     auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
     auto modemDiag = fujinet::diag::create_modem_diagnostic_provider(core);
+    auto appStoreDiag = fujinet::diag::create_app_store_diagnostic_provider(core);
     diagRegistry.add_provider(*coreDiag);
     diagRegistry.add_provider(*netDiag);
     diagRegistry.add_provider(*diskDiag);
     diagRegistry.add_provider(*modemDiag);
+    diagRegistry.add_provider(*appStoreDiag);
 
     auto consoleTransport = fujinet::console::create_default_console_transport();
     fujinet::console::ConsoleEngine console(diagRegistry, *consoleTransport, core.storageManager());

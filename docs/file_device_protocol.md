@@ -63,6 +63,12 @@ Command IDs (initial set):
 | `ReadFile`      | `0x03` | Read bytes from a file at offset |
 | `WriteFile`     | `0x04` | Write bytes to a file at offset |
 | `ResolvePath`   | `0x05` | Resolve a base URI plus a path fragment into a canonical URI |
+| `MakeDirectory` | `0x06` | Create a directory |
+| `AppStoreStat`  | `0x20` | Query metadata for an application storage key |
+| `AppStoreRead`  | `0x21` | Read bytes from an application storage key |
+| `AppStoreWrite` | `0x22` | Write bytes to an application storage key |
+| `AppStoreDelete` | `0x23` | Delete an application storage key |
+| `AppStoreList`  | `0x24` | List keys in an application storage namespace |
 
 (IDs are intentionally compact to allow use by 8-bit transports.)
 
@@ -85,6 +91,141 @@ So the host must check *two layers*:
 If transport status is not `Ok`, the FileDevice payload may be empty or undefined.
 
 (Other transports may carry status differently; the FileDevice payload remains unchanged.)
+
+---
+
+## Application Storage Commands (0x20-0x24)
+
+Application storage is a namespaced key/value layer exposed through FileDevice. It is intended for application preferences and small-to-medium state, such as `config-ng` storing a user's colour preference. It deliberately avoids the legacy AppKey model of fixed creator/app/key triples and 64-byte blobs.
+
+The implementation is backed by a normal registered filesystem and stores opaque byte values under a private root (`/FujiNet/app-store/v1`). The current backing preference is `host`, then `sd0`, then `flash`, depending on which filesystem is registered. Clients should treat this location as an implementation detail and use the application-storage commands rather than constructing paths.
+
+Namespace and key strings are UTF-8 byte strings:
+
+- `namespace`: 1..255 bytes
+- `key`: 1..255 bytes for stat/read/write/delete
+- `key`: empty for list requests
+
+Common application-storage request prefix:
+
+```
+u8   version            // = 1
+u16  namespaceLen       // LE
+u8[] namespace
+u16  keyLen             // LE; 0 only for list
+u8[] key
+```
+
+### AppStoreStat (0x20)
+
+Request:
+
+```
+[Application Storage Prefix with key]
+```
+
+Response:
+
+```
+u8   version            // = 1
+u8   flags              // bit0=exists
+u16  reserved           // = 0
+u64  sizeBytes          // LE; 0 when missing
+u64  modifiedUnixTime   // LE seconds since epoch; 0 when unavailable or missing
+```
+
+Missing keys return `Ok` with `exists=false`.
+
+### AppStoreRead (0x21)
+
+Request:
+
+```
+[Application Storage Prefix with key]
+u32  offset             // LE
+u16  maxBytes           // LE; must be non-zero
+```
+
+Response:
+
+```
+u8   version            // = 1
+u8   flags              // bit0=eof, bit1=exists
+u16  reserved           // = 0
+u32  offset             // LE; echoed from request
+u16  dataLen            // LE
+u8[] data
+```
+
+Missing keys return `Ok` with `exists=false`, `eof=true`, and `dataLen=0`.
+
+### AppStoreWrite (0x22)
+
+Request:
+
+```
+[Application Storage Prefix with key]
+u32  offset             // LE
+u16  dataLen            // LE
+u8[] data
+```
+
+Response:
+
+```
+u8   version            // = 1
+u8   flags              // = 0
+u16  reserved           // = 0
+u32  offset             // LE; echoed from request
+u16  writtenLen         // LE
+```
+
+`offset==0` creates or replaces the value. Later chunks can append or overwrite by using the next offset.
+
+### AppStoreDelete (0x23)
+
+Request:
+
+```
+[Application Storage Prefix with key]
+```
+
+Response:
+
+```
+u8   version            // = 1
+u8   flags              // bit0=deleted
+u16  reserved           // = 0
+```
+
+Deleting a missing key returns `Ok` with `deleted=false`.
+
+### AppStoreList (0x24)
+
+Request:
+
+```
+[Application Storage Prefix with empty key]
+u16  startIndex         // LE
+u16  maxPayloadBytes    // LE; max bytes for the variable key blob
+```
+
+Response:
+
+```
+u8   version            // = 1
+u8   flags              // bit0=more
+u16  reserved           // = 0
+u16  startIndex         // LE; echoed from request
+u16  keyCount           // LE
+u16  keysLen            // LE
+
+repeat keyCount times:
+  u16  keyLen           // LE
+  u8[] key
+```
+
+Keys are returned sorted by key bytes. Only whole keys are encoded; if `maxPayloadBytes` is too small for the next key, the response returns the keys that fit and sets `more` when additional keys remain.
 
 ---
 

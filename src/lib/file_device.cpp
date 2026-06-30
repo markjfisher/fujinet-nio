@@ -2,6 +2,7 @@
 
 #include "fujinet/core/logging.h"
 #include "fujinet/fs/filesystem.h"
+#include "fujinet/io/devices/app_store.h"
 #include "fujinet/io/core/io_message.h"
 
 // Commands + to_file_command helper
@@ -102,6 +103,40 @@ struct ResolvePathRequest {
     std::string base_uri;
     std::string arg;
 };
+
+struct AppStorePrefix {
+    std::string ns;
+    std::string key;
+};
+
+static bool parse_app_store_prefix(Reader& r, AppStorePrefix& out, bool require_key)
+{
+    std::uint8_t ver = 0;
+    if (!r.read_u8(ver) || ver != FILEPROTO_VERSION) {
+        return false;
+    }
+
+    std::uint16_t ns_len = 0;
+    if (!r.read_u16le(ns_len) || ns_len == 0) return false;
+    const std::uint8_t* ns_ptr = nullptr;
+    if (!r.read_bytes(ns_ptr, ns_len)) return false;
+    out.ns.assign(reinterpret_cast<const char*>(ns_ptr), ns_len);
+
+    std::uint16_t key_len = 0;
+    if (!r.read_u16le(key_len)) return false;
+    const std::uint8_t* key_ptr = nullptr;
+    if (key_len > 0) {
+        if (!r.read_bytes(key_ptr, key_len)) return false;
+        out.key.assign(reinterpret_cast<const char*>(key_ptr), key_len);
+    } else {
+        out.key.clear();
+    }
+
+    if (!AppStore::valid_namespace(out.ns)) return false;
+    if (require_key && !AppStore::valid_key(out.key)) return false;
+    if (!require_key && !out.key.empty()) return false;
+    return true;
+}
 
 static bool parse_resolve_path_request(Reader& r, ResolvePathRequest& out)
 {
@@ -205,6 +240,16 @@ IOResponse FileDevice::handle(const IORequest& request)
             return handle_resolve_path(request);
         case protocol::FileCommand::MakeDirectory:
             return handle_make_directory(request);
+        case protocol::FileCommand::AppStoreStat:
+            return handle_app_store_stat(request);
+        case protocol::FileCommand::AppStoreRead:
+            return handle_app_store_read(request);
+        case protocol::FileCommand::AppStoreWrite:
+            return handle_app_store_write(request);
+        case protocol::FileCommand::AppStoreDelete:
+            return handle_app_store_delete(request);
+        case protocol::FileCommand::AppStoreList:
+            return handle_app_store_list(request);
         default:
             return make_base_response(request, StatusCode::Unsupported);
     }
@@ -749,6 +794,220 @@ IOResponse FileDevice::handle_make_directory(const IORequest& request)
     fileproto::write_u8(out, FILEPROTO_VERSION);
     fileproto::write_u8(out, 0);
     fileproto::write_u16le(out, 0);
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+IOResponse FileDevice::handle_app_store_stat(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+
+    Reader r(request.payload.data(), request.payload.size());
+    AppStorePrefix p{};
+    if (!parse_app_store_prefix(r, p, true)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    AppStore store(_storage);
+    if (!store.available()) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    AppStore::Stat st{};
+    if (!store.stat(p.ns, p.key, st)) {
+        resp.status = StatusCode::IOError;
+        return resp;
+    }
+
+    std::string out;
+    out.reserve(1 + 1 + 2 + 8 + 8);
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, st.exists ? 0x01U : 0x00U);
+    fileproto::write_u16le(out, 0);
+    fileproto::write_u64le(out, st.sizeBytes);
+    fileproto::write_u64le(out, st.modifiedUnixTime);
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+IOResponse FileDevice::handle_app_store_read(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+
+    Reader r(request.payload.data(), request.payload.size());
+    AppStorePrefix p{};
+    if (!parse_app_store_prefix(r, p, true)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    std::uint32_t offset = 0;
+    std::uint16_t max_bytes = 0;
+    if (!r.read_u32le(offset) || !r.read_u16le(max_bytes) || max_bytes == 0) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    AppStore store(_storage);
+    if (!store.available()) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    AppStore::ReadResult result{};
+    if (!store.read(p.ns, p.key, offset, max_bytes, result)) {
+        resp.status = StatusCode::IOError;
+        return resp;
+    }
+
+    std::uint8_t flags = 0;
+    if (result.eof) flags |= 0x01U;
+    if (result.exists) flags |= 0x02U;
+
+    std::string out;
+    out.reserve(1 + 1 + 2 + 4 + 2 + result.data.size());
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, flags);
+    fileproto::write_u16le(out, 0);
+    fileproto::write_u32le(out, result.offset);
+    fileproto::write_u16le(out, static_cast<std::uint16_t>(result.data.size()));
+    if (!result.data.empty()) {
+        fileproto::write_bytes(out, result.data.data(), result.data.size());
+    }
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+IOResponse FileDevice::handle_app_store_write(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+
+    Reader r(request.payload.data(), request.payload.size());
+    AppStorePrefix p{};
+    if (!parse_app_store_prefix(r, p, true)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    std::uint32_t offset = 0;
+    std::uint16_t data_len = 0;
+    if (!r.read_u32le(offset) || !r.read_u16le(data_len)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    const std::uint8_t* data = nullptr;
+    if (!r.read_bytes(data, data_len)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    AppStore store(_storage);
+    if (!store.available()) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    AppStore::WriteResult result{};
+    if (!store.write(p.ns, p.key, offset, data, data_len, result)) {
+        resp.status = StatusCode::IOError;
+        return resp;
+    }
+
+    std::string out;
+    out.reserve(1 + 1 + 2 + 4 + 2);
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, 0);
+    fileproto::write_u16le(out, 0);
+    fileproto::write_u32le(out, result.offset);
+    fileproto::write_u16le(out, result.written);
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+IOResponse FileDevice::handle_app_store_delete(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+
+    Reader r(request.payload.data(), request.payload.size());
+    AppStorePrefix p{};
+    if (!parse_app_store_prefix(r, p, true)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    AppStore store(_storage);
+    if (!store.available()) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    AppStore::DeleteResult result{};
+    if (!store.remove(p.ns, p.key, result)) {
+        resp.status = StatusCode::IOError;
+        return resp;
+    }
+
+    std::string out;
+    out.reserve(1 + 1 + 2);
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, result.deleted ? 0x01U : 0x00U);
+    fileproto::write_u16le(out, 0);
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+IOResponse FileDevice::handle_app_store_list(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+
+    Reader r(request.payload.data(), request.payload.size());
+    AppStorePrefix p{};
+    if (!parse_app_store_prefix(r, p, false)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    std::uint16_t start_index = 0;
+    std::uint16_t max_payload_bytes = 0;
+    if (!r.read_u16le(start_index) || !r.read_u16le(max_payload_bytes) || max_payload_bytes == 0) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    AppStore store(_storage);
+    if (!store.available()) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    AppStore::ListResult result{};
+    if (!store.list(p.ns, start_index, max_payload_bytes, result)) {
+        resp.status = StatusCode::IOError;
+        return resp;
+    }
+
+    std::string out;
+    out.reserve(1 + 1 + 2 + 2 + 2 + 2 + max_payload_bytes);
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    fileproto::write_u8(out, result.more ? 0x01U : 0x00U);
+    fileproto::write_u16le(out, 0);
+    fileproto::write_u16le(out, result.startIndex);
+    fileproto::write_u16le(out, static_cast<std::uint16_t>(result.keys.size()));
+
+    const std::size_t keys_len_pos = out.size();
+    fileproto::write_u16le(out, 0);
+    const std::size_t keys_start = out.size();
+    for (const auto& key : result.keys) {
+        fileproto::write_u16le(out, static_cast<std::uint16_t>(key.size()));
+        fileproto::write_bytes(out, key.data(), key.size());
+    }
+    const auto keys_len = static_cast<std::uint16_t>(out.size() - keys_start);
+    out[keys_len_pos + 0] = static_cast<char>(keys_len & 0xFF);
+    out[keys_len_pos + 1] = static_cast<char>((keys_len >> 8) & 0xFF);
+
     resp.payload.assign(out.begin(), out.end());
     return resp;
 }

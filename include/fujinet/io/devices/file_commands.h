@@ -10,6 +10,11 @@ enum class FileCommand : std::uint8_t {
     WriteFile     = 0x04,
     ResolvePath   = 0x05,
     MakeDirectory = 0x06,
+    AppStoreStat  = 0x20,
+    AppStoreRead  = 0x21,
+    AppStoreWrite = 0x22,
+    AppStoreDelete = 0x23,
+    AppStoreList  = 0x24,
 };
 
 // ListDirectory (0x02) request: after startIndex and maxPayloadBytes (u16le each), an

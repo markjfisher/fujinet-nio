@@ -47,6 +47,35 @@ def _mkdir_p(*, args, bus: FujiBusSession, uri: str) -> bool:
     return True
 
 
+def _send_file_command(
+    *,
+    args,
+    bus: FujiBusSession,
+    command: int,
+    payload: bytes,
+    cmd_txt: str,
+):
+    pkt = bus.send_command_expect(
+        device=fp.FILE_DEVICE_ID,
+        command=command,
+        payload=payload,
+        expect_device=fp.FILE_DEVICE_ID,
+        expect_command=command,
+        timeout=args.timeout,
+        cmd_txt=cmd_txt,
+    )
+    if pkt is None:
+        print("No response", file=sys.stderr)
+        return None
+    if not status_ok(pkt):
+        print(
+            f"Device status={pkt.params[0] if pkt.params else '??'}",
+            file=sys.stderr,
+        )
+        return None
+    return pkt
+
+
 def cmd_list(args) -> int:
     uri = _parse_uri(args.uri)
     start = args.start
@@ -211,6 +240,7 @@ def cmd_read_all(args) -> int:
     out_path = Path(args.out) if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"")
 
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
@@ -368,6 +398,214 @@ def cmd_write(args) -> int:
     return 0
 
 
+def cmd_appstore_stat(args) -> int:
+    req = fp.build_appstore_stat_req(args.namespace, args.key)
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+        pkt = _send_file_command(
+            args=args,
+            bus=bus,
+            command=fp.CMD_APPSTORE_STAT,
+            payload=req,
+            cmd_txt="APPSTORE_STAT",
+        )
+        if pkt is None:
+            return 1
+        st = fp.parse_appstore_stat_resp(pkt.payload)
+        print(f"{args.namespace}/{args.key}")
+        print(f"  exists: {st.exists}")
+        print(f"  size:   {st.size_bytes}")
+        print(f"  mtime:  {fp.fmt_utc(st.mtime_unix)}")
+    return 0
+
+
+def cmd_appstore_get(args) -> int:
+    out_path = Path(args.out) if args.out else None
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"")
+
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+        offset = args.offset
+        chunks: list[bytes] = []
+        total = 0
+
+        while True:
+            req = fp.build_appstore_read_req(args.namespace, args.key, offset, args.chunk)
+            pkt = _send_file_command(
+                args=args,
+                bus=bus,
+                command=fp.CMD_APPSTORE_READ,
+                payload=req,
+                cmd_txt="APPSTORE_READ",
+            )
+            if pkt is None:
+                return 1
+
+            rr = fp.parse_appstore_read_resp(pkt.payload)
+            if rr.offset != offset:
+                print(
+                    f"Offset echo mismatch: expected {offset}, got {rr.offset}",
+                    file=sys.stderr,
+                )
+                return 1
+            if not rr.exists:
+                print("Key not found", file=sys.stderr)
+                return 1
+
+            if out_path:
+                with out_path.open("ab") as f:
+                    f.write(rr.data)
+            else:
+                chunks.append(rr.data)
+
+            n = len(rr.data)
+            total += n
+            offset += n
+
+            if args.verbose:
+                print(f"read chunk: offset={rr.offset} len={n} eof={rr.eof}")
+
+            if rr.eof or n == 0 or args.once:
+                break
+
+        if not out_path:
+            sys.stdout.buffer.write(b"".join(chunks))
+
+        if args.verbose:
+            print(f"total read: {total} bytes", file=sys.stderr)
+
+    return 0
+
+
+def cmd_appstore_put(args) -> int:
+    if args.file:
+        data = Path(args.file).read_bytes()
+    elif args.text is not None:
+        data = args.text.encode("utf-8")
+    else:
+        data = sys.stdin.buffer.read()
+
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+        offset = args.offset
+        idx = 0
+        total_written = 0
+
+        if not data:
+            req = fp.build_appstore_write_req(args.namespace, args.key, offset, b"")
+            pkt = _send_file_command(
+                args=args,
+                bus=bus,
+                command=fp.CMD_APPSTORE_WRITE,
+                payload=req,
+                cmd_txt="APPSTORE_WRITE",
+            )
+            if pkt is None:
+                return 1
+            wr = fp.parse_appstore_write_resp(pkt.payload)
+            if args.verbose:
+                print(f"write chunk: offset={wr.offset} requested=0 written={wr.written}")
+        else:
+            while idx < len(data):
+                chunk = data[idx : idx + args.chunk]
+                req = fp.build_appstore_write_req(args.namespace, args.key, offset, chunk)
+                pkt = _send_file_command(
+                    args=args,
+                    bus=bus,
+                    command=fp.CMD_APPSTORE_WRITE,
+                    payload=req,
+                    cmd_txt="APPSTORE_WRITE",
+                )
+                if pkt is None:
+                    return 1
+
+                wr = fp.parse_appstore_write_resp(pkt.payload)
+                if wr.offset != offset:
+                    print(
+                        f"Offset echo mismatch: expected {offset}, got {wr.offset}",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+                wrote = int(wr.written)
+                if args.verbose:
+                    print(
+                        f"write chunk: offset={offset} requested={len(chunk)} written={wrote}"
+                    )
+                if wrote == 0:
+                    print("write stalled (0 bytes written), stopping", file=sys.stderr)
+                    return 1
+
+                total_written += wrote
+                offset += wrote
+                idx += wrote
+
+        if args.verbose:
+            print(f"total written: {total_written} bytes")
+
+    return 0
+
+
+def cmd_appstore_delete(args) -> int:
+    req = fp.build_appstore_delete_req(args.namespace, args.key)
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+        pkt = _send_file_command(
+            args=args,
+            bus=bus,
+            command=fp.CMD_APPSTORE_DELETE,
+            payload=req,
+            cmd_txt="APPSTORE_DELETE",
+        )
+        if pkt is None:
+            return 1
+        dr = fp.parse_appstore_delete_resp(pkt.payload)
+        if args.verbose:
+            print(f"deleted: {dr.deleted}")
+    return 0
+
+
+def cmd_appstore_list(args) -> int:
+    start = args.start
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+        while True:
+            req = fp.build_appstore_list_req(args.namespace, start, args.max_payload)
+            pkt = _send_file_command(
+                args=args,
+                bus=bus,
+                command=fp.CMD_APPSTORE_LIST,
+                payload=req,
+                cmd_txt="APPSTORE_LIST",
+            )
+            if pkt is None:
+                return 1
+
+            lr = fp.parse_appstore_list_resp(pkt.payload)
+            if lr.start_index != start:
+                print(
+                    f"startIndex echo mismatch: expected {start}, got {lr.start_index}",
+                    file=sys.stderr,
+                )
+                return 1
+            for key in lr.keys:
+                print(key)
+
+            if args.verbose:
+                print(
+                    f"list chunk: start={lr.start_index} count={lr.key_count} "
+                    f"bytes={lr.keys_len} more={lr.more}",
+                    file=sys.stderr,
+                )
+
+            start += lr.key_count
+            if not lr.more:
+                break
+    return 0
+
+
 def register_subcommands(subparsers) -> None:
     """Register FileDevice commands (list/stat/read/read-all/write) on a top-level subparser."""
     pl = subparsers.add_parser("list", help="List directory entries via FileDevice")
@@ -423,3 +661,41 @@ def register_subcommands(subparsers) -> None:
     pw.add_argument("uri", help="URI (e.g., tnfs://host:port/file, /path, sd0:/path)")
     pw.add_argument("inp", help="Local input file")
     pw.set_defaults(fn=cmd_write)
+
+    pas = subparsers.add_parser("appstore", help="Application storage commands")
+    appsub = pas.add_subparsers(dest="appstore_cmd", required=True)
+
+    ast = appsub.add_parser("stat", help="Stat an application storage key")
+    ast.add_argument("namespace")
+    ast.add_argument("key")
+    ast.set_defaults(fn=cmd_appstore_stat)
+
+    ag = appsub.add_parser("get", help="Read an application storage key")
+    ag.add_argument("--offset", type=int, default=0)
+    ag.add_argument("--chunk", type=int, default=512)
+    ag.add_argument("--out", help="Write to this file (else stdout)")
+    ag.add_argument("--once", action="store_true", help="Read one chunk only")
+    ag.add_argument("namespace")
+    ag.add_argument("key")
+    ag.set_defaults(fn=cmd_appstore_get)
+
+    ap = appsub.add_parser("put", help="Write an application storage key")
+    ap.add_argument("--offset", type=int, default=0)
+    ap.add_argument("--chunk", type=int, default=512)
+    src = ap.add_mutually_exclusive_group()
+    src.add_argument("--file", help="Local file to write")
+    src.add_argument("--text", help="UTF-8 text to write")
+    ap.add_argument("namespace")
+    ap.add_argument("key")
+    ap.set_defaults(fn=cmd_appstore_put)
+
+    ad = appsub.add_parser("delete", help="Delete an application storage key")
+    ad.add_argument("namespace")
+    ad.add_argument("key")
+    ad.set_defaults(fn=cmd_appstore_delete)
+
+    al = appsub.add_parser("list", help="List keys in an application storage namespace")
+    al.add_argument("--start", type=int, default=0)
+    al.add_argument("--max-payload", type=int, default=512)
+    al.add_argument("namespace")
+    al.set_defaults(fn=cmd_appstore_list)
