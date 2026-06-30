@@ -592,6 +592,60 @@ class C_0010580021346264420268 {
 {static} +sessions(const NetworkDevice & dev) : std::vector<SessionRow>
 __
 }
+class "io::AppStore" as C_0017938940343811357840
+class C_0017938940343811357840 {
++AppStore(fs::StorageManager & storage) : void
+..
++available() const : bool
+-backing_fs() const : fs::IFileSystem *
++backing_fs_name() const : std::string
+-ensure_namespace_dir(std::string_view ns) : bool
+-key_path(std::string_view ns, std::string_view key) const : std::string
++list(std::string_view ns, std::uint16_t startIndex, std::uint16_t maxPayloadBytes, ListResult & out) : bool
+-namespace_path(std::string_view ns) const : std::string
++read(std::string_view ns, std::string_view key, std::uint32_t offset, std::uint16_t maxBytes, ReadResult & out) : bool
++remove(std::string_view ns, std::string_view key, DeleteResult & out) : bool
++rename(std::string_view ns, std::string_view oldKey, std::string_view newKey) : bool
++stat(std::string_view ns, std::string_view key, Stat & out) : bool
+{static} +valid_key(std::string_view key) : bool
+{static} +valid_namespace(std::string_view ns) : bool
++write(std::string_view ns, std::string_view key, std::uint32_t offset, const std::uint8_t * data, std::uint16_t len, WriteResult & out) : bool
+__
+-_storage : fs::StorageManager &
+}
+class "io::AppStore::Stat" as C_0002332226688905710359
+class C_0002332226688905710359 {
+__
++exists : bool
++modifiedUnixTime : std::uint64_t
++sizeBytes : std::uint64_t
+}
+class "io::AppStore::ReadResult" as C_0010095979242356174466
+class C_0010095979242356174466 {
+__
++data : std::vector<std::uint8_t>
++eof : bool
++exists : bool
++offset : std::uint32_t
+}
+class "io::AppStore::WriteResult" as C_0006855611607891588110
+class C_0006855611607891588110 {
+__
++offset : std::uint32_t
++written : std::uint16_t
+}
+class "io::AppStore::DeleteResult" as C_0000914061821889831829
+class C_0000914061821889831829 {
+__
++deleted : bool
+}
+class "io::AppStore::ListResult" as C_0016068550494544013900
+class C_0016068550494544013900 {
+__
++keys : std::vector<std::string>
++more : bool
++startIndex : std::uint16_t
+}
 class "io::ClockDevice" as C_0006193474076654383504
 class C_0006193474076654383504 {
 +ClockDevice() = default : void
@@ -620,6 +674,11 @@ class C_0018348317585229177251 {
 +FileDevice(fs::StorageManager & storage) : void
 ..
 +handle(const IORequest & request) : IOResponse
+-handle_app_store_delete(const IORequest & request) : IOResponse
+-handle_app_store_list(const IORequest & request) : IOResponse
+-handle_app_store_read(const IORequest & request) : IOResponse
+-handle_app_store_stat(const IORequest & request) : IOResponse
+-handle_app_store_write(const IORequest & request) : IOResponse
 -handle_list_directory(const IORequest & request) : IOResponse
 -handle_make_directory(const IORequest & request) : IOResponse
 -handle_read_file(const IORequest & request) : IOResponse
@@ -1066,6 +1125,24 @@ __
 -_core : core::FujinetCore &
 -_wifi_ctx : std::shared_ptr<NetworkDiagWifiContext>
 }
+class "diag::AppStoreDiagnosticProvider" as C_0002498529430908874790
+class C_0002498529430908874790 {
++AppStoreDiagnosticProvider(core::FujinetCore & core) : void
+..
+-cmd_delete(const DiagArgsView & args) : DiagResult
+-cmd_list(const DiagArgsView & args) : DiagResult
+-cmd_read(const DiagArgsView & args) : DiagResult
+-cmd_rename(const DiagArgsView & args) : DiagResult
+-cmd_stat(const DiagArgsView & args) : DiagResult
+-cmd_write(const DiagArgsView & args) : DiagResult
++execute(const DiagArgsView & args) : DiagResult
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+-require_available(io::AppStore & s) : DiagResult
+-store() : io::AppStore
+__
+-_core : core::FujinetCore &
+}
 class "diag::CoreDiagnosticProvider" as C_0011633639399304046317
 class C_0011633639399304046317 {
 +CoreDiagnosticProvider(core::FujinetCore & core) : void
@@ -1373,6 +1450,18 @@ C_0011301425670680674257 o-- C_0010613333864250568344 : +proto
 C_0011301425670680674257 o-- C_0011628969558439618672 : +translation
 C_0011301425670680674257 o-- C_0017172268465975245210 : +translator
 C_0010580021346264420268 ..> C_0006245826437162508923
+C_0017938940343811357840 ..> C_0002332226688905710359
+C_0017938940343811357840 ..> C_0010095979242356174466
+C_0017938940343811357840 ..> C_0006855611607891588110
+C_0017938940343811357840 ..> C_0000914061821889831829
+C_0017938940343811357840 ..> C_0016068550494544013900
+C_0017938940343811357840 ..> C_0012397556205933868732
+C_0017938940343811357840 --> C_0001279065520068563954 : -_storage
+C_0002332226688905710359 --+ C_0017938940343811357840
+C_0010095979242356174466 --+ C_0017938940343811357840
+C_0006855611607891588110 --+ C_0017938940343811357840
+C_0000914061821889831829 --+ C_0017938940343811357840
+C_0016068550494544013900 --+ C_0017938940343811357840
 C_0006193474076654383504 ..> C_0002386736627821114488
 C_0006193474076654383504 ..> C_0002942984525013396621
 C_0006193474076654383504 --> C_0010708806357379257038 : -_configStore
@@ -1482,6 +1571,12 @@ C_0005339174589336306392 ..> C_0001548601329560013188
 C_0005339174589336306392 --> C_0011474842863539673819 : -_core
 C_0005339174589336306392 --> C_0003130400837978442922 : -_wifi_ctx
 C_0007944674237235781138 <|-- C_0005339174589336306392
+C_0002498529430908874790 ..> C_0014265545497805753192
+C_0002498529430908874790 ..> C_0018340176854803608744
+C_0002498529430908874790 ..> C_0011046427244206106114
+C_0002498529430908874790 ..> C_0017938940343811357840
+C_0002498529430908874790 --> C_0011474842863539673819 : -_core
+C_0007944674237235781138 <|-- C_0002498529430908874790
 C_0011633639399304046317 ..> C_0014265545497805753192
 C_0011633639399304046317 ..> C_0018340176854803608744
 C_0011633639399304046317 ..> C_0011046427244206106114

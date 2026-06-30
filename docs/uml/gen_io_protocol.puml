@@ -103,6 +103,11 @@ ReadFile
 WriteFile
 ResolvePath
 MakeDirectory
+AppStoreStat
+AppStoreRead
+AppStoreWrite
+AppStoreDelete
+AppStoreList
 }
 enum "io::protocol::NetworkCommand" as C_0007700754280455587098
 enum C_0007700754280455587098 {
