@@ -86,7 +86,7 @@
         "FN_BUILD_ATARI_PTY": "OFF",
         "FN_BUILD_ATARI_NETSIO": "OFF",
         "FN_BUILD_POSIX_APP": "ON",
-        "FN_BUILD_TESTS": "OFF"
+        "FN_BUILD_TESTS": "ON"
       }
     },
     {

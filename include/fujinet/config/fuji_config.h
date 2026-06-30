@@ -103,7 +103,8 @@ struct ChannelConfig {
     std::string ptyPath{};  // POSIX PTY device path; empty = kernel-assigned
     std::string tcpHost{"127.0.0.1"}; // POSIX TCP serial bind/connect host
     std::uint16_t tcpPort{65504};      // POSIX TCP serial port for QEMU-style clients
-    UartConfig  uart{};     // ESP32 host UART (baud, framing, optional RTS/CTS)
+    std::string serialPort{"/dev/ttyUSB0"}; // POSIX serial device for RS-232 profiles
+    UartConfig  uart{};     // UART/RS-232 settings (baud, framing, optional RTS/CTS)
 };
 
 // Unified config for the whole FujiNet instance.

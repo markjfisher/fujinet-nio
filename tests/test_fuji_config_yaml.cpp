@@ -79,6 +79,7 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.channel.ptyPath != b.channel.ptyPath) return false;
     if (a.channel.tcpHost != b.channel.tcpHost) return false;
     if (a.channel.tcpPort != b.channel.tcpPort) return false;
+    if (a.channel.serialPort != b.channel.serialPort) return false;
     if (a.channel.uart.baudRate != b.channel.uart.baudRate) return false;
     if (a.channel.uart.dataBits != b.channel.uart.dataBits) return false;
     if (a.channel.uart.parity != b.channel.uart.parity) return false;
@@ -732,6 +733,7 @@ channel:
     CHECK(cfg.channel.ptyPath == "/dev/fujinet-pty");
     CHECK(cfg.channel.tcpHost == "127.0.0.1");
     CHECK(cfg.channel.tcpPort == 65504);
+    CHECK(cfg.channel.serialPort == "/dev/ttyUSB0");
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Channel tcp config")
@@ -813,6 +815,44 @@ channel:
     CHECK(cfg.channel.uart.parity == UartParity::Even);
     CHECK(cfg.channel.uart.stopBits == UartStopBits::Two);
     CHECK(cfg.channel.uart.flowControl == UartFlowControl::RtsCts);
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Channel serial port config")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    const std::string yaml = R"(
+fujinet:
+  device_name: "test-device"
+  boot_mode: "normal"
+  alt_config_file: ""
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+mounts: []
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+channel:
+  serial_port: "/dev/ttyS1"
+  uart:
+    baud_rate: 38400
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    CHECK(cfg.channel.serialPort == "/dev/ttyS1");
+    CHECK(cfg.channel.uart.baudRate == 38400u);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Channel legacy uart_baud key")

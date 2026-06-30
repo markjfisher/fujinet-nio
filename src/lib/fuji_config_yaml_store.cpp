@@ -188,6 +188,7 @@ static void from_yaml(const YAML::Node& node, ChannelConfig& out)
     out.ptyPath = get_or<std::string>(node, "pty_path", "");
     out.tcpHost = get_or<std::string>(node, "tcp_host", "127.0.0.1");
     out.tcpPort = static_cast<std::uint16_t>(get_or<int>(node, "tcp_port", 65504));
+    out.serialPort = get_or<std::string>(node, "serial_port", "/dev/ttyUSB0");
     if (auto u = node["uart"]) {
         if (u.IsMap()) {
             from_yaml(u, out.uart);
@@ -312,6 +313,7 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
      out << YAML::Key << "pty_path" << YAML::Value << cfg.channel.ptyPath;
      out << YAML::Key << "tcp_host" << YAML::Value << cfg.channel.tcpHost;
      out << YAML::Key << "tcp_port" << YAML::Value << cfg.channel.tcpPort;
+     out << YAML::Key << "serial_port" << YAML::Value << cfg.channel.serialPort;
      out << YAML::Key << "uart" << YAML::Value << YAML::BeginMap;
      out << YAML::Key << "baud_rate"     << YAML::Value << cfg.channel.uart.baudRate;
      out << YAML::Key << "data_bits"     << YAML::Value << cfg.channel.uart.dataBits;

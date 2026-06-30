@@ -240,8 +240,9 @@ public:
 |----------|------------------------|
 | POSIX    | `PtyChannel` (in `platform/posix/channel_factory.cpp`) |
 | POSIX    | `TcpServerChannel` (in `platform/posix/channel_factory.cpp`) |
+| POSIX    | `SerialChannel` (in `platform/posix/channel_factory.cpp`) |
 | ESP32-S3 | `UsbCdcChannel` (in `platform/esp32/usb_cdc_channel.cpp`) |
-| Future   | UART-based SIO, WebUSB, emulator pipes |
+| Future   | WebUSB, emulator pipes |
 
 Channels are platform-specific and discovered via **channel factories**.  
 Core code only uses the `Channel` interface.
@@ -265,6 +266,24 @@ disconnects. FujiBus/SLIP framing remains entirely in `FujiBusTransport`.
 
 See [`docs/posix_tcp_serial_channel.md`](posix_tcp_serial_channel.md) for
 configuration and QEMU/MS-DOS usage notes.
+
+### POSIX RS-232 serial channel
+
+The POSIX `SerialChannel` is a raw byte channel for FujiBus over a local serial
+device, initially used by the Amiga RS-232 prototype profile. It is selected by
+the `fujibus-rs232-debug` preset:
+
+- `TransportKind::FujiBus`
+- `ChannelKind::SerialPort`
+- profile name `POSIX + FujiBus over RS-232 (Amiga prototype)`
+
+At runtime, `src/platform/posix/channel_factory.cpp` reads
+`FujiConfig.channel.serialPort` and the `FujiConfig.channel.uart` line settings,
+opens the configured TTY in raw mode, applies baud, data bits, parity, stop bits,
+and hardware flow control when available, and exposes it through the common
+`Channel` API. `FN_SERIAL_PORT` and `FN_SERIAL_BAUD` may override config values
+for manual hardware testing. FujiBus/SLIP framing remains entirely in
+`FujiBusTransport`.
 
 ---
 

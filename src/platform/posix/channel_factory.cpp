@@ -8,6 +8,7 @@
 #include "fujinet/io/core/channel.h"
 #include "fujinet/build/profile.h"
 #include "fujinet/config/fuji_config.h"
+#include "fujinet/platform/posix/serial_channel.h"
 
 #if !defined(_WIN32)
 
@@ -68,9 +69,25 @@ public:
         std::size_t remaining = len;
         while (remaining > 0) {
             ssize_t n = ::write(_fd, ptr, remaining);
-            if (n <= 0) break;
-            ptr       += n;
-            remaining -= static_cast<std::size_t>(n);
+            if (n > 0) {
+                ptr       += n;
+                remaining -= static_cast<std::size_t>(n);
+                continue;
+            }
+            if (n < 0 && errno == EINTR) {
+                continue;
+            }
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                struct pollfd pfd;
+                pfd.fd = _fd;
+                pfd.events = POLLOUT;
+                pfd.revents = 0;
+                if (::poll(&pfd, 1, 100) > 0 && (pfd.revents & POLLOUT) != 0) {
+                    continue;
+                }
+            }
+            std::perror("[SerialChannel] write");
+            break;
         }
     }
 
@@ -78,8 +95,29 @@ private:
     int _fd;
 };
 
-static speed_t baud_constant(int baud) {
+bool posix::is_supported_serial_baud(std::uint32_t baud)
+{
     switch (baud) {
+        case 9600:
+        case 19200:
+        case 38400:
+        case 57600:
+        case 115200:
+        case 230400:
+            return true;
+        default:
+            return false;
+    }
+}
+
+std::uint32_t posix::effective_serial_baud(std::uint32_t requested)
+{
+    return is_supported_serial_baud(requested) ? requested : 19200u;
+}
+
+static speed_t baud_constant(std::uint32_t baud)
+{
+    switch (posix::effective_serial_baud(baud)) {
         case 9600:   return B9600;
         case 19200:  return B19200;
         case 38400:  return B38400;
@@ -90,29 +128,123 @@ static speed_t baud_constant(int baud) {
     }
 }
 
-static std::unique_ptr<fujinet::io::Channel> create_serial_channel(const config::FujiConfig& /*config*/)
+static int normalized_data_bits(int dataBits)
 {
-    const char* port = std::getenv("FN_SERIAL_PORT");
-    if (!port || port[0] == '\0') port = "/dev/ttyUSB0";
+    return (dataBits >= 5 && dataBits <= 8) ? dataBits : 8;
+}
 
-    const char* baud_str = std::getenv("FN_SERIAL_BAUD");
-    int baud = (baud_str && baud_str[0] != '\0') ? std::atoi(baud_str) : 19200;
-
-    int fd = ::open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (fd < 0) {
-        std::perror("[SerialChannel] open");
-        return nullptr;
+static tcflag_t data_bits_flag(int dataBits)
+{
+    switch (normalized_data_bits(dataBits)) {
+        case 5: return CS5;
+        case 6: return CS6;
+        case 7: return CS7;
+        case 8:
+        default: return CS8;
     }
+}
 
+termios posix::make_serial_termios(const config::UartConfig& uart)
+{
     struct termios tio{};
-    tio.c_cflag = CS8 | CLOCAL | CREAD;
+    tio.c_cflag = CLOCAL | CREAD | data_bits_flag(uart.dataBits);
+    switch (uart.parity) {
+        case config::UartParity::Even:
+            tio.c_cflag |= PARENB;
+            tio.c_cflag &= ~PARODD;
+            break;
+        case config::UartParity::Odd:
+            tio.c_cflag |= PARENB;
+            tio.c_cflag |= PARODD;
+            break;
+        case config::UartParity::None:
+        default:
+            tio.c_cflag &= ~PARENB;
+            tio.c_cflag &= ~PARODD;
+            break;
+    }
+    if (uart.stopBits == config::UartStopBits::Two ||
+        uart.stopBits == config::UartStopBits::OnePointFive) {
+        tio.c_cflag |= CSTOPB;
+    } else {
+        tio.c_cflag &= ~CSTOPB;
+    }
+#if defined(CRTSCTS)
+    if (uart.flowControl == config::UartFlowControl::RtsCts) {
+        tio.c_cflag |= CRTSCTS;
+    } else {
+        tio.c_cflag &= ~CRTSCTS;
+    }
+#endif
     tio.c_iflag = 0;
     tio.c_oflag = 0;
     tio.c_lflag = 0;
     tio.c_cc[VMIN]  = 0;
     tio.c_cc[VTIME] = 1;
-    ::cfsetispeed(&tio, baud_constant(baud));
-    ::cfsetospeed(&tio, baud_constant(baud));
+    return tio;
+}
+
+posix::SerialSettings posix::resolve_serial_settings(const config::FujiConfig& config)
+{
+    SerialSettings settings{
+        .port = config.channel.serialPort.empty() ? std::string{"/dev/ttyUSB0"} : config.channel.serialPort,
+        .uart = config.channel.uart,
+    };
+
+    settings.uart.baudRate = effective_serial_baud(settings.uart.baudRate);
+    settings.uart.dataBits = normalized_data_bits(settings.uart.dataBits);
+
+    const char* envPort = std::getenv("FN_SERIAL_PORT");
+    if (envPort && envPort[0] != '\0') {
+        settings.port = envPort;
+    }
+
+    const char* envBaud = std::getenv("FN_SERIAL_BAUD");
+    if (envBaud && envBaud[0] != '\0') {
+        char* end = nullptr;
+        const auto parsed = std::strtoul(envBaud, &end, 10);
+        if (end && *end == '\0') {
+            settings.uart.baudRate = effective_serial_baud(static_cast<std::uint32_t>(parsed));
+        }
+    }
+
+    return settings;
+}
+
+std::unique_ptr<fujinet::io::Channel>
+posix::create_serial_channel_for_path(const std::string& port, const config::UartConfig& uart)
+{
+    const std::uint32_t effectiveBaud = effective_serial_baud(uart.baudRate);
+    const int dataBits = normalized_data_bits(uart.dataBits);
+
+    if (effectiveBaud != uart.baudRate) {
+        std::cout << "[SerialChannel] Unsupported baud " << uart.baudRate
+                  << "; using " << effectiveBaud << " instead.\n";
+    }
+    if (dataBits != uart.dataBits) {
+        std::cout << "[SerialChannel] Unsupported data_bits " << uart.dataBits
+                  << "; using " << dataBits << " instead.\n";
+    }
+
+    if (port.empty()) {
+        std::cout << "[SerialChannel] Empty serial port path.\n";
+        return nullptr;
+    }
+
+    int fd = ::open(port.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd < 0) {
+        std::perror("[SerialChannel] open");
+        return nullptr;
+    }
+
+#if !defined(CRTSCTS)
+    if (uart.flowControl == config::UartFlowControl::RtsCts) {
+        std::cout << "[SerialChannel] RTS/CTS flow control not supported by this termios platform.\n";
+    }
+#endif
+    struct termios tio = posix::make_serial_termios(uart);
+    ::cfsetispeed(&tio, baud_constant(effectiveBaud));
+    ::cfsetospeed(&tio, baud_constant(effectiveBaud));
 
     if (::tcsetattr(fd, TCSANOW, &tio) != 0) {
         std::perror("[SerialChannel] tcsetattr");
@@ -121,8 +253,17 @@ static std::unique_ptr<fujinet::io::Channel> create_serial_channel(const config:
     }
     ::tcflush(fd, TCIOFLUSH);
 
-    std::cout << "[SerialChannel] Opened " << port << " at " << baud << " baud.\n";
+    std::cout << "[SerialChannel] Opened " << port
+              << " at " << effectiveBaud
+              << " baud, " << dataBits
+              << " data bits.\n";
     return std::make_unique<SerialChannel>(fd);
+}
+
+static std::unique_ptr<fujinet::io::Channel> create_serial_channel(const config::FujiConfig& config)
+{
+    const auto settings = posix::resolve_serial_settings(config);
+    return posix::create_serial_channel_for_path(settings.port, settings.uart);
 }
 
 // ---------------------------------------------------------------------------

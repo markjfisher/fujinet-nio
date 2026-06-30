@@ -74,6 +74,7 @@ enum class ChannelKind {
     TcpSocket,    // TCP/IP serial channel for emulators/QEMU
     UdpSocket,    // UDP socket (for NetSIO protocol)
     UartGpio,     // ESP32 GPIO-based UART (SIO, RS232, etc.)
+    SerialPort,   // POSIX serial port (RS-232 via /dev/ttyS* or /dev/ttyUSB*)
 };
 
 struct BuildProfile {
@@ -147,6 +148,14 @@ BuildProfile current_build_profile()
         .primaryTransport = TransportKind::FujiBus,
         .primaryChannel   = ChannelKind::TcpSocket,
         .name             = "POSIX + FujiBus over TCP serial",
+        .hw               = {},
+    };
+#elif defined(FN_BUILD_AMIGA_RS232)
+    profile = BuildProfile{
+        .machine          = Machine::Generic,
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::SerialPort,
+        .name             = "POSIX + FujiBus over RS-232 (Amiga prototype)",
         .hw               = {},
     };
 #else
@@ -280,11 +289,18 @@ create_channel_for_profile(const BuildProfile& profile, const FujiConfig& config
                 config.channel.tcpHost,
                 config.channel.tcpPort
             );
+        case ChannelKind::SerialPort:
+            return create_serial_channel(config);
         default:
             return nullptr;
     }
 }
 ```
+
+The POSIX serial profile reads `channel.serial_port` and the `channel.uart`
+settings from `fujinet.yaml` (`baud_rate`, `data_bits`, `parity`, `stop_bits`,
+and `flow_control`). `FN_SERIAL_PORT` and `FN_SERIAL_BAUD` remain available as
+environment overrides for quick hardware bring-up.
 
 ## ESP32
 
