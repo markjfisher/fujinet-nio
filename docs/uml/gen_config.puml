@@ -92,6 +92,7 @@ class "config::ChannelConfig" as C_0014601375190208620155
 class C_0014601375190208620155 {
 __
 +ptyPath : std::string
++serialPort : std::string
 +tcpHost : std::string
 +tcpPort : std::uint16_t
 +uart : UartConfig

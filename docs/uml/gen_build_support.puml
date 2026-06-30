@@ -23,6 +23,7 @@ UsbCdcDevice
 TcpSocket
 UdpSocket
 UartGpio
+SerialPort
 }
 class "build::NetworkCapabilities" as C_0008019720847980173585
 class C_0008019720847980173585 {
