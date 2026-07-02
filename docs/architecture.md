@@ -991,7 +991,7 @@ Generated SVGs live in `docs/images/` and are referenced by docs.
 
 Example:
 
-![Core + IO auto-gen UML](images/core_io.svg)
+![Core + IO auto-gen UML](images/gen_core_io.svg)
 
 ---
 
