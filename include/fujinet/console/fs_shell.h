@@ -35,6 +35,7 @@ private:
     bool cmd_pwd(IConsoleTransport& io, const std::vector<std::string_view>& argv);
     bool cmd_cd(IConsoleTransport& io, const std::vector<std::string_view>& argv);
     bool cmd_ls(IConsoleTransport& io, const std::vector<std::string_view>& argv);
+    bool cmd_hexdump(IConsoleTransport& io, const std::vector<std::string_view>& argv);
     bool cmd_mkdir(IConsoleTransport& io, const std::vector<std::string_view>& argv);
     bool cmd_rm(IConsoleTransport& io, const std::vector<std::string_view>& argv);
     bool cmd_rmdir(IConsoleTransport& io, const std::vector<std::string_view>& argv);
@@ -47,5 +48,4 @@ private:
 };
 
 } // namespace fujinet::console
-
 

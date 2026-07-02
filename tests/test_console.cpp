@@ -227,8 +227,49 @@ TEST_CASE("FsShell rm/rmdir semantics + wildcards + mv to directory")
         CHECK(!fs->exists("/a/x.bin"));
         CHECK(fs->exists("/b/x.bin"));
     }
+
+    SUBCASE("hexdump dumps a file like hexdump -C")
+    {
+        REQUIRE(fs->create_file(
+            "/a/logging.bin",
+            {0x00, 0x01, 0x20, 0x41, 0x7e, 0x7f, 0x0a, 0x78,
+             0x80, 0x39, 0xff, 0x10, 0x11, 0x12, 0x13, 0x14,
+             0x5a}));
+
+        std::vector<std::string> argv_s = {"hexdump", "-n", "17", "logging.bin"};
+        auto r = reg.dispatch(sv_argv(argv_s));
+        REQUIRE(r.has_value());
+        CHECK(contains(io.out, "00000000  00 01 20 41 7e 7f 0a 78  80 39 ff 10 11 12 13 14"));
+        CHECK(contains(io.out, "|.. A~..x.9......|"));
+        CHECK(contains(io.out, "00000010  5a"));
+        CHECK(contains(io.out, "|Z|"));
+        CHECK(contains(io.out, "00000011"));
+    }
+
+    SUBCASE("hexdump defaults to 64 bytes")
+    {
+        std::vector<std::uint8_t> bytes(80);
+        for (std::size_t i = 0; i < bytes.size(); ++i) {
+            bytes[i] = static_cast<std::uint8_t>(i);
+        }
+        REQUIRE(fs->create_file("/a/big.bin", bytes));
+
+        std::vector<std::string> argv_s = {"hexdump", "big.bin"};
+        auto r = reg.dispatch(sv_argv(argv_s));
+        REQUIRE(r.has_value());
+        CHECK(contains(io.out, "00000030"));
+        CHECK(contains(io.out, "00000040"));
+        CHECK(!contains(io.out, "00000050"));
+    }
+
+    SUBCASE("hexdump rejects directories")
+    {
+        std::vector<std::string> argv_s = {"hexdump", "/a"};
+        auto r = reg.dispatch(sv_argv(argv_s));
+        REQUIRE(r.has_value());
+        CHECK(contains(io.out, "error: is a directory"));
+    }
 }
 
 } // namespace fujinet::tests
-
 

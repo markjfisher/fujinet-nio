@@ -7,9 +7,13 @@
 #include "fujinet/platform/time.h"
 
 #include <algorithm>
+#include <array>
+#include <cerrno>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -143,6 +147,55 @@ static std::string pad_left(std::string_view s, std::size_t width)
     out.append(width - s.size(), ' ');
     out.append(s.data(), s.size());
     return out;
+}
+
+static bool parse_size_arg(std::string_view s, std::size_t& out)
+{
+    if (s.empty()) return false;
+    std::string tmp(s);
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long long v = std::strtoull(tmp.c_str(), &end, 10);
+    if (errno != 0 || end == tmp.c_str() || *end != '\0') return false;
+    if (v > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) return false;
+    out = static_cast<std::size_t>(v);
+    return true;
+}
+
+static bool is_printable_ascii(std::uint8_t b)
+{
+    return b >= 0x20 && b <= 0x7e;
+}
+
+static void write_hexdump_line(IConsoleTransport& io, std::uint64_t offset, const std::uint8_t* bytes, std::size_t n)
+{
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%08llx  ", static_cast<unsigned long long>(offset));
+    io.write(buf);
+
+    for (std::size_t i = 0; i < 16; ++i) {
+        if (i < n) {
+            std::snprintf(buf, sizeof(buf), "%02x", static_cast<unsigned>(bytes[i]));
+            io.write(buf);
+        } else {
+            io.write("  ");
+        }
+        io.write(i == 7 ? "  " : " ");
+    }
+
+    io.write(" |");
+    for (std::size_t i = 0; i < n; ++i) {
+        const char c = is_printable_ascii(bytes[i]) ? static_cast<char>(bytes[i]) : '.';
+        io.write(std::string_view(&c, 1));
+    }
+    io.write_line("|");
+}
+
+static void write_hexdump_final_offset(IConsoleTransport& io, std::uint64_t offset)
+{
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%08llx", static_cast<unsigned long long>(offset));
+    io.write_line(buf);
 }
 
 struct FsPath {
@@ -280,6 +333,9 @@ bool FsShell::register_commands(ConsoleCommandRegistry& reg, IConsoleTransport& 
     });
     ok &= reg.register_command(ConsoleCommandSpec{"ls", "list directory (or stat file)", "ls [<fs:/>|<path>]"}, [&](const auto& argv) {
         return this->cmd_ls(io, argv);
+    });
+    ok &= reg.register_command(ConsoleCommandSpec{"hexdump", "dump file bytes", "hexdump [-n <bytes>] <path>"}, [&](const auto& argv) {
+        return this->cmd_hexdump(io, argv);
     });
     ok &= reg.register_command(ConsoleCommandSpec{"mkdir", "create directory", "mkdir <path>"}, [&](const auto& argv) {
         return this->cmd_mkdir(io, argv);
@@ -448,6 +504,98 @@ bool FsShell::cmd_ls(IConsoleTransport& io, const std::vector<std::string_view>&
         io.write_line(leaf_name(e.path));
     }
 
+    return true;
+}
+
+bool FsShell::cmd_hexdump(IConsoleTransport& io, const std::vector<std::string_view>& argv)
+{
+    constexpr std::size_t kDefaultMaxBytes = 64;
+
+    if (argv.size() < 2) {
+        io.write_line("error: usage: hexdump [-n <bytes>] <path>");
+        return true;
+    }
+
+    std::size_t maxBytes = kDefaultMaxBytes;
+    std::string_view path_arg;
+    bool saw_separator = false;
+
+    for (std::size_t i = 1; i < argv.size(); ++i) {
+        const std::string_view a = argv[i];
+        if (!saw_separator && a == "--") {
+            saw_separator = true;
+            continue;
+        }
+        if (!saw_separator && (a == "-n" || a == "--max" || a == "--max-bytes")) {
+            if (i + 1 >= argv.size() || !parse_size_arg(argv[++i], maxBytes)) {
+                io.write_line("error: usage: hexdump [-n <bytes>] <path>");
+                return true;
+            }
+            continue;
+        }
+        if (!saw_separator && a.rfind("--max=", 0) == 0) {
+            if (!parse_size_arg(a.substr(6), maxBytes)) {
+                io.write_line("error: usage: hexdump [-n <bytes>] <path>");
+                return true;
+            }
+            continue;
+        }
+        if (path_arg.empty()) {
+            path_arg = a;
+            continue;
+        }
+        if (!parse_size_arg(a, maxBytes)) {
+            io.write_line("error: usage: hexdump [-n <bytes>] <path>");
+            return true;
+        }
+    }
+
+    if (path_arg.empty()) {
+        io.write_line("error: usage: hexdump [-n <bytes>] <path>");
+        return true;
+    }
+
+    FsPath target;
+    if (!parse_fs_path(_pathResolver, path_arg, _cwd_fs, _cwd_path, target)) {
+        io.write_line("error: no filesystem selected (try: fs, then cd <fs>:/)");
+        return true;
+    }
+
+    auto* fs = _storage.get(target.fs);
+    if (!fs) {
+        io.write_line("error: unknown filesystem");
+        return true;
+    }
+
+    fujinet::fs::FileInfo st;
+    if (!fs->stat(target.path, st)) {
+        io.write_line("error: not found");
+        return true;
+    }
+    if (st.isDirectory) {
+        io.write_line("error: is a directory");
+        return true;
+    }
+
+    auto file = fs->open(target.path, "rb");
+    if (!file) {
+        io.write_line("error: open failed");
+        return true;
+    }
+
+    std::array<std::uint8_t, 16> line{};
+    std::uint64_t offset = 0;
+    std::size_t remaining = maxBytes;
+    while (remaining > 0) {
+        const std::size_t want = std::min<std::size_t>(line.size(), remaining);
+        const std::size_t got = file->read(line.data(), want);
+        if (got == 0) break;
+        write_hexdump_line(io, offset, line.data(), got);
+        offset += got;
+        remaining -= got;
+        if (got < want) break;
+    }
+    write_hexdump_final_offset(io, offset);
     return true;
 }
 
@@ -621,5 +769,4 @@ bool FsShell::cmd_mv(IConsoleTransport& io, const std::vector<std::string_view>&
 }
 
 } // namespace fujinet::console
-
 
