@@ -8,6 +8,7 @@
 #include "fujinet/io/core/channel.h"
 #include "fujinet/build/profile.h"
 #include "fujinet/config/fuji_config.h"
+#include "fujinet/io/transport/legacy/netsio_protocol.h"
 #include "fujinet/platform/posix/serial_channel.h"
 
 #if !defined(_WIN32)
@@ -23,6 +24,8 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <algorithm>
+#include <vector>
 
 #if defined(__linux__)
     #include <pty.h>
@@ -33,6 +36,127 @@
 #endif
 
 namespace fujinet::platform {
+
+class NetSioFujiBusChannel : public fujinet::io::Channel {
+public:
+    explicit NetSioFujiBusChannel(std::unique_ptr<fujinet::io::Channel> udp)
+        : _udp(std::move(udp))
+    {
+        _netsio.sendDeviceConnect();
+        write_netsio();
+    }
+
+    ~NetSioFujiBusChannel() override
+    {
+        _netsio.sendDeviceDisconnect();
+        write_netsio();
+    }
+
+    bool available() override
+    {
+        pump();
+        return !_rx.empty();
+    }
+
+    std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override
+    {
+        if (!buffer || maxLen == 0) {
+            return 0;
+        }
+        pump();
+        const std::size_t n = std::min(maxLen, _rx.size());
+        if (n == 0) {
+            return 0;
+        }
+        std::copy_n(_rx.begin(), n, buffer);
+        _rx.erase(_rx.begin(), _rx.begin() + static_cast<std::ptrdiff_t>(n));
+        return n;
+    }
+
+    void write(const std::uint8_t* buffer, std::size_t len) override
+    {
+        if (!buffer || len == 0) {
+            return;
+        }
+        _netsio.sendDataBlock(buffer, len);
+        write_netsio();
+    }
+
+private:
+    void write_netsio()
+    {
+        if (!_udp) {
+            return;
+        }
+        const auto& msg = _netsio.getEncodedMessage();
+        if (!msg.empty()) {
+            _udp->write(msg.data(), msg.size());
+        }
+    }
+
+    void pump()
+    {
+        if (!_udp) {
+            return;
+        }
+
+        std::uint8_t buf[512];
+        while (_udp->available()) {
+            const std::size_t n = _udp->read(buf, sizeof(buf));
+            if (n == 0) {
+                break;
+            }
+            if (!_netsio.parseMessage(buf, n)) {
+                continue;
+            }
+
+            using namespace fujinet::io::transport::legacy;
+            const std::uint8_t type = _netsio.getMessageType();
+            const auto& payload = _netsio.getPayload();
+            switch (type) {
+            case netsio::DATA_BYTE:
+            case netsio::DATA_BYTE_SYNC:
+                if (!payload.empty()) {
+                    _rx.push_back(payload[0]);
+                }
+                break;
+            case netsio::DATA_BLOCK:
+                _rx.insert(_rx.end(), payload.begin(), payload.end());
+                break;
+            case netsio::PING_REQUEST:
+                _netsio.sendPingResponse();
+                write_netsio();
+                break;
+            case netsio::ALIVE_REQUEST:
+                _netsio.sendAliveResponse();
+                write_netsio();
+                break;
+            case netsio::CREDIT_UPDATE:
+            case netsio::CREDIT_STATUS:
+            case netsio::BUS_IDLE:
+            case netsio::COMMAND_ON:
+            case netsio::COMMAND_OFF:
+            case netsio::COMMAND_OFF_SYNC:
+            case netsio::MOTOR_ON:
+            case netsio::MOTOR_OFF:
+            case netsio::PROCEED_ON:
+            case netsio::PROCEED_OFF:
+            case netsio::INTERRUPT_ON:
+            case netsio::INTERRUPT_OFF:
+            case netsio::SPEED_CHANGE:
+            case netsio::WARM_RESET:
+            case netsio::COLD_RESET:
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    std::unique_ptr<fujinet::io::Channel> _udp;
+    fujinet::io::transport::legacy::NetSIOProtocol _netsio;
+    std::vector<std::uint8_t> _rx;
+};
 
 // ---------------------------------------------------------------------------
 // SerialChannel — wraps a POSIX RS-232 serial port (8N1, raw, non-blocking)
@@ -573,7 +697,13 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
         
         // Forward declaration - implementation in udp_channel.cpp
         extern std::unique_ptr<fujinet::io::Channel> create_udp_channel(const std::string& host, std::uint16_t port);
-        return create_udp_channel(host, port);
+        auto udp = create_udp_channel(host, port);
+        if (profile.machine == build::Machine::Atari8Bit &&
+            profile.primaryTransport == build::TransportKind::FujiBus) {
+            std::cout << "[ChannelFactory] Wrapping UDP channel as FujiBus over NetSIO.\n";
+            return std::make_unique<NetSioFujiBusChannel>(std::move(udp));
+        }
+        return udp;
     }
 
     case ChannelKind::UartGpio:

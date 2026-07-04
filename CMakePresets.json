@@ -152,6 +152,40 @@
       }
     },
     {
+      "name": "atari-fujibus-netsio-debug",
+      "displayName": "Atari FujiBus over NetSIO (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_DEBUG_LOG_TS": "ON",
+        "FN_HTTPS_TEST_CA_ADDITIVE": "ON",
+        "FN_BUILD_ATARI_FUJIBUS_NETSIO": "ON",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "atari-fujibus-netsio-release",
+      "displayName": "Atari FujiBus over NetSIO (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FN_BUILD_ATARI_FUJIBUS_NETSIO": "ON",
+        "FN_BUILD_ATARI_NETSIO": "OFF",
+        "FN_BUILD_ATARI_SIO": "OFF",
+        "FN_BUILD_ATARI_PTY": "OFF",
+        "FN_BUILD_FUJIBUS_PTY": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
+    },
+    {
       "name": "lib-only",
       "displayName": "library only (no app, tests on)",
       "generator": "Ninja",
@@ -203,6 +237,14 @@
     {
       "name": "atari-netsio-release-build",
       "configurePreset": "atari-netsio-release"
+    },
+    {
+      "name": "atari-fujibus-netsio-debug-build",
+      "configurePreset": "atari-fujibus-netsio-debug"
+    },
+    {
+      "name": "atari-fujibus-netsio-release-build",
+      "configurePreset": "atari-fujibus-netsio-release"
     },
     {
       "name": "lib-only-build",

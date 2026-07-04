@@ -48,6 +48,14 @@ BuildProfile current_build_profile()
         .name             = "Atari + FujiBus over SIO GPIO",
         .hw               = {},
     };
+#elif defined(FN_BUILD_ATARI_FUJIBUS_NETSIO)
+    profile = BuildProfile{
+        .machine          = Machine::Atari8Bit,
+        .primaryTransport = TransportKind::FujiBus,
+        .primaryChannel   = ChannelKind::UdpSocket,
+        .name             = "Atari + FujiBus over NetSIO (POSIX)",
+        .hw               = {},
+    };
 #elif defined(FN_BUILD_ESP32_USB_CDC)
     profile = BuildProfile{
         .machine          = Machine::FujiNetESP32,
