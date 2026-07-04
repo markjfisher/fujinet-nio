@@ -451,7 +451,7 @@ Currently supported profiles:
   - `primaryTransport = TransportKind::FujiBus`
   - `primaryChannel   = ChannelKind::SioGpio`
   - Used for ESP32 builds where Atari hosts speak the NIO/FujiBus protocol over the SIO connector.
-  - PlatformIO environment: `atari-fujibus-sio-gpio`
+  - PlatformIO environment: `atari-nio-fujibus-sio-gpio-fujinet-v1-8mb`
 
 - `FN_BUILD_ESP32_USB_CDC`  
   - `machine          = Machine::FujiNetESP32`  
