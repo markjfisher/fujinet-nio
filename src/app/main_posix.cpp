@@ -214,6 +214,13 @@ int main()
     }
     core::setup_transports(core, *channel, profile, &config);
 
+    const auto loopDelay =
+        (profile.machine == build::Machine::Atari8Bit &&
+         profile.primaryTransport == build::TransportKind::FujiBus &&
+         profile.primaryChannel == build::ChannelKind::UdpSocket)
+            ? std::chrono::milliseconds(1)
+            : std::chrono::milliseconds(50);
+
     // Run core loop until the process is terminated (Ctrl+C, kill, etc.).
     bool running = true;
     while (running) {
@@ -231,7 +238,7 @@ int main()
             return 75;
 #endif
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(loopDelay);
     }
 
     // (Unreachable for now, but kept for future clean shutdown logic.)

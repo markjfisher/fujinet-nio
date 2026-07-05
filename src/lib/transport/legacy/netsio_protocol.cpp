@@ -230,6 +230,17 @@ void NetSIOProtocol::sendInterruptOff()
     _txBuffer.push_back(netsio::INTERRUPT_OFF);
 }
 
+void NetSIOProtocol::sendSpeedChange(std::uint32_t baudrate)
+{
+    _txBuffer.clear();
+    _txBuffer.push_back(netsio::SPEED_CHANGE);
+    _txBuffer.push_back(static_cast<std::uint8_t>(baudrate & 0xFF));
+    _txBuffer.push_back(static_cast<std::uint8_t>((baudrate >> 8) & 0xFF));
+    _txBuffer.push_back(static_cast<std::uint8_t>((baudrate >> 16) & 0xFF));
+    _txBuffer.push_back(static_cast<std::uint8_t>((baudrate >> 24) & 0xFF));
+    _baudrate = baudrate;
+}
+
 void NetSIOProtocol::sendSyncResponse(std::uint8_t syncNum, std::uint8_t ackType, std::uint8_t ackByte, std::uint16_t writeSize)
 {
     _txBuffer.clear();

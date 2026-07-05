@@ -67,6 +67,7 @@ public:
     void sendProceedOff();
     void sendInterruptOn();
     void sendInterruptOff();
+    void sendSpeedChange(std::uint32_t baudrate);
     void sendSyncResponse(std::uint8_t syncNum, std::uint8_t ackType, std::uint8_t ackByte, std::uint16_t writeSize);
     void sendDeviceConnect();
     void sendDeviceDisconnect();
