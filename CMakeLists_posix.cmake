@@ -190,6 +190,7 @@ target_sources(fujinet-nio
         src/lib/uri_display_formatter.cpp
         src/lib/uri_parser.cpp
         src/lib/utils.cpp
+        src/platform/posix/atari_netsio_fujibus_channel.cpp
         src/platform/posix/channel_factory.cpp
         src/platform/posix/console_transport_default.cpp
         src/platform/posix/console_transport_pty.cpp

@@ -39,6 +39,7 @@ option (FN_BUILD_ATARI_SIO    "Build for Atari SIO via GPIO (ESP32)"  OFF)
 option (FN_BUILD_ATARI_PTY    "Build for Atari SIO over PTY (POSIX)"  OFF)
 option (FN_BUILD_ATARI_NETSIO "Build for Atari SIO over NetSIO/UDP (POSIX)" OFF)
 option (FN_BUILD_ATARI_FUJIBUS_SIO "Build for Atari NIO FujiBus over SIO GPIO (ESP32)" OFF)
+option (FN_BUILD_ATARI_FUJIBUS_NETSIO "Build for Atari NIO FujiBus over NetSIO/UDP (POSIX)" OFF)
 option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 option (FN_BUILD_FUJIBUS_TCP  "Build for FUJIBUS TCP serial profile"  OFF)
 option (FN_BUILD_AMIGA_RS232  "Build for FujiBus over RS-232 (Amiga prototype)" OFF)
@@ -103,6 +104,7 @@ target_compile_definitions(fujinet-nio
         $<$<BOOL:${FN_BUILD_ATARI_PTY}>:FN_BUILD_ATARI_PTY>
         $<$<BOOL:${FN_BUILD_ATARI_NETSIO}>:FN_BUILD_ATARI_NETSIO>
         $<$<BOOL:${FN_BUILD_ATARI_FUJIBUS_SIO}>:FN_BUILD_ATARI_FUJIBUS_SIO>
+        $<$<BOOL:${FN_BUILD_ATARI_FUJIBUS_NETSIO}>:FN_BUILD_ATARI_FUJIBUS_NETSIO>
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
         $<$<BOOL:${FN_BUILD_FUJIBUS_TCP}>:FN_BUILD_FUJIBUS_TCP>
         $<$<BOOL:${FN_BUILD_AMIGA_RS232}>:FN_BUILD_AMIGA_RS232>
