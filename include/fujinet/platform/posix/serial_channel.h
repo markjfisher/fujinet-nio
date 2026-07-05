@@ -23,4 +23,6 @@ SerialSettings resolve_serial_settings(const config::FujiConfig& config);
 std::unique_ptr<fujinet::io::Channel>
 create_serial_channel_for_path(const std::string& port, const config::UartConfig& uart);
 
+std::unique_ptr<fujinet::io::Channel> create_serial_channel(const config::FujiConfig& config);
+
 } // namespace fujinet::platform::posix

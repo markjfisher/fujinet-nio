@@ -206,8 +206,11 @@ target_sources(fujinet-nio
         src/platform/posix/legacy/sio_bus_hardware.cpp
         src/platform/posix/logging.cpp
         src/platform/posix/network_registry.cpp
+        src/platform/posix/pty_channel.cpp
+        src/platform/posix/serial_channel.cpp
         src/platform/posix/tcp_channel.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
+        src/platform/posix/tcp_server_channel.cpp
         src/platform/posix/tcp_socket_ops_default.cpp
         src/platform/posix/tcp_socket_ops_posix.cpp
         src/platform/posix/time.cpp
