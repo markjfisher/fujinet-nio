@@ -8,6 +8,7 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
 - **Platform glue only**: platform differences live in `src/platform/<platform>/` and are expressed via factories/registries, not preprocessor conditionals.
 - **Registration over branching**: new device/image/protocol types are registered via **init/registry** APIs (e.g. `register_*_device`, `make_default_*_registry`).
 - **Binary protocols**: host↔device commands are little-endian binary payloads over the IO bus, exposed as `VirtualDevice` implementations.
+- **Core heartbeat stays cooperative**: channels/transports may opt into bounded `waitForWork()` wakeups, but device/service code should not force the whole `core.tick()` loop to run faster for bus-specific latency.
 - **Tests**: keep unit tests fast and deterministic (doctest). Integration tests (Python) verify end-to-end protocol behavior.
 
 ## Start here (high-signal docs)
@@ -36,6 +37,11 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
   - `include/fujinet/build/profile.h`
   - `src/lib/build_profile.cpp`
   - `src/platform/posix/channel_factory.cpp`
+- **Core loop / transport waiting**:
+  - `include/fujinet/core/core.h`
+  - `include/fujinet/io/transport/io_service.h`
+  - `include/fujinet/io/transport/transport.h`
+  - `include/fujinet/io/core/channel.h`
 - **Diagnostics**:
   - `include/fujinet/diag/diagnostic_provider.h`
   - `include/fujinet/diag/diagnostic_registry.h`

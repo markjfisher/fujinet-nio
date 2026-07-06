@@ -1,6 +1,6 @@
 # **FujiNet-NIO Architecture Document**
 
-*Version 1.2 — Updated 2026-07-02*
+*Version 1.3 — Updated 2026-07-06*
 
 ---
 
@@ -231,9 +231,26 @@ public:
     virtual bool available() = 0;
     virtual std::size_t read(std::uint8_t* buffer, std::size_t maxLen) = 0;
     virtual void write(const std::uint8_t* buffer, std::size_t len) = 0;
+
+    virtual bool supports_readable_wait() const;
+    virtual bool wait_for_readable(std::chrono::milliseconds timeout);
     virtual ~Channel() = default;
 };
 ```
+
+`available()` / `read()` / `write()` are the required non-blocking byte I/O
+contract. Some channels can also wait for inbound bytes without making the
+whole FujiNet core spin faster. Those channels opt in with
+`supports_readable_wait()` and implement `wait_for_readable(timeout)`.
+
+This wait capability is intentionally optional:
+
+- Socket-backed channels such as POSIX UDP can block in `select()` until data
+  arrives or the idle timeout expires.
+- Memory, PTY, serial, USB, or GPIO-backed channels can continue using the
+  default non-waitable behavior until they have a useful readiness primitive.
+- The core still treats every channel as a raw byte stream; waitability does not
+  add protocol knowledge to the channel layer.
 
 ### Implementations
 
@@ -326,6 +343,8 @@ public:
     explicit FujiBusTransport(Channel& ch);
 
     void poll() override;
+    bool supports_work_wait() const override;
+    bool wait_for_work(std::chrono::milliseconds timeout) override;
     bool receive(IORequest& out) override;
     void send(const IOResponse& resp) override;
 };
@@ -341,6 +360,27 @@ public:
 - Pass requests/responses to/from `IOService`
 
 Transports are **stateless with respect to devices**—they only speak protocol.
+
+### Polling and wait responsibility
+
+`poll()` remains the transport's cooperative background hook. It must be cheap:
+read whatever is immediately available, update internal buffers/state machines,
+and return. It must not encode platform-specific timing policy into the shared
+core.
+
+`supports_work_wait()` / `wait_for_work(timeout)` are an optional readiness
+hook. A transport may use this when it can cheaply wait for new channel data or
+already has buffered work. `FujiBusTransport` delegates this to its underlying
+`Channel`:
+
+- if its receive buffer already contains bytes, it reports work immediately;
+- otherwise it calls `channel.wait_for_readable(timeout)` when the channel
+  supports it.
+
+This separates *when the application loop should wake up* from *how requests
+are parsed and routed*. Latency-sensitive paths such as Atari NetSIO can wake
+the loop promptly without reducing the global FujiNet heartbeat to a fixed
+1ms delay.
 
 ---
 
@@ -454,10 +494,24 @@ public:
 
     void addTransport(ITransport* t);
     void serviceOnce();
+    bool hasWaitableWorkSource() const;
+    bool waitForWork(std::chrono::milliseconds timeout);
 };
 ```
 
 `serviceOnce()` is called once per core tick.
+
+`waitForWork(timeout)` is not a replacement for `serviceOnce()`. It is a
+platform-loop helper used between ticks:
+
+1. Check every waitable transport with a zero timeout, so already-buffered work
+   wakes immediately.
+2. If none is ready, wait on one waitable source for at most the platform's idle
+   budget.
+3. Return to the platform loop, which calls `tick()` again.
+
+If no transport is waitable, the platform loop falls back to its normal sleep
+primitive (`std::this_thread::sleep_for` on POSIX, `vTaskDelay` on ESP32).
 
 ### Polling / background work
 
@@ -465,6 +519,12 @@ FujinetCore::tick() polls devices each tick. Devices may use poll() for:
 - streaming progress (async backends),
 - connection/session timeout reaping,
 - housekeeping (autosave, etc).
+
+Device polling is deliberately separate from transport waiting. A transport can
+wake the loop early because bytes arrived, but device code must still tolerate
+the platform idle cadence. If a device needs high-frequency or blocking work, it
+should use a platform service, async backend, or explicit service task rather
+than forcing the global core loop to run faster.
 
 ---
 
@@ -485,6 +545,8 @@ public:
 
     void addTransport(io::ITransport* t);
     void tick();
+    bool hasWaitableWorkSource() const;
+    bool waitForWork(std::chrono::milliseconds timeout);
     std::uint64_t tick_count() const;
 
 private:
@@ -508,7 +570,49 @@ void FujinetCore::tick()
 }
 ```
 
-The platform main loop calls `core.tick()` on a schedule (e.g., every 20–50ms).
+The platform main loop calls `core.tick()` repeatedly. Between ticks it may
+either sleep for its idle budget or ask the core to wait for transport work.
+
+```cpp
+while (running) {
+    core.tick();
+    platform_services.poll();
+    console.step(0);
+
+    if (core.hasWaitableWorkSource()) {
+        core.waitForWork(idleDelay);
+    } else {
+        platform_sleep(idleDelay);
+    }
+}
+```
+
+The important rule is that `idleDelay` is a platform idle budget, not a
+protocol timing hack. Transport/channel readiness may wake the loop early, but
+the core heartbeat itself remains cooperative and portable.
+
+### POSIX vs ESP32 loop shape
+
+POSIX and ESP32 intentionally keep the same high-level shape:
+
+| Step | POSIX | ESP32 |
+|------|-------|-------|
+| Core work | `core.tick()` | `core.tick()` |
+| Platform services | minimal POSIX services / console | Wi-Fi monitor, SNTP, buttons, LEDs, console |
+| Wait path | `core.waitForWork(50ms)` if transport wait is available | `core.waitForWork(20ms)` if transport wait is available |
+| Fallback idle | `std::this_thread::sleep_for(50ms)` | `vTaskDelay(20ms)` |
+
+This means the emulator/host paths can be responsive without making every
+device poll and service poll run at 1ms. For example, the POSIX Atari NetSIO
+adapter wraps a UDP channel that can wait on socket readability. Altirra SIO
+traffic wakes the loop quickly, but idle FujiNet behavior still uses the normal
+POSIX idle budget.
+
+On ESP32, the same wait API is available, but current hardware paths do not
+need to lower the whole core delay for Atari SIO. Timing-sensitive SIO behavior
+belongs inside the SIO channel/framer and hardware drivers. If an ESP32 channel
+later exposes a useful readiness primitive, it can opt in without changing the
+core loop contract.
 
 ---
 
@@ -593,6 +697,14 @@ These boundaries ensure that FujiNet-NIO remains portable, maintainable, and sca
 Some capabilities (e.g. Wi-Fi link bring-up) are platform services rather than IO devices.
 They are initialized by platform bootstrap and/or a service manager, then used by devices
 (e.g. network backends) without coupling device init time to link bring-up time.
+
+Services participate in the platform loop outside `core.tick()`. They may poll
+their own state, subscribe to `SystemEvents`, or start platform tasks. They must
+not rely on transport waitability for correctness: a service should assume it is
+called at the platform idle cadence unless it owns a separate event/task
+mechanism. This keeps service timing from leaking into the transport/channel
+contract and prevents one target's bus latency requirements from changing the
+whole FujiNet heartbeat.
 
 ---
 
