@@ -73,6 +73,7 @@ idf_component_register(
         lib/time_platform.cpp
         lib/tnfs/tnfs_tcp_client.cpp
         lib/tnfs/tnfs_udp_client.cpp
+        lib/transport/atari_sio_fujibus_framer.cpp
         lib/transport/legacy/byte_based_legacy_transport.cpp
         lib/transport/legacy/iwm_traits.cpp
         lib/transport/legacy/iwm_transport.cpp
@@ -85,6 +86,7 @@ idf_component_register(
         lib/uri_display_formatter.cpp
         lib/uri_parser.cpp
         lib/utils.cpp
+        platform/esp32/atari_sio_fujibus_channel.cpp
         platform/esp32/button_manager.cpp
         platform/esp32/channel_factory.cpp
         platform/esp32/console_transport_default.cpp

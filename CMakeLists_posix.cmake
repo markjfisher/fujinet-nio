@@ -178,6 +178,7 @@ target_sources(fujinet-nio
         src/lib/time_platform.cpp
         src/lib/tnfs/tnfs_tcp_client.cpp
         src/lib/tnfs/tnfs_udp_client.cpp
+        src/lib/transport/atari_sio_fujibus_framer.cpp
         src/lib/transport/legacy/byte_based_legacy_transport.cpp
         src/lib/transport/legacy/iwm_traits.cpp
         src/lib/transport/legacy/iwm_transport.cpp

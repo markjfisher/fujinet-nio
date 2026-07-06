@@ -94,3 +94,26 @@ class TestPlatformIOBoardConfig(unittest.TestCase):
         self.assertNotIn("-DFN_BUILD_ATARI_FUJIBUS_SIO", legacy_flags)
         self.assertIn("-DFN_BUILD_ATARI_FUJIBUS_SIO", nio_flags)
         self.assertNotIn("-DFN_BUILD_ATARI_SIO", nio_flags)
+
+    def test_atari_nio_v1_board_targets_old_esp32_sio_hardware(self) -> None:
+        name = "atari-nio-fujibus-sio-gpio-fujinet-v1-8mb"
+        config = _read_ini(PLATFORM_DIR / f"platformio-{name}.ini")
+        section = f"env:{name}"
+
+        self.assertEqual(config.get(section, "board"), "fujinet-v1-8mb")
+        self.assertEqual(
+            config.get(section, "board_build.cmake_extra_args"),
+            "-D CONFIG_IDF_TARGET_ESP32=1",
+        )
+
+        flags = config.get(section, "build_flags")
+        self.assertIn("-DFN_BUILD_ATARI_FUJIBUS_SIO", flags)
+        self.assertIn("-DFN_PINMAP_DEFAULT=FN_PINMAP_ATARIV1", flags)
+
+        board = (BOARDS_DIR / "fujinet-v1-8mb.json").read_text()
+        self.assertIn('"mcu": "esp32"', board)
+        self.assertIn('"maximum_ram_size": 327680', board)
+
+        sdkconfig_map = _read_sdkconfig_map()
+        self.assertIn("fujibus-gpio", sdkconfig_map[name])
+        self.assertNotIn("spiram-oct80", sdkconfig_map[name])
