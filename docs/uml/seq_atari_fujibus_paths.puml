@@ -1,0 +1,121 @@
+@startuml seq_atari_fujibus_paths
+title Atari FujiBus Channel/Transport Paths Compared
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam sequenceMessageAlign center
+
+actor "Atari app\n(fdrive.xex etc.)" as AtariApp
+participant "fujinet-nio-lib\nAtari FujiBus client\nSLIP + FujiBus packets" as AtariLib
+
+box "POSIX emulator path" #EEF7FF
+participant "AltirraSDL\nAtari SIO bus" as Altirra
+participant "netsio.atdevice\nAltirra custom device" as AtDevice
+participant "netsiohub\nTCP custom-device side\nUDP NetSIO side" as NetSioHub
+participant "UdpChannel\nChannelKind::UdpSocket" as UdpChannel
+participant "AtariNetSioFujiBusChannel\nNetSIO/SIO adapter Channel" as NetSioAdapter
+end box
+
+box "fujinet-nio core" #F4FFF1
+participant "FujiBusTransport\nTransportKind::FujiBus" as FujiBusTransport
+participant "IOService / RoutingManager" as IOSvc
+participant "FujiDevice / DiskDevice /\nFileDevice / Clock / ..." as Devices
+end box
+
+box "ESP32 Atari hardware path" #FFF8E8
+participant "Atari SIO connector\nphysical pins" as SioConnector
+participant "ESP32 UartChannel\nChannelKind::SioGpio" as SioGpio
+end box
+
+box "Other FujiBus byte-pipe paths" #F8F0FF
+participant "BBC / MS-DOS / Amiga /\nPython FujiBus client" as OtherClient
+participant "RS-232 / TCP / PTY / USB CDC\nChannel byte pipe" as OtherChannel
+end box
+
+== Shared client-side packet shape ==
+
+AtariApp -> AtariLib : FujiNet API call\n(e.g. get mount slot)
+AtariLib -> AtariLib : Build FujiBus packet\nSLIP encode bytes
+
+note right of AtariLib
+The new Atari NIO path speaks the same
+FujiBus protocol as BBC, MS-DOS, Amiga,
+Python, POSIX PTY/TCP, and USB CDC clients.
+It does not use the legacy SIO transport.
+end note
+
+== POSIX emulator: Atari FujiBus over NetSIO ==
+
+AtariLib -> Altirra : FujiBus bytes over Atari SIO calls
+Altirra -> AtDevice : custom device SIO events
+AtDevice -> NetSioHub : TCP NetSIO custom-device protocol
+NetSioHub -> UdpChannel : UDP NetSIO packets
+UdpChannel -> NetSioAdapter : raw NetSIO bytes
+
+NetSioAdapter -> NetSioAdapter : unwrap NetSIO/SIO command frames\nrecover FujiBus byte stream
+NetSioAdapter -> FujiBusTransport : Channel::read()\nSLIP + FujiBus bytes
+
+FujiBusTransport -> FujiBusTransport : Decode SLIP\nparse FujiBusPacket
+FujiBusTransport -> IOSvc : IORequest
+IOSvc -> Devices : route by device id + command
+Devices --> IOSvc : IOResponse
+IOSvc --> FujiBusTransport : response
+FujiBusTransport -> NetSioAdapter : Channel::write()\nSLIP + FujiBus response bytes
+
+NetSioAdapter -> NetSioAdapter : wrap response as SIO complete/data/checksum\ninside NetSIO packets
+NetSioAdapter -> UdpChannel : UDP NetSIO packets
+UdpChannel -> NetSioHub : UDP
+NetSioHub -> AtDevice : TCP custom-device protocol
+AtDevice -> Altirra : SIO response bytes
+Altirra --> AtariLib : FujiBus response bytes
+AtariLib --> AtariApp : decoded result
+
+note over UdpChannel,NetSioAdapter
+POSIX needs this Atari-specific adapter only because
+Altirra exposes SIO through the existing NetSIO custom
+device protocol. The core still sees ordinary Channel bytes.
+end note
+
+== ESP32 hardware: Atari FujiBus over SIO GPIO ==
+
+AtariLib -> SioConnector : FujiBus bytes on Atari SIO physical link
+SioConnector -> SioGpio : UART RX/TX pins from pinmap().sio.uart
+SioGpio -> FujiBusTransport : Channel::read()\nSLIP + FujiBus bytes
+FujiBusTransport -> IOSvc : IORequest
+IOSvc -> Devices : route by device id + command
+Devices --> IOSvc : IOResponse
+IOSvc --> FujiBusTransport : response
+FujiBusTransport -> SioGpio : Channel::write()\nSLIP + FujiBus response bytes
+SioGpio --> SioConnector : UART TX
+SioConnector --> AtariLib : FujiBus response bytes
+
+note over SioConnector,SioGpio
+Current ESP32 Atari NIO selection is:
+FN_BUILD_ATARI_FUJIBUS_SIO
+  TransportKind::FujiBus
+  ChannelKind::SioGpio
+
+The ESP32 factory maps SioGpio to UartChannel
+with Atari SIO pins. There is not yet a separate
+Atari-specific ESP32 channel beyond that profile,
+pin selection, and UART byte pipe.
+end note
+
+== BBC / MS-DOS comparison ==
+
+OtherClient -> OtherChannel : FujiBus bytes over RS-232/TCP/PTY/USB CDC
+OtherChannel -> FujiBusTransport : Channel::read()\nSLIP + FujiBus bytes
+FujiBusTransport -> IOSvc : IORequest
+IOSvc -> Devices : route by device id + command
+Devices --> IOSvc : IOResponse
+IOSvc --> FujiBusTransport : response
+FujiBusTransport --> OtherChannel : Channel::write()\nSLIP + FujiBus response bytes
+OtherChannel --> OtherClient : FujiBus response bytes
+
+note over OtherClient,OtherChannel
+BBC and MS-DOS do not need a NetSIO/SIO adapter
+when they use RS-232/TCP/PTY-style channels. Their
+channel is already a raw byte pipe carrying FujiBus.
+end note
+
+@enduml

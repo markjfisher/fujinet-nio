@@ -53,6 +53,7 @@ Related focused docs:
 
 - [`docs/build_profiles.md`](build_profiles.md) - how build flags select machine, transport, and channel
 - [`docs/posix_tcp_serial_channel.md`](posix_tcp_serial_channel.md) - FujiBus over TCP serial for emulator and QEMU workflows
+- [`docs/uml/seq_atari_fujibus_paths.puml`](uml/seq_atari_fujibus_paths.puml) - Atari FujiBus POSIX emulator path vs ESP32 SIO GPIO path, compared with BBC/MS-DOS byte-pipe paths
 
 ---
 
@@ -266,6 +267,31 @@ disconnects. FujiBus/SLIP framing remains entirely in `FujiBusTransport`.
 
 See [`docs/posix_tcp_serial_channel.md`](posix_tcp_serial_channel.md) for
 configuration and QEMU/MS-DOS usage notes.
+
+### Atari FujiBus channel paths
+
+The Atari NIO/FujiBus path uses the same `FujiBusTransport` as BBC, MS-DOS,
+Amiga, Python, POSIX PTY/TCP, and USB CDC clients. The platform difference is
+only how raw bytes reach the transport:
+
+- **POSIX + AltirraSDL** uses `ChannelKind::UdpSocket` plus the
+  `AtariNetSioFujiBusChannel` adapter. Altirra talks to `netsio.atdevice`,
+  `netsiohub` forwards NetSIO packets over UDP, and the adapter unwraps the
+  NetSIO/SIO command flow back into a raw FujiBus byte stream for
+  `FujiBusTransport`.
+- **ESP32 + Atari SIO GPIO** uses `FN_BUILD_ATARI_FUJIBUS_SIO`, selecting
+  `TransportKind::FujiBus` with `ChannelKind::SioGpio`. The ESP32 channel
+  factory currently maps this to `UartChannel` using `pinmap().sio.uart`.
+  There is no separate Atari-specific ESP32 transport layer for NIO mode; SIO
+  is treated as the physical UART byte pipe for FujiBus.
+- **BBC/MS-DOS-style paths** use RS-232/TCP/PTY/USB CDC byte channels directly.
+  They do not need the NetSIO adapter because their channel already presents
+  raw FujiBus bytes to the common transport.
+
+Diagram source:
+[`docs/uml/seq_atari_fujibus_paths.puml`](uml/seq_atari_fujibus_paths.puml).
+Rendered SVG:
+[`docs/images/seq_atari_fujibus_paths.svg`](images/seq_atari_fujibus_paths.svg).
 
 ### POSIX RS-232 serial channel
 
