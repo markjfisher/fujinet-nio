@@ -53,6 +53,7 @@ Related focused docs:
 
 - [`docs/build_profiles.md`](build_profiles.md) - how build flags select machine, transport, and channel
 - [`docs/posix_tcp_serial_channel.md`](posix_tcp_serial_channel.md) - FujiBus over TCP serial for emulator and QEMU workflows
+- [`docs/poc_altirrasdl_embedding.md`](poc_altirrasdl_embedding.md) - POC notes for embedding FujiNet-NIO as a native AltirraSDL SIO device
 - [`docs/uml/seq_atari_fujibus_paths.puml`](uml/seq_atari_fujibus_paths.puml) - Atari FujiBus POSIX emulator path vs ESP32 SIO GPIO path, compared with BBC/MS-DOS byte-pipe paths
 
 ---
