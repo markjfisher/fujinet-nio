@@ -222,6 +222,7 @@ class C_0000916483910605533938 {
 +sendPingResponse() : void
 +sendProceedOff() : void
 +sendProceedOn() : void
++sendSpeedChange(std::uint32_t baudrate) : void
 +sendSyncResponse(std::uint8_t syncNum, std::uint8_t ackType, std::uint8_t ackByte, std::uint16_t writeSize) : void
 __
 -_baudrate : std::uint32_t
