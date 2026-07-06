@@ -281,9 +281,12 @@ only how raw bytes reach the transport:
   `FujiBusTransport`.
 - **ESP32 + Atari SIO GPIO** uses `FN_BUILD_ATARI_FUJIBUS_SIO`, selecting
   `TransportKind::FujiBus` with `ChannelKind::SioGpio`. The ESP32 channel
-  factory currently maps this to `UartChannel` using `pinmap().sio.uart`.
-  There is no separate Atari-specific ESP32 transport layer for NIO mode; SIO
-  is treated as the physical UART byte pipe for FujiBus.
+  factory maps this to `AtariSioFujiBusChannel`. That channel owns the
+  `UartChannel` using `pinmap().sio.uart`, configures the Atari SIO control
+  pins, and uses `AtariSioFujiBusFramer` to translate Atari SIO `W`/`R`
+  command/data/checksum traffic into the raw FujiBus byte stream consumed by
+  `FujiBusTransport`. This keeps SIO as a channel adapter; the core transport
+  remains FujiBus, not legacy SIO.
 - **BBC/MS-DOS-style paths** use RS-232/TCP/PTY/USB CDC byte channels directly.
   They do not need the NetSIO adapter because their channel already presents
   raw FujiBus bytes to the common transport.

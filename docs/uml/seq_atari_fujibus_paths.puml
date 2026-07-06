@@ -24,7 +24,9 @@ end box
 
 box "ESP32 Atari hardware path" #FFF8E8
 participant "Atari SIO connector\nphysical pins" as SioConnector
-participant "ESP32 UartChannel\nChannelKind::SioGpio" as SioGpio
+participant "ESP32 UartChannel\nSIO data pins" as SioUart
+participant "AtariSioFujiBusChannel\nChannelKind::SioGpio" as SioChannel
+participant "AtariSioFujiBusFramer\nSIO W/R/checksum adapter" as SioFramer
 end box
 
 box "Other FujiBus byte-pipe paths" #F8F0FF
@@ -78,27 +80,35 @@ end note
 
 == ESP32 hardware: Atari FujiBus over SIO GPIO ==
 
-AtariLib -> SioConnector : FujiBus bytes on Atari SIO physical link
-SioConnector -> SioGpio : UART RX/TX pins from pinmap().sio.uart
-SioGpio -> FujiBusTransport : Channel::read()\nSLIP + FujiBus bytes
+AtariLib -> SioConnector : Atari OS SIO command\nW/R around FujiBus payload
+SioConnector -> SioUart : SIO UART bytes\npinmap().sio.uart
+SioUart -> SioChannel : raw SIO command/data/checksum bytes
+SioChannel -> SioFramer : ingest SIO W payload
+SioFramer -> SioChannel : recovered SLIP + FujiBus bytes
+SioChannel -> FujiBusTransport : Channel::read()\nSLIP + FujiBus bytes
 FujiBusTransport -> IOSvc : IORequest
 IOSvc -> Devices : route by device id + command
 Devices --> IOSvc : IOResponse
 IOSvc --> FujiBusTransport : response
-FujiBusTransport -> SioGpio : Channel::write()\nSLIP + FujiBus response bytes
-SioGpio --> SioConnector : UART TX
-SioConnector --> AtariLib : FujiBus response bytes
+FujiBusTransport -> SioChannel : Channel::write()\nSLIP + FujiBus response bytes
+SioChannel -> SioFramer : queue response for pending SIO R
+SioFramer -> SioChannel : SIO C/data/checksum bytes
+SioChannel -> SioUart : UART TX
+SioUart --> SioConnector : SIO response bytes
+SioConnector --> AtariLib : Atari SIO read result\nFujiBus response payload
 
-note over SioConnector,SioGpio
+note over SioConnector,SioFramer
 Current ESP32 Atari NIO selection is:
 FN_BUILD_ATARI_FUJIBUS_SIO
   TransportKind::FujiBus
   ChannelKind::SioGpio
 
-The ESP32 factory maps SioGpio to UartChannel
-with Atari SIO pins. There is not yet a separate
-Atari-specific ESP32 channel beyond that profile,
-pin selection, and UART byte pipe.
+The ESP32 factory maps SioGpio to
+AtariSioFujiBusChannel. That channel owns
+the UartChannel, configures SIO control pins,
+and uses AtariSioFujiBusFramer to translate
+Atari SIO W/R/checksum traffic into the raw
+FujiBus byte stream consumed by FujiBusTransport.
 end note
 
 == BBC / MS-DOS comparison ==
