@@ -102,14 +102,44 @@ abstract C_0008542343802949846318 {
 {abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
 __
 }
-abstract "io::ITransport" as C_0015529497257294770104
-abstract C_0015529497257294770104 {
-+~ITransport() constexpr = default : void
-..
-+poll() : void
-{abstract} +receive(IORequest & outReq) = 0 : bool
-{abstract} +send(const IOResponse & resp) = 0 : void
+class "io::transport::AtariSioFujiBusFramer" as C_0006392424685935755622
+class C_0006392424685935755622 {
+-aux_word() const : std::uint16_t
+{static} +checksum(const std::uint8_t * data, std::size_t len) : std::uint8_t
+{static} +checksum_update(std::uint8_t checksum, std::uint8_t value) : std::uint8_t
++has_output() const noexcept : bool
++has_request() const noexcept : bool
++ingest(const std::uint8_t * data, std::size_t len) : void
+-process_command() : void
+-process_write_checksum(std::uint8_t got) : void
+-push_output(std::uint8_t value) : void
++queue_response(const std::uint8_t * data, std::size_t len) : void
++read_output(std::uint8_t * buffer, std::size_t maxLen) : std::size_t
++read_request(std::uint8_t * buffer, std::size_t maxLen) : std::size_t
+-reset_command() : void
+-send_read_response() : void
 __
+{static} +CommandRead : const std::uint8_t
+{static} +CommandWrite : const std::uint8_t
+{static} +DefaultReadSize : const std::uint16_t
+{static} +DeviceId : const std::uint8_t
+{static} +SioAck : const std::uint8_t
+{static} +SioComplete : const std::uint8_t
+{static} +SioNak : const std::uint8_t
+-_command : std::vector<std::uint8_t>
+-_output : std::vector<std::uint8_t>
+-_pendingReadSize : std::uint16_t
+-_request : std::vector<std::uint8_t>
+-_response : std::vector<std::uint8_t>
+-_state : State
+-_writePayload : std::vector<std::uint8_t>
+-_writeRemaining : std::uint16_t
+}
+enum "io::transport::AtariSioFujiBusFramer::State" as C_0005635211274124367418
+enum C_0005635211274124367418 {
+Command
+WritePayload
+WriteChecksum
 }
 enum "io::transport::legacy::ResponseStyle" as C_0013970161679530750266
 enum C_0013970161679530750266 {
@@ -293,6 +323,15 @@ enum C_0008469988080401523664 {
 Idle
 Reset
 Enable
+}
+abstract "io::ITransport" as C_0015529497257294770104
+abstract C_0015529497257294770104 {
++~ITransport() constexpr = default : void
+..
++poll() : void
+{abstract} +receive(IORequest & outReq) = 0 : bool
+{abstract} +send(const IOResponse & resp) = 0 : void
+__
 }
 enum "io::ClockCommand" as C_0006646916694369797139
 enum C_0006646916694369797139 {
@@ -901,8 +940,8 @@ C_0002942984525013396621 o-- C_0012496700434923238249 : +status
 C_0010613333864250568344 ..> C_0001159279330674149840
 C_0010613333864250568344 ..> C_0012496700434923238249
 C_0010613333864250568344 ..> C_0007100525671922339382
-C_0015529497257294770104 ..> C_0002386736627821114488
-C_0015529497257294770104 ..> C_0002942984525013396621
+C_0006392424685935755622 o-- C_0005635211274124367418 : -_state
+C_0005635211274124367418 --+ C_0006392424685935755622
 C_0008686573398797909484 o-- C_0013970161679530750266 : +response_style
 C_0015838915725578446589 ..> C_0002386736627821114488
 C_0015838915725578446589 ..> C_0002942984525013396621
@@ -931,6 +970,8 @@ C_0009446685585853408367 ..> C_0015438333988660315289
 C_0009446685585853408367 o-- C_0008469988080401523664 : -_currentPhase
 C_0007145399192091431715 <|-- C_0009446685585853408367
 C_0008469988080401523664 --+ C_0009446685585853408367
+C_0015529497257294770104 ..> C_0002386736627821114488
+C_0015529497257294770104 ..> C_0002942984525013396621
 C_0007350464861923755413 ..> C_0002386736627821114488
 C_0007350464861923755413 ..> C_0002942984525013396621
 C_0010069830097413987109 ..> C_0002386736627821114488
