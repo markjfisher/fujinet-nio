@@ -292,8 +292,16 @@ Current behavior:
   present, which matches the workspace POC layout.
 - Builds `fujinet-nio` as a CMake subdirectory with the POSIX app/tests
   disabled.
+- Enables `FN_BUILD_EMBEDDED_LIB` so the AltirraSDL build links a reduced POSIX
+  library surface and does not pull in the standalone POSIX app, console
+  transports, serial/PTY/TCP channel implementations, or NetSIO bridge channel
+  glue.
+- Keeps curl/OpenSSL enabled for the embedded build because FujiNet network
+  operations are part of the expected device behavior.
 - Registers a native `fujinetnio` Altirra device in the main device registry.
 - Shows `FujiNet-NIO` under the SDL Configure System SIO bus device catalog.
+- Exposes a `configdir` device property in the SDL configuration UI and through
+  `--adddevice fujinetnio,configdir=...`.
 - Implements a command-level SIO device that accepts the NIO FujiBus wrapper
   `W` and `R` commands on the same SIO IDs as the NetSIO bridge path:
   - `0x7F` for the NIO wrapper device;
@@ -302,8 +310,10 @@ Current behavior:
   Altirra's SIO manager and `FujiBusTransport`.
 - Boots a real `FujinetCore`, creates the Fuji device, registers the file,
   clock, disk, network, and modem devices, and applies configured disk mounts.
-- Pumps the embedded core synchronously for a bounded number of ticks during
-  SIO command handling.
+- Runs the embedded core from a worker thread. SIO write commands enqueue
+  FujiBus request bytes and signal the worker; SIO read commands use Altirra
+  fences and short retry delays until a response is ready. This avoids running
+  FujiNet file/network operations on Altirra's emulator/UI path.
 
 Validation run:
 
@@ -339,6 +349,8 @@ altirra:
   embedded_fujinet_nio: true
   devices:
     - type: fujinetnio
+      params:
+        configdir: ${ATARI_FUJINET_CONFIG_DIR}
 ```
 
 The `scripts/build.sh atari-run` wrapper detects that flag and changes the
@@ -347,8 +359,7 @@ runtime shape:
 - uses the workspace-built AltirraSDL binary at
   `repos/AltirraSDL/build/linux-debug/src/AltirraSDL/AltirraSDL`;
 - creates the normal temporary `fujinet-data/fujinet.yaml` test config;
-- runs AltirraSDL from that temporary root so the embedded POSIX config store
-  sees `./fujinet-data/fujinet.yaml`;
+- passes that temporary data directory as the device `configdir`;
 - does not start `netsiohub`;
 - does not start an external `fujinet-nio` process;
 - logs AltirraSDL/fujinet-nio output to `build/logs/atari-run.log`.
