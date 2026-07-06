@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
@@ -38,6 +39,32 @@ using namespace fujinet;
 using namespace fujinet::io::protocol;
 
 static constexpr const char* TAG = "nio";
+
+namespace {
+
+std::chrono::milliseconds posix_loop_delay_for_profile(const build::BuildProfile& profile)
+{
+    if (const char* raw = std::getenv("FN_POSIX_LOOP_DELAY_MS")) {
+        char* end = nullptr;
+        const long value = std::strtol(raw, &end, 10);
+        if (end != raw && *end == '\0' && value >= 0) {
+            return std::chrono::milliseconds(value);
+        }
+        FN_LOGW(TAG, "Ignoring invalid FN_POSIX_LOOP_DELAY_MS=%s", raw);
+    }
+
+    const bool atariNetsioFujiBus =
+        profile.machine == build::Machine::Atari8Bit &&
+        profile.primaryTransport == build::TransportKind::FujiBus &&
+        profile.primaryChannel == build::ChannelKind::UdpSocket;
+
+    // NetSIO/Altirra exchanges complete via the cooperative Channel poll path.
+    // Keep this profile responsive enough for Atari SIO command/data handshakes.
+    return atariNetsioFujiBus ? std::chrono::milliseconds(1)
+                              : std::chrono::milliseconds(50);
+}
+
+} // namespace
 
 // Helper: run a std::function once after a delay (no templates; keeps loop clean).
 struct DeferredOnce {
@@ -214,12 +241,8 @@ int main()
     }
     core::setup_transports(core, *channel, profile, &config);
 
-    const auto loopDelay =
-        (profile.machine == build::Machine::Atari8Bit &&
-         profile.primaryTransport == build::TransportKind::FujiBus &&
-         profile.primaryChannel == build::ChannelKind::UdpSocket)
-            ? std::chrono::milliseconds(1)
-            : std::chrono::milliseconds(50);
+    const auto loopDelay = posix_loop_delay_for_profile(profile);
+    FN_LOGI(TAG, "POSIX loop delay: %lld ms", static_cast<long long>(loopDelay.count()));
 
     // Run core loop until the process is terminated (Ctrl+C, kill, etc.).
     bool running = true;
