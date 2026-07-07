@@ -75,6 +75,20 @@ const IFileSystem* StorageManager::get(const std::string& name) const
     return nullptr;
 }
 
+IFileSystem* StorageManager::defaultPersistentFileSystem()
+{
+    if (auto* fs = get("host")) return fs;
+    if (auto* fs = get("sd0")) return fs;
+    return get("flash");
+}
+
+const IFileSystem* StorageManager::defaultPersistentFileSystem() const
+{
+    if (auto* fs = get("host")) return fs;
+    if (auto* fs = get("sd0")) return fs;
+    return get("flash");
+}
+
 std::vector<std::string> StorageManager::listNames() const
 {
     std::vector<std::string> out;

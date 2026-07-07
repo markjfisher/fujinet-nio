@@ -30,6 +30,15 @@ public:
     IFileSystem*       get(const std::string& name);
     const IFileSystem* get(const std::string& name) const;
 
+    // Platform-neutral persistent storage root.
+    //
+    // Selection priority:
+    // - "host"  for POSIX/embedded-host runs
+    // - "sd0"   for ESP32 SD-card-backed storage
+    // - "flash" for ESP32 internal flash fallback
+    IFileSystem*       defaultPersistentFileSystem();
+    const IFileSystem* defaultPersistentFileSystem() const;
+
     // Optional helpers for enumeration.
     std::vector<std::string> listNames() const;
 

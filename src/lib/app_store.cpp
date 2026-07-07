@@ -121,9 +121,7 @@ AppStore::AppStore(fs::StorageManager& storage)
 
 fs::IFileSystem* AppStore::backing_fs() const
 {
-    if (auto* fs = _storage.get("host")) return fs;
-    if (auto* fs = _storage.get("sd0")) return fs;
-    return _storage.get("flash");
+    return _storage.defaultPersistentFileSystem();
 }
 
 bool AppStore::available() const
