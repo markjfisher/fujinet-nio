@@ -8,6 +8,8 @@ class C_0001279065520068563954 {
 ..
 +operator=(const StorageManager &) = deleted : StorageManager &
 ..
++defaultPersistentFileSystem() : IFileSystem *
++defaultPersistentFileSystem() const : const IFileSystem *
 +get(const std::string & name) : IFileSystem *
 +get(const std::string & name) const : const IFileSystem *
 +getByScheme(const std::string & scheme) : IFileSystem *
@@ -99,6 +101,8 @@ abstract C_0008542343802949846318 {
 ..
 {abstract} +available() = 0 : bool
 {abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
++supports_readable_wait() const : bool
++wait_for_readable(std::chrono::milliseconds timeout) : bool
 {abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
 __
 }
@@ -331,6 +335,8 @@ abstract C_0015529497257294770104 {
 +poll() : void
 {abstract} +receive(IORequest & outReq) = 0 : bool
 {abstract} +send(const IOResponse & resp) = 0 : void
++supports_work_wait() const : bool
++wait_for_work(std::chrono::milliseconds timeout) : bool
 __
 }
 enum "io::ClockCommand" as C_0006646916694369797139
@@ -444,7 +450,9 @@ class C_0007645722238685656096 {
 +IOService(IRequestHandler & handler) : void
 ..
 +addTransport(ITransport * transport) : void
++hasWaitableWorkSource() const : bool
 +serviceOnce() : void
++waitForWork(std::chrono::milliseconds timeout) : bool
 __
 -_handler : IRequestHandler &
 -_transports : std::vector<ITransport *>
@@ -599,6 +607,8 @@ class C_0003433839086217597071 {
 +receive(IORequest & outReq) : bool
 +receiveResponse(IOResponse & outResp) : bool
 +send(const IOResponse & resp) : void
++supports_work_wait() const : bool
++wait_for_work(std::chrono::milliseconds timeout) : bool
 __
 -_channel : Channel &
 -_nextRequestId : RequestID
@@ -919,6 +929,7 @@ class C_0011474842863539673819 {
 +deviceManager() const : const io::IODeviceManager &
 +events() : SystemEvents &
 +events() const : const SystemEvents &
++hasWaitableWorkSource() const : bool
 +ioService() : io::IOService &
 +ioService() const : const io::IOService &
 +routingManager() : io::RoutingManager &
@@ -927,6 +938,7 @@ class C_0011474842863539673819 {
 +storageManager() const : const fs::StorageManager &
 +tick() : void
 +tick_count() const noexcept : std::uint64_t
++waitForWork(std::chrono::milliseconds timeout) : bool
 __
 -_deviceManager : io::IODeviceManager
 -_events : SystemEvents
@@ -1074,6 +1086,6 @@ C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
 C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
 C_0011474842863539673819 o-- C_0010820187132968979160 : -_events
 
-'Generated with clang-uml, version 0.6.2
+'Generated with clang-uml, version 0.6.3
 'LLVM version Ubuntu clang version 18.1.3 (1ubuntu1)
 @enduml
