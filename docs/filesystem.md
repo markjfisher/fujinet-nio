@@ -209,6 +209,43 @@ std::pair<IFileSystem*, std::string> resolveUri(const std::string& uri);
 
 These are useful when a caller has a full URI (for example `http://...`), while normal `FileDevice` style commands still use explicit filesystem name + path (`<fs> <path>`).
 
+### 5.1 Default Persistent Filesystem
+
+Some core features need a platform-neutral place to store persistent data, but
+should not know whether they are running under POSIX, embedded AltirraSDL, or on
+ESP32 hardware. Examples include application storage and legacy compatibility
+layers that store normal files beneath a FujiNet data directory.
+
+Use `StorageManager::defaultPersistentFileSystem()` for this case:
+
+```cpp
+IFileSystem* fs = storage.defaultPersistentFileSystem();
+```
+
+The selection order is:
+
+1. `host` - POSIX and embedded-host runs. For the POSIX app this is usually
+   `./fujinet-data`; for embedded AltirraSDL it is the configured `configdir`.
+2. `sd0` - ESP32 SD-card-backed storage when available.
+3. `flash` - ESP32 internal flash fallback.
+
+This is intentionally a `StorageManager` responsibility rather than an
+`IFileSystem` responsibility: the choice depends on the set of filesystems that
+the platform has registered.
+
+Callers should use this helper instead of hardcoding platform checks or
+duplicating the `host`/`sd0`/`flash` fallback. Once a filesystem is selected,
+paths are still normal filesystem-relative paths. For example, application
+storage currently writes below:
+
+```text
+/FujiNet/app-store/v1
+```
+
+Legacy appkey compatibility can use the same selected filesystem and store/read
+the legacy files directly under the legacy path, without converting them into
+the newer app-store layout.
+
 ---
 
 ## 6. URI Paths And Path Resolver Layer
@@ -386,6 +423,8 @@ This keeps the interface *minimal* but extensible.
 - Core logic is fully **decoupled from platform filesystem behavior**.
 - ESP-IDF VFS makes the ESP32 behave like a minimal POSIX system — enabling the shared implementation.
 - `StorageManager` cleanly manages multiple filesystems.
+- `StorageManager::defaultPersistentFileSystem()` centralizes the persistent
+  storage fallback used by platform-agnostic services.
 - Config storage now operates through filesystem abstraction, not std::fstream.
 - URI parsing for console paths is centralized in `path_resolvers`, not embedded in shell command code.
 - Protocol-specific URI behavior (TNFS today, more later) is implemented in protocol-specific resolver handlers.

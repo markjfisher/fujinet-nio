@@ -96,6 +96,61 @@ TEST_CASE("StorageManager: get by scheme")
     CHECK(manager.getByScheme("nonexistent") == nullptr);
 }
 
+TEST_CASE("StorageManager: default persistent filesystem prefers host")
+{
+    StorageManager manager;
+
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("flash")));
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("sd0")));
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("host")));
+
+    auto* fs = manager.defaultPersistentFileSystem();
+    REQUIRE(fs != nullptr);
+    CHECK(fs->name() == "host");
+}
+
+TEST_CASE("StorageManager: default persistent filesystem uses sd0 before flash")
+{
+    StorageManager manager;
+
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("flash")));
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("sd0")));
+
+    auto* fs = manager.defaultPersistentFileSystem();
+    REQUIRE(fs != nullptr);
+    CHECK(fs->name() == "sd0");
+}
+
+TEST_CASE("StorageManager: default persistent filesystem falls back to flash")
+{
+    StorageManager manager;
+
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("flash")));
+
+    auto* fs = manager.defaultPersistentFileSystem();
+    REQUIRE(fs != nullptr);
+    CHECK(fs->name() == "flash");
+}
+
+TEST_CASE("StorageManager: default persistent filesystem can be absent")
+{
+    StorageManager manager;
+
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("tnfs")));
+    CHECK(manager.defaultPersistentFileSystem() == nullptr);
+}
+
+TEST_CASE("StorageManager: default persistent filesystem const overload")
+{
+    StorageManager manager;
+    CHECK(manager.registerFileSystem(std::make_unique<MockFileSystem>("host")));
+
+    const auto& const_manager = manager;
+    const auto* fs = const_manager.defaultPersistentFileSystem();
+    REQUIRE(fs != nullptr);
+    CHECK(fs->name() == "host");
+}
+
 TEST_CASE("StorageManager: resolveUri")
 {
     StorageManager manager;
