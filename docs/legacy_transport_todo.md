@@ -2,7 +2,12 @@
 
 ## Overview
 
-This document tracks the remaining work for implementing legacy bus protocol support in fujinet-nio. The SIO (Atari) and IWM (Apple II) transports have been created with placeholder hardware implementations.
+This document tracks remaining legacy bus work in fujinet-nio. The current
+priority is Atari SIO compatibility for unmodified legacy FujiNet applications.
+Apple II/IWM notes are retained for context, but are not part of the Atari-only
+work estimate.
+
+For effort and scope, see `legacy_work_estimate.md`.
 
 ## Completed ✅
 
@@ -17,6 +22,9 @@ This document tracks the remaining work for implementing legacy bus protocol sup
    - NetSIO protocol parsing + POSIX `NetSioBusHardware` (UDP)
    - Routing-layer legacy network adapter (`0x71..0x78` → `0xFD`)
    - Byte-based data-phase reads use protocol-correct expected lengths (prevents legacy WRITE hangs)
+   - Protocol-specific legacy base classes exist:
+     - `ByteBasedLegacyTransport` for SIO-style ACK/NAK/COMPLETE/ERROR flows
+     - `PacketBasedLegacyTransport` for packet-style flows
 
 ## Remaining Work
 
@@ -24,7 +32,7 @@ This document tracks the remaining work for implementing legacy bus protocol sup
 
 #### SIO Hardware (Atari)
 
-**ESP32** (`src/platform/esp32/sio_bus_hardware.cpp`):
+**ESP32** (`src/platform/esp32/legacy/sio_bus_hardware.cpp`):
 - [ ] Configure GPIO pins:
   - CMD pin (input) - command line assertion
   - INT pin (output) - interrupt line
@@ -44,10 +52,10 @@ This document tracks the remaining work for implementing legacy bus protocol sup
   - Read data + checksum, validate
   - Write data + checksum
 
-**POSIX** (`src/platform/posix/sio_bus_hardware.cpp`):
+**POSIX** (`src/platform/posix/legacy/sio_bus_hardware.cpp`):
 - [x] Integrate with NetSIO protocol (UDP):
   - Command assertion via protocol (not GPIO)
-  - UDP channel + NetSIO message parsing (`src/platform/posix/netsio_bus_hardware.cpp`)
+  - UDP channel + NetSIO message parsing (`src/platform/posix/legacy/netsio_bus_hardware.cpp`)
 - [ ] Or integrate with physical serial port:
   - Open serial device
   - Configure baud rate, parity, etc.
@@ -123,15 +131,57 @@ This document tracks the remaining work for implementing legacy bus protocol sup
   - Send INIT reply packets
   - Handle last device in chain (status bit)
 
-### Phase 3: Code Refactoring
+### Phase 3: Atari Device Compatibility Adapters
+
+The SIO transport converts command frames into `IORequest`s, but old Atari
+software does not automatically speak the new service protocols. Each legacy
+device surface must either already match the new device command contract or get
+a routing adapter.
+
+#### Network (`N:` / `0x71..0x78`)
+
+- [x] Route old network device IDs to `NetworkService` (`0xFD`)
+- [x] Map legacy `O`, `C`, `R`, `W`, `S` commands to new Open/Close/Read/Write/Info requests
+- [x] Maintain one new network handle per legacy device ID
+- [x] Support legacy POST/PUT streaming by committing on first STATUS/READ
+- [ ] Audit old JSON/channel commands and map them to current `NetworkDevice` translation extensions
+- [ ] Add compatibility tests for representative old Atari `N:` applications
+
+#### Disk (`D1:`.. / `0x31..0x3F`)
+
+- [ ] Add a legacy disk adapter for Atari SIO disk command bytes
+- [ ] Map legacy sector read/write/status/format semantics onto `DiskService`/`DiskDevice`
+- [ ] Preserve Atari sector sizing and ATR geometry behavior
+- [ ] Validate boot and DOS edge cases against real old Atari clients
+
+#### Clock (`0x45`)
+
+- [ ] Audit legacy clock command bytes and payload formats against `ClockDevice`
+- [ ] Add a small adapter if legacy payloads do not match current `ClockCommand` formats
+
+#### Modem / R: style workflows
+
+- [ ] Decide the legacy SIO device ID and command surface to support
+- [ ] Add an adapter to `ModemService` (`0xFB`) if old Atari modem clients expect R:-style SIO reads/writes/status
+- [ ] Validate Hayes/AT command and stream behavior with existing old clients
+
+#### Fuji control device (`0x70`)
+
+- [ ] Enumerate legacy Atari FujiDevice config/mount commands
+- [ ] Map old mount/config workflows to current `FujiDevice`, `DiskService`, and config storage
+- [ ] Verify old mounting tools can configure and boot disks without recompilation
+
+### Phase 4: Code Refactoring
+
+Most of the original architecture refactor is now complete. Keep this section
+for smaller cleanup only.
 
 #### Remove Duplication
 
-- [ ] **Analyze ACK/NAK/COMPLETE/ERROR patterns**:
+- [x] **Analyze ACK/NAK/COMPLETE/ERROR patterns**:
   - SIO uses these control bytes
   - IWM doesn't use them (packet-based)
-  - Consider making them optional in LegacyTransport base class
-  - Or create separate base classes for byte-based vs packet-based protocols
+  - Implemented as separate byte-based and packet-based base classes
 
 - [ ] **Extract common frame parsing**:
   - Both SIO and IWM parse command frames
@@ -147,7 +197,7 @@ This document tracks the remaining work for implementing legacy bus protocol sup
 
 #### Improve Architecture
 
-- [ ] Consider protocol-specific base classes:
+- [x] Consider protocol-specific base classes:
   - `ByteBasedLegacyTransport` (SIO, IEC)
   - `PacketBasedLegacyTransport` (IWM)
   - Share common logic in `LegacyTransport` base
@@ -157,7 +207,7 @@ This document tracks the remaining work for implementing legacy bus protocol sup
   - Create `GpioHardware` and `SerialHardware` interfaces
   - Compose as needed (SIO needs both, IWM needs SPI+GPIO)
 
-### Phase 4: Testing
+### Phase 5: Testing
 
 #### Unit Tests
 
@@ -217,7 +267,7 @@ This document tracks the remaining work for implementing legacy bus protocol sup
   - Test SmartPort commands
   - Verify packet encoding/decoding
 
-### Phase 5: Python Client Updates
+### Phase 6: Python Client Updates
 
 #### Legacy Transport Support
 
@@ -268,13 +318,14 @@ This document tracks the remaining work for implementing legacy bus protocol sup
 
 ## Next Steps
 
-1. **Immediate**: Implement ESP32 SIO hardware (most critical for Atari support)
-2. **Short-term**: Add unit tests for existing code
-3. **Medium-term**: Implement IWM packet encoding/decoding
-4. **Long-term**: Hardware testing and Python client updates
+1. **Immediate**: Implement ESP32 SIO hardware (most critical for real Atari support)
+2. **Short-term**: Add Atari-focused legacy adapters for disk/Fuji control gaps
+3. **Short-term**: Add tests for existing SIO and legacy network adapter behavior
+4. **Medium-term**: Validate against NetSIO first, then real Atari hardware
+5. **Later**: Return to IWM packet encoding/decoding when Apple II becomes active work
 
 ## Notes
 
-- IWM's packet-based protocol suggests we may need to refactor `LegacyTransport` to support both byte-based (SIO) and packet-based (IWM) protocols more cleanly.
-- The ACK/NAK/COMPLETE/ERROR methods in LegacyTransport are SIO-specific and should be made optional or moved to a SIO-specific base class.
-- Hardware implementations are currently placeholders and need platform-specific GPIO/SPI/UART code.
+- The old broad architecture notes are stale: byte-based and packet-based legacy base classes now exist.
+- ESP32 SIO hardware remains a placeholder and needs platform-specific GPIO/UART/timing code.
+- POSIX NetSIO is implemented; POSIX physical serial SIO remains optional/future work.

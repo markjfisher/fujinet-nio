@@ -26,12 +26,16 @@ FujiNet-firmware applications.
 ✅ **Bus Hardware Abstraction** (`include/fujinet/io/transport/legacy/bus_hardware.h`)
 - Abstract interface for platform-specific hardware access
 - GPIO, UART, and timing operations
-- Platform-specific implementations in `src/platform/<platform>/sio_bus_hardware.cpp`
+- Platform-specific implementations in `src/platform/<platform>/legacy/sio_bus_hardware.cpp`
 
 ✅ **Legacy Transport Base Class** (`include/fujinet/io/transport/legacy/legacy_transport.h`)
 - Common protocol logic for all legacy buses
 - Handles frame parsing, conversion to/from IORequest/IOResponse
 - State machine for protocol flow
+
+✅ **Protocol-Specific Base Classes**
+- `ByteBasedLegacyTransport` handles SIO-style ACK/NAK/COMPLETE/ERROR flows
+- `PacketBasedLegacyTransport` exists for packet-style legacy transports
 
 ### SIO Transport Implementation
 
@@ -40,12 +44,14 @@ FujiNet-firmware applications.
 - Extends LegacyTransport with SIO-specific protocol handling
 
 ✅ **Platform Hardware**
-- `src/platform/esp32/sio_bus_hardware.cpp` - ESP32 hardware abstraction (placeholder)
-- `src/platform/posix/sio_bus_hardware.cpp` - POSIX hardware abstraction (placeholder)
+- `src/platform/esp32/legacy/sio_bus_hardware.cpp` - ESP32 hardware abstraction (placeholder)
+- `src/platform/posix/legacy/netsio_bus_hardware.cpp` - POSIX NetSIO UDP hardware abstraction
+- `src/platform/posix/legacy/sio_bus_hardware.cpp` - POSIX factory; selects NetSIO when enabled, otherwise placeholder serial SIO
 
 ✅ **Integration**
 - Updated `src/lib/bootstrap.cpp` to register SIO transport
 - SIO transport is now available when `TransportKind::SIO` is selected
+- Legacy SIO builds install `LegacyNetworkAdapter` so old `N:` device IDs route to the new `NetworkService`
 
 ## Implementation Details
 
@@ -70,11 +76,13 @@ FujiNet-firmware applications.
 
 SIO wire device IDs are mapped to internal DeviceIDs:
 - `0x70` → FujiNet device
-- `0x31-0x3F` → Disk devices (pass-through)
-- `0x71-0x78` → Network devices (pass-through)
-- `0x40-0x43` → Printer devices (pass-through)
+- `0x31-0x3F` → Disk devices (pass-through today; needs legacy disk adapter)
+- `0x71-0x78` → Network devices (handled by `LegacyNetworkAdapter`)
 - `0x45` → Clock device
-- `0x99` → MIDI device
+
+Pass-through IDs still require device-level command compatibility. The SIO
+transport only converts the bus frame into an `IORequest`; it does not make old
+Atari device protocols match new service protocols by itself.
 
 ### Timing Constants
 
@@ -85,19 +93,33 @@ SIO wire device IDs are mapped to internal DeviceIDs:
 
 ### Hardware Implementation
 
-⚠️ **ESP32 Hardware** (`src/platform/esp32/sio_bus_hardware.cpp`)
+⚠️ **ESP32 Hardware** (`src/platform/esp32/legacy/sio_bus_hardware.cpp`)
 - Currently a placeholder
 - Needs GPIO pin configuration for:
   - CMD pin (input)
   - INT pin (output)
   - MTR pin (input, optional)
 - Needs UART configuration for SIO bus
-- Needs timing functions (delayMicroseconds)
+- Needs timing functions (`delayMicroseconds`)
+- Current placeholder never sees CMD asserted, reads no bytes, and writes no bytes
 
-⚠️ **POSIX Hardware** (`src/platform/posix/sio_bus_hardware.cpp`)
-- Currently a placeholder
-- Needs integration with NetSIO or serial port
-- For NetSIO, command assertion is protocol-based, not GPIO
+✅ **POSIX NetSIO Hardware** (`src/platform/posix/legacy/netsio_bus_hardware.cpp`)
+- UDP NetSIO parsing is implemented
+- Command assertion is protocol-based, not GPIO
+- Keepalive, command/data byte handling, sync ACK handling, and interrupt messages are present
+
+⚠️ **POSIX Physical Serial SIO**
+- Still optional/future work
+- Would need serial device open/configuration and any available control-line handling
+
+### Device Compatibility Adapters
+
+- Network `N:` compatibility is partially implemented through `LegacyNetworkAdapter`
+- JSON/channel compatibility from old network APIs still needs audit against current `NetworkDevice` translation extensions
+- Disk `D:` compatibility is not implemented as a legacy adapter; old Atari sector commands must be mapped to `DiskService`/`DiskDevice`
+- Clock compatibility needs payload/command audit
+- Modem/R: style compatibility needs a separate adapter if old clients expect an R: device
+- Fuji control/mount commands on `0x70` need audit against old Atari tools
 
 ### Protocol Refinements
 
@@ -138,16 +160,19 @@ The transport will be automatically registered via `core::setup_transports()`.
 
 1. **Complete Hardware Implementation**
    - Implement ESP32 GPIO/UART access
-   - Implement POSIX NetSIO integration
    - Add proper timing functions
 
-2. **Test with Real Hardware**
+2. **Complete Atari Device Compatibility**
+   - Fill disk/Fuji/clock/modem adapter gaps as needed
+   - Extend the existing network adapter for old JSON/channel semantics
+
+3. **Test with Real Hardware**
    - Connect to Atari 8-bit computer
    - Test basic SIO commands
    - Verify checksum validation
    - Test timing-sensitive operations
 
-3. **Extend to Other Platforms**
+4. **Extend to Other Platforms**
    - IWM (Apple II)
    - IEC (Commodore)
    - AdamNet (Coleco Adam)
