@@ -199,6 +199,27 @@ std::vector<std::uint8_t> make_app_store_list_request(
     return payload;
 }
 
+std::string app_store_read_value(FileDevice& device, std::string_view key)
+{
+    IORequest read{};
+    read.command = static_cast<std::uint16_t>(FileCommand::AppStoreRead);
+    read.payload = make_app_store_read_request("fujinet-nio", key, 0, 512);
+    const auto response = device.handle(read);
+    CHECK(response.status == StatusCode::Ok);
+    if (response.status != StatusCode::Ok || response.payload.size() < 10) {
+        return {};
+    }
+    return std::string(response.payload.begin() + 10, response.payload.end());
+}
+
+void app_store_write_value(FileDevice& device, std::string_view key, std::string_view value)
+{
+    IORequest write{};
+    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.payload = make_app_store_write_request("fujinet-nio", key, 0, value);
+    CHECK(device.handle(write).status == StatusCode::Ok);
+}
+
 class NullFile final : public IFile {
 public:
     std::size_t read(void*, std::size_t) override { return 0; }
@@ -614,6 +635,38 @@ TEST_CASE("FileDevice routes current-host writes through HostState")
     CHECK(history_response.status == StatusCode::Ok);
     REQUIRE(history_response.payload.size() >= 10);
     CHECK(std::string(history_response.payload.begin() + 10, history_response.payload.end()) == "tnfs://server/root\n");
+}
+
+TEST_CASE("FileDevice HostState reserved keys manipulate host history")
+{
+    StorageManager storage;
+    auto fs = std::make_unique<MemoryFs>("tnfs");
+    fs->add_entry("tnfs://server/a", true);
+    fs->add_entry("tnfs://server/b", true);
+    fs->add_entry("tnfs://server/c", true);
+    CHECK(storage.registerFileSystem(std::move(fs)));
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+
+    FileDevice device(storage);
+
+    app_store_write_value(device, "current-host", "tnfs://server/a");
+    app_store_write_value(device, "current-host", "tnfs://server/b");
+    app_store_write_value(device, "current-host", "tnfs://server/c");
+
+    CHECK(app_store_read_value(device, "host-history") ==
+          "tnfs://server/c\ntnfs://server/b\ntnfs://server/a\n");
+    CHECK(app_store_read_value(device, "host-history-list") ==
+          "0 tnfs://server/c\n1 tnfs://server/b\n2 tnfs://server/a\n");
+
+    app_store_write_value(device, "current-host-index", "2");
+    CHECK(app_store_read_value(device, "current-host") == "tnfs://server/a");
+    CHECK(app_store_read_value(device, "host-history") ==
+          "tnfs://server/a\ntnfs://server/c\ntnfs://server/b\n");
+
+    app_store_write_value(device, "host-history-delete", "0");
+    CHECK(app_store_read_value(device, "current-host") == "tnfs://server/a");
+    CHECK(app_store_read_value(device, "host-history") ==
+          "tnfs://server/c\ntnfs://server/b\n");
 }
 
 TEST_CASE("AppStore current-host key is plain key/value storage")

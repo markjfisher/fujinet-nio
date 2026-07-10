@@ -717,7 +717,22 @@ IOResponse FileDevice::handle_app_store_read(const IORequest& request)
     }
 
     AppStore::ReadResult result{};
-    if (!store.read(p.ns, p.key, offset, max_bytes, result)) {
+    HostState hostState(_storage);
+    if (p.ns == HostState::kNamespace && p.key == HostState::kHostHistoryListKey) {
+        std::string text;
+        if (!hostState.format_history(&text)) {
+            resp.status = StatusCode::IOError;
+            return resp;
+        }
+        result.exists = true;
+        result.offset = offset;
+        if (offset < text.size()) {
+            const std::size_t n = std::min<std::size_t>(max_bytes, text.size() - offset);
+            result.data.assign(text.begin() + static_cast<std::ptrdiff_t>(offset),
+                               text.begin() + static_cast<std::ptrdiff_t>(offset + n));
+        }
+        result.eof = static_cast<std::uint64_t>(offset) + result.data.size() >= text.size();
+    } else if (!store.read(p.ns, p.key, offset, max_bytes, result)) {
         resp.status = StatusCode::IOError;
         return resp;
     }
@@ -776,6 +791,22 @@ IOResponse FileDevice::handle_app_store_write(const IORequest& request)
         result.offset = offset;
         const std::string spec(reinterpret_cast<const char*>(data), data_len);
         if (offset != 0 || !hostState.set_current_host(spec)) {
+            resp.status = StatusCode::IOError;
+            return resp;
+        }
+        result.written = data_len;
+    } else if (p.ns == HostState::kNamespace && p.key == HostState::kCurrentHostIndexKey) {
+        result.offset = offset;
+        const std::string indexText(reinterpret_cast<const char*>(data), data_len);
+        if (offset != 0 || !hostState.set_current_host_index(indexText)) {
+            resp.status = StatusCode::IOError;
+            return resp;
+        }
+        result.written = data_len;
+    } else if (p.ns == HostState::kNamespace && p.key == HostState::kHostHistoryDeleteKey) {
+        result.offset = offset;
+        const std::string indexText(reinterpret_cast<const char*>(data), data_len);
+        if (offset != 0 || !hostState.delete_history_index(indexText)) {
             resp.status = StatusCode::IOError;
             return resp;
         }

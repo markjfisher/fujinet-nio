@@ -3,8 +3,10 @@
 #include "fujinet/fs/path_resolvers/path_resolver.h"
 #include "fujinet/io/devices/app_store.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
 #include <sstream>
-#include <vector>
 
 namespace fujinet::io {
 
@@ -128,9 +130,71 @@ bool HostState::set_current_host(std::string_view spec)
            update_history(uri);
 }
 
+bool HostState::parse_index(std::string_view text, std::size_t* index) const
+{
+    if (!index || text.empty() || text.size() > 2) {
+        return false;
+    }
+
+    std::size_t value = 0;
+    for (unsigned char c : text) {
+        if (!std::isdigit(c)) {
+            return false;
+        }
+        value = value * 10U + static_cast<std::size_t>(c - '0');
+    }
+    if (value >= kHostHistoryMax) {
+        return false;
+    }
+    *index = value;
+    return true;
+}
+
+bool HostState::set_current_host_index(std::string_view indexText)
+{
+    std::size_t index = 0;
+    std::vector<std::string> entries;
+    if (!parse_index(indexText, &index) || !read_history(entries) || index >= entries.size()) {
+        return false;
+    }
+    return set_current_host(entries[index]);
+}
+
+bool HostState::delete_history_index(std::string_view indexText)
+{
+    std::size_t index = 0;
+    std::vector<std::string> entries;
+    if (!parse_index(indexText, &index) || !read_history(entries) || index >= entries.size()) {
+        return false;
+    }
+    entries.erase(entries.begin() + static_cast<std::ptrdiff_t>(index));
+    return write_history(entries);
+}
+
+bool HostState::format_history(std::string* text)
+{
+    if (!text) return false;
+    text->clear();
+
+    std::vector<std::string> entries;
+    if (!read_history(entries)) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        *text += std::to_string(i);
+        *text += ' ';
+        *text += entries[i];
+        *text += '\n';
+    }
+    return true;
+}
+
 bool HostState::write_value(std::string_view key, std::string_view value)
 {
     AppStore store(_storage);
+    AppStore::DeleteResult dr{};
+    (void)store.remove(kNamespace, key, dr);
     AppStore::WriteResult wr{};
     return store.write(kNamespace, key, 0,
                        reinterpret_cast<const std::uint8_t*>(value.data()),
@@ -138,9 +202,9 @@ bool HostState::write_value(std::string_view key, std::string_view value)
            wr.written == value.size();
 }
 
-bool HostState::update_history(std::string_view uri)
+bool HostState::read_history(std::vector<std::string>& entries)
 {
-    std::vector<std::string> entries;
+    entries.clear();
     AppStore store(_storage);
     AppStore::ReadResult rr{};
     if (store.read(kNamespace, kHostHistoryKey, 0, 8192, rr) && rr.exists) {
@@ -148,24 +212,38 @@ bool HostState::update_history(std::string_view uri)
         std::istringstream input(existing);
         std::string line;
         while (std::getline(input, line)) {
-            if (!line.empty() && line != uri) {
+            if (!line.empty()) {
                 entries.push_back(std::move(line));
             }
         }
     }
+    return true;
+}
 
-    entries.insert(entries.begin(), std::string(uri));
-    if (entries.size() > kHostHistoryMax) {
-        entries.resize(kHostHistoryMax);
-    }
-
+bool HostState::write_history(const std::vector<std::string>& entries)
+{
     std::string text;
     for (const auto& entry : entries) {
         text += entry;
         text += '\n';
     }
-
     return write_value(kHostHistoryKey, text);
+}
+
+bool HostState::update_history(std::string_view uri)
+{
+    std::vector<std::string> entries;
+    if (!read_history(entries)) {
+        return false;
+    }
+
+    entries.erase(std::remove(entries.begin(), entries.end(), uri), entries.end());
+    entries.insert(entries.begin(), std::string(uri));
+    if (entries.size() > kHostHistoryMax) {
+        entries.resize(kHostHistoryMax);
+    }
+
+    return write_history(entries);
 }
 
 } // namespace fujinet::io
