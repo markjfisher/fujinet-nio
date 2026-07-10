@@ -6,6 +6,7 @@
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/disk_codec.h"
 #include "fujinet/io/devices/disk_commands.h"
+#include "fujinet/io/devices/app_store.h"
 
 namespace fujinet::io {
 
@@ -113,8 +114,11 @@ IOResponse DiskDevice::handle(const IORequest& request)
             opts.typeOverride = static_cast<ImageType>(typeRaw);
             opts.sectorSizeHint = sectorHint;
 
-            // Parse URI using StorageManager
             std::string uriStr(uri);
+            AppStore store(_storage);
+            if (!store.resolve_target(uriStr, uriStr, nullptr)) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
             auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
             
             if (!fs || resolvedPath.empty()) {
@@ -463,8 +467,11 @@ IOResponse DiskDevice::handle(const IORequest& request)
             const bool overwrite = (flags & 0x01) != 0;
             const auto type = static_cast<ImageType>(typeRaw);
 
-            // Parse URI using StorageManager
             std::string uriStr(uri);
+            AppStore store(_storage);
+            if (!store.resolve_target(uriStr, uriStr, nullptr)) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
             auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
             
             if (!fs || resolvedPath.empty()) {

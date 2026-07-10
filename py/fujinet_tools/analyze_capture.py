@@ -44,7 +44,6 @@ COMMAND_NAMES: dict[int, dict[int, str]] = {
         fp.CMD_LIST: "ListDirectory",
         fp.CMD_READ: "ReadFile",
         fp.CMD_WRITE: "WriteFile",
-        fp.CMD_RESOLVE_PATH: "ResolvePath",
         fp.CMD_MAKE_DIRECTORY: "MakeDirectory",
     },
     dp.DISK_DEVICE_ID: {
@@ -197,10 +196,6 @@ def _decode_semantic_hint(ev: CapturedFrame) -> Optional[str]:
         if ev.device == fp.FILE_DEVICE_ID and ev.command == fp.CMD_WRITE:
             r = fp.parse_write_resp(payload)
             return f"offset={r.offset} written={r.written}"
-        if ev.device == fp.FILE_DEVICE_ID and ev.command == fp.CMD_RESOLVE_PATH:
-            r = fp.parse_resolve_path_resp(payload)
-            return f"uri={r.resolved_uri!r} path={r.display_path!r}"
-
         if ev.device == dp.DISK_DEVICE_ID and ev.command == dp.CMD_INFO:
             r = dp.parse_info_resp(payload)
             return f"slot={r.slot} inserted={int(r.inserted)} sector_size={r.sector_size} sectors={r.sector_count}"

@@ -6,6 +6,7 @@
 #include "fujinet/core/logging.h"
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/io/uri_display_formatter.h"
+#include "fujinet/io/devices/app_store.h"
 
 #include <algorithm>
 #include <cctype>
@@ -340,6 +341,15 @@ IOResponse FujiDevice::handle_set_mount(const IORequest& request)
 
     const int slotNumber = fujinet::config::MountConfig::from_index(slotIndex);
     const bool enabled = (flags & 0x01U) != 0 && !uri.empty();
+
+    if (!uri.empty()) {
+        AppStore store(_storage);
+        std::string canonical_uri;
+        if (!store.resolve_target(uri, canonical_uri, nullptr)) {
+            return make_base_response(request, StatusCode::InvalidRequest);
+        }
+        uri = std::move(canonical_uri);
+    }
 
     auto* mount = find_mount_by_slot_number(slotNumber);
     if (uri.empty()) {

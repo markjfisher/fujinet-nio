@@ -148,17 +148,6 @@ std::string_view first_list_entry_name(const std::vector<std::uint8_t>& payload)
         name_len};
 }
 
-std::vector<std::uint8_t> make_resolve_request(std::string_view base_uri, std::string_view arg)
-{
-    std::vector<std::uint8_t> payload;
-    append_u8(payload, kVersion);
-    append_u16le(payload, static_cast<std::uint16_t>(base_uri.size()));
-    payload.insert(payload.end(), base_uri.begin(), base_uri.end());
-    append_u16le(payload, static_cast<std::uint16_t>(arg.size()));
-    payload.insert(payload.end(), arg.begin(), arg.end());
-    return payload;
-}
-
 std::vector<std::uint8_t> make_app_store_prefix(std::string_view ns, std::string_view key)
 {
     std::vector<std::uint8_t> payload;
@@ -589,113 +578,84 @@ TEST_CASE("FileDevice ListDirectory caches listing and skips repeated filesystem
     CHECK(spy->list_directory_calls() == 3);
 }
 
-TEST_CASE("FileDevice ResolvePath resolves relative TNFS paths")
+TEST_CASE("FileDevice AppStore current-host write canonicalizes host state")
 {
     StorageManager storage;
     auto fs = std::make_unique<MemoryFs>("tnfs");
-    fs->add_entry("tnfs://server/root/NEXT", true);
+    fs->add_entry("tnfs://server/root", true);
     CHECK(storage.registerFileSystem(std::move(fs)));
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
     FileDevice device(storage);
-    IORequest request{};
-    request.id = 2;
-    request.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
-    request.payload = make_resolve_request("tnfs://server/root", "NEXT");
 
-    const auto response = device.handle(request);
-    CHECK(response.status == StatusCode::Ok);
-    REQUIRE(response.payload.size() >= 8);
-    CHECK(response.payload[0] == kVersion);
-    CHECK((response.payload[1] & 0x03) == 0x03);
+    IORequest write{};
+    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.payload = make_app_store_write_request("fujinet-nio", "current-host", 0, "tnfs://server/root");
+    CHECK(device.handle(write).status == StatusCode::Ok);
 
-    std::size_t offset = 4;
-    const std::string resolved_uri = read_len_string(response.payload, offset);
-    const std::string display_path = read_len_string(response.payload, offset);
+    IORequest read{};
+    read.command = static_cast<std::uint16_t>(FileCommand::AppStoreRead);
+    read.payload = make_app_store_read_request("fujinet-nio", "current-host", 0, 128);
+    const auto host_response = device.handle(read);
+    CHECK(host_response.status == StatusCode::Ok);
+    REQUIRE(host_response.payload.size() >= 10);
+    CHECK(std::string(host_response.payload.begin() + 10, host_response.payload.end()) == "tnfs://server/root");
 
-    CHECK(resolved_uri == "tnfs://server/root/NEXT");
-    CHECK(display_path == "/root/NEXT");
+    read.payload = make_app_store_read_request("fujinet-nio", "current-display-path", 0, 128);
+    const auto path_response = device.handle(read);
+    CHECK(path_response.status == StatusCode::Ok);
+    REQUIRE(path_response.payload.size() >= 10);
+    CHECK(std::string(path_response.payload.begin() + 10, path_response.payload.end()) == "/root");
 }
 
-TEST_CASE("FileDevice ResolvePath rejects unresolved base URIs")
-{
-    StorageManager storage;
-    FileDevice device(storage);
-
-    IORequest request{};
-    request.id = 3;
-    request.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
-    request.payload = make_resolve_request("tnfs://server/root", "NEXT");
-
-    const auto response = device.handle(request);
-    CHECK(response.status == StatusCode::DeviceNotFound);
-}
-
-TEST_CASE("FileDevice ResolvePath canonicalizes full URI when arg is empty")
-{
-    StorageManager storage;
-    auto fs = std::make_unique<MemoryFs>("tnfs");
-    fs->add_entry("tnfs://server/root/NEXT", true);
-    CHECK(storage.registerFileSystem(std::move(fs)));
-
-    FileDevice device(storage);
-    IORequest request{};
-    request.id = 4;
-    request.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
-    request.payload = make_resolve_request("tnfs://server/root/NEXT", "");
-
-    const auto response = device.handle(request);
-    CHECK(response.status == StatusCode::Ok);
-    REQUIRE(response.payload.size() >= 8);
-
-    std::size_t offset = 4;
-    const std::string resolved_uri = read_len_string(response.payload, offset);
-    const std::string display_path = read_len_string(response.payload, offset);
-
-    CHECK(resolved_uri == "tnfs://server/root/NEXT");
-    CHECK(display_path == "/root/NEXT");
-}
-
-TEST_CASE("FileDevice ResolvePath canonicalizes parent TNFS paths")
+TEST_CASE("FileDevice ListDirectory resolves empty and relative specs through current host")
 {
     StorageManager storage;
     auto fs = std::make_unique<MemoryFs>("tnfs");
     fs->add_entry("tnfs://server/root", true);
     fs->add_entry("tnfs://server/root/NEXT", true);
+    fs->set_directory("tnfs://server/root", {
+        FileInfo{"tnfs://server/root/NEXT", true, 0, {}},
+    });
+    fs->set_directory("tnfs://server/root/NEXT", {
+        FileInfo{"tnfs://server/root/NEXT/file.txt", false, 1, {}},
+    });
     CHECK(storage.registerFileSystem(std::move(fs)));
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
     FileDevice device(storage);
-    IORequest request{};
-    request.id = 6;
-    request.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
-    request.payload = make_resolve_request("tnfs://server/root/NEXT", "..");
 
-    const auto response = device.handle(request);
-    CHECK(response.status == StatusCode::Ok);
-    REQUIRE(response.payload.size() >= 8);
+    IORequest write{};
+    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.payload = make_app_store_write_request("fujinet-nio", "current-host", 0, "tnfs://server/root");
+    CHECK(device.handle(write).status == StatusCode::Ok);
 
-    std::size_t offset = 4;
-    const std::string resolved_uri = read_len_string(response.payload, offset);
-    const std::string display_path = read_len_string(response.payload, offset);
+    IORequest list{};
+    list.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
+    list.payload = make_list_request("", 0, kListMaxPayloadBytes);
+    const auto current_response = device.handle(list);
+    CHECK(current_response.status == StatusCode::Ok);
+    REQUIRE(current_response.payload.size() >= kListDirHeaderBytes + 2);
+    CHECK(first_list_entry_name(current_response.payload) == "NEXT");
 
-    CHECK(resolved_uri == "tnfs://server/root");
-    CHECK(display_path == "/root");
+    list.payload = make_list_request("NEXT", 0, kListMaxPayloadBytes);
+    const auto relative_response = device.handle(list);
+    CHECK(relative_response.status == StatusCode::Ok);
+    REQUIRE(relative_response.payload.size() >= kListDirHeaderBytes + 2);
+    CHECK(first_list_entry_name(relative_response.payload) == "file.txt");
 }
 
-TEST_CASE("FileDevice ResolvePath returns IOError when resolved target probe fails")
+TEST_CASE("FileDevice ListDirectory rejects relative specs without current host")
 {
     StorageManager storage;
-    auto fs = std::make_unique<MemoryFs>("tnfs");
-    CHECK(storage.registerFileSystem(std::move(fs)));
-
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
     FileDevice device(storage);
-    IORequest request{};
-    request.id = 5;
-    request.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
-    request.payload = make_resolve_request("tnfs://server/root", "NEXT");
 
-    const auto response = device.handle(request);
-    CHECK(response.status == StatusCode::IOError);
-    CHECK(response.payload.empty());
+    IORequest list{};
+    list.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
+    list.payload = make_list_request("", 0, kListMaxPayloadBytes);
+    const auto response = device.handle(list);
+    CHECK(response.status == StatusCode::DeviceNotFound);
 }
 
 TEST_CASE("FileDevice resolves persist URI through default persistent filesystem")

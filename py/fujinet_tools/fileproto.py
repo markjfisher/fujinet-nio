@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List
 import datetime
 
 from .byte_proto import (
@@ -25,7 +25,6 @@ CMD_STAT = 0x01
 CMD_LIST = 0x02
 CMD_READ = 0x03
 CMD_WRITE = 0x04
-CMD_RESOLVE_PATH = 0x05
 CMD_MAKE_DIRECTORY = 0x06
 CMD_MKDIR = CMD_MAKE_DIRECTORY  # backward-compatible alias
 CMD_APPSTORE_STAT = 0x20
@@ -162,44 +161,6 @@ def build_write_req(uri: str, offset: int, data: bytes) -> bytes:
     return build_uri_request(uri) + u32le(offset) + u16le(len(data)) + data
 
 
-def build_resolve_path_req(*, base_uri: str, arg: str = "") -> bytes:
-    """
-    Build a resolve-path request.
-
-    Args:
-        base_uri: Current/base URI for path resolution
-        arg: Relative path argument (may be empty to canonicalize base_uri)
-    """
-    base_b = base_uri.encode("utf-8")
-    arg_b = arg.encode("utf-8")
-    if not (1 <= len(base_b) <= 0xFFFF):
-        raise ValueError("base_uri must be 1..65535 bytes")
-    if len(arg_b) > 0xFFFF:
-        raise ValueError("arg too long for u16 length")
-    return (
-        bytes([FILEPROTO_VERSION])
-        + u16le(len(base_b))
-        + base_b
-        + u16le(len(arg_b))
-        + arg_b
-    )
-
-
-def parse_resolve_path_req(payload: bytes) -> Tuple[str, str]:
-    off = 0
-    off = _check_version(payload, off)
-    base_len, off = read_u16le(payload, off)
-    if off + base_len > len(payload):
-        raise ValueError("base_uri out of bounds")
-    base_uri = payload[off : off + base_len].decode("utf-8", errors="replace")
-    off += base_len
-    arg_len, off = read_u16le(payload, off)
-    if off + arg_len > len(payload):
-        raise ValueError("arg out of bounds")
-    arg = payload[off : off + arg_len].decode("utf-8", errors="replace")
-    return base_uri, arg
-
-
 def build_mkdir_req(*, uri: str, parents: bool = True, exist_ok: bool = True) -> bytes:
     """
     Build a make directory request.
@@ -304,12 +265,6 @@ class ReadResp:
 class WriteResp:
     offset: int
     written: int
-
-
-@dataclass
-class ResolvePathResp:
-    resolved_uri: str
-    display_path: str
 
 
 @dataclass
@@ -466,23 +421,6 @@ def parse_write_resp(payload: bytes) -> WriteResp:
     offset, off = read_u32le(payload, off)
     written, off = read_u16le(payload, off)
     return WriteResp(offset=offset, written=written)
-
-
-def parse_resolve_path_resp(payload: bytes) -> ResolvePathResp:
-    off = 0
-    off = _check_version(payload, off)
-    _flags, off = read_u8(payload, off)
-    _reserved, off = read_u16le(payload, off)
-    uri_len, off = read_u16le(payload, off)
-    if off + uri_len > len(payload):
-        raise ValueError("resolved_uri out of bounds")
-    resolved_uri = payload[off : off + uri_len].decode("utf-8", errors="replace")
-    off += uri_len
-    path_len, off = read_u16le(payload, off)
-    if off + path_len > len(payload):
-        raise ValueError("display_path out of bounds")
-    display_path = payload[off : off + path_len].decode("utf-8", errors="replace")
-    return ResolvePathResp(resolved_uri=resolved_uri, display_path=display_path)
 
 
 def parse_appstore_stat_resp(payload: bytes) -> AppStoreStatResp:

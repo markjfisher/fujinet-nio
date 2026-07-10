@@ -19,7 +19,6 @@ private:
     IOResponse handle_list_directory(const IORequest& request);
     IOResponse handle_read_file(const IORequest& request);
     IOResponse handle_write_file(const IORequest& request);
-    IOResponse handle_resolve_path(const IORequest& request);
     IOResponse handle_make_directory(const IORequest& request);
     IOResponse handle_app_store_stat(const IORequest& request);
     IOResponse handle_app_store_read(const IORequest& request);

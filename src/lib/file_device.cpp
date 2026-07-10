@@ -10,7 +10,6 @@
 
 // Binary codec
 #include "fujinet/io/devices/file_codec.h"
-#include "fujinet/fs/path_resolvers/path_resolver.h"
 #include "fujinet/io/list_directory_format.h"
 
 #include <algorithm>
@@ -80,7 +79,7 @@ struct CommonPrefix {
     std::string uri;
 };
 
-static bool parse_common_prefix(Reader& r, CommonPrefix& out)
+static bool parse_common_prefix(Reader& r, CommonPrefix& out, bool allow_empty = false)
 {
     std::uint8_t ver = 0;
     if (!r.read_u8(ver) || ver != FILEPROTO_VERSION) {
@@ -94,15 +93,10 @@ static bool parse_common_prefix(Reader& r, CommonPrefix& out)
     if (!r.read_bytes(uriPtr, uriLen)) return false;
     out.uri.assign(reinterpret_cast<const char*>(uriPtr), uriLen);
 
-    if (out.uri.empty()) return false;
+    if (!allow_empty && out.uri.empty()) return false;
 
     return true;
 }
-
-struct ResolvePathRequest {
-    std::string base_uri;
-    std::string arg;
-};
 
 struct AppStorePrefix {
     std::string ns;
@@ -138,80 +132,6 @@ static bool parse_app_store_prefix(Reader& r, AppStorePrefix& out, bool require_
     return true;
 }
 
-static bool parse_resolve_path_request(Reader& r, ResolvePathRequest& out)
-{
-    std::uint8_t ver = 0;
-    if (!r.read_u8(ver) || ver != FILEPROTO_VERSION) {
-        return false;
-    }
-
-    std::uint16_t base_uri_len = 0;
-    if (!r.read_u16le(base_uri_len) || base_uri_len == 0) return false;
-    const std::uint8_t* base_uri_ptr = nullptr;
-    if (!r.read_bytes(base_uri_ptr, base_uri_len)) return false;
-    out.base_uri.assign(reinterpret_cast<const char*>(base_uri_ptr), base_uri_len);
-
-    std::uint16_t arg_len = 0;
-    if (!r.read_u16le(arg_len)) return false;
-    const std::uint8_t* arg_ptr = nullptr;
-    if (arg_len > 0) {
-        if (!r.read_bytes(arg_ptr, arg_len)) return false;
-        out.arg.assign(reinterpret_cast<const char*>(arg_ptr), arg_len);
-    } else {
-        out.arg.clear();
-    }
-
-    return true;
-}
-
-static bool make_path_context(const std::string& base_uri, fs::PathContext& ctx)
-{
-    fs::PathResolver resolver;
-    fs::ResolvedTarget target;
-    if (!resolver.resolve(base_uri, {}, target)) {
-        return false;
-    }
-    ctx.cwd_fs = target.fs_name;
-    ctx.cwd_path = target.fs_path;
-    return true;
-}
-
-static std::string build_resolved_uri(const fs::ResolvedTarget& target)
-{
-    if (target.fs_path.find("://") != std::string::npos) {
-        return target.fs_path;
-    }
-    return target.fs_name + ":" + target.fs_path;
-}
-
-static std::string build_display_path(const fs::ResolvedTarget& target)
-{
-    std::string path = target.fs_path;
-
-    const auto scheme_pos = path.find("://");
-    if (scheme_pos != std::string::npos) {
-        const auto slash_pos = path.find('/', scheme_pos + 3);
-        if (slash_pos != std::string::npos) {
-            path = path.substr(slash_pos);
-        } else {
-            path = "/";
-        }
-    } else {
-        const auto prefix_pos = path.find(':');
-        if (prefix_pos != std::string::npos) {
-            path = path.substr(prefix_pos + 1);
-        }
-    }
-
-    if (path.empty()) {
-        path = "/";
-    }
-    if (path.front() != '/') {
-        path.insert(path.begin(), '/');
-    }
-    return path;
-}
-
 static std::uint64_t to_unix_seconds(std::chrono::system_clock::time_point tp)
 {
     if (tp == std::chrono::system_clock::time_point{}) return 0;
@@ -236,8 +156,6 @@ IOResponse FileDevice::handle(const IORequest& request)
             return handle_read_file(request);
         case protocol::FileCommand::WriteFile:
             return handle_write_file(request);
-        case protocol::FileCommand::ResolvePath:
-            return handle_resolve_path(request);
         case protocol::FileCommand::MakeDirectory:
             return handle_make_directory(request);
         case protocol::FileCommand::AppStoreStat:
@@ -363,7 +281,7 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
 
     Reader r(request.payload.data(), request.payload.size());
     CommonPrefix p{};
-    if (!parse_common_prefix(r, p)) {
+    if (!parse_common_prefix(r, p, true)) {
         resp.status = StatusCode::InvalidRequest;
         return resp;
     }
@@ -392,19 +310,26 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         return resp;
     }
 
-    auto [fs, resolvedPath] = _storage.resolveUri(p.uri);
+    AppStore store(_storage);
+    std::string canonical_uri;
+    if (!store.resolve_target(p.uri, canonical_uri, nullptr)) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    auto [fs, resolvedPath] = _storage.resolveUri(canonical_uri);
     if (!fs) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     std::vector<FileInfo> entries;
-    if (!get_cached_directory_entries(p.uri, entries)) {
+    if (!get_cached_directory_entries(canonical_uri, entries)) {
         if (!fs->listDirectory(resolvedPath, entries)) {
             resp.status = StatusCode::IOError;
             return resp;
         }
-        store_cached_directory_entries(p.uri, entries);
+        store_cached_directory_entries(canonical_uri, entries);
     }
 
     auto basename_sv = [](const std::string& s) -> std::string_view {
@@ -665,72 +590,6 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
     fileproto::write_u16le(out, 0);
     fileproto::write_u32le(out, offset);
     fileproto::write_u16le(out, static_cast<std::uint16_t>(written));
-
-    resp.payload.assign(out.begin(), out.end());
-    return resp;
-}
-
-IOResponse FileDevice::handle_resolve_path(const IORequest& request)
-{
-    auto resp = make_success_response(request);
-
-    Reader r(request.payload.data(), request.payload.size());
-    ResolvePathRequest p{};
-    if (!parse_resolve_path_request(r, p)) {
-        resp.status = StatusCode::InvalidRequest;
-        return resp;
-    }
-
-    fs::ResolvedTarget resolved;
-    if (p.arg.empty()) {
-        fs::PathResolver resolver;
-        if (!resolver.resolve(p.base_uri, {}, resolved)) {
-            resp.status = StatusCode::DeviceNotFound;
-            return resp;
-        }
-    } else {
-        fs::PathContext ctx;
-        if (!make_path_context(p.base_uri, ctx)) {
-            resp.status = StatusCode::DeviceNotFound;
-            return resp;
-        }
-
-        fs::PathResolver resolver;
-        if (!resolver.resolve(p.arg, ctx, resolved)) {
-            resp.status = StatusCode::InvalidRequest;
-            return resp;
-        }
-    }
-
-    auto [resolved_fs, resolved_path] = _storage.resolveUri(build_resolved_uri(resolved));
-    if (!resolved_fs) {
-        resp.status = StatusCode::DeviceNotFound;
-        return resp;
-    }
-
-    FileInfo info{};
-    const bool exists = resolved_fs->stat(resolved_path, info);
-    if (!exists) {
-        resp.status = StatusCode::IOError;
-        return resp;
-    }
-
-    std::uint8_t flags = 0;
-    flags |= 0x02;
-    if (info.isDirectory) flags |= 0x01;
-
-    const std::string resolved_uri = build_resolved_uri(resolved);
-    const std::string display_path = build_display_path(resolved);
-
-    std::string out;
-    out.reserve(1 + 1 + 2 + 2 + resolved_uri.size() + 2 + display_path.size());
-    fileproto::write_u8(out, FILEPROTO_VERSION);
-    fileproto::write_u8(out, flags);
-    fileproto::write_u16le(out, 0);
-    fileproto::write_u16le(out, static_cast<std::uint16_t>(resolved_uri.size()));
-    fileproto::write_bytes(out, resolved_uri.data(), resolved_uri.size());
-    fileproto::write_u16le(out, static_cast<std::uint16_t>(display_path.size()));
-    fileproto::write_bytes(out, display_path.data(), display_path.size());
 
     resp.payload.assign(out.begin(), out.end());
     return resp;

@@ -1,15 +1,23 @@
 #include "fujinet/io/devices/app_store.h"
 
+#include "fujinet/fs/path_resolvers/path_resolver.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cctype>
 #include <cstdio>
+#include <sstream>
 
 namespace fujinet::io {
 
 namespace {
 
 constexpr const char* kRoot = "/FujiNet/app-store/v1";
+constexpr const char* kHostNamespace = "fujinet-nio";
+constexpr const char* kCurrentHostKey = "current-host";
+constexpr const char* kCurrentDisplayPathKey = "current-display-path";
+constexpr const char* kHostHistoryKey = "host-history";
+constexpr std::size_t kHostHistoryMax = 32;
 
 std::uint64_t to_unix_seconds(std::chrono::system_clock::time_point tp)
 {
@@ -113,6 +121,51 @@ bool mkdir_parents(fujinet::fs::IFileSystem& fs, const std::string& path)
     return true;
 }
 
+std::string build_resolved_uri(const fs::ResolvedTarget& target)
+{
+    if (target.fs_path.find("://") != std::string::npos) {
+        return target.fs_path;
+    }
+    return target.fs_name + ":" + target.fs_path;
+}
+
+std::string build_display_path(const fs::ResolvedTarget& target)
+{
+    std::string path = target.fs_path;
+
+    const auto scheme_pos = path.find("://");
+    if (scheme_pos != std::string::npos) {
+        const auto slash_pos = path.find('/', scheme_pos + 3);
+        path = (slash_pos == std::string::npos) ? "/" : path.substr(slash_pos);
+    } else {
+        const auto prefix_pos = path.find(':');
+        if (prefix_pos != std::string::npos) {
+            path = path.substr(prefix_pos + 1);
+        }
+    }
+
+    if (path.empty()) path = "/";
+    if (path.front() != '/') path.insert(path.begin(), '/');
+    return path;
+}
+
+bool make_path_context(std::string_view baseUri, fs::PathContext& ctx)
+{
+    fs::PathResolver resolver;
+    fs::ResolvedTarget target;
+    if (!resolver.resolve(baseUri, {}, target)) {
+        return false;
+    }
+    ctx.cwd_fs = target.fs_name;
+    ctx.cwd_path = target.fs_path;
+    return true;
+}
+
+bool must_resolve_against_current(std::string_view spec)
+{
+    return spec.empty() || spec.front() == '/';
+}
+
 } // namespace
 
 AppStore::AppStore(fs::StorageManager& storage)
@@ -209,6 +262,21 @@ bool AppStore::read(std::string_view ns, std::string_view key, std::uint32_t off
 
 bool AppStore::write(std::string_view ns, std::string_view key, std::uint32_t offset, const std::uint8_t* data, std::uint16_t len, WriteResult& out)
 {
+    if (ns == kHostNamespace && key == kCurrentHostKey) {
+        out = {};
+        out.offset = offset;
+        if (offset != 0 || data == nullptr) return false;
+        const std::string spec(reinterpret_cast<const char*>(data), len);
+        if (!set_current_host(spec)) return false;
+        out.written = len;
+        return true;
+    }
+
+    return raw_write(ns, key, offset, data, len, out);
+}
+
+bool AppStore::raw_write(std::string_view ns, std::string_view key, std::uint32_t offset, const std::uint8_t* data, std::uint16_t len, WriteResult& out)
+{
     out = {};
     out.offset = offset;
     if (!valid_namespace(ns) || !valid_key(key)) return false;
@@ -227,6 +295,118 @@ bool AppStore::write(std::string_view ns, std::string_view key, std::uint32_t of
     (void)file->flush();
     out.written = static_cast<std::uint16_t>(std::min<std::size_t>(written, 0xFFFF));
     return true;
+}
+
+bool AppStore::get_current_host(std::string* uri, std::string* displayPath)
+{
+    if (!uri) return false;
+    uri->clear();
+    if (displayPath) displayPath->clear();
+
+    ReadResult rr{};
+    if (!read(kHostNamespace, kCurrentHostKey, 0, 512, rr) || !rr.exists) {
+        return false;
+    }
+    uri->assign(reinterpret_cast<const char*>(rr.data.data()), rr.data.size());
+    if (uri->empty()) return false;
+
+    if (displayPath) {
+        ReadResult pr{};
+        if (read(kHostNamespace, kCurrentDisplayPathKey, 0, 512, pr) && pr.exists) {
+            displayPath->assign(reinterpret_cast<const char*>(pr.data.data()), pr.data.size());
+        }
+    }
+    return true;
+}
+
+bool AppStore::resolve_target(std::string_view spec, std::string& uri, std::string* displayPath)
+{
+    fs::PathResolver resolver;
+    fs::ResolvedTarget target;
+
+    if (!must_resolve_against_current(spec) && resolver.resolve(spec, {}, target)) {
+        uri = build_resolved_uri(target);
+        if (displayPath) *displayPath = build_display_path(target);
+        return true;
+    }
+
+    std::string current;
+    if (!get_current_host(&current, nullptr)) {
+        return false;
+    }
+
+    fs::PathContext ctx;
+    if (!make_path_context(current, ctx) || !resolver.resolve(spec, ctx, target)) {
+        return false;
+    }
+
+    uri = build_resolved_uri(target);
+    if (displayPath) *displayPath = build_display_path(target);
+    return true;
+}
+
+bool AppStore::set_current_host(std::string_view spec)
+{
+    std::string uri;
+    std::string displayPath;
+    if (!resolve_target(spec, uri, &displayPath)) {
+        return false;
+    }
+
+    auto [fs, resolvedPath] = _storage.resolveUri(uri);
+    if (!fs || !fs->isDirectory(resolvedPath)) {
+        return false;
+    }
+
+    WriteResult wr{};
+    if (!raw_write(kHostNamespace, kCurrentHostKey, 0,
+                   reinterpret_cast<const std::uint8_t*>(uri.data()),
+                   static_cast<std::uint16_t>(uri.size()), wr) ||
+        wr.written != uri.size()) {
+        return false;
+    }
+
+    if (!raw_write(kHostNamespace, kCurrentDisplayPathKey, 0,
+                   reinterpret_cast<const std::uint8_t*>(displayPath.data()),
+                   static_cast<std::uint16_t>(displayPath.size()), wr) ||
+        wr.written != displayPath.size()) {
+        return false;
+    }
+
+    return update_host_history(uri);
+}
+
+bool AppStore::update_host_history(std::string_view uri)
+{
+    std::vector<std::string> entries;
+    ReadResult rr{};
+    if (read(kHostNamespace, kHostHistoryKey, 0, 8192, rr) && rr.exists) {
+        const std::string existing(reinterpret_cast<const char*>(rr.data.data()), rr.data.size());
+        std::istringstream input(existing);
+        std::string line;
+        while (std::getline(input, line)) {
+            if (!line.empty() && line != uri) {
+                entries.push_back(std::move(line));
+            }
+        }
+    }
+
+    entries.insert(entries.begin(), std::string(uri));
+    if (entries.size() > kHostHistoryMax) {
+        entries.resize(kHostHistoryMax);
+    }
+
+    std::string text;
+    for (const auto& entry : entries) {
+        text += entry;
+        text += '\n';
+    }
+
+    WriteResult wr{};
+    return raw_write(kHostNamespace, kHostHistoryKey, 0,
+                     reinterpret_cast<const std::uint8_t*>(text.data()),
+                     static_cast<std::uint16_t>(text.size()), wr) &&
+           wr.written == text.size();
 }
 
 bool AppStore::remove(std::string_view ns, std::string_view key, DeleteResult& out)

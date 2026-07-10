@@ -141,11 +141,6 @@ def _request_filename_suffix(device: int, command: int, payload: bytes) -> str:
                 return f"slot{payload[1]}"
 
         if device == fp.FILE_DEVICE_ID:
-            if command == fp.CMD_RESOLVE_PATH:
-                base_uri, arg = fp.parse_resolve_path_req(payload)
-                base = _safe_slug(_uri_basename(base_uri) or base_uri[:40])
-                arg_slug = _safe_slug(arg) if arg else "canonical"
-                return f"{base}_{arg_slug}"
             off = 0
             _, off = read_u8(payload, off)
             uri, off = read_lp_u16_str(payload, off)

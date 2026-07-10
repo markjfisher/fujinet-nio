@@ -8,7 +8,6 @@ enum class FileCommand : std::uint8_t {
     ListDirectory = 0x02,
     ReadFile      = 0x03,
     WriteFile     = 0x04,
-    ResolvePath   = 0x05,
     MakeDirectory = 0x06,
     AppStoreStat  = 0x20,
     AppStoreRead  = 0x21,

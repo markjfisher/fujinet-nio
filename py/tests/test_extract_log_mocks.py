@@ -9,7 +9,6 @@ from fujinet_tools import diskproto as dp
 from fujinet_tools import fileproto as fp
 from fujinet_tools.extract_log_mocks import (
     _filename_base,
-    _request_filename_suffix,
     extract_log_mocks,
     extract_mocks_from_log,
 )
@@ -19,15 +18,6 @@ _FIXTURE = Path(__file__).resolve().parents[1] / "unittest_data" / "cat01.txt"
 
 
 class TestExtractLogMocks(unittest.TestCase):
-    def test_resolve_path_filename_not_make_directory(self) -> None:
-        req = fp.build_resolve_path_req(
-            base_uri="tnfs://server/root", arg="NEXT"
-        )
-        suffix = _request_filename_suffix(fp.FILE_DEVICE_ID, fp.CMD_RESOLVE_PATH, req)
-        self.assertEqual(suffix, "root_NEXT")
-        name = _filename_base(1, fp.FILE_DEVICE_ID, fp.CMD_RESOLVE_PATH, req)
-        self.assertEqual(name, "001_resolve_path_root_NEXT")
-
     def test_make_directory_filename(self) -> None:
         req = fp.build_mkdir_req(uri="sd0:/newdir")
         name = _filename_base(2, fp.FILE_DEVICE_ID, fp.CMD_MAKE_DIRECTORY, req)
