@@ -4,7 +4,7 @@
 
 namespace fujinet::io::protocol {
 
-// HostDevice wire id: WireDeviceId::HostService (0xF0)
+// HostService wire id: WireDeviceId::HostService (0xF0)
 //
 // All payloads begin with version=1.
 //

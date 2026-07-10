@@ -1,4 +1,4 @@
-#include "fujinet/io/devices/host_device.h"
+#include "fujinet/io/devices/host_service.h"
 
 #include "fujinet/io/devices/host_commands.h"
 #include "fujinet/io/host_state.h"
@@ -40,11 +40,11 @@ bool valid_version(const IORequest& request)
 
 } // namespace
 
-HostDevice::HostDevice(fs::StorageManager& storage)
+HostService::HostService(fs::StorageManager& storage)
     : _storage(storage)
 {}
 
-IOResponse HostDevice::handle(const IORequest& request)
+IOResponse HostService::handle(const IORequest& request)
 {
     using protocol::HostCommand;
     auto resp = make_success_response(request);

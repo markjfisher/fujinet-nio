@@ -7,7 +7,7 @@
 #include "fujinet/io/devices/file_commands.h"
 #include "fujinet/io/devices/file_device.h"
 #include "fujinet/io/devices/host_commands.h"
-#include "fujinet/io/devices/host_device.h"
+#include "fujinet/io/devices/host_service.h"
 #include "fake_fs.h"
 
 #include <cstring>
@@ -26,7 +26,7 @@ using fujinet::fs::IFileSystem;
 using fujinet::fs::StorageManager;
 using fujinet::io::AppStore;
 using fujinet::io::FileDevice;
-using fujinet::io::HostDevice;
+using fujinet::io::HostService;
 using fujinet::io::IORequest;
 using fujinet::io::StatusCode;
 using fujinet::io::protocol::FileCommand;
@@ -226,7 +226,7 @@ std::vector<std::uint8_t> make_host_index_request(std::uint8_t index)
     return {kVersion, index};
 }
 
-std::string host_history_text(HostDevice& device)
+std::string host_history_text(HostService& device)
 {
     IORequest list{};
     list.command = static_cast<std::uint16_t>(HostCommand::ListHistory);
@@ -240,7 +240,7 @@ std::string host_history_text(HostDevice& device)
     return std::string(response.payload.begin() + 6, response.payload.begin() + 6 + len);
 }
 
-std::string host_current_uri(HostDevice& device)
+std::string host_current_uri(HostService& device)
 {
     IORequest get{};
     get.command = static_cast<std::uint16_t>(HostCommand::GetCurrent);
@@ -635,7 +635,7 @@ TEST_CASE("FileDevice ListDirectory caches listing and skips repeated filesystem
     CHECK(spy->list_directory_calls() == 3);
 }
 
-TEST_CASE("HostDevice manipulates current host and LRU history")
+TEST_CASE("HostService manipulates current host and LRU history")
 {
     StorageManager storage;
     auto fs = std::make_unique<MemoryFs>("tnfs");
@@ -645,7 +645,7 @@ TEST_CASE("HostDevice manipulates current host and LRU history")
     CHECK(storage.registerFileSystem(std::move(fs)));
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
-    HostDevice device(storage);
+    HostService device(storage);
 
     IORequest request{};
     request.command = static_cast<std::uint16_t>(HostCommand::SetCurrent);

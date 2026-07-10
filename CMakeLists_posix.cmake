@@ -146,8 +146,8 @@ set(FUJINET_NIO_SOURCES
         src/lib/fujibus_transport.cpp
         src/lib/fujinet_core.cpp
         src/lib/fujinet_init.cpp
-        src/lib/host_device.cpp
-        src/lib/host_device_init.cpp
+        src/lib/host_service.cpp
+        src/lib/host_service_init.cpp
         src/lib/host_state.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
