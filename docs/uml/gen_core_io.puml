@@ -362,10 +362,18 @@ class "io::HostState" as C_0000340960947726784289
 class C_0000340960947726784289 {
 +HostState(fs::StorageManager & storage) : void
 ..
++delete_history_index(std::string_view indexText) : bool
++delete_history_index(std::size_t index) : bool
++format_history(std::string * text) : bool
 +get_current_host(std::string * uri, std::string * displayPath = nullptr) : bool
+-parse_index(std::string_view text, std::size_t * index) const : bool
+-read_history(std::vector<std::string> & entries) : bool
 +resolve_target(std::string_view spec, std::string & uri, std::string * displayPath = nullptr) : bool
 +set_current_host(std::string_view spec) : bool
++set_current_host_index(std::string_view indexText) : bool
++set_current_host_index(std::size_t index) : bool
 -update_history(std::string_view uri) : bool
+-write_history(const std::vector<std::string> & entries) : bool
 -write_value(std::string_view key, std::string_view value) : bool
 __
 -_storage : fs::StorageManager &
@@ -461,6 +469,49 @@ class C_0010794218937492142358 {
 __
 -_devices : std::unordered_map<DeviceID,std::unique_ptr<VirtualDevice>>
 }
+class "io::RoutingManager" as C_0005273847708888915350
+class C_0005273847708888915350 {
++RoutingManager(IODeviceManager & deviceManager) : void
+..
++clearOverrideHandler() : void
++deviceManager() : IODeviceManager &
++deviceManager() const : const IODeviceManager &
++handleRequest(const IORequest & request) : IOResponse
++hasOverrideHandler() const : bool
++setOverrideHandler(IRequestHandler * handler) : void
++setOverrideHandler(std::unique_ptr<IRequestHandler> handler) : void
+__
+-_deviceManager : IODeviceManager &
+-_overrideHandler : IRequestHandler *
+-_overrideOwned : std::unique_ptr<IRequestHandler>
+}
+class "io::IOService" as C_0007645722238685656096
+class C_0007645722238685656096 {
++IOService(IRequestHandler & handler) : void
+..
++addTransport(ITransport * transport) : void
++hasWaitableWorkSource() const : bool
++serviceOnce() : void
++waitForWork(std::chrono::milliseconds timeout) : bool
+__
+-_handler : IRequestHandler &
+-_transports : std::vector<ITransport *>
+}
+class "io::ProtocolRegistry" as C_0011868125949252482179
+class C_0011868125949252482179 {
++create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
++register_scheme(std::string schemeLower, Factory factory) : bool
+__
+-_factories : std::unordered_map<std::string,Factory>
+}
+class "io::HostService" as C_0014542562225987093978
+class C_0014542562225987093978 {
++HostService(fs::StorageManager & storage) : void
+..
++handle(const IORequest & request) : IOResponse
+__
+-_storage : fs::StorageManager &
+}
 class "io::DiskDevice" as C_0005932353517374970487
 class C_0005932353517374970487 {
 +DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
@@ -499,34 +550,6 @@ class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
 class C_0016910926688454257733 {
 {static} +slots(const DiskDevice & dev) : std::vector<disk::DiskSlotInfo>
 __
-}
-class "io::RoutingManager" as C_0005273847708888915350
-class C_0005273847708888915350 {
-+RoutingManager(IODeviceManager & deviceManager) : void
-..
-+clearOverrideHandler() : void
-+deviceManager() : IODeviceManager &
-+deviceManager() const : const IODeviceManager &
-+handleRequest(const IORequest & request) : IOResponse
-+hasOverrideHandler() const : bool
-+setOverrideHandler(IRequestHandler * handler) : void
-+setOverrideHandler(std::unique_ptr<IRequestHandler> handler) : void
-__
--_deviceManager : IODeviceManager &
--_overrideHandler : IRequestHandler *
--_overrideOwned : std::unique_ptr<IRequestHandler>
-}
-class "io::IOService" as C_0007645722238685656096
-class C_0007645722238685656096 {
-+IOService(IRequestHandler & handler) : void
-..
-+addTransport(ITransport * transport) : void
-+hasWaitableWorkSource() const : bool
-+serviceOnce() : void
-+waitForWork(std::chrono::milliseconds timeout) : bool
-__
--_handler : IRequestHandler &
--_transports : std::vector<ITransport *>
 }
 class "io::ModemDevice" as C_0012713930330229444348
 class C_0012713930330229444348 {
@@ -718,13 +741,6 @@ abstract C_0017172268465975245210 {
 {abstract} +reset() = 0 : void
 {abstract} +translated_size() const = 0 : std::uint64_t
 __
-}
-class "io::ProtocolRegistry" as C_0011868125949252482179
-class C_0011868125949252482179 {
-+create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
-+register_scheme(std::string schemeLower, Factory factory) : bool
-__
--_factories : std::unordered_map<std::string,Factory>
 }
 class "io::NetworkDevice" as C_0006245826437162508923
 class C_0006245826437162508923 {
@@ -1014,12 +1030,6 @@ C_0010794218937492142358 ..> C_0010069830097413987109
 C_0010794218937492142358 ..> C_0002386736627821114488
 C_0010794218937492142358 ..> C_0002942984525013396621
 C_0007350464861923755413 <|-- C_0010794218937492142358
-C_0005932353517374970487 ..> C_0002386736627821114488
-C_0005932353517374970487 ..> C_0002942984525013396621
-C_0005932353517374970487 --> C_0001279065520068563954 : -_storage
-C_0005932353517374970487 <.. C_0016910926688454257733 : +<<friend>>
-C_0010069830097413987109 <|-- C_0005932353517374970487
-C_0016910926688454257733 ..> C_0005932353517374970487
 C_0005273847708888915350 ..> C_0002386736627821114488
 C_0005273847708888915350 ..> C_0002942984525013396621
 C_0005273847708888915350 --> C_0010794218937492142358 : -_deviceManager
@@ -1027,6 +1037,17 @@ C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
 C_0007350464861923755413 <|-- C_0005273847708888915350
 C_0007645722238685656096 ..> C_0015529497257294770104
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
+C_0011868125949252482179 ..> C_0010613333864250568344
+C_0014542562225987093978 ..> C_0002386736627821114488
+C_0014542562225987093978 ..> C_0002942984525013396621
+C_0014542562225987093978 --> C_0001279065520068563954 : -_storage
+C_0010069830097413987109 <|-- C_0014542562225987093978
+C_0005932353517374970487 ..> C_0002386736627821114488
+C_0005932353517374970487 ..> C_0002942984525013396621
+C_0005932353517374970487 --> C_0001279065520068563954 : -_storage
+C_0005932353517374970487 <.. C_0016910926688454257733 : +<<friend>>
+C_0010069830097413987109 <|-- C_0005932353517374970487
+C_0016910926688454257733 ..> C_0005932353517374970487
 C_0012713930330229444348 ..> C_0002386736627821114488
 C_0012713930330229444348 ..> C_0002942984525013396621
 C_0012713930330229444348 ..> C_0012496700434923238249
@@ -1050,7 +1071,6 @@ C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0011628969558439618672 o-- C_0018307773322721098785 : +type
 C_0017172268465975245210 ..> C_0011628969558439618672
 C_0017172268465975245210 ..> C_0012496700434923238249
-C_0011868125949252482179 ..> C_0010613333864250568344
 C_0006245826437162508923 ..> C_0002386736627821114488
 C_0006245826437162508923 ..> C_0002942984525013396621
 C_0006245826437162508923 ..> C_0011301425670680674257

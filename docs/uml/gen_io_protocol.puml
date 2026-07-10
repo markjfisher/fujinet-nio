@@ -4,6 +4,7 @@ enum "io::protocol::WireDeviceId" as C_0015225225004340369839
 enum C_0015225225004340369839 {
 FujiNet
 Clock
+HostService
 ModemService
 DiskService
 NetworkService
@@ -85,6 +86,14 @@ __
 -_data : std::optional<ByteBuffer>
 -_device : WireDeviceId
 -_params : std::vector<PacketParam>
+}
+enum "io::protocol::HostCommand" as C_0007123260493549580442
+enum C_0007123260493549580442 {
+GetCurrent
+SetCurrent
+ListHistory
+SelectHistory
+DeleteHistory
 }
 class "io::protocol::FujiBusHeader" as C_0009954510640382192371
 class C_0009954510640382192371 {

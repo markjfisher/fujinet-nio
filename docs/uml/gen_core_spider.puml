@@ -299,10 +299,18 @@ class "io::HostState" as C_0000340960947726784289
 class C_0000340960947726784289 {
 +HostState(fs::StorageManager & storage) : void
 ..
++delete_history_index(std::string_view indexText) : bool
++delete_history_index(std::size_t index) : bool
++format_history(std::string * text) : bool
 +get_current_host(std::string * uri, std::string * displayPath = nullptr) : bool
+-parse_index(std::string_view text, std::size_t * index) const : bool
+-read_history(std::vector<std::string> & entries) : bool
 +resolve_target(std::string_view spec, std::string & uri, std::string * displayPath = nullptr) : bool
 +set_current_host(std::string_view spec) : bool
++set_current_host_index(std::string_view indexText) : bool
++set_current_host_index(std::size_t index) : bool
 -update_history(std::string_view uri) : bool
+-write_history(const std::vector<std::string> & entries) : bool
 -write_value(std::string_view key, std::string_view value) : bool
 __
 -_storage : fs::StorageManager &
@@ -398,25 +406,6 @@ class C_0010794218937492142358 {
 __
 -_devices : std::unordered_map<DeviceID,std::unique_ptr<VirtualDevice>>
 }
-class "io::DiskDevice" as C_0005932353517374970487
-class C_0005932353517374970487 {
-+DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
-+DiskDevice(fs::StorageManager & storage) : void
-..
-+disk_service() : disk::DiskService &
-+disk_service() const : const disk::DiskService &
-+handle(const IORequest & request) : IOResponse
-+poll() : void
-__
-{static} -DISKPROTO_VERSION : const std::uint8_t
--_storage : fs::StorageManager &
--_svc : disk::DiskService
-}
-class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
-class C_0016910926688454257733 {
-{static} +slots(const DiskDevice & dev) : std::vector<disk::DiskSlotInfo>
-__
-}
 class "io::RoutingManager" as C_0005273847708888915350
 class C_0005273847708888915350 {
 +RoutingManager(IODeviceManager & deviceManager) : void
@@ -444,6 +433,40 @@ class C_0007645722238685656096 {
 __
 -_handler : IRequestHandler &
 -_transports : std::vector<ITransport *>
+}
+class "io::ProtocolRegistry" as C_0011868125949252482179
+class C_0011868125949252482179 {
++create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
++register_scheme(std::string schemeLower, Factory factory) : bool
+__
+-_factories : std::unordered_map<std::string,Factory>
+}
+class "io::HostService" as C_0014542562225987093978
+class C_0014542562225987093978 {
++HostService(fs::StorageManager & storage) : void
+..
++handle(const IORequest & request) : IOResponse
+__
+-_storage : fs::StorageManager &
+}
+class "io::DiskDevice" as C_0005932353517374970487
+class C_0005932353517374970487 {
++DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
++DiskDevice(fs::StorageManager & storage) : void
+..
++disk_service() : disk::DiskService &
++disk_service() const : const disk::DiskService &
++handle(const IORequest & request) : IOResponse
++poll() : void
+__
+{static} -DISKPROTO_VERSION : const std::uint8_t
+-_storage : fs::StorageManager &
+-_svc : disk::DiskService
+}
+class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
+class C_0016910926688454257733 {
+{static} +slots(const DiskDevice & dev) : std::vector<disk::DiskSlotInfo>
+__
 }
 class "io::ModemDevice" as C_0012713930330229444348
 class C_0012713930330229444348 {
@@ -606,13 +629,6 @@ abstract C_0017172268465975245210 {
 {abstract} +reset() = 0 : void
 {abstract} +translated_size() const = 0 : std::uint64_t
 __
-}
-class "io::ProtocolRegistry" as C_0011868125949252482179
-class C_0011868125949252482179 {
-+create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
-+register_scheme(std::string schemeLower, Factory factory) : bool
-__
--_factories : std::unordered_map<std::string,Factory>
 }
 class "io::NetworkDevice" as C_0006245826437162508923
 class C_0006245826437162508923 {
@@ -1051,147 +1067,6 @@ __
 +kind : TimeEventKind
 +synced : TimeSynchronized
 }
-enum "diag::DiagStatus" as C_0010514397783410162538
-enum C_0010514397783410162538 {
-Ok
-Error
-NotFound
-InvalidArgs
-NotReady
-Busy
-}
-class "diag::DiagResult" as C_0011046427244206106114
-class C_0011046427244206106114 {
-{static} +busy(std::string t) : DiagResult
-{static} +error(std::string t) : DiagResult
-{static} +invalid_args(std::string t) : DiagResult
-{static} +not_found(std::string t) : DiagResult
-{static} +not_ready(std::string t) : DiagResult
-{static} +ok(std::string t = = {}) : DiagResult
-__
-+kv : std::vector<std::pair<std::string,std::string>>
-+status : DiagStatus
-+text : std::string
-}
-class "diag::DiagCommandSpec" as C_0014265545497805753192
-class C_0014265545497805753192 {
-__
-+name : std::string
-+safe : bool
-+summary : std::string
-+usage : std::string
-}
-class "diag::DiagArgsView" as C_0018340176854803608744
-class C_0018340176854803608744 {
-__
-+argv : std::vector<std::string_view>
-+line : std::string_view
-}
-abstract "diag::IDiagnosticProvider" as C_0007944674237235781138
-abstract C_0007944674237235781138 {
-+~IDiagnosticProvider() constexpr = default : void
-..
-{abstract} +execute(const DiagArgsView & args) = 0 : DiagResult
-{abstract} +list_commands(std::vector<DiagCommandSpec> & out) const = 0 : void
-{abstract} +provider_id() const noexcept = 0 : std::string_view
-__
-}
-class "diag::NetworkDiagWifiContext" as C_0003130400837978442922
-class C_0003130400837978442922 {
-__
-+ensure_wifi : std::function<net::INetworkLink *()>
-+fuji : io::FujiDevice *
-}
-class "diag::ModemDiagnosticProvider" as C_0004415785026504276688
-class C_0004415785026504276688 {
-+ModemDiagnosticProvider(core::FujinetCore & core) : void
-..
--cmd_at(const DiagArgsView & args) : DiagResult
--cmd_baud(const DiagArgsView & args) : DiagResult
--cmd_baudlock(const DiagArgsView & args) : DiagResult
--cmd_drain() : DiagResult
--cmd_status() : DiagResult
-+execute(const DiagArgsView & args) : DiagResult
-+list_commands(std::vector<DiagCommandSpec> & out) const : void
-+provider_id() const noexcept : std::string_view
-__
--_core : core::FujinetCore &
-}
-class "diag::DiskDiagnosticProvider" as C_0002421237021206326705
-class C_0002421237021206326705 {
-+DiskDiagnosticProvider(core::FujinetCore & core) : void
-..
--cmd_slots() : DiagResult
-+execute(const DiagArgsView & args) : DiagResult
-+list_commands(std::vector<DiagCommandSpec> & out) const : void
-+provider_id() const noexcept : std::string_view
-__
--_core : core::FujinetCore &
-}
-class "diag::NetworkDiagnosticProvider" as C_0005339174589336306392
-class C_0005339174589336306392 {
-+NetworkDiagnosticProvider(core::FujinetCore & core, std::shared_ptr<NetworkDiagWifiContext> wifi_ctx) : void
-..
--append_wifi_save_status(io::FujiDevice * fuji, DiagResult & r) : void
--cmd_close(const DiagArgsView & args) : DiagResult
--cmd_sessions() : DiagResult
--cmd_wifi_get() : DiagResult
--cmd_wifi_save() : DiagResult
--cmd_wifi_scan() : DiagResult
--cmd_wifi_set(const DiagArgsView & args) : DiagResult
--cmd_wifi_status() : DiagResult
-+execute(const DiagArgsView & args) : DiagResult
--fuji_device() const : io::FujiDevice *
-{static} -join_args(const DiagArgsView & args, std::size_t from) : std::string
-+list_commands(std::vector<DiagCommandSpec> & out) const : void
-+provider_id() const noexcept : std::string_view
--reconnect_wifi() : DiagResult
--wifi_link() const : net::INetworkLink *
-__
--_core : core::FujinetCore &
--_wifi_ctx : std::shared_ptr<NetworkDiagWifiContext>
-}
-class "diag::AppStoreDiagnosticProvider" as C_0002498529430908874790
-class C_0002498529430908874790 {
-+AppStoreDiagnosticProvider(core::FujinetCore & core) : void
-..
--cmd_delete(const DiagArgsView & args) : DiagResult
--cmd_list(const DiagArgsView & args) : DiagResult
--cmd_read(const DiagArgsView & args) : DiagResult
--cmd_rename(const DiagArgsView & args) : DiagResult
--cmd_stat(const DiagArgsView & args) : DiagResult
--cmd_write(const DiagArgsView & args) : DiagResult
-+execute(const DiagArgsView & args) : DiagResult
-+list_commands(std::vector<DiagCommandSpec> & out) const : void
-+provider_id() const noexcept : std::string_view
--require_available(io::AppStore & s) : DiagResult
--store() : io::AppStore
-__
--_core : core::FujinetCore &
-}
-class "diag::CoreDiagnosticProvider" as C_0011633639399304046317
-class C_0011633639399304046317 {
-+CoreDiagnosticProvider(core::FujinetCore & core) : void
-..
--cmd_info() : DiagResult
--cmd_stats() : DiagResult
-+execute(const DiagArgsView & args) : DiagResult
-+list_commands(std::vector<DiagCommandSpec> & out) const : void
-+provider_id() const noexcept : std::string_view
-__
--_core : core::FujinetCore &
-}
-class "diag::DiagnosticRegistry" as C_0010263522683166994737
-class C_0010263522683166994737 {
-+DiagnosticRegistry() = default : void
-..
-+add_provider(IDiagnosticProvider & p) : void
-+dispatch(const DiagArgsView & args) : DiagResult
-+list_all_commands(std::vector<DiagCommandSpec> & out) const : void
-__
--_mutex : std::mutex
--_providers : std::vector<IDiagnosticProvider *>
-}
 class "core::EventStream<EventT>" as C_0005138967228563115798
 class C_0005138967228563115798 {
 +publish(const EventT & ev) : void
@@ -1369,6 +1244,147 @@ Connecting
 Connected
 Failed
 }
+enum "diag::DiagStatus" as C_0010514397783410162538
+enum C_0010514397783410162538 {
+Ok
+Error
+NotFound
+InvalidArgs
+NotReady
+Busy
+}
+class "diag::DiagResult" as C_0011046427244206106114
+class C_0011046427244206106114 {
+{static} +busy(std::string t) : DiagResult
+{static} +error(std::string t) : DiagResult
+{static} +invalid_args(std::string t) : DiagResult
+{static} +not_found(std::string t) : DiagResult
+{static} +not_ready(std::string t) : DiagResult
+{static} +ok(std::string t = = {}) : DiagResult
+__
++kv : std::vector<std::pair<std::string,std::string>>
++status : DiagStatus
++text : std::string
+}
+class "diag::DiagCommandSpec" as C_0014265545497805753192
+class C_0014265545497805753192 {
+__
++name : std::string
++safe : bool
++summary : std::string
++usage : std::string
+}
+class "diag::DiagArgsView" as C_0018340176854803608744
+class C_0018340176854803608744 {
+__
++argv : std::vector<std::string_view>
++line : std::string_view
+}
+abstract "diag::IDiagnosticProvider" as C_0007944674237235781138
+abstract C_0007944674237235781138 {
++~IDiagnosticProvider() constexpr = default : void
+..
+{abstract} +execute(const DiagArgsView & args) = 0 : DiagResult
+{abstract} +list_commands(std::vector<DiagCommandSpec> & out) const = 0 : void
+{abstract} +provider_id() const noexcept = 0 : std::string_view
+__
+}
+class "diag::NetworkDiagWifiContext" as C_0003130400837978442922
+class C_0003130400837978442922 {
+__
++ensure_wifi : std::function<net::INetworkLink *()>
++fuji : io::FujiDevice *
+}
+class "diag::ModemDiagnosticProvider" as C_0004415785026504276688
+class C_0004415785026504276688 {
++ModemDiagnosticProvider(core::FujinetCore & core) : void
+..
+-cmd_at(const DiagArgsView & args) : DiagResult
+-cmd_baud(const DiagArgsView & args) : DiagResult
+-cmd_baudlock(const DiagArgsView & args) : DiagResult
+-cmd_drain() : DiagResult
+-cmd_status() : DiagResult
++execute(const DiagArgsView & args) : DiagResult
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+__
+-_core : core::FujinetCore &
+}
+class "diag::DiskDiagnosticProvider" as C_0002421237021206326705
+class C_0002421237021206326705 {
++DiskDiagnosticProvider(core::FujinetCore & core) : void
+..
+-cmd_slots() : DiagResult
++execute(const DiagArgsView & args) : DiagResult
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+__
+-_core : core::FujinetCore &
+}
+class "diag::NetworkDiagnosticProvider" as C_0005339174589336306392
+class C_0005339174589336306392 {
++NetworkDiagnosticProvider(core::FujinetCore & core, std::shared_ptr<NetworkDiagWifiContext> wifi_ctx) : void
+..
+-append_wifi_save_status(io::FujiDevice * fuji, DiagResult & r) : void
+-cmd_close(const DiagArgsView & args) : DiagResult
+-cmd_sessions() : DiagResult
+-cmd_wifi_get() : DiagResult
+-cmd_wifi_save() : DiagResult
+-cmd_wifi_scan() : DiagResult
+-cmd_wifi_set(const DiagArgsView & args) : DiagResult
+-cmd_wifi_status() : DiagResult
++execute(const DiagArgsView & args) : DiagResult
+-fuji_device() const : io::FujiDevice *
+{static} -join_args(const DiagArgsView & args, std::size_t from) : std::string
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+-reconnect_wifi() : DiagResult
+-wifi_link() const : net::INetworkLink *
+__
+-_core : core::FujinetCore &
+-_wifi_ctx : std::shared_ptr<NetworkDiagWifiContext>
+}
+class "diag::AppStoreDiagnosticProvider" as C_0002498529430908874790
+class C_0002498529430908874790 {
++AppStoreDiagnosticProvider(core::FujinetCore & core) : void
+..
+-cmd_delete(const DiagArgsView & args) : DiagResult
+-cmd_list(const DiagArgsView & args) : DiagResult
+-cmd_read(const DiagArgsView & args) : DiagResult
+-cmd_rename(const DiagArgsView & args) : DiagResult
+-cmd_stat(const DiagArgsView & args) : DiagResult
+-cmd_write(const DiagArgsView & args) : DiagResult
++execute(const DiagArgsView & args) : DiagResult
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+-require_available(io::AppStore & s) : DiagResult
+-store() : io::AppStore
+__
+-_core : core::FujinetCore &
+}
+class "diag::CoreDiagnosticProvider" as C_0011633639399304046317
+class C_0011633639399304046317 {
++CoreDiagnosticProvider(core::FujinetCore & core) : void
+..
+-cmd_info() : DiagResult
+-cmd_stats() : DiagResult
++execute(const DiagArgsView & args) : DiagResult
++list_commands(std::vector<DiagCommandSpec> & out) const : void
++provider_id() const noexcept : std::string_view
+__
+-_core : core::FujinetCore &
+}
+class "diag::DiagnosticRegistry" as C_0010263522683166994737
+class C_0010263522683166994737 {
++DiagnosticRegistry() = default : void
+..
++add_provider(IDiagnosticProvider & p) : void
++dispatch(const DiagArgsView & args) : DiagResult
++list_all_commands(std::vector<DiagCommandSpec> & out) const : void
+__
+-_mutex : std::mutex
+-_providers : std::vector<IDiagnosticProvider *>
+}
 C_0012397556205933868732 ..> C_0014883681608496495557
 C_0012397556205933868732 ..> C_0014904826619290153445
 C_0012397556205933868732 ..> C_0007646493544420080876
@@ -1432,6 +1448,20 @@ C_0010794218937492142358 ..> C_0002386736627821114488
 C_0010794218937492142358 ..> C_0002942984525013396621
 C_0010794218937492142358 o-- C_0010069830097413987109 : -_devices
 C_0007350464861923755413 <|-- C_0010794218937492142358
+C_0005273847708888915350 ..> C_0002386736627821114488
+C_0005273847708888915350 ..> C_0002942984525013396621
+C_0005273847708888915350 --> C_0010794218937492142358 : -_deviceManager
+C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
+C_0005273847708888915350 o-- C_0007350464861923755413 : -_overrideOwned
+C_0007350464861923755413 <|-- C_0005273847708888915350
+C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
+C_0007645722238685656096 --> C_0015529497257294770104 : -_transports
+C_0011868125949252482179 ..> C_0010613333864250568344
+C_0011868125949252482179 ..> C_0010613333864250568344 : -_factories
+C_0014542562225987093978 ..> C_0002386736627821114488
+C_0014542562225987093978 ..> C_0002942984525013396621
+C_0014542562225987093978 --> C_0001279065520068563954 : -_storage
+C_0010069830097413987109 <|-- C_0014542562225987093978
 C_0005932353517374970487 ..> C_0008422084792172174393
 C_0005932353517374970487 ..> C_0002386736627821114488
 C_0005932353517374970487 ..> C_0002942984525013396621
@@ -1441,14 +1471,6 @@ C_0005932353517374970487 <.. C_0016910926688454257733 : +<<friend>>
 C_0010069830097413987109 <|-- C_0005932353517374970487
 C_0016910926688454257733 ..> C_0005932353517374970487
 C_0016910926688454257733 ..> C_0000494354313681174192
-C_0005273847708888915350 ..> C_0002386736627821114488
-C_0005273847708888915350 ..> C_0002942984525013396621
-C_0005273847708888915350 --> C_0010794218937492142358 : -_deviceManager
-C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
-C_0005273847708888915350 o-- C_0007350464861923755413 : -_overrideOwned
-C_0007350464861923755413 <|-- C_0005273847708888915350
-C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
-C_0007645722238685656096 --> C_0015529497257294770104 : -_transports
 C_0012713930330229444348 ..> C_0002386736627821114488
 C_0012713930330229444348 ..> C_0002942984525013396621
 C_0012713930330229444348 ..> C_0012496700434923238249
@@ -1474,8 +1496,6 @@ C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0011628969558439618672 o-- C_0018307773322721098785 : +type
 C_0017172268465975245210 ..> C_0011628969558439618672
 C_0017172268465975245210 ..> C_0012496700434923238249
-C_0011868125949252482179 ..> C_0010613333864250568344
-C_0011868125949252482179 ..> C_0010613333864250568344 : -_factories
 C_0006245826437162508923 ..> C_0002386736627821114488
 C_0006245826437162508923 ..> C_0002942984525013396621
 C_0006245826437162508923 ..> C_0018307773322721098785
@@ -1576,6 +1596,28 @@ C_0004992050062997423308 --> C_0012397556205933868732 : -_backup
 C_0010708806357379257038 <|-- C_0004992050062997423308
 C_0009904927253814442249 o-- C_0003871058920514508987 : +kind
 C_0009904927253814442249 o-- C_0009331148645708671483 : +synced
+C_0005138967228563115798 ..> C_0001165583155332036678
+C_0001165583155332036678 --+ C_0005138967228563115798
+C_0002040917693353561204 ..> C_0011340228097429469319
+C_0002040917693353561204 ..|> C_0005138967228563115798
+C_0006289034866210007341 ..> C_0009904927253814442249
+C_0006289034866210007341 ..|> C_0005138967228563115798
+C_0010820187132968979160 ..> C_0005138967228563115798
+C_0010820187132968979160 ..> C_0011340228097429469319
+C_0010820187132968979160 ..> C_0009904927253814442249
+C_0010820187132968979160 o-- C_0002040917693353561204 : -_network
+C_0010820187132968979160 o-- C_0006289034866210007341 : -_time
+C_0011474842863539673819 ..> C_0015529497257294770104
+C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
+C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
+C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
+C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
+C_0011474842863539673819 o-- C_0010820187132968979160 : -_events
+C_0011340228097429469319 o-- C_0014656238790804323890 : +kind
+C_0011340228097429469319 o-- C_0003572434641464952782 : +gotIp
+C_0018080614400737831579 ..> C_0012496700434923238249
+C_0018080614400737831579 --> C_0000293687568532163494 : -_socket_ops
+C_0001548601329560013188 ..> C_0014292031979356073071
 C_0011046427244206106114 o-- C_0010514397783410162538 : +status
 C_0007944674237235781138 ..> C_0014265545497805753192
 C_0007944674237235781138 ..> C_0018340176854803608744
@@ -1615,28 +1657,6 @@ C_0010263522683166994737 ..> C_0014265545497805753192
 C_0010263522683166994737 ..> C_0018340176854803608744
 C_0010263522683166994737 ..> C_0011046427244206106114
 C_0010263522683166994737 --> C_0007944674237235781138 : -_providers
-C_0005138967228563115798 ..> C_0001165583155332036678
-C_0001165583155332036678 --+ C_0005138967228563115798
-C_0002040917693353561204 ..> C_0011340228097429469319
-C_0002040917693353561204 ..|> C_0005138967228563115798
-C_0006289034866210007341 ..> C_0009904927253814442249
-C_0006289034866210007341 ..|> C_0005138967228563115798
-C_0010820187132968979160 ..> C_0005138967228563115798
-C_0010820187132968979160 ..> C_0011340228097429469319
-C_0010820187132968979160 ..> C_0009904927253814442249
-C_0010820187132968979160 o-- C_0002040917693353561204 : -_network
-C_0010820187132968979160 o-- C_0006289034866210007341 : -_time
-C_0011474842863539673819 ..> C_0015529497257294770104
-C_0011474842863539673819 o-- C_0010794218937492142358 : -_deviceManager
-C_0011474842863539673819 o-- C_0005273847708888915350 : -_routing
-C_0011474842863539673819 o-- C_0007645722238685656096 : -_ioService
-C_0011474842863539673819 o-- C_0001279065520068563954 : -_storageManager
-C_0011474842863539673819 o-- C_0010820187132968979160 : -_events
-C_0011340228097429469319 o-- C_0014656238790804323890 : +kind
-C_0011340228097429469319 o-- C_0003572434641464952782 : +gotIp
-C_0018080614400737831579 ..> C_0012496700434923238249
-C_0018080614400737831579 --> C_0000293687568532163494 : -_socket_ops
-C_0001548601329560013188 ..> C_0014292031979356073071
 
 'Generated with clang-uml, version 0.6.3
 'LLVM version Ubuntu clang version 18.1.3 (1ubuntu1)
