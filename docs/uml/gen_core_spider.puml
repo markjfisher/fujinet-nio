@@ -295,6 +295,77 @@ abstract C_0015529497257294770104 {
 +wait_for_work(std::chrono::milliseconds timeout) : bool
 __
 }
+class "io::HostState" as C_0000340960947726784289
+class C_0000340960947726784289 {
++HostState(fs::StorageManager & storage) : void
+..
++get_current_host(std::string * uri, std::string * displayPath = nullptr) : bool
++resolve_target(std::string_view spec, std::string & uri, std::string * displayPath = nullptr) : bool
++set_current_host(std::string_view spec) : bool
+-update_history(std::string_view uri) : bool
+-write_value(std::string_view key, std::string_view value) : bool
+__
+-_storage : fs::StorageManager &
+{static} +kCurrentDisplayPathKey : const char *const
+{static} +kCurrentHostKey : const char *const
+{static} +kHostHistoryKey : const char *const
+{static} +kHostHistoryMax : const std::size_t
+{static} +kNamespace : const char *const
+}
+class "io::AppStore" as C_0017938940343811357840
+class C_0017938940343811357840 {
++AppStore(fs::StorageManager & storage) : void
+..
++available() const : bool
+-backing_fs() const : fs::IFileSystem *
++backing_fs_name() const : std::string
+-ensure_namespace_dir(std::string_view ns) : bool
+-key_path(std::string_view ns, std::string_view key) const : std::string
++list(std::string_view ns, std::uint16_t startIndex, std::uint16_t maxPayloadBytes, ListResult & out) : bool
+-namespace_path(std::string_view ns) const : std::string
++read(std::string_view ns, std::string_view key, std::uint32_t offset, std::uint16_t maxBytes, ReadResult & out) : bool
++remove(std::string_view ns, std::string_view key, DeleteResult & out) : bool
++rename(std::string_view ns, std::string_view oldKey, std::string_view newKey) : bool
++stat(std::string_view ns, std::string_view key, Stat & out) : bool
+{static} +valid_key(std::string_view key) : bool
+{static} +valid_namespace(std::string_view ns) : bool
++write(std::string_view ns, std::string_view key, std::uint32_t offset, const std::uint8_t * data, std::uint16_t len, WriteResult & out) : bool
+__
+-_storage : fs::StorageManager &
+}
+class "io::AppStore::Stat" as C_0002332226688905710359
+class C_0002332226688905710359 {
+__
++exists : bool
++modifiedUnixTime : std::uint64_t
++sizeBytes : std::uint64_t
+}
+class "io::AppStore::ReadResult" as C_0010095979242356174466
+class C_0010095979242356174466 {
+__
++data : std::vector<std::uint8_t>
++eof : bool
++exists : bool
++offset : std::uint32_t
+}
+class "io::AppStore::WriteResult" as C_0006855611607891588110
+class C_0006855611607891588110 {
+__
++offset : std::uint32_t
++written : std::uint16_t
+}
+class "io::AppStore::DeleteResult" as C_0000914061821889831829
+class C_0000914061821889831829 {
+__
++deleted : bool
+}
+class "io::AppStore::ListResult" as C_0016068550494544013900
+class C_0016068550494544013900 {
+__
++keys : std::vector<std::string>
++more : bool
++startIndex : std::uint16_t
+}
 abstract "io::IRequestHandler" as C_0007350464861923755413
 abstract C_0007350464861923755413 {
 +~IRequestHandler() constexpr = default : void
@@ -602,60 +673,6 @@ class C_0010580021346264420268 {
 {static} +sessions(const NetworkDevice & dev) : std::vector<SessionRow>
 __
 }
-class "io::AppStore" as C_0017938940343811357840
-class C_0017938940343811357840 {
-+AppStore(fs::StorageManager & storage) : void
-..
-+available() const : bool
--backing_fs() const : fs::IFileSystem *
-+backing_fs_name() const : std::string
--ensure_namespace_dir(std::string_view ns) : bool
--key_path(std::string_view ns, std::string_view key) const : std::string
-+list(std::string_view ns, std::uint16_t startIndex, std::uint16_t maxPayloadBytes, ListResult & out) : bool
--namespace_path(std::string_view ns) const : std::string
-+read(std::string_view ns, std::string_view key, std::uint32_t offset, std::uint16_t maxBytes, ReadResult & out) : bool
-+remove(std::string_view ns, std::string_view key, DeleteResult & out) : bool
-+rename(std::string_view ns, std::string_view oldKey, std::string_view newKey) : bool
-+stat(std::string_view ns, std::string_view key, Stat & out) : bool
-{static} +valid_key(std::string_view key) : bool
-{static} +valid_namespace(std::string_view ns) : bool
-+write(std::string_view ns, std::string_view key, std::uint32_t offset, const std::uint8_t * data, std::uint16_t len, WriteResult & out) : bool
-__
--_storage : fs::StorageManager &
-}
-class "io::AppStore::Stat" as C_0002332226688905710359
-class C_0002332226688905710359 {
-__
-+exists : bool
-+modifiedUnixTime : std::uint64_t
-+sizeBytes : std::uint64_t
-}
-class "io::AppStore::ReadResult" as C_0010095979242356174466
-class C_0010095979242356174466 {
-__
-+data : std::vector<std::uint8_t>
-+eof : bool
-+exists : bool
-+offset : std::uint32_t
-}
-class "io::AppStore::WriteResult" as C_0006855611607891588110
-class C_0006855611607891588110 {
-__
-+offset : std::uint32_t
-+written : std::uint16_t
-}
-class "io::AppStore::DeleteResult" as C_0000914061821889831829
-class C_0000914061821889831829 {
-__
-+deleted : bool
-}
-class "io::AppStore::ListResult" as C_0016068550494544013900
-class C_0016068550494544013900 {
-__
-+keys : std::vector<std::string>
-+more : bool
-+startIndex : std::uint16_t
-}
 class "io::ClockDevice" as C_0006193474076654383504
 class C_0006193474076654383504 {
 +ClockDevice() = default : void
@@ -692,7 +709,6 @@ class C_0018348317585229177251 {
 -handle_list_directory(const IORequest & request) : IOResponse
 -handle_make_directory(const IORequest & request) : IOResponse
 -handle_read_file(const IORequest & request) : IOResponse
--handle_resolve_path(const IORequest & request) : IOResponse
 -handle_stat(const IORequest & request) : IOResponse
 -handle_write_file(const IORequest & request) : IOResponse
 +poll() : void
@@ -1395,6 +1411,19 @@ C_0007145399192091431715 ..> C_0002942984525013396621
 C_0015838915725578446589 <|-- C_0007145399192091431715
 C_0015529497257294770104 ..> C_0002386736627821114488
 C_0015529497257294770104 ..> C_0002942984525013396621
+C_0000340960947726784289 --> C_0001279065520068563954 : -_storage
+C_0017938940343811357840 ..> C_0002332226688905710359
+C_0017938940343811357840 ..> C_0010095979242356174466
+C_0017938940343811357840 ..> C_0006855611607891588110
+C_0017938940343811357840 ..> C_0000914061821889831829
+C_0017938940343811357840 ..> C_0016068550494544013900
+C_0017938940343811357840 ..> C_0012397556205933868732
+C_0017938940343811357840 --> C_0001279065520068563954 : -_storage
+C_0002332226688905710359 --+ C_0017938940343811357840
+C_0010095979242356174466 --+ C_0017938940343811357840
+C_0006855611607891588110 --+ C_0017938940343811357840
+C_0000914061821889831829 --+ C_0017938940343811357840
+C_0016068550494544013900 --+ C_0017938940343811357840
 C_0007350464861923755413 ..> C_0002386736627821114488
 C_0007350464861923755413 ..> C_0002942984525013396621
 C_0010069830097413987109 ..> C_0002386736627821114488
@@ -1462,18 +1491,6 @@ C_0011301425670680674257 o-- C_0010613333864250568344 : +proto
 C_0011301425670680674257 o-- C_0011628969558439618672 : +translation
 C_0011301425670680674257 o-- C_0017172268465975245210 : +translator
 C_0010580021346264420268 ..> C_0006245826437162508923
-C_0017938940343811357840 ..> C_0002332226688905710359
-C_0017938940343811357840 ..> C_0010095979242356174466
-C_0017938940343811357840 ..> C_0006855611607891588110
-C_0017938940343811357840 ..> C_0000914061821889831829
-C_0017938940343811357840 ..> C_0016068550494544013900
-C_0017938940343811357840 ..> C_0012397556205933868732
-C_0017938940343811357840 --> C_0001279065520068563954 : -_storage
-C_0002332226688905710359 --+ C_0017938940343811357840
-C_0010095979242356174466 --+ C_0017938940343811357840
-C_0006855611607891588110 --+ C_0017938940343811357840
-C_0000914061821889831829 --+ C_0017938940343811357840
-C_0016068550494544013900 --+ C_0017938940343811357840
 C_0006193474076654383504 ..> C_0002386736627821114488
 C_0006193474076654383504 ..> C_0002942984525013396621
 C_0006193474076654383504 --> C_0010708806357379257038 : -_configStore

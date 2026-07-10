@@ -101,7 +101,6 @@ Stat
 ListDirectory
 ReadFile
 WriteFile
-ResolvePath
 MakeDirectory
 AppStoreStat
 AppStoreRead
