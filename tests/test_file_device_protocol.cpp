@@ -6,6 +6,8 @@
 #include "fujinet/io/devices/app_store.h"
 #include "fujinet/io/devices/file_commands.h"
 #include "fujinet/io/devices/file_device.h"
+#include "fujinet/io/devices/host_commands.h"
+#include "fujinet/io/devices/host_device.h"
 #include "fake_fs.h"
 
 #include <cstring>
@@ -24,9 +26,11 @@ using fujinet::fs::IFileSystem;
 using fujinet::fs::StorageManager;
 using fujinet::io::AppStore;
 using fujinet::io::FileDevice;
+using fujinet::io::HostDevice;
 using fujinet::io::IORequest;
 using fujinet::io::StatusCode;
 using fujinet::io::protocol::FileCommand;
+using fujinet::io::protocol::HostCommand;
 using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
 using fujinet::io::protocol::list_directory::kListFlagFormattedLines;
 using fujinet::io::protocol::list_directory::kListFlagSortByName;
@@ -199,25 +203,55 @@ std::vector<std::uint8_t> make_app_store_list_request(
     return payload;
 }
 
-std::string app_store_read_value(FileDevice& device, std::string_view key)
+std::vector<std::uint8_t> make_host_set_request(std::string_view spec)
 {
-    IORequest read{};
-    read.command = static_cast<std::uint16_t>(FileCommand::AppStoreRead);
-    read.payload = make_app_store_read_request("fujinet-nio", key, 0, 512);
-    const auto response = device.handle(read);
-    CHECK(response.status == StatusCode::Ok);
-    if (response.status != StatusCode::Ok || response.payload.size() < 10) {
-        return {};
-    }
-    return std::string(response.payload.begin() + 10, response.payload.end());
+    std::vector<std::uint8_t> payload;
+    append_u8(payload, kVersion);
+    append_u16le(payload, static_cast<std::uint16_t>(spec.size()));
+    payload.insert(payload.end(), spec.begin(), spec.end());
+    return payload;
 }
 
-void app_store_write_value(FileDevice& device, std::string_view key, std::string_view value)
+std::vector<std::uint8_t> make_host_list_request(std::uint16_t offset, std::uint16_t max_bytes)
 {
-    IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
-    write.payload = make_app_store_write_request("fujinet-nio", key, 0, value);
-    CHECK(device.handle(write).status == StatusCode::Ok);
+    std::vector<std::uint8_t> payload;
+    append_u8(payload, kVersion);
+    append_u16le(payload, offset);
+    append_u16le(payload, max_bytes);
+    return payload;
+}
+
+std::vector<std::uint8_t> make_host_index_request(std::uint8_t index)
+{
+    return {kVersion, index};
+}
+
+std::string host_history_text(HostDevice& device)
+{
+    IORequest list{};
+    list.command = static_cast<std::uint16_t>(HostCommand::ListHistory);
+    list.payload = make_host_list_request(0, 512);
+    const auto response = device.handle(list);
+    CHECK(response.status == StatusCode::Ok);
+    if (response.status != StatusCode::Ok || response.payload.size() < 6) {
+        return {};
+    }
+    const auto len = read_u16le(response.payload, 4);
+    return std::string(response.payload.begin() + 6, response.payload.begin() + 6 + len);
+}
+
+std::string host_current_uri(HostDevice& device)
+{
+    IORequest get{};
+    get.command = static_cast<std::uint16_t>(HostCommand::GetCurrent);
+    get.payload = {kVersion};
+    const auto response = device.handle(get);
+    CHECK(response.status == StatusCode::Ok);
+    if (response.status != StatusCode::Ok || response.payload.size() < 5) {
+        return {};
+    }
+    const auto len = read_u16le(response.payload, 1);
+    return std::string(response.payload.begin() + 5, response.payload.begin() + 5 + len);
 }
 
 class NullFile final : public IFile {
@@ -601,43 +635,7 @@ TEST_CASE("FileDevice ListDirectory caches listing and skips repeated filesystem
     CHECK(spy->list_directory_calls() == 3);
 }
 
-TEST_CASE("FileDevice routes current-host writes through HostState")
-{
-    StorageManager storage;
-    auto fs = std::make_unique<MemoryFs>("tnfs");
-    fs->add_entry("tnfs://server/root", true);
-    CHECK(storage.registerFileSystem(std::move(fs)));
-    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-
-    FileDevice device(storage);
-
-    IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
-    write.payload = make_app_store_write_request("fujinet-nio", "current-host", 0, "tnfs://server/root");
-    CHECK(device.handle(write).status == StatusCode::Ok);
-
-    IORequest read{};
-    read.command = static_cast<std::uint16_t>(FileCommand::AppStoreRead);
-    read.payload = make_app_store_read_request("fujinet-nio", "current-host", 0, 128);
-    const auto host_response = device.handle(read);
-    CHECK(host_response.status == StatusCode::Ok);
-    REQUIRE(host_response.payload.size() >= 10);
-    CHECK(std::string(host_response.payload.begin() + 10, host_response.payload.end()) == "tnfs://server/root");
-
-    read.payload = make_app_store_read_request("fujinet-nio", "current-display-path", 0, 128);
-    const auto path_response = device.handle(read);
-    CHECK(path_response.status == StatusCode::Ok);
-    REQUIRE(path_response.payload.size() >= 10);
-    CHECK(std::string(path_response.payload.begin() + 10, path_response.payload.end()) == "/root");
-
-    read.payload = make_app_store_read_request("fujinet-nio", "host-history", 0, 128);
-    const auto history_response = device.handle(read);
-    CHECK(history_response.status == StatusCode::Ok);
-    REQUIRE(history_response.payload.size() >= 10);
-    CHECK(std::string(history_response.payload.begin() + 10, history_response.payload.end()) == "tnfs://server/root\n");
-}
-
-TEST_CASE("FileDevice HostState reserved keys manipulate host history")
+TEST_CASE("HostDevice manipulates current host and LRU history")
 {
     StorageManager storage;
     auto fs = std::make_unique<MemoryFs>("tnfs");
@@ -647,26 +645,32 @@ TEST_CASE("FileDevice HostState reserved keys manipulate host history")
     CHECK(storage.registerFileSystem(std::move(fs)));
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
-    FileDevice device(storage);
+    HostDevice device(storage);
 
-    app_store_write_value(device, "current-host", "tnfs://server/a");
-    app_store_write_value(device, "current-host", "tnfs://server/b");
-    app_store_write_value(device, "current-host", "tnfs://server/c");
+    IORequest request{};
+    request.command = static_cast<std::uint16_t>(HostCommand::SetCurrent);
+    request.payload = make_host_set_request("tnfs://server/a");
+    CHECK(device.handle(request).status == StatusCode::Ok);
+    request.payload = make_host_set_request("tnfs://server/b");
+    CHECK(device.handle(request).status == StatusCode::Ok);
+    request.payload = make_host_set_request("tnfs://server/c");
+    CHECK(device.handle(request).status == StatusCode::Ok);
 
-    CHECK(app_store_read_value(device, "host-history") ==
-          "tnfs://server/c\ntnfs://server/b\ntnfs://server/a\n");
-    CHECK(app_store_read_value(device, "host-history-list") ==
+    CHECK(host_history_text(device) ==
           "0 tnfs://server/c\n1 tnfs://server/b\n2 tnfs://server/a\n");
 
-    app_store_write_value(device, "current-host-index", "2");
-    CHECK(app_store_read_value(device, "current-host") == "tnfs://server/a");
-    CHECK(app_store_read_value(device, "host-history") ==
-          "tnfs://server/a\ntnfs://server/c\ntnfs://server/b\n");
+    request.command = static_cast<std::uint16_t>(HostCommand::SelectHistory);
+    request.payload = make_host_index_request(2);
+    CHECK(device.handle(request).status == StatusCode::Ok);
+    CHECK(host_current_uri(device) == "tnfs://server/a");
+    CHECK(host_history_text(device) ==
+          "0 tnfs://server/a\n1 tnfs://server/c\n2 tnfs://server/b\n");
 
-    app_store_write_value(device, "host-history-delete", "0");
-    CHECK(app_store_read_value(device, "current-host") == "tnfs://server/a");
-    CHECK(app_store_read_value(device, "host-history") ==
-          "tnfs://server/c\ntnfs://server/b\n");
+    request.command = static_cast<std::uint16_t>(HostCommand::DeleteHistory);
+    request.payload = make_host_index_request(0);
+    CHECK(device.handle(request).status == StatusCode::Ok);
+    CHECK(host_current_uri(device) == "tnfs://server/a");
+    CHECK(host_history_text(device) == "0 tnfs://server/c\n1 tnfs://server/b\n");
 }
 
 TEST_CASE("AppStore current-host key is plain key/value storage")

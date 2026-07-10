@@ -197,6 +197,7 @@ int main()
     }
 
     // Register Core Devices
+    fujinet::core::register_host_device(core);
     fujinet::core::register_file_device(core);
     
     // Register clock device with config store for timezone persistence

@@ -153,8 +153,16 @@ bool HostState::parse_index(std::string_view text, std::size_t* index) const
 bool HostState::set_current_host_index(std::string_view indexText)
 {
     std::size_t index = 0;
+    if (!parse_index(indexText, &index)) {
+        return false;
+    }
+    return set_current_host_index(index);
+}
+
+bool HostState::set_current_host_index(std::size_t index)
+{
     std::vector<std::string> entries;
-    if (!parse_index(indexText, &index) || !read_history(entries) || index >= entries.size()) {
+    if (index >= kHostHistoryMax || !read_history(entries) || index >= entries.size()) {
         return false;
     }
     return set_current_host(entries[index]);
@@ -163,8 +171,16 @@ bool HostState::set_current_host_index(std::string_view indexText)
 bool HostState::delete_history_index(std::string_view indexText)
 {
     std::size_t index = 0;
+    if (!parse_index(indexText, &index)) {
+        return false;
+    }
+    return delete_history_index(index);
+}
+
+bool HostState::delete_history_index(std::size_t index)
+{
     std::vector<std::string> entries;
-    if (!parse_index(indexText, &index) || !read_history(entries) || index >= entries.size()) {
+    if (index >= kHostHistoryMax || !read_history(entries) || index >= entries.size()) {
         return false;
     }
     entries.erase(entries.begin() + static_cast<std::ptrdiff_t>(index));

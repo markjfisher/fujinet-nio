@@ -16,9 +16,6 @@ public:
     static constexpr const char* kCurrentHostKey = "current-host";
     static constexpr const char* kCurrentDisplayPathKey = "current-display-path";
     static constexpr const char* kHostHistoryKey = "host-history";
-    static constexpr const char* kHostHistoryListKey = "host-history-list";
-    static constexpr const char* kCurrentHostIndexKey = "current-host-index";
-    static constexpr const char* kHostHistoryDeleteKey = "host-history-delete";
     static constexpr std::size_t kHostHistoryMax = 32;
 
     explicit HostState(fs::StorageManager& storage);
@@ -26,7 +23,9 @@ public:
     bool get_current_host(std::string* uri, std::string* displayPath = nullptr);
     bool set_current_host(std::string_view spec);
     bool set_current_host_index(std::string_view indexText);
+    bool set_current_host_index(std::size_t index);
     bool delete_history_index(std::string_view indexText);
+    bool delete_history_index(std::size_t index);
     bool format_history(std::string* text);
     bool resolve_target(std::string_view spec, std::string& uri, std::string* displayPath = nullptr);
 

@@ -7,6 +7,7 @@
 namespace fujinet::core {
 
 void register_file_device(FujinetCore& core);
+void register_host_device(FujinetCore& core);
 
 /// Register clock device without config persistence
 void register_clock_device(FujinetCore& core);

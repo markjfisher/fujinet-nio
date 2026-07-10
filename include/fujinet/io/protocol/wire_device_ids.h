@@ -14,6 +14,7 @@ enum class WireDeviceId : std::uint8_t {
     Clock           = 0x45,     // ... and clock
 
     // New NIO devices
+    HostService     = 0xF0,
     ModemService    = 0xFB,
     DiskService     = 0xFC,
     NetworkService  = 0xFD,
