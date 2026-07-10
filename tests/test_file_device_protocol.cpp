@@ -3,6 +3,7 @@
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/io_message.h"
+#include "fujinet/io/devices/app_store.h"
 #include "fujinet/io/devices/file_commands.h"
 #include "fujinet/io/devices/file_device.h"
 #include "fake_fs.h"
@@ -21,6 +22,7 @@ using fujinet::fs::FileSystemKind;
 using fujinet::fs::IFile;
 using fujinet::fs::IFileSystem;
 using fujinet::fs::StorageManager;
+using fujinet::io::AppStore;
 using fujinet::io::FileDevice;
 using fujinet::io::IORequest;
 using fujinet::io::StatusCode;
@@ -578,7 +580,7 @@ TEST_CASE("FileDevice ListDirectory caches listing and skips repeated filesystem
     CHECK(spy->list_directory_calls() == 3);
 }
 
-TEST_CASE("FileDevice AppStore current-host write canonicalizes host state")
+TEST_CASE("FileDevice routes current-host writes through HostState")
 {
     StorageManager storage;
     auto fs = std::make_unique<MemoryFs>("tnfs");
@@ -606,6 +608,31 @@ TEST_CASE("FileDevice AppStore current-host write canonicalizes host state")
     CHECK(path_response.status == StatusCode::Ok);
     REQUIRE(path_response.payload.size() >= 10);
     CHECK(std::string(path_response.payload.begin() + 10, path_response.payload.end()) == "/root");
+
+    read.payload = make_app_store_read_request("fujinet-nio", "host-history", 0, 128);
+    const auto history_response = device.handle(read);
+    CHECK(history_response.status == StatusCode::Ok);
+    REQUIRE(history_response.payload.size() >= 10);
+    CHECK(std::string(history_response.payload.begin() + 10, history_response.payload.end()) == "tnfs://server/root\n");
+}
+
+TEST_CASE("AppStore current-host key is plain key/value storage")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+
+    AppStore store(storage);
+    AppStore::WriteResult wr{};
+    const std::string raw = "not/a/canonical/host";
+    CHECK(store.write("fujinet-nio", "current-host", 0,
+                      reinterpret_cast<const std::uint8_t*>(raw.data()),
+                      static_cast<std::uint16_t>(raw.size()), wr));
+    CHECK(wr.written == raw.size());
+
+    AppStore::ReadResult rr{};
+    CHECK(store.read("fujinet-nio", "current-host", 0, 128, rr));
+    REQUIRE(rr.exists);
+    CHECK(std::string(rr.data.begin(), rr.data.end()) == raw);
 }
 
 TEST_CASE("FileDevice ListDirectory resolves empty and relative specs through current host")

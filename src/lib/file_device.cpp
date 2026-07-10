@@ -3,6 +3,7 @@
 #include "fujinet/core/logging.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/io/devices/app_store.h"
+#include "fujinet/io/host_state.h"
 #include "fujinet/io/core/io_message.h"
 
 // Commands + to_file_command helper
@@ -310,9 +311,9 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         return resp;
     }
 
-    AppStore store(_storage);
+    HostState hostState(_storage);
     std::string canonical_uri;
-    if (!store.resolve_target(p.uri, canonical_uri, nullptr)) {
+    if (!hostState.resolve_target(p.uri, canonical_uri, nullptr)) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
@@ -770,7 +771,16 @@ IOResponse FileDevice::handle_app_store_write(const IORequest& request)
     }
 
     AppStore::WriteResult result{};
-    if (!store.write(p.ns, p.key, offset, data, data_len, result)) {
+    HostState hostState(_storage);
+    if (p.ns == HostState::kNamespace && p.key == HostState::kCurrentHostKey) {
+        result.offset = offset;
+        const std::string spec(reinterpret_cast<const char*>(data), data_len);
+        if (offset != 0 || !hostState.set_current_host(spec)) {
+            resp.status = StatusCode::IOError;
+            return resp;
+        }
+        result.written = data_len;
+    } else if (!store.write(p.ns, p.key, offset, data, data_len, result)) {
         resp.status = StatusCode::IOError;
         return resp;
     }

@@ -42,6 +42,7 @@ idf_component_register(
         lib/fujibus_transport.cpp
         lib/fujinet_core.cpp
         lib/fujinet_init.cpp
+        lib/host_state.cpp
         lib/io_device_manager.cpp
         lib/io_service.cpp
         lib/json_content_translator.cpp

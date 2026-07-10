@@ -6,7 +6,7 @@
 #include "fujinet/core/logging.h"
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/io/uri_display_formatter.h"
-#include "fujinet/io/devices/app_store.h"
+#include "fujinet/io/host_state.h"
 
 #include <algorithm>
 #include <cctype>
@@ -343,9 +343,9 @@ IOResponse FujiDevice::handle_set_mount(const IORequest& request)
     const bool enabled = (flags & 0x01U) != 0 && !uri.empty();
 
     if (!uri.empty()) {
-        AppStore store(_storage);
+        HostState hostState(_storage);
         std::string canonical_uri;
-        if (!store.resolve_target(uri, canonical_uri, nullptr)) {
+        if (!hostState.resolve_target(uri, canonical_uri, nullptr)) {
             return make_base_response(request, StatusCode::InvalidRequest);
         }
         uri = std::move(canonical_uri);

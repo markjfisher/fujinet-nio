@@ -52,10 +52,6 @@ public:
     bool list(std::string_view ns, std::uint16_t startIndex, std::uint16_t maxPayloadBytes, ListResult& out);
     bool rename(std::string_view ns, std::string_view oldKey, std::string_view newKey);
 
-    bool get_current_host(std::string* uri, std::string* displayPath = nullptr);
-    bool set_current_host(std::string_view spec);
-    bool resolve_target(std::string_view spec, std::string& uri, std::string* displayPath = nullptr);
-
     static bool valid_namespace(std::string_view ns);
     static bool valid_key(std::string_view key);
 
@@ -64,8 +60,6 @@ private:
     std::string key_path(std::string_view ns, std::string_view key) const;
     std::string namespace_path(std::string_view ns) const;
     bool ensure_namespace_dir(std::string_view ns);
-    bool raw_write(std::string_view ns, std::string_view key, std::uint32_t offset, const std::uint8_t* data, std::uint16_t len, WriteResult& out);
-    bool update_host_history(std::string_view uri);
 
     fs::StorageManager& _storage;
 };
