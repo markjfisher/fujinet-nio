@@ -6,8 +6,9 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
 
 - **Platform-agnostic first**: device logic lives under `include/fujinet/` + `src/lib/` and should not contain platform `#ifdef`s.
 - **Platform glue only**: platform differences live in `src/platform/<platform>/` and are expressed via factories/registries, not preprocessor conditionals.
-- **Registration over branching**: new device/image/protocol types are registered via **init/registry** APIs (e.g. `register_*_device`, `make_default_*_registry`).
-- **Binary protocols**: host↔device commands are little-endian binary payloads over the IO bus, exposed as `VirtualDevice` implementations.
+- **Registration over branching**: new device/image/protocol types are registered via **init/registry** APIs (e.g. `register_*_device`, `register_*_service`, `make_default_*_registry`).
+- **Binary protocols**: host↔endpoint commands are little-endian binary payloads over the IO bus, exposed as `VirtualDevice` implementations or the `VirtualService` alias for FujiNet management services.
+- **Service vs device naming**: use `VirtualService`/`<Name>Service` for focused handlers that manage FujiNet internal state rather than representing a virtual peripheral. Do not dump unrelated management behavior into `FujiDevice`.
 - **Core heartbeat stays cooperative**: channels/transports may opt into bounded `waitForWork()` wakeups, but device/service code should not force the whole `core.tick()` loop to run faster for bus-specific latency.
 - **Tests**: keep unit tests fast and deterministic (doctest). Integration tests (Python) verify end-to-end protocol behavior.
 
@@ -18,18 +19,19 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
 - **Protocol references**:
   - `docs/protocol_reference.md`
   - `docs/network_device_protocol.md` (good exemplar for a v1 binary protocol doc)
+  - `docs/host_service_protocol.md` (management-service exemplar; current host + history)
 - **Diagnostics framework**: `docs/diagnostics.md`
 - **Build feature combinations**: `docs/build_feature_matrix.md` (reference for optional backend compile matrix; keep bootstrap itself concise)
 
 ## Key concepts and where they live
 
-- **Virtual devices (host protocol endpoints)**:
+- **Virtual devices/services (host protocol endpoints)**:
   - `include/fujinet/io/devices/virtual_device.h`
   - `include/fujinet/io/core/io_message.h` (`IORequest`, `IOResponse`, `StatusCode`)
 - **Wire device IDs**:
   - `include/fujinet/io/protocol/wire_device_ids.h`
 - **Core registration entrypoint(s)**:
-  - `include/fujinet/core/device_init.h` (`register_*_device(...)`)
+  - `include/fujinet/core/device_init.h` (`register_*_device(...)`, `register_*_service(...)`)
 - **Storage/filesystems**:
   - `include/fujinet/fs/storage_manager.h`
   - `include/fujinet/fs/filesystem.h`
@@ -64,22 +66,30 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
   - platform registry: `src/platform/posix/disk_registry.cpp`, `src/platform/esp32/disk_registry.cpp`
   - doc: `docs/disk_device_protocol.md`
 
-## How to add a new device (minimal checklist)
+- **HostService** (management service over the normal endpoint table):
+  - header: `include/fujinet/io/devices/host_service.h`
+  - commands: `include/fujinet/io/devices/host_commands.h`
+  - impl: `src/lib/host_service.cpp`, `src/lib/host_service_init.cpp`
+  - state layer: `include/fujinet/io/host_state.h`, `src/lib/host_state.cpp`
+  - doc: `docs/host_service_protocol.md`
+
+## How to add a new endpoint (minimal checklist)
 
 - **Define a wire ID** in `include/fujinet/io/protocol/wire_device_ids.h`.
 - **Define commands/codecs** in `include/fujinet/io/devices/<device>_commands.h` (+ optional `<device>_codec.h`).
-- **Implement the `VirtualDevice`** in:
+- **Implement the endpoint** in:
   - header: `include/fujinet/io/devices/<device>.h`
   - source: `src/lib/<device>.cpp`
+  - use `VirtualDevice` for virtual peripherals and `VirtualService` for management services
 - **Add a registration function** (no platform `#ifdef`):
-  - header: `include/fujinet/core/device_init.h` (declare `register_<device>_device(...)`)
-  - source: `src/lib/<device>_init.cpp` (construct device + any platform-provided registries)
+  - header: `include/fujinet/core/device_init.h` (declare `register_<name>_device(...)` or `register_<name>_service(...)`)
+  - source: `src/lib/<name>_init.cpp` (construct endpoint + any platform-provided registries)
 - **Provide platform registries/factories** (if needed):
   - `include/fujinet/platform/<thing>_registry.h` (platform-agnostic interface)
   - `src/platform/posix/<thing>_registry.cpp`
   - `src/platform/esp32/<thing>_registry.cpp`
-- **Hook into the app/core init** by calling your `register_<device>_device(...)` from the platform main (e.g. `src/app/main_posix.cpp`, `src/app/main_esp32.cpp`) in the same style as other devices.
-- **Document the protocol** in `docs/<device>_protocol.md` (copy the NetworkDevice doc style).
+- **Hook into the app/core init** by calling your registration function from the platform main (e.g. `src/app/main_posix.cpp`, `src/app/main_esp32.cpp`) in the same style as other endpoints.
+- **Document the protocol** in `docs/<device>_protocol.md` or `docs/<service>_protocol.md` (copy the NetworkDevice doc style for devices, HostService style for management services).
 - **Add tests**:
   - unit/doctest: `tests/test_<device>*.cpp` (fast, deterministic)
   - integration (Python): `integration-tests/steps/*.yaml` + `py/fujinet_tools/*` protocol helpers if applicable
@@ -97,8 +107,8 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
 I’m working on `fujinet-nio` (multi-platform: POSIX + ESP32). Please follow these rules:
 - Keep new device logic platform-agnostic in `include/` + `src/lib/`. No `#ifdef` in device/service code.
 - Put platform-specific glue in `src/platform/<platform>/` via registries/factories.
-- Mirror existing device patterns (`NetworkDevice`, `FileDevice`, `DiskDevice`).
-- Use `VirtualDevice` + binary little-endian payloads; map failures to `StatusCode`.
+- Mirror existing endpoint patterns (`NetworkDevice`, `FileDevice`, `DiskDevice`, `HostService`).
+- Use `VirtualDevice` or `VirtualService` + binary little-endian payloads; map failures to `StatusCode`.
 - Add doctest unit tests + (when applicable) Python integration tests.
 - Update docs and link from `docs/architecture.md` when adding a new subsystem.
 

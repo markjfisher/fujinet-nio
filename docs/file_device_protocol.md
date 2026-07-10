@@ -105,6 +105,11 @@ Application storage is a namespaced key/value layer exposed through FileDevice. 
 
 The implementation is backed by a normal registered filesystem and stores opaque byte values under a private root (`/FujiNet/app-store/v1`). The current backing preference is `host`, then `sd0`, then `flash`, depending on which filesystem is registered. Clients should treat this location as an implementation detail and use the application-storage commands rather than constructing paths.
 
+AppStore is deliberately generic. It does not own higher-level concepts such as
+"current host" or host history. Those are exposed through
+[`HostService`](host_service_protocol.md), which uses AppStore internally via
+`HostState` as an implementation detail.
+
 Namespace and key strings are UTF-8 byte strings:
 
 - `namespace`: 1..255 bytes

@@ -1,6 +1,6 @@
 # **FujiNet-NIO Architecture Document**
 
-*Version 1.3 — Updated 2026-07-06*
+*Version 1.4 — Updated 2026-07-10*
 
 ---
 
@@ -8,13 +8,13 @@
 1. [Overview](#overview)  
 2. [Design Principles](#design-principles)  
 3. [High-Level Layered Architecture](#high-level-layered-architecture)  
-4. [Data Flow: Host → Core → Device → Host](#data-flow-host--core--device--host)  
+4. [Data Flow: Host → Core → Endpoint → Host](#data-flow-host--core--endpoint--host)  
 5. [Core Components](#core-components)  
    - [Channel](#1-channel-lowest-layer)  
    - [Transport](#2-transport-framing--protocol-layer)  
    - [FujiBus / SLIP Protocol](#3-fujibus--slip-protocol-layer)  
    - [IODeviceManager](#4-iodevicemanager-device-routing-and-lifecycle)  
-   - [VirtualDevice](#5-virtualdevice-abstract-device-api)  
+   - [VirtualDevice / VirtualService](#5-virtualdevice--virtualservice-addressable-endpoint-api)  
    - [IOService](#6-ioservice-transport-polling--routing)  
    - [FujinetCore](#7-fujinetcore-overall-engine)  
 6. [Build Profiles, Channels & Transports](#build-profiles-channels--transports)  
@@ -45,7 +45,7 @@ At the heart of the design is a clean separation between:
 | **Channels** | Raw byte I/O (USB CDC, PTY, TCP, UART, …) |
 | **Transports** | Framing (SLIP), FujiBus encode/decode → IORequest/IOResponse |
 | **Core** | Request routing, ticking, device lifecycle |
-| **Devices** | Virtual devices (Fuji config, File/App Store, Clock, Disk, Network, Modem, …) |
+| **Devices and services** | Addressable handlers for virtual devices and FujiNet management services |
 
 This replaces the previous macro-heavy, platform-entangled architecture with a testable, layered core.
 
@@ -68,7 +68,7 @@ Platform differences are isolated behind:
 - **Channel factories** (`fujinet::platform::*`)
 - **Platform-specific hardware capability detection**
 
-Core types (transports, devices, IOService, routing) are **`#ifdef`-free**.
+Core types (transports, endpoint handlers, IOService, routing) are **`#ifdef`-free**.
 
 ---
 
@@ -78,7 +78,7 @@ Each layer has a narrow, focused API:
 
 - **Channel** → raw bytes (`read` / `write`)  
 - **Transport** → `IORequest` / `IOResponse`  
-- **VirtualDevice** → business logic (`handle` / `poll`)  
+- **VirtualDevice / VirtualService** → endpoint logic (`handle` / `poll`)  
 
 This makes mocking, fuzzing, and unit testing straightforward.
 
@@ -96,7 +96,7 @@ FujiBus and SLIP are treated as first-class protocol layers:
 
 ### ✔ 4. Zero shared state between layers
 
-- Devices don’t know about transports or channels  
+- Endpoint handlers don’t know about transports or channels  
 - Transports don’t know about device internals  
 - Channels don’t know about FujiBus or SLIP  
 
@@ -140,8 +140,9 @@ Only a thin platform layer differs.
       - Tick loop
                       │
                       ▼
-           VirtualDevice subsystem
-  Fuji config, File/App Store, Clock, Disk, Network, Modem, etc.
+       VirtualDevice / VirtualService subsystem
+  Fuji config, File/App Store, Clock, Disk, Network, Modem,
+  HostService, etc.
                       │
                       ▼
       Transport encodes IOResponse → Channel.write()
@@ -157,7 +158,7 @@ Only a thin platform layer differs.
 
 ---
 
-# **Data Flow: Host → Core → Device → Host**
+# **Data Flow: Host → Core → Endpoint → Host**
 
 1. **Transport reads bytes from Channel**  
    - Calls `channel.read()` when `channel.available()` is true  
@@ -189,8 +190,8 @@ Only a thin platform layer differs.
    - `IOService::serviceOnce()` pulls requests from transports  
    - For each request: `IODeviceManager::handleRequest()`  
 
-5. **VirtualDevice handles request**  
-   - Device-specific logic (Disk, Fuji config, etc.)  
+5. **VirtualDevice / VirtualService handles request**
+   - Endpoint-specific logic (Disk, Fuji config, HostService, etc.)
    - Returns an `IOResponse`:
 
    ```cpp
@@ -412,13 +413,18 @@ This separation allows:
 
 ---
 
-## **4. IODeviceManager (device routing and lifecycle)**
+## **4. IODeviceManager (endpoint routing and lifecycle)**
 
 ### Responsibilities
 
-- Map `DeviceID` → `VirtualDevice*`  
-- Forward `IORequest` to the correct device  
-- Poll all devices each tick for background work
+- Map `DeviceID` → `VirtualDevice*`
+- Forward `IORequest` to the correct endpoint
+- Poll all endpoints each tick for background work
+
+Despite the class name, `IODeviceManager` routes to all addressable FujiNet
+request handlers. Most are virtual devices, but management services use the
+same table because the wire protocol addresses them with the same `DeviceID`
+field.
 
 ### API
 
@@ -439,10 +445,27 @@ If a `DeviceID` is not registered, `handleRequest()` returns an `IOResponse` wit
 
 ---
 
-## **5. VirtualDevice (abstract device API)**
+## **5. VirtualDevice / VirtualService (addressable endpoint API)**
 
-Devices represent logical endpoints for the host. The POSIX app currently
-registers:
+`VirtualDevice` is the common C++ base class for addressable request handlers.
+`VirtualService` is an alias to the same base class, used when the endpoint
+manages FujiNet internal state rather than representing a virtual hardware
+device.
+
+Use the naming distinction deliberately:
+
+- `VirtualDevice`: the endpoint behaves like a virtual peripheral or protocol
+  device, such as disk, file, clock, network, or modem.
+- `VirtualService`: the endpoint exposes a small management API for FujiNet
+  state. It still receives `IORequest` and returns `IOResponse`, but it should
+  not accumulate unrelated responsibilities.
+
+This keeps management features from being dumped onto `FujiDevice`. `FujiDevice`
+is retained for core FujiNet compatibility/config/reset behavior; new focused
+management surfaces should be small services when they do not act on a real or
+virtual peripheral.
+
+The POSIX app currently registers:
 
 - `FujiDevice` for core/config/reset behavior (`WireDeviceId::FujiNet`, 0x70)
 - `FileDevice` for filesystem commands and app-store commands (`FileService`, 0xFE)
@@ -450,6 +473,7 @@ registers:
 - `DiskDevice` for image mounting and sector I/O (`DiskService`, 0xFC)
 - `NetworkDevice` for handle-based network sessions (`NetworkService`, 0xFD)
 - `ModemDevice` for modem-style network workflows (`ModemService`, 0xFB)
+- `HostService` for current host state and host history management (`HostService`, 0xF0)
 
 ### API
 
@@ -463,15 +487,21 @@ public:
     // Optional periodic work (e.g. time-based events)
     virtual void poll() {}
 };
+
+using VirtualService = VirtualDevice;
 ```
 
-Each device is **fully decoupled** from:
+Each endpoint is **fully decoupled** from:
 
 - channels
 - transports
 - platform specifics
 
 They just receive `IORequest` and return `IOResponse`.
+
+Related service doc:
+
+- [`docs/host_service_protocol.md`](host_service_protocol.md)
 
 ---
 
@@ -1265,7 +1295,7 @@ This allows the core to remain protocol-agnostic.
 
 ### 4. Device-Specific Command IDs
 
-Each `VirtualDevice` defines **its own command enum**, scoped to its behavior and responsibilities.
+Each `VirtualDevice` or `VirtualService` defines **its own command enum**, scoped to its behavior and responsibilities.
 
 Commands are **not shared across devices**.
 
@@ -1343,6 +1373,7 @@ other administrative workflows.
 Related docs:
 
 - [`docs/file_device_protocol.md`](file_device_protocol.md)
+- [`docs/host_service_protocol.md`](host_service_protocol.md)
 
 ---
 
