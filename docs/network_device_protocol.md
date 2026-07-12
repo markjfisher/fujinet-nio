@@ -445,7 +445,9 @@ The meaning of the `offset` field depends on the active network scheme:
   - `offset` is a sequential stream cursor.
   - Reads MUST be strictly sequential.
   - A Read request whose `offset` does not match the current stream read
-    cursor MUST fail with StatusCode::InvalidRequest.
+    cursor MUST fail with StatusCode::InvalidRequest, except that an exact
+    duplicate of the immediately previous successful read MAY replay the same
+    response bytes and flags without consuming more TCP bytes.
 
 See docs/network_device_tcp.md for full TCP stream semantics.
 

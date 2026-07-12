@@ -171,6 +171,10 @@ Rules:
 - `offset` must equal `read_cursor`
 - Reads are non-blocking
 - Data may come from an internal receive buffer
+- A repeated `Read(handle, offset, maxBytes)` for the immediately previous
+  successful read MAY replay the same bytes and flags when `maxBytes` is
+  identical. This is a transport response-loss recovery rule; the TCP stream
+  MUST NOT be consumed a second time.
 
 Return behavior:
 - `Ok` with `dataLen > 0` – bytes returned
@@ -181,6 +185,15 @@ Return behavior:
 
 EOF is only reported **after** the peer has closed and all buffered data
 has been consumed.
+
+### Duplicate Read Replay
+
+TCP remains a strictly sequential stream. A same-offset read is not a seek.
+
+The only permitted duplicate is the exact most recent successful read, with the
+same offset and requested maximum length. This lets a host retry after losing
+the lower-transport response packet: the device can return the same bytes and
+flags while avoiding a second TCP `recv()`.
 
 ---
 

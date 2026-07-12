@@ -64,6 +64,13 @@ void TcpNetworkProtocolCommon::reset_state()
     _last_write_offset = 0;
     _last_write_len = 0;
     _last_write_data.clear();
+    _last_read_valid = false;
+    _last_read_offset = 0;
+    _last_read_max = 0;
+    _last_read_len = 0;
+    _last_read_eof = false;
+    _last_read_more_available = false;
+    _last_read_data.clear();
     _connect_start_ms = 0;
     _last_errno = 0;
 
@@ -498,8 +505,19 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::read_body(std::uint32_t offset
     eof = false;
     more_available = false;
 
-    // sequential stream cursor rule
     if (offset != _read_cursor) {
+        if (_last_read_valid &&
+            offset == _last_read_offset &&
+            outLen == _last_read_max &&
+            _read_cursor == offset + _last_read_len) {
+            if (out && !_last_read_data.empty()) {
+                std::memcpy(out, _last_read_data.data(), _last_read_data.size());
+            }
+            read = _last_read_len;
+            eof = _last_read_eof;
+            more_available = _last_read_more_available;
+            return fujinet::io::StatusCode::Ok;
+        }
         return fujinet::io::StatusCode::InvalidRequest;
     }
 
@@ -560,6 +578,18 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::read_body(std::uint32_t offset
     // eof only when peer closed AND buffer empty after this read
     if (_state == State::PeerClosed && rx_available() == 0) {
         eof = true;
+    }
+
+    _last_read_valid = true;
+    _last_read_offset = offset;
+    _last_read_max = static_cast<std::uint16_t>(std::min<std::size_t>(outLen, 0xFFFF));
+    _last_read_len = read;
+    _last_read_eof = eof;
+    _last_read_more_available = more_available;
+    if (out && read > 0) {
+        _last_read_data.assign(out, out + read);
+    } else {
+        _last_read_data.clear();
     }
 
     return fujinet::io::StatusCode::Ok;

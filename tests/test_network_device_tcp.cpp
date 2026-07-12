@@ -614,6 +614,37 @@ TEST_CASE("TCP: duplicate retry of last accepted write is idempotent")
     CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
 }
 
+TEST_CASE("TCP common: duplicate retry of last read replays bytes")
+{
+    MemoryTcpSocketOps ops;
+    ops.rx = {'h', 'i'};
+
+    fujinet::net::TcpNetworkProtocolCommon proto(ops);
+    fujinet::net::TcpNetworkProtocolCommon::Options opt{};
+    REQUIRE(proto.adopt_connected_socket(1, opt, "memory", 1) == StatusCode::Ok);
+
+    std::uint8_t first[2] = {};
+    std::uint16_t read = 0;
+    bool eof = false;
+    bool more = false;
+    REQUIRE(proto.read_body(0, first, sizeof(first), read, eof, more) == StatusCode::Ok);
+    REQUIRE(read == 2);
+    CHECK(first[0] == 'h');
+    CHECK(first[1] == 'i');
+
+    std::uint8_t replay[2] = {};
+    read = 0;
+    eof = false;
+    more = false;
+    REQUIRE(proto.read_body(0, replay, sizeof(replay), read, eof, more) == StatusCode::Ok);
+    REQUIRE(read == 2);
+    CHECK(replay[0] == 'h');
+    CHECK(replay[1] == 'i');
+
+    std::uint8_t wrong_size[1] = {};
+    CHECK(proto.read_body(0, wrong_size, sizeof(wrong_size), read, eof, more) == StatusCode::InvalidRequest);
+}
+
 TEST_CASE("TCP: Read preserves bytes across 64K stream and ring boundary")
 {
     LocalEchoServer srv;

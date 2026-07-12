@@ -104,6 +104,13 @@ private:
     std::uint32_t _last_write_offset = 0;
     std::uint16_t _last_write_len = 0;
     std::vector<std::uint8_t> _last_write_data;
+    bool _last_read_valid = false;
+    std::uint32_t _last_read_offset = 0;
+    std::uint16_t _last_read_max = 0;
+    std::uint16_t _last_read_len = 0;
+    bool _last_read_eof = false;
+    bool _last_read_more_available = false;
+    std::vector<std::uint8_t> _last_read_data;
 
     // ring buffer
     std::vector<std::uint8_t> _rx;

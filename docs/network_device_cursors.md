@@ -178,6 +178,12 @@ The cursor is therefore not adding seekability to TCP. It is adding
 That synchronization is what turns host retries and implementation mistakes
 into detectable protocol errors instead of silent byte-stream corruption.
 
+There is one safe recovery exception: the device may remember the immediately
+previous successful TCP read and replay an exact duplicate
+`(handle, offset, maxBytes)` response. That handles a lost response packet after
+the TCP bytes were already consumed. It does not allow arbitrary rewinds, and a
+same-offset retry with a different requested length still fails.
+
 ---
 
 ## 5. Why the Overhead Feels Unpleasant on 8-Bit Hosts
@@ -266,6 +272,8 @@ For reads:
 
 - the request offset must equal `read_cursor`
 - if data is returned, `read_cursor` advances by the number of bytes delivered
+- an exact duplicate of the immediately previous successful TCP read may replay
+  the same bytes and flags without advancing the cursor or consuming TCP bytes
 
 For writes:
 
