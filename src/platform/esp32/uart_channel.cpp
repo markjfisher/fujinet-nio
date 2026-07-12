@@ -7,6 +7,7 @@
 
 extern "C" {
 #include "driver/uart.h"
+#include "esp_rom_sys.h"
 #include "soc/uart_struct.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -318,6 +319,10 @@ void UartChannel::write(const std::uint8_t* buffer, std::size_t len)
         return;
     }
 
+    if (_uart_cfg.txGapUs != 0) {
+        esp_rom_delay_us(_uart_cfg.txGapUs);
+    }
+
     int bytes_written = uart_write_bytes(_uart_port, buffer, len);
     if (bytes_written < 0) {
         FN_LOGE(TAG, "uart_write_bytes failed: %d", bytes_written);
@@ -327,6 +332,7 @@ void UartChannel::write(const std::uint8_t* buffer, std::size_t len)
     if (static_cast<std::size_t>(bytes_written) != len) {
         FN_LOGW(TAG, "Partial write: %d of %zu bytes", bytes_written, len);
     }
+
 }
 
 void UartChannel::flushOutput()

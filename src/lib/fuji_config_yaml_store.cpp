@@ -181,6 +181,7 @@ static void from_yaml(const YAML::Node& node, UartConfig& out)
     out.parity     = parse_uart_parity(get_or<std::string>(node, "parity", "none"));
     out.stopBits   = parse_uart_stop_bits(get_or<std::string>(node, "stop_bits", "1"));
     out.flowControl = parse_uart_flow_control(get_or<std::string>(node, "flow_control", "none"));
+    out.txGapUs    = static_cast<std::uint32_t>(get_or<int>(node, "tx_gap_us", 0));
 }
 
 static void from_yaml(const YAML::Node& node, ChannelConfig& out)
@@ -320,6 +321,7 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
      out << YAML::Key << "parity"        << YAML::Value << uart_parity_to_string(cfg.channel.uart.parity);
      out << YAML::Key << "stop_bits"     << YAML::Value << uart_stop_bits_to_string(cfg.channel.uart.stopBits);
      out << YAML::Key << "flow_control"  << YAML::Value << uart_flow_to_string(cfg.channel.uart.flowControl);
+     out << YAML::Key << "tx_gap_us"     << YAML::Value << cfg.channel.uart.txGapUs;
      out << YAML::EndMap; // uart
      out << YAML::EndMap;
 

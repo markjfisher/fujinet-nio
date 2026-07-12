@@ -130,7 +130,7 @@ public:
         });
         out.push_back(DiagCommandSpec{
             .name = "uart.set",
-            .summary = "set one field: baud_rate|data_bits|parity|stop_bits|flow_control",
+            .summary = "set one field: baud_rate|data_bits|parity|stop_bits|flow_control|tx_gap_us",
             .usage = "uart.set <field> <value>",
             .safe = false,
         });
@@ -195,6 +195,9 @@ private:
         text += "flow_control: ";
         text += flow_str(c.flowControl);
         text += "\r\n";
+        text += "tx_gap_us: ";
+        text += std::to_string(c.txGapUs);
+        text += "\r\n";
         return DiagResult::ok(std::move(text));
     }
 
@@ -226,7 +229,7 @@ private:
         }
         if (args.argv.size() < 3) {
             return DiagResult::invalid_args(
-                "usage: uart.set <baud_rate|data_bits|parity|stop_bits|flow_control> <value>");
+                "usage: uart.set <baud_rate|data_bits|parity|stop_bits|flow_control|tx_gap_us> <value>");
         }
 
         config::UartConfig next = uart->uart_config();
@@ -251,6 +254,12 @@ private:
             next.stopBits = parse_stop(val);
         } else if (ascii_iequals(field, "flow_control")) {
             next.flowControl = parse_flow(val);
+        } else if (ascii_iequals(field, "tx_gap_us")) {
+            std::uint32_t gap = 0;
+            if (!parse_decimal_u32(val, gap) || gap > 1000000) {
+                return DiagResult::invalid_args("tx_gap_us must be 0..1000000");
+            }
+            next.txGapUs = gap;
         } else {
             return DiagResult::invalid_args("unknown field (see uart.set usage)");
         }

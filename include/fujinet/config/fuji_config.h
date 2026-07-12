@@ -95,6 +95,7 @@ struct UartConfig {
     UartParity        parity{UartParity::None};
     UartStopBits      stopBits{UartStopBits::One};
     UartFlowControl   flowControl{UartFlowControl::None};
+    std::uint32_t     txGapUs{0};    // Optional pre-write turnaround gap.
 };
 
 /// Settings for the logical FujiBus channel (profile-dependent: PTY path on POSIX,
