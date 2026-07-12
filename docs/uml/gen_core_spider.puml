@@ -1214,6 +1214,17 @@ __
 -_fd : int
 -_host : std::string
 -_last_errno : int
+-_last_read_data : std::vector<std::uint8_t>
+-_last_read_eof : bool
+-_last_read_len : std::uint16_t
+-_last_read_max : std::uint16_t
+-_last_read_more_available : bool
+-_last_read_offset : std::uint32_t
+-_last_read_valid : bool
+-_last_write_data : std::vector<std::uint8_t>
+-_last_write_len : std::uint16_t
+-_last_write_offset : std::uint32_t
+-_last_write_valid : bool
 -_opt : Options
 -_peer_closed : bool
 -_port : std::uint16_t
