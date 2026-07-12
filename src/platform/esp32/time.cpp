@@ -57,16 +57,24 @@ bool sync_network_time()
         return false;
     }
     
-    // Request immediate sync
-    esp_sntp_restart();
+    // Request immediate sync and wait for this sync attempt to complete. Do
+    // not use time_is_valid() here: callers may have just set a wrong-but-
+    // plausible time, such as 2024-01-01, which still passes that check.
+    esp_sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
+    if (!esp_sntp_restart()) {
+        ESP_LOGW(TAG, "SNTP restart failed");
+        return false;
+    }
     
     ESP_LOGI(TAG, "SNTP time sync requested");
     
-    // Wait a short time for sync (up to 1 second)
-    // The actual sync happens asynchronously
-    int retries = 10;
+    // Wait for sync completion. Smooth mode may report IN_PROGRESS while the
+    // clock is being adjusted, which is still a successful network sync.
+    int retries = 100;
     while (retries > 0) {
-        if (time_is_valid()) {
+        sntp_sync_status_t status = esp_sntp_get_sync_status();
+        if (status == SNTP_SYNC_STATUS_COMPLETED ||
+            status == SNTP_SYNC_STATUS_IN_PROGRESS) {
             ESP_LOGI(TAG, "Time sync successful");
             return true;
         }
@@ -74,9 +82,8 @@ bool sync_network_time()
         retries--;
     }
     
-    // Even if we didn't get a valid time yet, the sync is in progress
-    // Return true to indicate the request was made
-    return true;
+    ESP_LOGW(TAG, "SNTP time sync did not complete before timeout");
+    return false;
 }
 
 static bool gmtime_utc(std::uint64_t unix_seconds, tm& out_tm)

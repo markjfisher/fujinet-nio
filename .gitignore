@@ -6,6 +6,7 @@ CMakeFiles/
 # platformio files
 /.pio/
 /managed_components/
+/dependencies.lock
 .pioenvs/
 .pioinitcache.py
 /sdkconfig.*
