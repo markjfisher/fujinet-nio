@@ -87,6 +87,7 @@ __
 +flowControl : UartFlowControl
 +parity : UartParity
 +stopBits : UartStopBits
++txGapUs : std::uint32_t
 }
 class "config::ChannelConfig" as C_0014601375190208620155
 class C_0014601375190208620155 {
