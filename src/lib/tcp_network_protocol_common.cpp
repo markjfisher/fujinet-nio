@@ -60,6 +60,10 @@ void TcpNetworkProtocolCommon::reset_state()
     _peer_closed = false;
     _read_cursor = 0;
     _write_cursor = 0;
+    _last_write_valid = false;
+    _last_write_offset = 0;
+    _last_write_len = 0;
+    _last_write_data.clear();
     _connect_start_ms = 0;
     _last_errno = 0;
 
@@ -419,13 +423,11 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::write_body(std::uint32_t offse
 {
     written = 0;
 
-    // sequential stream cursor rule
-    if (offset != _write_cursor) {
-        return fujinet::io::StatusCode::InvalidRequest;
-    }
-
     // Optional "halfclose" signal: Write with len=0 at current cursor
     if (len == 0) {
+        if (offset != _write_cursor) {
+            return fujinet::io::StatusCode::InvalidRequest;
+        }
         if (_opt.halfclose && _fd >= 0) {
             (void)_socket_ops.shutdown_write(_fd);
         }
@@ -433,6 +435,19 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::write_body(std::uint32_t offse
     }
 
     if (!data) return fujinet::io::StatusCode::InvalidRequest;
+
+    if (offset != _write_cursor) {
+        if (_last_write_valid &&
+            offset == _last_write_offset &&
+            len == _last_write_len &&
+            _write_cursor == offset + len &&
+            _last_write_data.size() == len &&
+            std::equal(_last_write_data.begin(), _last_write_data.end(), data)) {
+            written = static_cast<std::uint16_t>(len);
+            return fujinet::io::StatusCode::Ok;
+        }
+        return fujinet::io::StatusCode::InvalidRequest;
+    }
 
     if (_state == State::Connecting) {
         return fujinet::io::StatusCode::NotReady;
@@ -447,6 +462,15 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::write_body(std::uint32_t offse
         const std::size_t nn = static_cast<std::size_t>(n);
         _write_cursor += static_cast<std::uint32_t>(nn);
         written = static_cast<std::uint16_t>(std::min<std::size_t>(nn, 0xFFFF));
+        if (nn == len) {
+            _last_write_valid = true;
+            _last_write_offset = offset;
+            _last_write_len = written;
+            _last_write_data.assign(data, data + len);
+        } else {
+            _last_write_valid = false;
+            _last_write_data.clear();
+        }
         return fujinet::io::StatusCode::Ok;
     }
     if (n == 0) {

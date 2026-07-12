@@ -364,7 +364,9 @@ As with Read, the meaning of `offset` depends on the scheme:
   - `offset` is a sequential stream cursor.
   - Writes MUST be strictly sequential.
   - A Write request whose `offset` does not match the current stream write
-    cursor MUST fail with StatusCode::InvalidRequest.
+    cursor MUST fail with StatusCode::InvalidRequest, except that an exact
+    duplicate of the immediately previous successful write MAY be acknowledged
+    again without sending duplicate bytes to the TCP peer.
 
 ### Zero-length write (TCP half-close)
 
@@ -454,6 +456,11 @@ Backends may be synchronous (POSIX curl) or streaming/asynchronous (ESP32, TCP).
 - If data is not yet available, READ may return `NotReady`.
 - A READ returning `Ok` with `read_len == 0` is only valid when `eof == true` (transfer complete / peer closed).
 - Hosts should treat `NotReady` as "try again soon", not a fatal error.
+- Hosts may retry the same Write request after a transport timeout or lost
+  response. TCP backends may acknowledge the immediately previous successful
+  Write again only when handle, offset, length, and data bytes match exactly.
+  Hosts must still advance their local write offset only after receiving and
+  validating the response.
 - Transport-layer framing limits (e.g. USB, SLIP, CDC buffers) MUST NOT affect protocol semantics.
   Hosts should assume that large responses require multiple Read calls.
 

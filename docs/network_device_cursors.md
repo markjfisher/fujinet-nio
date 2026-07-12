@@ -97,6 +97,13 @@ If offsets are enforced:
 - the backend returns `InvalidRequest`
 - the host learns immediately that it is out of sync
 
+There is one safe recovery exception: the device may remember the immediately
+previous successful TCP write and acknowledge an exact duplicate
+`(handle, offset, length, data)` without sending those bytes to the peer again.
+That handles a lost response packet after the write was already committed. It
+does not allow arbitrary rewinds, and a same-offset retry with different bytes
+still fails.
+
 ### Case B: Duplicate read request
 
 Suppose the host asks to read at offset 1000, gets data, but due to a retry bug
@@ -264,6 +271,8 @@ For writes:
 
 - the request offset must equal `write_cursor`
 - if bytes are accepted, `write_cursor` advances by the number of bytes sent
+- an exact duplicate of the immediately previous successful TCP write may be
+  acknowledged again without advancing the cursor or sending duplicate bytes
 
 If the provided offset does not match the expected cursor, the backend returns:
 

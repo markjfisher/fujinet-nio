@@ -131,6 +131,10 @@ Rules:
 - `offset` must equal `write_cursor`
 - Partial writes are allowed
 - `write_cursor` advances by the number of bytes successfully written
+- A repeated `Write(handle, offset, data)` for the immediately previous
+  successful write MAY be acknowledged again when the data bytes are identical.
+  This is a transport response-loss recovery rule; the TCP bytes MUST NOT be
+  sent to the peer a second time.
 
 Return behavior:
 - `Ok` – one or more bytes written
@@ -147,6 +151,15 @@ If `halfclose=1`, a zero-length write:
 
 causes the backend to call `shutdown(SHUT_WR)`, signaling end-of-stream
 to the peer while still allowing reads.
+
+### Duplicate Write Acknowledgement
+
+TCP remains a strictly sequential stream. A same-offset write with different
+bytes, an older offset, or a future offset is still `InvalidRequest`.
+
+The only permitted duplicate is the exact most recent successful write. This
+lets a host retry after losing the lower-transport response packet: the device
+can return the same accepted length while avoiding a duplicate TCP send.
 
 ---
 
@@ -245,4 +258,3 @@ The TCP protocol is fully compatible with NetworkDevice v1:
 
 Future extensions (e.g. TLS via `tls://`) can be introduced as new schemes
 without breaking v1 compatibility.
-

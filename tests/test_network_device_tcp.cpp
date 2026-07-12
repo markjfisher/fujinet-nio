@@ -561,6 +561,59 @@ TEST_CASE("TCP: Write enforces sequential offset (mismatch => InvalidRequest)")
     CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
 }
 
+TEST_CASE("TCP: duplicate retry of last accepted write is idempotent")
+{
+    LocalEchoServer srv;
+    REQUIRE(srv.start());
+
+    auto reg = make_registry_tcp_only();
+    NetworkDevice dev(std::move(reg));
+    const auto deviceId = to_device_id(WireDeviceId::NetworkService);
+
+    const std::string url = "tcp://127.0.0.1:" + std::to_string(srv.port);
+    const std::uint16_t handle = open_handle_stub(dev, deviceId, url, 1, 0, 0);
+
+    REQUIRE(spin_poll_until(dev, [&] {
+        auto ir = info_req(dev, deviceId, handle);
+        if (ir.status != StatusCode::Ok) return false;
+
+        InfoParsed ip;
+        if (!parse_info_response(ir, ip)) return false;
+        std::string headers;
+        if (!fetch_info_headers(dev, deviceId, handle, ip.hdrLen, headers)) return false;
+        return headers.find("X-FujiNet-Connected: 1") != std::string::npos;
+    }, 1500));
+
+    {
+        IOResponse w = write_req(dev, deviceId, handle, 0, "abc");
+        if (w.status == StatusCode::DeviceBusy) {
+            dev.poll();
+            w = write_req(dev, deviceId, handle, 0, "abc");
+        }
+        REQUIRE(w.status == StatusCode::Ok);
+        WriteParsed wp;
+        REQUIRE(parse_write_response(w, wp));
+        CHECK(wp.offset == 0);
+        CHECK(wp.written == 3);
+    }
+
+    {
+        IOResponse w = write_req(dev, deviceId, handle, 0, "abc");
+        CHECK(w.status == StatusCode::Ok);
+        WriteParsed wp;
+        REQUIRE(parse_write_response(w, wp));
+        CHECK(wp.offset == 0);
+        CHECK(wp.written == 3);
+    }
+
+    {
+        IOResponse w = write_req(dev, deviceId, handle, 0, "abd");
+        CHECK(w.status == StatusCode::InvalidRequest);
+    }
+
+    CHECK(close_req(dev, deviceId, handle).status == StatusCode::Ok);
+}
+
 TEST_CASE("TCP: Read preserves bytes across 64K stream and ring boundary")
 {
     LocalEchoServer srv;
