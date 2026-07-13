@@ -68,6 +68,43 @@ static uart_stop_bits_t map_stop_bits(config::UartStopBits s)
     }
 }
 
+static const char* parity_label(config::UartParity p)
+{
+    switch (p) {
+    case config::UartParity::Even:
+        return "even";
+    case config::UartParity::Odd:
+        return "odd";
+    case config::UartParity::None:
+    default:
+        return "none";
+    }
+}
+
+static const char* stop_bits_label(config::UartStopBits s)
+{
+    switch (s) {
+    case config::UartStopBits::Two:
+        return "2";
+    case config::UartStopBits::OnePointFive:
+        return "1.5";
+    case config::UartStopBits::One:
+    default:
+        return "1";
+    }
+}
+
+static const char* flow_control_label(config::UartFlowControl f)
+{
+    switch (f) {
+    case config::UartFlowControl::RtsCts:
+        return "rts_cts";
+    case config::UartFlowControl::None:
+    default:
+        return "none";
+    }
+}
+
 } // namespace
 
 UartChannel::UartChannel(const config::UartConfig& uart_cfg)
@@ -162,13 +199,13 @@ bool UartChannel::apply_hw_parameters(const UartPins& uart_pins)
     }
 
     FN_LOGI(TAG,
-            "UartChannel UART%d baud=%d data=%d parity=%d stop=%d flow=%d",
+            "UartChannel UART%d baud=%d data=%d parity=%s stop=%s flow=%s",
             static_cast<int>(_uart_port),
             baud,
             data_bits,
-            static_cast<int>(_uart_cfg.parity),
-            static_cast<int>(_uart_cfg.stopBits),
-            static_cast<int>(_uart_cfg.flowControl));
+            parity_label(_uart_cfg.parity),
+            stop_bits_label(_uart_cfg.stopBits),
+            flow_control_label(_uart_cfg.flowControl));
     return true;
 }
 
