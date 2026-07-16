@@ -26,7 +26,6 @@ static BootMode parse_boot_mode(const std::string& s)
 {
     if (s == "normal") return BootMode::Normal;
     if (s == "config") return BootMode::Config;
-    if (s == "cpm")    return BootMode::Cpm;
     return BootMode::Unknown;
 }
 
@@ -35,7 +34,6 @@ static std::string boot_mode_to_string(BootMode m)
     switch (m) {
     case BootMode::Normal: return "normal";
     case BootMode::Config: return "config";
-    case BootMode::Cpm:    return "cpm";
     default:               return "unknown";
     }
 }
@@ -45,9 +43,14 @@ static std::string boot_mode_to_string(BootMode m)
 static void from_yaml(const YAML::Node& node, GeneralConfig& out)
 {
     out.deviceName        = get_or<std::string>(node, "device_name", "fujinet");
-    auto bootModeStr      = get_or<std::string>(node, "boot_mode", "normal");
-    out.bootMode          = parse_boot_mode(bootModeStr);
-    out.altConfigFile     = get_or<std::string>(node, "alt_config_file", "");
+}
+
+static void from_yaml(const YAML::Node& node, BootConfig& out)
+{
+    auto modeStr  = get_or<std::string>(node, "mode", "config");
+    out.mode      = parse_boot_mode(modeStr);
+    out.configUri = get_or<std::string>(node, "config_uri", out.configUri);
+    out.readOnly  = get_or<bool>(node, "readonly", out.readOnly);
 }
 
 static void from_yaml(const YAML::Node& node, WifiConfig& out)
@@ -208,6 +211,10 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
         from_yaml(n, cfg.general);
     }
 
+    if (auto n = root["boot"]) {
+        from_yaml(n, cfg.boot);
+    }
+
     if (auto n = root["wifi"]) {
         from_yaml(n, cfg.wifi);
     }
@@ -249,8 +256,13 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     // fujinet:
     out << YAML::Key << "fujinet" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "device_name"        << YAML::Value << cfg.general.deviceName;
-    out << YAML::Key << "boot_mode"          << YAML::Value << boot_mode_to_string(cfg.general.bootMode);
-    out << YAML::Key << "alt_config_file"    << YAML::Value << cfg.general.altConfigFile;
+    out << YAML::EndMap;
+
+    // boot:
+    out << YAML::Key << "boot" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "mode"       << YAML::Value << boot_mode_to_string(cfg.boot.mode);
+    out << YAML::Key << "config_uri" << YAML::Value << cfg.boot.configUri;
+    out << YAML::Key << "readonly"   << YAML::Value << cfg.boot.readOnly;
     out << YAML::EndMap;
 
     // wifi:

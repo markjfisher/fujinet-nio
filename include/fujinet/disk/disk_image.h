@@ -9,6 +9,16 @@
 
 namespace fujinet::disk {
 
+struct DiskImageStats {
+    std::uint64_t readOps{0};
+    std::uint64_t writeOps{0};
+    std::uint64_t seekOps{0};
+    std::uint64_t sequentialReadHits{0};
+    std::uint64_t sequentialWriteHits{0};
+    std::uint64_t readBytes{0};
+    std::uint64_t writeBytes{0};
+};
+
 // Per-format image handler (ATR/SSD/DSD/etc).
 // Pure core: no bus/protocol concerns.
 class IDiskImage {
@@ -35,8 +45,10 @@ public:
     virtual DiskResult write_sector(std::uint32_t lba, const std::uint8_t* src, std::size_t srcBytes) = 0;
 
     virtual DiskResult flush() = 0;
+
+    virtual DiskImageStats image_stats() const noexcept { return {}; }
+    virtual void reset_image_stats() noexcept {}
 };
 
 } // namespace fujinet::disk
-
 

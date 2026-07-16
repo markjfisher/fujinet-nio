@@ -75,6 +75,18 @@ public:
             .usage = "disk.slots",
             .safe = true,
         });
+        out.push_back(DiagCommandSpec{
+            .name = "disk.stats",
+            .summary = "show disk request and image cursor statistics",
+            .usage = "disk.stats",
+            .safe = true,
+        });
+        out.push_back(DiagCommandSpec{
+            .name = "disk.stats.reset",
+            .summary = "reset disk request and image cursor statistics",
+            .usage = "disk.stats.reset",
+            .safe = false,
+        });
     }
 
     DiagResult execute(const DiagArgsView& args) override
@@ -86,6 +98,12 @@ public:
         const std::string_view cmd = args.argv[0];
         if (cmd == "disk.slots") {
             return cmd_slots();
+        }
+        if (cmd == "disk.stats") {
+            return cmd_stats();
+        }
+        if (cmd == "disk.stats.reset") {
+            return cmd_stats_reset();
         }
 
         return DiagResult::not_found("unknown disk command");
@@ -138,6 +156,93 @@ private:
         return DiagResult::ok(text);
     }
 
+    DiagResult cmd_stats()
+    {
+        auto* dev = get_disk_device(_core);
+        if (!dev) {
+            return DiagResult::not_ready("DiskDevice not registered");
+        }
+
+        std::string text;
+        text.reserve(1024);
+
+        for (std::size_t i = 0; i < dev->disk_service().slot_count(); ++i) {
+            const auto st = dev->disk_service().stats(i);
+            const auto info = dev->disk_service().info(i);
+            const unsigned slot1 = static_cast<unsigned>(i + 1);
+
+            text += "slot=";
+            text += std::to_string(slot1);
+            text += " inserted=";
+            text += info.inserted ? "1" : "0";
+            text += " fail=";
+            text += std::to_string(st.failedRequests);
+            text += "\r\n";
+
+            text += "slot=";
+            text += std::to_string(slot1);
+            text += " req read=";
+            text += std::to_string(st.readRequests);
+            text += " sec=";
+            text += std::to_string(st.readSectors);
+            text += " bytes=";
+            text += std::to_string(st.readBytes);
+            text += " multi=";
+            text += std::to_string(st.multiReadRequests);
+            text += " seq=";
+            text += std::to_string(st.sequentialReadRequests);
+            text += "\r\n";
+
+            text += "slot=";
+            text += std::to_string(slot1);
+            text += " req write=";
+            text += std::to_string(st.writeRequests);
+            text += " sec=";
+            text += std::to_string(st.writeSectors);
+            text += " bytes=";
+            text += std::to_string(st.writeBytes);
+            text += " multi=";
+            text += std::to_string(st.multiWriteRequests);
+            text += " seq=";
+            text += std::to_string(st.sequentialWriteRequests);
+            text += "\r\n";
+
+            text += "slot=";
+            text += std::to_string(slot1);
+            text += " img read=";
+            text += std::to_string(st.image.readOps);
+            text += " write=";
+            text += std::to_string(st.image.writeOps);
+            text += " seek=";
+            text += std::to_string(st.image.seekOps);
+            text += " seq_read=";
+            text += std::to_string(st.image.sequentialReadHits);
+            text += " seq_write=";
+            text += std::to_string(st.image.sequentialWriteHits);
+            text += "\r\n";
+
+            text += "slot=";
+            text += std::to_string(slot1);
+            text += " img_bytes read=";
+            text += std::to_string(st.image.readBytes);
+            text += " write=";
+            text += std::to_string(st.image.writeBytes);
+            text += "\r\n";
+        }
+
+        return DiagResult::ok(text);
+    }
+
+    DiagResult cmd_stats_reset()
+    {
+        auto* dev = get_disk_device(_core);
+        if (!dev) {
+            return DiagResult::not_ready("DiskDevice not registered");
+        }
+        dev->disk_service().reset_all_stats();
+        return DiagResult::ok("disk stats reset\r\n");
+    }
+
     fujinet::core::FujinetCore& _core;
 };
 
@@ -149,5 +254,3 @@ std::unique_ptr<IDiagnosticProvider> create_disk_diagnostic_provider(::fujinet::
 }
 
 } // namespace fujinet::diag
-
-

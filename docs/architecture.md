@@ -1048,6 +1048,28 @@ Disk protocol doc:
 
 - [`docs/disk_device_protocol.md`](disk_device_protocol.md) — Disk subsystem overview + DiskDevice v1 binary protocol
 
+### Boot/config disk projection
+
+FujiNet-NIO supports the familiar FujiNet “config disk” experience without
+coupling persisted slots to active host drives. `fujinet.yaml` has a dedicated
+`boot:` block:
+
+```yaml
+boot:
+  mode: "config"        # or "normal"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
+```
+
+At startup, platform bootstrap loads config, registers `DiskDevice`, then
+projects the boot/config disk into a bootstrap-selected active disk unit only
+when `boot.mode` is `config`. That active unit is not a persisted user slot and
+not a host drive name. Host-side drive selection remains client-specific: Atari
+sees the first SIO disk unit as `D1:`, the MS-DOS driver exposes its first block
+unit as the next DOS drive assigned by DOS, and BBC tooling can map a FujiNet
+slot to a BBC drive number explicitly. Ordinary `mounts:` remain persisted user
+slots and are applied separately afterward.
+
 ---
 
 # **Hardware Capabilities**

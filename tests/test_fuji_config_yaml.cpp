@@ -45,8 +45,10 @@ std::string read_file(fujinet::tests::MemoryFileSystem& fs, const std::string& p
 bool configs_equal(const FujiConfig& a, const FujiConfig& b)
 {
     if (a.general.deviceName != b.general.deviceName) return false;
-    if (a.general.bootMode != b.general.bootMode) return false;
-    if (a.general.altConfigFile != b.general.altConfigFile) return false;
+
+    if (a.boot.mode != b.boot.mode) return false;
+    if (a.boot.configUri != b.boot.configUri) return false;
+    if (a.boot.readOnly != b.boot.readOnly) return false;
 
     if (a.wifi.enabled != b.wifi.enabled) return false;
     if (a.wifi.ssid != b.wifi.ssid) return false;
@@ -99,8 +101,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Load minimal config from primary")
     const std::string yaml = R"(
 fujinet:
   device_name: "test-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -130,8 +130,8 @@ clock:
     FujiConfig cfg = store.load();
 
     CHECK(cfg.general.deviceName == "test-device");
-    CHECK(cfg.general.bootMode == BootMode::Normal);
-    CHECK(cfg.general.altConfigFile == "");
+    CHECK(cfg.boot.mode == BootMode::Config);
+    CHECK(cfg.boot.configUri == "persist:/boot/autorun.img");
     CHECK(cfg.wifi.enabled == false);
     CHECK(cfg.mounts.empty());
 }
@@ -144,8 +144,10 @@ TEST_CASE("YamlFujiConfigStoreFs: Load full config from primary")
     const std::string yaml = R"(
 fujinet:
   device_name: "my-fujinet"
-  boot_mode: "config"
-  alt_config_file: "/alt/config.yaml"
+boot:
+  mode: "config"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
 wifi:
   enabled: true
   ssid: "MyWiFi"
@@ -182,8 +184,8 @@ clock:
     FujiConfig cfg = store.load();
 
     CHECK(cfg.general.deviceName == "my-fujinet");
-    CHECK(cfg.general.bootMode == BootMode::Config);
-    CHECK(cfg.general.altConfigFile == "/alt/config.yaml");
+    CHECK(cfg.boot.mode == BootMode::Config);
+    CHECK(cfg.boot.configUri == "persist:/boot/autorun.atr");
 
     CHECK(cfg.wifi.enabled == true);
     CHECK(cfg.wifi.ssid == "MyWiFi");
@@ -221,8 +223,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Load from backup when primary missing")
     const std::string yaml = R"(
 fujinet:
   device_name: "backup-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -253,7 +253,7 @@ clock:
     FujiConfig cfg = store.load();
 
     CHECK(cfg.general.deviceName == "backup-device");
-    CHECK(cfg.general.bootMode == BootMode::Normal);
+    CHECK(cfg.boot.mode == BootMode::Config);
 
     // Should have been copied to primary
     CHECK(primary->exists("fujinet.yaml"));
@@ -269,8 +269,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Load from backup when primary fails")
     const std::string validYaml = R"(
 fujinet:
   device_name: "backup-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -314,7 +312,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Load defaults when both missing")
 
     // Should return defaults (struct defaults, not YAML parsing defaults)
     CHECK(cfg.general.deviceName == ""); // empty string default
-    CHECK(cfg.general.bootMode == BootMode::Config); // struct default
+    CHECK(cfg.boot.mode == BootMode::Config); // struct default
     CHECK(cfg.wifi.enabled == false);
     CHECK(cfg.mounts.empty());
 
@@ -333,8 +331,8 @@ TEST_CASE("YamlFujiConfigStoreFs: Save to primary only")
 
     FujiConfig cfg{};
     cfg.general.deviceName = "saved-device";
-    cfg.general.bootMode = BootMode::Cpm;
-    cfg.general.altConfigFile = "/alt.yaml";
+    cfg.boot.mode = BootMode::Config;
+    cfg.boot.configUri = "persist:/boot/autorun.atr";
     cfg.wifi.enabled = true;
     cfg.wifi.ssid = "TestSSID";
     cfg.wifi.passphrase = "password";
@@ -371,7 +369,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Save to primary and backup")
 
     FujiConfig cfg{};
     cfg.general.deviceName = "dual-save";
-    cfg.general.bootMode = BootMode::Normal;
+    cfg.boot.mode = BootMode::Normal;
 
     store.save(cfg);
 
@@ -393,8 +391,8 @@ TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load")
 
     FujiConfig original{};
     original.general.deviceName = "roundtrip-test";
-    original.general.bootMode = BootMode::Config;
-    original.general.altConfigFile = "/alt.yaml";
+    original.boot.mode = BootMode::Config;
+    original.boot.configUri = "/alt.yaml";
     original.wifi.enabled = true;
     original.wifi.ssid = "RoundTripWiFi";
     original.wifi.passphrase = "secretpass";
@@ -437,7 +435,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Load empty file uses defaults")
 
     // Should return defaults (struct defaults, not YAML parsing defaults)
     CHECK(cfg.general.deviceName == ""); // empty string default
-    CHECK(cfg.general.bootMode == BootMode::Config); // struct default
+    CHECK(cfg.boot.mode == BootMode::Config); // struct default
     CHECK(cfg.wifi.enabled == false);
 }
 
@@ -460,8 +458,8 @@ wifi:
     FujiConfig cfg = store.load();
 
     CHECK(cfg.general.deviceName == "partial-device");
-    CHECK(cfg.general.bootMode == BootMode::Normal); // default
-    CHECK(cfg.general.altConfigFile == ""); // default
+    CHECK(cfg.boot.mode == BootMode::Config); // default
+    CHECK(cfg.boot.configUri == "persist:/boot/autorun.img"); // default
 
     CHECK(cfg.wifi.enabled == true);
     CHECK(cfg.wifi.ssid == "MySSID");
@@ -481,7 +479,10 @@ TEST_CASE("YamlFujiConfigStoreFs: Boot mode parsing")
     const std::string yamlNormal = R"(
 fujinet:
   device_name: "test"
-  boot_mode: "normal"
+boot:
+  mode: "normal"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
 wifi:
   enabled: false
 mounts: []
@@ -506,12 +507,15 @@ clock:
     create_file(*primary, "/fujinet.yaml", yamlNormal);
     YamlFujiConfigStoreFs store1(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg1 = store1.load();
-    CHECK(cfg1.general.bootMode == BootMode::Normal);
+    CHECK(cfg1.boot.mode == BootMode::Normal);
 
     const std::string yamlConfig = R"(
 fujinet:
   device_name: "test"
-  boot_mode: "config"
+boot:
+  mode: "config"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
 wifi:
   enabled: false
 mounts: []
@@ -529,12 +533,15 @@ devices:
     create_file(*primary, "/fujinet.yaml", yamlConfig);
     YamlFujiConfigStoreFs store2(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg2 = store2.load();
-    CHECK(cfg2.general.bootMode == BootMode::Config);
+    CHECK(cfg2.boot.mode == BootMode::Config);
 
-    const std::string yamlCpm = R"(
+    const std::string yamlUnknown = R"(
 fujinet:
   device_name: "test"
-  boot_mode: "cpm"
+boot:
+  mode: "future"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
 wifi:
   enabled: false
 mounts: []
@@ -549,10 +556,10 @@ devices:
     enabled: false
 )";
 
-    create_file(*primary, "/fujinet.yaml", yamlCpm);
+    create_file(*primary, "/fujinet.yaml", yamlUnknown);
     YamlFujiConfigStoreFs store3(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg3 = store3.load();
-    CHECK(cfg3.general.bootMode == BootMode::Cpm);
+    CHECK(cfg3.boot.mode == BootMode::Unknown);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Multiple mounts")
@@ -562,7 +569,10 @@ TEST_CASE("YamlFujiConfigStoreFs: Multiple mounts")
     const std::string yaml = R"(
 fujinet:
   device_name: "multi-test"
-  boot_mode: "normal"
+boot:
+  mode: "normal"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
 wifi:
   enabled: false
 mounts:
@@ -616,7 +626,10 @@ TEST_CASE("YamlFujiConfigStoreFs: Load config with new slot field")
     const std::string yaml = R"(
 fujinet:
   device_name: "slot-test"
-  boot_mode: "normal"
+boot:
+  mode: "normal"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
 wifi:
   enabled: false
 mounts:
@@ -700,8 +713,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Channel ptyPath config")
     const std::string yaml = R"(
 fujinet:
   device_name: "test-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -726,8 +737,8 @@ channel:
     FujiConfig cfg = store.load();
 
     CHECK(cfg.general.deviceName == "test-device");
-    CHECK(cfg.general.bootMode == BootMode::Normal);
-    CHECK(cfg.general.altConfigFile == "");
+    CHECK(cfg.boot.mode == BootMode::Config);
+    CHECK(cfg.boot.configUri == "persist:/boot/autorun.img");
     CHECK(cfg.wifi.enabled == false);
     CHECK(cfg.mounts.empty());
     CHECK(cfg.channel.ptyPath == "/dev/fujinet-pty");
@@ -743,8 +754,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Channel tcp config")
     const std::string yaml = R"(
 fujinet:
   device_name: "test-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -780,8 +789,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Channel uart nested map")
     const std::string yaml = R"(
 fujinet:
   device_name: "test-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -824,8 +831,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Channel serial port config")
     const std::string yaml = R"(
 fujinet:
   device_name: "test-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -862,8 +867,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Channel legacy uart_baud key")
     const std::string yaml = R"(
 fujinet:
   device_name: "test-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -900,8 +903,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Channel ptyPath empty default")
     const std::string yaml = R"(
 fujinet:
   device_name: "test-device"
-  boot_mode: "normal"
-  alt_config_file: ""
 wifi:
   enabled: false
   ssid: ""
@@ -924,8 +925,8 @@ devices:
     FujiConfig cfg = store.load();
 
     CHECK(cfg.general.deviceName == "test-device");
-    CHECK(cfg.general.bootMode == BootMode::Normal);
-    CHECK(cfg.general.altConfigFile == "");
+    CHECK(cfg.boot.mode == BootMode::Config);
+    CHECK(cfg.boot.configUri == "persist:/boot/autorun.img");
     CHECK(cfg.wifi.enabled == false);
     CHECK(cfg.mounts.empty());
     CHECK(cfg.channel.ptyPath.empty());  // Should be empty by default
@@ -939,8 +940,8 @@ TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load with ptyPath")
 
     FujiConfig original{};
     original.general.deviceName = "roundtrip-test";
-    original.general.bootMode = BootMode::Config;
-    original.general.altConfigFile = "/alt.yaml";
+    original.boot.mode = BootMode::Config;
+    original.boot.configUri = "/alt.yaml";
     original.wifi.enabled = true;
     original.wifi.ssid = "RoundTripWiFi";
     original.wifi.passphrase = "secretpass";

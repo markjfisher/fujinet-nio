@@ -101,6 +101,9 @@ public:
         _geo.sectorSize = baseSectorSize; // maximum size in this format
         _geo.sectorCount = sectorCount;
         _geo.supportsVariableSectorSize = (baseSectorSize == 256);
+        _cursorValid = false;
+        _nextSequentialLba = 0;
+        _stats = {};
 
         return DiskResult{DiskError::None};
     }
@@ -111,6 +114,9 @@ public:
         _geo = {};
         _readOnly = true;
         _baseSectorSize = 0;
+        _cursorValid = false;
+        _nextSequentialLba = 0;
+        _stats = {};
         return DiskResult{DiskError::None};
     }
 
@@ -124,14 +130,28 @@ public:
 
         const std::uint32_t sector1 = lba + 1;
         const std::uint32_t secSize = sector_size_for(_baseSectorSize, sector1);
-        const std::uint64_t off = sector_to_offset(_baseSectorSize, sector1);
-
-        if (!_file->seek(off)) return DiskResult{DiskError::IoError};
+        ++_stats.readOps;
+        if (!_cursorValid || lba != _nextSequentialLba) {
+            const std::uint64_t off = sector_to_offset(_baseSectorSize, sector1);
+            ++_stats.seekOps;
+            if (!_file->seek(off)) {
+                _cursorValid = false;
+                return DiskResult{DiskError::IoError};
+            }
+        } else {
+            ++_stats.sequentialReadHits;
+        }
 
         // Zero-fill the destination up to max size, then read actual bytes.
         std::memset(dst, 0, _geo.sectorSize);
         const std::size_t got = _file->read(dst, secSize);
-        if (got != secSize) return DiskResult{DiskError::IoError};
+        if (got != secSize) {
+            _cursorValid = false;
+            return DiskResult{DiskError::IoError};
+        }
+        _stats.readBytes += got;
+        _cursorValid = true;
+        _nextSequentialLba = lba + 1;
 
         return DiskResult{DiskError::None, static_cast<std::uint16_t>(secSize)};
     }
@@ -148,11 +168,26 @@ public:
         const std::uint32_t secSize = sector_size_for(_baseSectorSize, sector1);
         if (srcBytes < secSize) return DiskResult{DiskError::InvalidRequest};
 
-        const std::uint64_t off = sector_to_offset(_baseSectorSize, sector1);
-        if (!_file->seek(off)) return DiskResult{DiskError::IoError};
+        ++_stats.writeOps;
+        if (!_cursorValid || lba != _nextSequentialLba) {
+            const std::uint64_t off = sector_to_offset(_baseSectorSize, sector1);
+            ++_stats.seekOps;
+            if (!_file->seek(off)) {
+                _cursorValid = false;
+                return DiskResult{DiskError::IoError};
+            }
+        } else {
+            ++_stats.sequentialWriteHits;
+        }
 
         const std::size_t wrote = _file->write(src, secSize);
-        if (wrote != secSize) return DiskResult{DiskError::IoError};
+        if (wrote != secSize) {
+            _cursorValid = false;
+            return DiskResult{DiskError::IoError};
+        }
+        _stats.writeBytes += wrote;
+        _cursorValid = true;
+        _nextSequentialLba = lba + 1;
 
         return DiskResult{DiskError::None, static_cast<std::uint16_t>(secSize)};
     }
@@ -163,11 +198,17 @@ public:
         return DiskResult{_file->flush() ? DiskError::None : DiskError::IoError};
     }
 
+    DiskImageStats image_stats() const noexcept override { return _stats; }
+    void reset_image_stats() noexcept override { _stats = {}; }
+
 private:
     std::unique_ptr<fs::IFile> _file;
     DiskGeometry _geo{};
     bool _readOnly{true};
     std::uint16_t _baseSectorSize{0};
+    bool _cursorValid{false};
+    std::uint32_t _nextSequentialLba{0};
+    DiskImageStats _stats{};
 };
 
 std::unique_ptr<IDiskImage> make_atr_disk_image()
@@ -234,5 +275,3 @@ DiskResult create_atr_image_file(fs::IFile& file, std::uint16_t sectorSize, std:
 }
 
 } // namespace fujinet::disk
-
-

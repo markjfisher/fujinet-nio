@@ -6,6 +6,7 @@
 namespace fujinet::disk {
 
 static constexpr const char* TAG = "disk_svc";
+static constexpr const char* STATS_TAG = "diskstats";
 
 static const char* disk_error_name(DiskError e) noexcept
 {
@@ -89,6 +90,11 @@ DiskResult DiskService::mount(
     s->lastError = DiskError::None;
     s->fsName = fsName;
     s->path = path;
+    s->statsReadCursorValid = false;
+    s->statsWriteCursorValid = false;
+    s->statsNextReadLba = 0;
+    s->statsNextWriteLba = 0;
+    _stats[slotIndex] = {};
 
     auto* pfs = _storage.get(fsName);
     if (!pfs) {
@@ -216,22 +222,101 @@ DiskResult DiskService::unmount(std::size_t slotIndex)
     s->lastError = DiskError::None;
     s->fsName.clear();
     s->path.clear();
+    s->statsReadCursorValid = false;
+    s->statsWriteCursorValid = false;
+    s->statsNextReadLba = 0;
+    s->statsNextWriteLba = 0;
 
     return DiskResult{DiskError::None};
+}
+
+static void log_slot_stats(std::size_t slotIndex, const DiskServiceSlotStats& stats)
+{
+    FN_LOGI(STATS_TAG,
+            "slot=%u read_req=%llu read_sec=%llu read_bytes=%llu multi_read=%llu seq_read=%llu "
+            "write_req=%llu write_sec=%llu write_bytes=%llu multi_write=%llu seq_write=%llu "
+            "fail=%llu img_read=%llu img_write=%llu img_seek=%llu img_seq_read=%llu img_seq_write=%llu",
+            static_cast<unsigned>(slotIndex + 1),
+            static_cast<unsigned long long>(stats.readRequests),
+            static_cast<unsigned long long>(stats.readSectors),
+            static_cast<unsigned long long>(stats.readBytes),
+            static_cast<unsigned long long>(stats.multiReadRequests),
+            static_cast<unsigned long long>(stats.sequentialReadRequests),
+            static_cast<unsigned long long>(stats.writeRequests),
+            static_cast<unsigned long long>(stats.writeSectors),
+            static_cast<unsigned long long>(stats.writeBytes),
+            static_cast<unsigned long long>(stats.multiWriteRequests),
+            static_cast<unsigned long long>(stats.sequentialWriteRequests),
+            static_cast<unsigned long long>(stats.failedRequests),
+            static_cast<unsigned long long>(stats.image.readOps),
+            static_cast<unsigned long long>(stats.image.writeOps),
+            static_cast<unsigned long long>(stats.image.seekOps),
+            static_cast<unsigned long long>(stats.image.sequentialReadHits),
+            static_cast<unsigned long long>(stats.image.sequentialWriteHits));
+}
+
+void DiskService::reset_stats(std::size_t slotIndex)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return;
+    _stats[slotIndex] = {};
+    if (s->image) s->image->reset_image_stats();
+    s->statsReadCursorValid = false;
+    s->statsWriteCursorValid = false;
+    s->statsNextReadLba = 0;
+    s->statsNextWriteLba = 0;
+}
+
+void DiskService::reset_all_stats()
+{
+    for (std::size_t i = 0; i < MAX_SLOTS; ++i) reset_stats(i);
+}
+
+DiskServiceSlotStats DiskService::stats(std::size_t slotIndex) const
+{
+    if (slotIndex >= MAX_SLOTS) return {};
+    DiskServiceSlotStats out = _stats[slotIndex];
+    if (const auto* s = slot_ptr(slotIndex); s && s->image) {
+        out.image = s->image->image_stats();
+    }
+    return out;
 }
 
 DiskResult DiskService::read_sector(std::size_t slotIndex, std::uint32_t lba, std::uint8_t* dst, std::size_t dstBytes)
 {
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
+    auto& stats = _stats[slotIndex];
 
     auto mountResult = ensure_mounted(slotIndex);
-    if (!mountResult.ok()) return mountResult;
+    if (!mountResult.ok()) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return mountResult;
+    }
 
-    if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    if (!s->image) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    }
+
+    ++stats.readRequests;
+    ++stats.readSectors;
+    if (s->statsReadCursorValid && lba == s->statsNextReadLba)
+        ++stats.sequentialReadRequests;
 
     DiskResult r = s->image->read_sector(lba, dst, dstBytes);
-    if (!r.ok()) set_error(slotIndex, r.error);
+    if (r.ok()) {
+        stats.readBytes += r.bytes;
+        s->statsReadCursorValid = true;
+        s->statsNextReadLba = lba + 1;
+    } else {
+        ++stats.failedRequests;
+        s->statsReadCursorValid = false;
+        set_error(slotIndex, r.error);
+    }
+    log_slot_stats(slotIndex, this->stats(slotIndex));
     return r;
 }
 
@@ -239,18 +324,38 @@ DiskResult DiskService::write_sector(std::size_t slotIndex, std::uint32_t lba, c
 {
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
+    auto& stats = _stats[slotIndex];
 
     auto mountResult = ensure_mounted(slotIndex);
-    if (!mountResult.ok()) return mountResult;
+    if (!mountResult.ok()) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return mountResult;
+    }
 
-    if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    if (!s->image) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    }
+
+    ++stats.writeRequests;
+    ++stats.writeSectors;
+    if (s->statsWriteCursorValid && lba == s->statsNextWriteLba)
+        ++stats.sequentialWriteRequests;
 
     DiskResult r = s->image->write_sector(lba, src, srcBytes);
     if (r.ok()) {
+        stats.writeBytes += r.bytes;
         s->dirty = true;
+        s->statsWriteCursorValid = true;
+        s->statsNextWriteLba = lba + 1;
     } else {
+        ++stats.failedRequests;
+        s->statsWriteCursorValid = false;
         set_error(slotIndex, r.error);
     }
+    log_slot_stats(slotIndex, this->stats(slotIndex));
     return r;
 }
 
@@ -259,28 +364,60 @@ DiskResult DiskService::read_sectors(std::size_t slotIndex, std::uint32_t lba, s
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
     if (count == 0 || !dst) return DiskResult{DiskError::InvalidRequest};
+    auto& stats = _stats[slotIndex];
 
     auto mountResult = ensure_mounted(slotIndex);
-    if (!mountResult.ok()) return mountResult;
-    if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
-    if (s->geometry.sectorSize == 0) return DiskResult{set_error(slotIndex, DiskError::BadImage)};
+    if (!mountResult.ok()) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return mountResult;
+    }
+    if (!s->image) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    }
+    if (s->geometry.sectorSize == 0) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{set_error(slotIndex, DiskError::BadImage)};
+    }
     if (lba >= s->geometry.sectorCount || count > (s->geometry.sectorCount - lba)) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
         return DiskResult{set_error(slotIndex, DiskError::OutOfRange)};
     }
 
     const std::size_t sectorSize = s->geometry.sectorSize;
     const std::size_t totalBytes = static_cast<std::size_t>(count) * sectorSize;
-    if (dstBytes < totalBytes) return DiskResult{DiskError::InvalidRequest};
+    if (dstBytes < totalBytes) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{DiskError::InvalidRequest};
+    }
+
+    ++stats.readRequests;
+    stats.readSectors += count;
+    if (count > 1) ++stats.multiReadRequests;
+    if (s->statsReadCursorValid && lba == s->statsNextReadLba)
+        ++stats.sequentialReadRequests;
 
     std::size_t bytes = 0;
     for (std::uint16_t i = 0; i < count; ++i) {
         DiskResult r = s->image->read_sector(lba + i, dst + bytes, sectorSize);
         if (!r.ok()) {
+            ++stats.failedRequests;
+            s->statsReadCursorValid = false;
             set_error(slotIndex, r.error);
+            log_slot_stats(slotIndex, this->stats(slotIndex));
             return r;
         }
         bytes += r.bytes ? r.bytes : sectorSize;
     }
+    stats.readBytes += bytes;
+    s->statsReadCursorValid = true;
+    s->statsNextReadLba = lba + count;
+    log_slot_stats(slotIndex, this->stats(slotIndex));
     return DiskResult{DiskError::None, static_cast<std::uint16_t>(bytes)};
 }
 
@@ -289,30 +426,66 @@ DiskResult DiskService::write_sectors(std::size_t slotIndex, std::uint32_t lba, 
     auto* s = slot_ptr(slotIndex);
     if (!s) return DiskResult{DiskError::InvalidSlot};
     if (count == 0 || !src) return DiskResult{DiskError::InvalidRequest};
+    auto& stats = _stats[slotIndex];
 
     auto mountResult = ensure_mounted(slotIndex);
-    if (!mountResult.ok()) return mountResult;
-    if (!s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
-    if (s->readOnly) return DiskResult{set_error(slotIndex, DiskError::ReadOnly)};
-    if (s->geometry.sectorSize == 0) return DiskResult{set_error(slotIndex, DiskError::BadImage)};
+    if (!mountResult.ok()) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return mountResult;
+    }
+    if (!s->image) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    }
+    if (s->readOnly) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{set_error(slotIndex, DiskError::ReadOnly)};
+    }
+    if (s->geometry.sectorSize == 0) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{set_error(slotIndex, DiskError::BadImage)};
+    }
     if (lba >= s->geometry.sectorCount || count > (s->geometry.sectorCount - lba)) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
         return DiskResult{set_error(slotIndex, DiskError::OutOfRange)};
     }
 
     const std::size_t sectorSize = s->geometry.sectorSize;
     const std::size_t totalBytes = static_cast<std::size_t>(count) * sectorSize;
-    if (srcBytes < totalBytes) return DiskResult{DiskError::InvalidRequest};
+    if (srcBytes < totalBytes) {
+        ++stats.failedRequests;
+        log_slot_stats(slotIndex, this->stats(slotIndex));
+        return DiskResult{DiskError::InvalidRequest};
+    }
+
+    ++stats.writeRequests;
+    stats.writeSectors += count;
+    if (count > 1) ++stats.multiWriteRequests;
+    if (s->statsWriteCursorValid && lba == s->statsNextWriteLba)
+        ++stats.sequentialWriteRequests;
 
     std::size_t bytes = 0;
     for (std::uint16_t i = 0; i < count; ++i) {
         DiskResult r = s->image->write_sector(lba + i, src + bytes, sectorSize);
         if (!r.ok()) {
+            ++stats.failedRequests;
+            s->statsWriteCursorValid = false;
             set_error(slotIndex, r.error);
+            log_slot_stats(slotIndex, this->stats(slotIndex));
             return r;
         }
         bytes += r.bytes ? r.bytes : sectorSize;
     }
+    stats.writeBytes += bytes;
+    s->statsWriteCursorValid = true;
+    s->statsNextWriteLba = lba + count;
     s->dirty = true;
+    log_slot_stats(slotIndex, this->stats(slotIndex));
     return DiskResult{DiskError::None, static_cast<std::uint16_t>(bytes)};
 }
 

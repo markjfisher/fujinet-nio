@@ -298,6 +298,11 @@ if(FN_BUILD_POSIX_APP)
             $<TARGET_FILE_DIR:fujinet-nio-posix>/run-fujinet-nio
         COMMAND /bin/chmod +x
             $<TARGET_FILE_DIR:fujinet-nio-posix>/run-fujinet-nio
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:fujinet-nio-posix>/fujinet-data/boot
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/distfiles/boot
+            $<TARGET_FILE_DIR:fujinet-nio-posix>/fujinet-data/boot
         VERBATIM
     )
 endif()

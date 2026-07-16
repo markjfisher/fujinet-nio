@@ -23,6 +23,21 @@ struct PendingMountInfo {
 // Forward declaration
 struct PendingMountInfo;
 
+struct DiskServiceSlotStats {
+    std::uint64_t readRequests{0};
+    std::uint64_t readSectors{0};
+    std::uint64_t readBytes{0};
+    std::uint64_t multiReadRequests{0};
+    std::uint64_t sequentialReadRequests{0};
+    std::uint64_t writeRequests{0};
+    std::uint64_t writeSectors{0};
+    std::uint64_t writeBytes{0};
+    std::uint64_t multiWriteRequests{0};
+    std::uint64_t sequentialWriteRequests{0};
+    std::uint64_t failedRequests{0};
+    DiskImageStats image{};
+};
+
 class DiskService {
 public:
     static constexpr std::size_t MAX_SLOTS = 8;
@@ -61,6 +76,9 @@ public:
     DiskResult ensure_mounted(std::size_t slotIndex);
 
     DiskSlotInfo info(std::size_t slotIndex) const;
+    DiskServiceSlotStats stats(std::size_t slotIndex) const;
+    void reset_stats(std::size_t slotIndex);
+    void reset_all_stats();
 
     void clear_changed(std::size_t slotIndex);
 
@@ -101,6 +119,11 @@ private:
         std::optional<PendingMountInfo> pendingMount;
 
         std::unique_ptr<IDiskImage> image;
+
+        bool statsReadCursorValid{false};
+        bool statsWriteCursorValid{false};
+        std::uint32_t statsNextReadLba{0};
+        std::uint32_t statsNextWriteLba{0};
     };
 
     DiskError set_error(std::size_t slotIndex, DiskError e);
@@ -111,6 +134,7 @@ private:
     fs::StorageManager& _storage;
     ImageRegistry _registry;
     std::array<Slot, MAX_SLOTS> _slots{};
+    std::array<DiskServiceSlotStats, MAX_SLOTS> _stats{};
 };
 
 } // namespace fujinet::disk

@@ -1,7 +1,10 @@
 fujinet:
   device_name: "atari-fdrive-test"
-  boot_mode: "normal"
-  alt_config_file: ""
+
+boot:
+  mode: "normal"
+  config_uri: "persist:/boot/autorun.atr"
+  readonly: true
 
 wifi:
   enabled: false

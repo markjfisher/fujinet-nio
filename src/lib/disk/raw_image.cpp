@@ -25,6 +25,9 @@ public:
         _geo.sectorSize = sectorSize;
         _geo.sectorCount = static_cast<std::uint32_t>(sizeBytes / sectorSize);
         _geo.supportsVariableSectorSize = false;
+        _cursorValid = false;
+        _nextSequentialLba = 0;
+        _stats = {};
 
         return DiskResult{DiskError::None};
     }
@@ -34,6 +37,9 @@ public:
         _file.reset();
         _geo = {};
         _readOnly = true;
+        _cursorValid = false;
+        _nextSequentialLba = 0;
+        _stats = {};
         return DiskResult{DiskError::None};
     }
 
@@ -45,10 +51,25 @@ public:
         if (lba >= _geo.sectorCount) return DiskResult{DiskError::OutOfRange};
         if (dstBytes < _geo.sectorSize) return DiskResult{DiskError::InvalidSlot};
 
-        const std::uint64_t off = static_cast<std::uint64_t>(lba) * _geo.sectorSize;
-        if (!_file->seek(off)) return DiskResult{DiskError::IoError};
+        ++_stats.readOps;
+        if (!_cursorValid || lba != _nextSequentialLba) {
+            const std::uint64_t off = static_cast<std::uint64_t>(lba) * _geo.sectorSize;
+            ++_stats.seekOps;
+            if (!_file->seek(off)) {
+                _cursorValid = false;
+                return DiskResult{DiskError::IoError};
+            }
+        } else {
+            ++_stats.sequentialReadHits;
+        }
         const std::size_t got = _file->read(dst, _geo.sectorSize);
-        if (got != _geo.sectorSize) return DiskResult{DiskError::IoError};
+        if (got != _geo.sectorSize) {
+            _cursorValid = false;
+            return DiskResult{DiskError::IoError};
+        }
+        _stats.readBytes += got;
+        _cursorValid = true;
+        _nextSequentialLba = lba + 1;
         return DiskResult{DiskError::None, static_cast<std::uint16_t>(_geo.sectorSize)};
     }
 
@@ -61,10 +82,25 @@ public:
         if (lba >= _geo.sectorCount) return DiskResult{DiskError::OutOfRange};
         if (srcBytes < _geo.sectorSize) return DiskResult{DiskError::InvalidSlot};
 
-        const std::uint64_t off = static_cast<std::uint64_t>(lba) * _geo.sectorSize;
-        if (!_file->seek(off)) return DiskResult{DiskError::IoError};
+        ++_stats.writeOps;
+        if (!_cursorValid || lba != _nextSequentialLba) {
+            const std::uint64_t off = static_cast<std::uint64_t>(lba) * _geo.sectorSize;
+            ++_stats.seekOps;
+            if (!_file->seek(off)) {
+                _cursorValid = false;
+                return DiskResult{DiskError::IoError};
+            }
+        } else {
+            ++_stats.sequentialWriteHits;
+        }
         const std::size_t wrote = _file->write(src, _geo.sectorSize);
-        if (wrote != _geo.sectorSize) return DiskResult{DiskError::IoError};
+        if (wrote != _geo.sectorSize) {
+            _cursorValid = false;
+            return DiskResult{DiskError::IoError};
+        }
+        _stats.writeBytes += wrote;
+        _cursorValid = true;
+        _nextSequentialLba = lba + 1;
         return DiskResult{DiskError::None, static_cast<std::uint16_t>(_geo.sectorSize)};
     }
 
@@ -74,10 +110,16 @@ public:
         return DiskResult{_file->flush() ? DiskError::None : DiskError::IoError};
     }
 
+    DiskImageStats image_stats() const noexcept override { return _stats; }
+    void reset_image_stats() noexcept override { _stats = {}; }
+
 private:
     std::unique_ptr<fs::IFile> _file;
     DiskGeometry _geo{};
     bool _readOnly{true};
+    bool _cursorValid{false};
+    std::uint32_t _nextSequentialLba{0};
+    DiskImageStats _stats{};
 };
 
 std::unique_ptr<IDiskImage> make_raw_disk_image()
@@ -97,5 +139,3 @@ DiskResult create_raw_image_file(fs::IFile& file, std::uint16_t sectorSize, std:
 }
 
 } // namespace fujinet::disk
-
-

@@ -291,6 +291,13 @@ extern "C" void fujinet_core_task(void* arg)
         auto* diskDev = dynamic_cast<fujinet::io::DiskDevice*>(
             core.deviceManager().getDevice(diskDeviceId));
         if (diskDev) {
+            std::size_t bootApplied = fujinet::apply_boot_mount(
+                diskDev->disk_service(),
+                core.storageManager(),
+                config.boot,
+                0);
+            FN_LOGI(TAG, "Applied %zu boot config mount", bootApplied);
+
             std::size_t applied = fujinet::apply_config_mounts(
                 diskDev->disk_service(),
                 core.storageManager(),
@@ -354,6 +361,7 @@ extern "C" void app_main(void)
     esp_log_level_set("console",     ESP_LOG_INFO);
     esp_log_level_set("core",        ESP_LOG_INFO);
     esp_log_level_set("disk",        ESP_LOG_INFO);
+    esp_log_level_set("diskstats",   ESP_LOG_INFO);
     esp_log_level_set("fs",          ESP_LOG_INFO);
     esp_log_level_set("fujibus",     ESP_LOG_INFO);
     esp_log_level_set("io",          ESP_LOG_INFO);

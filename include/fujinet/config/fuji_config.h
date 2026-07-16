@@ -9,14 +9,17 @@ namespace fujinet::config {
 enum class BootMode {
     Normal,
     Config,
-    Cpm,
     Unknown,
 };
 
 struct GeneralConfig {
     std::string deviceName;
-    BootMode    bootMode{BootMode::Config};
-    std::string altConfigFile;
+};
+
+struct BootConfig {
+    BootMode    mode{BootMode::Config};
+    std::string configUri{"persist:/boot/autorun.img"};
+    bool        readOnly{true};
 };
 
 struct WifiConfig {
@@ -111,6 +114,7 @@ struct ChannelConfig {
 // Unified config for the whole FujiNet instance.
 struct FujiConfig {
     GeneralConfig        general;
+    BootConfig           boot;
     WifiConfig           wifi;
 
     std::vector<MountConfig> mounts;  // Mounted resources (URI-based)

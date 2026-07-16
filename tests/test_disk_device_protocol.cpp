@@ -60,6 +60,8 @@ TEST_CASE("DiskService: mount raw + read/write sector")
     CHECK(sec[0] == 0x00);
     CHECK(sec[1] == 0x01);
 
+    REQUIRE(svc.read_sectors(0, 1, 2, sec.data(), sec.size()).error == fujinet::disk::DiskError::InvalidRequest);
+
     sec[0] = 0xAA;
     sec[1] = 0x55;
     REQUIRE(svc.write_sector(0, 0, sec.data(), sec.size()).ok());
@@ -68,6 +70,15 @@ TEST_CASE("DiskService: mount raw + read/write sector")
     REQUIRE(svc.read_sector(0, 0, sec2.data(), sec2.size()).ok());
     CHECK(sec2[0] == 0xAA);
     CHECK(sec2[1] == 0x55);
+
+    auto stats = svc.stats(0);
+    CHECK(stats.readRequests == 2);
+    CHECK(stats.readSectors == 2);
+    CHECK(stats.writeRequests == 1);
+    CHECK(stats.writeSectors == 1);
+    CHECK(stats.failedRequests == 1);
+    CHECK(stats.image.readOps == 2);
+    CHECK(stats.image.writeOps == 1);
 
     CHECK(svc.info(0).dirty);
     REQUIRE(svc.unmount(0).ok());
