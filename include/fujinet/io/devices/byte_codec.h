@@ -8,6 +8,18 @@
 
 namespace fujinet::io::bytecodec {
 
+inline std::uint16_t read_u16le(const std::uint8_t* p) {
+    return static_cast<std::uint16_t>(p[0]) |
+           static_cast<std::uint16_t>(static_cast<std::uint16_t>(p[1]) << 8);
+}
+
+inline std::uint32_t read_u32le(const std::uint8_t* p) {
+    return static_cast<std::uint32_t>(p[0])
+         | (static_cast<std::uint32_t>(p[1]) << 8)
+         | (static_cast<std::uint32_t>(p[2]) << 16)
+         | (static_cast<std::uint32_t>(p[3]) << 24);
+}
+
 // Bounds-checked reader over a byte span.
 class Reader {
 public:
@@ -22,17 +34,14 @@ public:
 
     bool read_u16le(std::uint16_t& out) {
         if (_p + 2 > _end) return false;
-        out = static_cast<std::uint16_t>(_p[0] | (_p[1] << 8));
+        out = bytecodec::read_u16le(_p);
         _p += 2;
         return true;
     }
 
     bool read_u32le(std::uint32_t& out) {
         if (_p + 4 > _end) return false;
-        out = (std::uint32_t)_p[0]
-            | ((std::uint32_t)_p[1] << 8)
-            | ((std::uint32_t)_p[2] << 16)
-            | ((std::uint32_t)_p[3] << 24);
+        out = bytecodec::read_u32le(_p);
         _p += 4;
         return true;
     }
@@ -144,5 +153,4 @@ inline void write_lp_u16_string(Buf& out, std::string_view s) {
 }
 
 } // namespace fujinet::io::bytecodec
-
 

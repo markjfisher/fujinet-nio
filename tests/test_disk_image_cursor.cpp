@@ -189,6 +189,20 @@ TEST_CASE("Raw image ignores isolated BPB bytes-per-sector without FAT markers")
     CHECK(image->geometry().sectorCount == 8);
 }
 
+TEST_CASE("Raw image accepts explicit non-FAT sector size hints")
+{
+    FileStats stats;
+    auto file = std::make_unique<TrackingFile>(make_raw_bytes(100, 4), stats, true);
+    auto image = fujinet::disk::make_raw_disk_image();
+
+    fujinet::disk::MountOptions opts{};
+    opts.sectorSizeHint = 100;
+
+    REQUIRE(image->mount(std::move(file), 400, opts).ok());
+    CHECK(image->geometry().sectorSize == 100);
+    CHECK(image->geometry().sectorCount == 4);
+}
+
 TEST_CASE("ATR image skips seeks for sequential sector reads")
 {
     FileStats stats;

@@ -144,14 +144,14 @@ mounts:
     uri: "host:/dos/fn-dos.img"
     mode: "rw"
     enabled: true
-    sector_size_hint: 512
 channel:
   tcp_host: "127.0.0.1"
   tcp_port: 65504
 ```
 
-`sector_size_hint: 512` is required for raw DOS/FAT images. Raw images default
-to 256-byte sectors when no hint is provided.
+Raw DOS/FAT images with a valid FAT BPB can be mounted without a sector-size
+hint. Use `sector_size_hint` only for headerless raw images or ambiguous files
+whose geometry cannot be detected from content.
 
 ## Why this is not legacy FujiNet transport
 

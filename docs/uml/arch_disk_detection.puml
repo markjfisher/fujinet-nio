@@ -1,0 +1,216 @@
+@startuml DiskDetectionArchitecture
+title Disk Image Detection and Geometry Ownership
+
+scale max 1800 width
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+legend top
+  Hand-maintained architecture diagram.
+
+  This shows the mount-time path from a configured URI to an
+  `IDiskImage`, and where geometry detection/validation currently lives.
+
+  Important distinction:
+  - ATR and SSD are selected as explicit image types, then parse/validate
+    their own image structure in `mount()`.
+  - Raw `.img`/`.ima`/`.raw` has no NIO header, so `RawDiskImage` has an
+    internal prober extension point for recognizable raw-container content
+    such as FAT BPB superfloppy images.
+endlegend
+
+' ========= Request/config side =========
+package "Mount source" as pkg_mount_source {
+    class "fujinet.yaml / boot config" as Config {
+        + uri
+        + mode
+        + sector_size_hint
+        + typeOverride
+    }
+
+    class "DiskDevice protocol" as DiskDeviceProtocol {
+        + Mount(slot, uri, typeOverride, sectorSizeHint)
+    }
+}
+
+package "fujinet::disk service layer" as pkg_service {
+    class DiskService {
+        + set_pending_mount(slot, uri, mode, enabled, sectorSizeHint)
+        + activate_pending_mount(slot)
+        + mount(slot, fsName, path, MountOptions)
+        + read(slot, lba, count, dst)
+        + write(slot, lba, count, src)
+    }
+
+    class MountOptions <<struct>> {
+        + readOnlyRequested
+        + sectorSizeHint
+        + typeOverride
+    }
+
+    class ImageRegistry {
+        + guess_type_from_path(path): ImageType
+        + create(type): unique_ptr<IDiskImage>
+    }
+
+    enum ImageType {
+        Auto
+        Atr
+        Ssd
+        Dsd
+        Raw
+    }
+}
+
+package "fujinet::fs" as pkg_fs {
+    class StorageManager {
+        + resolveUri(uri): (IFileSystem*, path)
+    }
+
+    interface IFileSystem {
+        + open(path, mode): unique_ptr<IFile>
+        + stat(path, outInfo): bool
+    }
+
+    interface IFile {
+        + read(dst, bytes): size_t
+        + seek(offset): bool
+        + write(src, bytes): size_t
+    }
+}
+
+' ========= Image interface =========
+package "fujinet::disk image interface" as pkg_image_if {
+    interface IDiskImage {
+        + type(): ImageType
+        + mount(file, sizeBytes, MountOptions): DiskResult
+        + geometry(): DiskGeometry
+        + read_sector(lba, dst, dstBytes): DiskResult
+        + write_sector(lba, src, srcBytes): DiskResult
+    }
+
+    class DiskGeometry <<struct>> {
+        + sectorSize
+        + sectorCount
+        + supportsVariableSectorSize
+    }
+
+    class DiskSlotInfo <<struct>> {
+        + inserted
+        + readOnly
+        + type
+        + geometry
+        + lastError
+    }
+}
+
+' ========= Concrete image handlers =========
+package "Concrete IDiskImage implementations" as pkg_images {
+    class RawDiskImage {
+        + mount(file, sizeBytes, opts): DiskResult
+        + read_sector(lba, dst, dstBytes): DiskResult
+        + write_sector(lba, src, srcBytes): DiskResult
+    }
+
+    class AtrDiskImage {
+        + mount(file, sizeBytes, opts): DiskResult
+        + read_sector(lba, dst, dstBytes): DiskResult
+        + write_sector(lba, src, srcBytes): DiskResult
+    }
+
+    class SsdDiskImage {
+        + mount(file, sizeBytes, opts): DiskResult
+        + read_sector(lba, dst, dstBytes): DiskResult
+        + write_sector(lba, src, srcBytes): DiskResult
+    }
+
+    class UnsupportedImage {
+        + mount(...): UnsupportedImageType
+    }
+}
+
+RawDiskImage ..|> IDiskImage
+AtrDiskImage ..|> IDiskImage
+SsdDiskImage ..|> IDiskImage
+UnsupportedImage ..|> IDiskImage
+
+' ========= Raw-image probing =========
+package "Raw image geometry probing" as pkg_raw_probe {
+    class RawImageProbeRegistry {
+        + registerProbe(IRawImageProbe)
+        + probe(file, sizeBytes): RawImageProbeResult
+    }
+
+    interface IRawImageProbe {
+        + probe(file, sizeBytes): RawImageProbeResult
+    }
+
+    class RawImageProbeResult <<struct>> {
+        + matched
+        + geometry
+    }
+
+    class FatBpbSectorSizeProbe {
+        + probe(file, sizeBytes): RawImageProbeResult
+    }
+
+}
+
+FatBpbSectorSizeProbe ..|> IRawImageProbe
+RawImageProbeRegistry o-- "0..*" IRawImageProbe
+RawImageProbeResult --> DiskGeometry
+
+' ========= Current geometry ownership =========
+note bottom of RawDiskImage
+    Raw `.img`/`.ima`/`.raw` is ambiguous.
+    Hint -> raw geometry.
+    No hint -> raw probes -> fallback 256.
+end note
+
+note bottom of FatBpbSectorSizeProbe
+    FAT BPB recognition lives here.
+    On match, returns complete `DiskGeometry`.
+end note
+
+note bottom of AtrDiskImage
+    ATR header parsing and geometry
+    validation live in `AtrDiskImage::mount()`.
+end note
+
+note bottom of SsdDiskImage
+    SSD/DFS validation and geometry
+    live in `SsdDiskImage::mount()`.
+end note
+
+' ========= Static relationships =========
+Config --> DiskService : pending mount\nor boot mount
+DiskDeviceProtocol --> DiskService : direct mount command
+DiskService --> StorageManager : resolve URI
+StorageManager --> IFileSystem
+IFileSystem --> IFile : open image file
+DiskService --> ImageRegistry : choose image handler
+ImageRegistry --> ImageType : extension or override
+ImageRegistry --> IDiskImage : create(type)
+DiskService o-- IDiskImage : slot owns mounted image
+IDiskImage --> DiskGeometry : reports mount geometry
+
+RawDiskImage --> RawImageProbeRegistry : no hint;\nprobe raw content
+RawImageProbeRegistry --> RawImageProbeResult
+RawDiskImage --> DiskGeometry : hint/probe/fallback
+AtrDiskImage --> DiskGeometry : ATR header parsing
+SsdDiskImage --> DiskGeometry : SSD/DFS validation
+
+note bottom
+    Alignment question:
+
+    The common contract is `IDiskImage::mount()` plus `geometry()`.
+    ATR and SSD already own their selected-format validation there.
+
+    A future `IImageGeometryProbe`/`ImageDescriptor` layer would make
+    sense if NIO wants content-based type detection before choosing
+    Raw/ATR/SSD.
+
+    See `arch_disk_detection_flow.puml` for mount-time control flow.
+end note
+
+@enduml

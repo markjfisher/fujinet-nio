@@ -130,6 +130,8 @@ set(FUJINET_NIO_SOURCES
         src/lib/diagnostic_uart_channel_provider.cpp
         src/lib/disk/atr_image.cpp
         src/lib/disk/disk_service.cpp
+        src/lib/disk/image_probers/fat_bpb_probe.cpp
+        src/lib/disk/image_probers/raw_image_probe.cpp
         src/lib/disk/image_registry.cpp
         src/lib/disk/raw_image.cpp
         src/lib/disk/ssd_image.cpp

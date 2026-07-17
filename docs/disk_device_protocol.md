@@ -87,9 +87,10 @@ v1 includes (image-format understanding required for sector I/O):
 
 - **Raw** (`ImageType::Raw`): flat `sector_count * sector_size` bytes, **no header**
   - used for tests and tooling
-  - requires `sectorSizeHint` (default 256 if not provided)
-  - persisted config mounts can provide `sector_size_hint` so raw images can be
-    exposed with non-default sector sizes such as 512-byte DOS/FAT sectors
+  - probes known filesystem/image signatures to infer geometry when possible
+  - falls back to 256-byte sectors when no probe recognizes the file
+  - persisted config mounts can provide `sector_size_hint` for headerless raw
+    images where geometry cannot be inferred from file content
 
 - **SSD** (`ImageType::Ssd`, `.ssd`): BBC DFS SSD image (flat 256-byte sectors)
   - supported sizes (validated on mount):
@@ -304,11 +305,12 @@ Fields:
 - `uri`: full storage URI resolved through `StorageManager`
 - `mode`: `r` or `rw`; `rw` attempts writable open and may fall back read-only
 - `enabled`: disabled mounts are skipped
-- `sector_size_hint`: optional raw-image sector size hint; `0` or omission uses
-  the image default
+- `sector_size_hint`: optional raw-image sector size hint; `0` or omission lets
+  NIO probe known raw-container formats, then fall back to 256-byte raw sectors
 
-For MS-DOS/FAT raw disk images, use `sector_size_hint: 512`. Without this hint,
-raw images default to 256-byte sectors for historical 8-bit workflows.
+For MS-DOS/FAT raw disk images with a valid FAT BPB, NIO can infer the sector
+size from the image. Use `sector_size_hint` for headerless raw images or
+ambiguous files whose geometry cannot be detected from content.
 
 ---
 

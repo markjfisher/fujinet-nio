@@ -1,0 +1,94 @@
+@startuml DiskDetectionFlow
+title Disk Image Mount-Time Detection Flow
+
+skinparam shadowing false
+
+legend top
+  Hand-maintained activity diagram.
+
+  Complements `arch_disk_detection.puml`.
+  Shows how mount-time detection selects an image handler and where
+  geometry is established.
+endlegend
+
+start
+
+:Mount request arrives;
+note right
+  Inputs:
+  - URI
+  - mode
+  - optional type override
+  - optional sector-size hint
+end note
+
+:StorageManager resolves URI
+to filesystem + path;
+:Open image file;
+:Determine sizeBytes;
+
+if (type override supplied?) then (yes)
+  :Use requested ImageType;
+else (no)
+  :Guess ImageType from extension;
+  note right
+    .atr -> ATR
+    .ssd -> SSD
+    .img/.ima/.raw -> Raw
+  end note
+endif
+
+:ImageRegistry creates IDiskImage;
+
+if (ImageType is Raw?) then (Raw)
+  if (sector-size hint supplied?) then (yes)
+    :RawDiskImage derives geometry
+    from hint + file size;
+  else (no)
+    :RawDiskImage asks
+    RawImageProbeRegistry;
+    if (raw probe matched?) then (yes)
+      :Use probe-provided DiskGeometry;
+      note right
+        Current probe:
+        FAT BPB superfloppy recognition.
+      end note
+    else (no)
+      :Fallback to legacy
+      256-byte raw sectors;
+    endif
+  endif
+elseif (ImageType is ATR?) then (ATR)
+  :AtrDiskImage parses ATR header;
+  :Validate ATR magic, size fields,
+  and sector geometry;
+  :Set DiskGeometry;
+elseif (ImageType is SSD?) then (SSD)
+  :SsdDiskImage validates DFS/SSD shape;
+  :Read sector count from catalogue fields;
+  :Set 256-byte sector DiskGeometry;
+else (unsupported)
+  :Return UnsupportedImageType;
+  :DiskService records lastError;
+  stop
+endif
+
+if (mount ok?) then (yes)
+  :DiskService stores mounted image,
+  type, readOnly, and DiskGeometry
+  in the target slot;
+else (no)
+  :DiskService records lastError;
+endif
+
+note right
+  Detection does not remove the need for hints.
+
+  Hints are still the explicit geometry contract for truly
+  raw/headerless images. Probes are useful only when the file content
+  has enough structure to identify geometry without external context.
+end note
+
+stop
+
+@enduml
