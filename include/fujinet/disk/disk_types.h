@@ -44,8 +44,12 @@ struct MountOptions {
     // Optional hint for formats that need it (Raw); ignored by most.
     std::uint16_t sectorSizeHint{0};
 
-    // Optional override; Auto means guess from extension.
+    // Optional override; Auto means detect from content/path.
     ImageType typeOverride{ImageType::Auto};
+
+    // Optional geometry supplied by image detection. Image implementations
+    // still validate final mount state before accepting it.
+    DiskGeometry geometryHint{};
 };
 
 struct DiskResult {
@@ -72,5 +76,4 @@ struct DiskSlotInfo {
 };
 
 } // namespace fujinet::disk
-
 

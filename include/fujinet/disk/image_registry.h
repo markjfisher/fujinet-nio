@@ -2,8 +2,6 @@
 
 #include <functional>
 #include <memory>
-#include <string>
-#include <string_view>
 #include <unordered_map>
 
 #include "fujinet/disk/disk_image.h"
@@ -28,12 +26,8 @@ private:
     std::unordered_map<std::uint8_t, Creator> _creators;
 };
 
-// Lowercases ASCII and guesses from extension.
-ImageType guess_type_from_path(std::string_view path);
-
 // Default registry (pure/core): provides Raw (implemented) and placeholders for Atr/Ssd/Dsd.
 ImageRegistry make_default_image_registry();
 
 } // namespace fujinet::disk
-
 

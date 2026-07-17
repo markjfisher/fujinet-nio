@@ -1,6 +1,6 @@
 #include "fujinet/disk/raw_image.h"
 
-#include "fujinet/disk/image_probers/raw_image_probe.h"
+#include "fujinet/disk/image_probers/image_probe.h"
 
 namespace fujinet::disk {
 
@@ -23,8 +23,8 @@ public:
             geometry.sectorSize = opts.sectorSizeHint;
             if ((sizeBytes % geometry.sectorSize) != 0) return DiskResult{DiskError::BadImage};
             geometry.sectorCount = static_cast<std::uint32_t>(sizeBytes / geometry.sectorSize);
-        } else if (const auto probe = probe_raw_image_geometry(*file, sizeBytes); probe.matched) {
-            geometry = probe.geometry;
+        } else if (has_geometry(opts.geometryHint)) {
+            geometry = opts.geometryHint;
         } else {
             constexpr std::uint16_t defaultRawSectorSize = 256;
             if ((sizeBytes % defaultRawSectorSize) != 0) return DiskResult{DiskError::BadImage};

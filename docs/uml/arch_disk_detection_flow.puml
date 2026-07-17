@@ -29,13 +29,30 @@ to filesystem + path;
 
 if (type override supplied?) then (yes)
   :Use requested ImageType;
+  if (override is Raw and no sector-size hint?) then (yes)
+    :ProbeRegistry may still provide
+    raw geometryHint;
+  else (no)
+  endif
 else (no)
-  :Guess ImageType from extension;
+  :ProbeRegistry inspects content,
+  path, and sector-size hint;
   note right
-    .atr -> ATR
-    .ssd -> SSD
-    .img/.ima/.raw -> Raw
+    Probe order:
+    - ATR header
+    - FAT BPB -> Raw + geometry
+    - SSD DFS shape
+    - extension/hint fallback
   end note
+  if (probe matched?) then (yes)
+    :Use probe ImageType;
+    :Carry probe DiskGeometry
+    as geometryHint;
+  else (no)
+    :Return UnsupportedImageType;
+    :DiskService records lastError;
+    stop
+  endif
 endif
 
 :ImageRegistry creates IDiskImage;
@@ -45,14 +62,9 @@ if (ImageType is Raw?) then (Raw)
     :RawDiskImage derives geometry
     from hint + file size;
   else (no)
-    :RawDiskImage asks
-    RawImageProbeRegistry;
-    if (raw probe matched?) then (yes)
-      :Use probe-provided DiskGeometry;
-      note right
-        Current probe:
-        FAT BPB superfloppy recognition.
-      end note
+    if (geometryHint supplied?) then (yes)
+      :RawDiskImage uses
+      probe-provided DiskGeometry;
     else (no)
       :Fallback to legacy
       256-byte raw sectors;
@@ -85,8 +97,8 @@ note right
   Detection does not remove the need for hints.
 
   Hints are still the explicit geometry contract for truly
-  raw/headerless images. Probes are useful only when the file content
-  has enough structure to identify geometry without external context.
+  raw/headerless images. Probes are useful when file content,
+  path, or a hint gives enough information to choose a type.
 end note
 
 stop

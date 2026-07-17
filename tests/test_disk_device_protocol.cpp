@@ -10,6 +10,9 @@
 #include "fujinet/io/devices/disk_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 
+#include <cstring>
+#include <vector>
+
 namespace diskproto = fujinet::io::diskproto;
 using fujinet::io::DeviceID;
 using fujinet::io::DiskDevice;
@@ -24,6 +27,38 @@ static constexpr std::uint8_t V = 1;
 static std::vector<std::uint8_t> to_vec(const std::string& s)
 {
     return std::vector<std::uint8_t>(s.begin(), s.end());
+}
+
+static std::vector<std::uint8_t> make_fat12_floppy_bytes()
+{
+    std::vector<std::uint8_t> bytes(512 * 2880);
+
+    bytes[0] = 0xeb;
+    bytes[1] = 0x3c;
+    bytes[2] = 0x90;
+    const char oem[] = "mkfs.fat";
+    std::memcpy(&bytes[3], oem, 8);
+    bytes[11] = 0x00;
+    bytes[12] = 0x02; // bytes per sector: 512
+    bytes[13] = 0x01; // sectors per cluster
+    bytes[14] = 0x01;
+    bytes[15] = 0x00; // reserved sectors
+    bytes[16] = 0x02; // FAT count
+    bytes[17] = 0xe0;
+    bytes[18] = 0x00; // root entries
+    bytes[19] = 0x40;
+    bytes[20] = 0x0b; // total sectors: 2880
+    bytes[21] = 0xf0; // media descriptor
+    bytes[22] = 0x09;
+    bytes[23] = 0x00; // sectors per FAT
+    bytes[24] = 0x12;
+    bytes[25] = 0x00; // sectors per track
+    bytes[26] = 0x02;
+    bytes[27] = 0x00; // heads
+    bytes[510] = 0x55;
+    bytes[511] = 0xaa;
+
+    return bytes;
 }
 
 TEST_CASE("DiskService: mount raw + read/write sector")
@@ -83,6 +118,31 @@ TEST_CASE("DiskService: mount raw + read/write sector")
     CHECK(svc.info(0).dirty);
     REQUIRE(svc.unmount(0).ok());
     CHECK(!svc.info(0).inserted);
+}
+
+TEST_CASE("DiskService: central probes detect FAT raw geometry without sector hint")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+
+    const std::string path = "/disks/fn-dos.img";
+    memfs->file_bytes(path) = make_fat12_floppy_bytes();
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+
+    fujinet::disk::MountOptions opts{};
+    opts.readOnlyRequested = true;
+
+    auto mr = svc.mount(0, "mem", path, opts);
+    REQUIRE(mr.ok());
+
+    auto info = svc.info(0);
+    CHECK(info.inserted);
+    CHECK(info.type == fujinet::disk::ImageType::Raw);
+    CHECK(info.geometry.sectorSize == 512);
+    CHECK(info.geometry.sectorCount == 2880);
 }
 
 TEST_CASE("DiskService: config pending raw mount uses sector size hint")
@@ -193,6 +253,71 @@ TEST_CASE("DiskDevice v1: ReadSector activates config pending raw mount")
     CHECK(info.inserted);
     CHECK(info.geometry.sectorSize == 512);
     CHECK(info.geometry.sectorCount == 2);
+}
+
+TEST_CASE("DiskDevice v1: Info activates config pending mount and reports geometry")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+
+    const std::string path = "/disks/fn-boot.img";
+    memfs->file_bytes(path) = make_fat12_floppy_bytes();
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    fujinet::config::MountConfig mount{};
+    mount.slot = 1;
+    mount.uri = "mem:/disks/fn-boot.img";
+    mount.mode = "r";
+    mount.enabled = true;
+
+    REQUIRE(fujinet::apply_config_mounts(dev.disk_service(), sm, {mount}) == 1);
+    CHECK_FALSE(dev.disk_service().info(0).inserted);
+
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 1);
+
+    IORequest req{};
+    req.id = 4;
+    req.deviceId = deviceId;
+    req.command = 0x05; // Info
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+
+    diskproto::Reader r(resp.payload.data(), resp.payload.size());
+    std::uint8_t ver = 0, flags = 0, slot = 0, type = 0, lastErr = 0;
+    std::uint16_t reserved = 0, sectorSize = 0;
+    std::uint32_t sectorCount = 0;
+
+    REQUIRE(r.read_u8(ver));
+    REQUIRE(r.read_u8(flags));
+    REQUIRE(r.read_u16le(reserved));
+    REQUIRE(r.read_u8(slot));
+    REQUIRE(r.read_u8(type));
+    REQUIRE(r.read_u16le(sectorSize));
+    REQUIRE(r.read_u32le(sectorCount));
+    REQUIRE(r.read_u8(lastErr));
+
+    CHECK(ver == V);
+    CHECK((flags & 0x01) != 0); // inserted
+    CHECK((flags & 0x02) != 0); // read-only
+    CHECK((flags & 0x10) != 0); // has geometry
+    CHECK(slot == 1);
+    CHECK(type == static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+    CHECK(sectorSize == 512);
+    CHECK(sectorCount == 2880);
+    CHECK(lastErr == 0);
+
+    auto info = dev.disk_service().info(0);
+    CHECK(info.inserted);
+    CHECK(info.geometry.sectorSize == 512);
+    CHECK(info.geometry.sectorCount == 2880);
 }
 
 TEST_CASE("DiskDevice v1: Mount -> Info -> ReadSector -> WriteSector -> Close")

@@ -27,7 +27,7 @@ idf_component_register(
         lib/disk/atr_image.cpp
         lib/disk/disk_service.cpp
         lib/disk/image_probers/fat_bpb_probe.cpp
-        lib/disk/image_probers/raw_image_probe.cpp
+        lib/disk/image_probers/image_probe.cpp
         lib/disk/image_registry.cpp
         lib/disk/raw_image.cpp
         lib/disk/ssd_image.cpp

@@ -1,8 +1,5 @@
 #include "fujinet/disk/image_registry.h"
 
-#include <algorithm>
-#include <cctype>
-
 #include "fujinet/disk/atr_image.h"
 #include "fujinet/disk/raw_image.h"
 #include "fujinet/disk/ssd_image.h"
@@ -37,12 +34,6 @@ private:
     ImageType _t{ImageType::Auto};
 };
 
-static std::string lower_ascii(std::string_view s)
-{
-    std::string out(s);
-    for (auto& ch : out) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    return out;
-}
 } // namespace
 
 bool ImageRegistry::register_type(ImageType type, Factory factory)
@@ -95,21 +86,6 @@ DiskResult ImageRegistry::create_file(ImageType type, fs::IFile& file, std::uint
     return (it->second)(file, sectorSize, sectorCount);
 }
 
-ImageType guess_type_from_path(std::string_view path)
-{
-    const std::string p = lower_ascii(path);
-
-    auto dot = p.find_last_of('.');
-    if (dot == std::string::npos) return ImageType::Auto;
-
-    const std::string ext = p.substr(dot + 1);
-    if (ext == "atr") return ImageType::Atr;
-    if (ext == "ssd") return ImageType::Ssd;
-    if (ext == "dsd") return ImageType::Dsd;
-    if (ext == "img" || ext == "ima" || ext == "raw") return ImageType::Raw;
-    return ImageType::Auto;
-}
-
 ImageRegistry make_default_image_registry()
 {
     ImageRegistry reg;
@@ -135,4 +111,3 @@ ImageRegistry make_default_image_registry()
 }
 
 } // namespace fujinet::disk
-

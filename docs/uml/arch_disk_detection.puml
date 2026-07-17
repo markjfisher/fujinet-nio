@@ -11,12 +11,10 @@ legend top
   This shows the mount-time path from a configured URI to an
   `IDiskImage`, and where geometry detection/validation currently lives.
 
-  Important distinction:
-  - ATR and SSD are selected as explicit image types, then parse/validate
-    their own image structure in `mount()`.
-  - Raw `.img`/`.ima`/`.raw` has no NIO header, so `RawDiskImage` has an
-    internal prober extension point for recognizable raw-container content
-    such as FAT BPB superfloppy images.
+  `ProbeRegistry` chooses a candidate `ImageType` from content, path,
+  and hints. `ImageRegistry` then constructs the selected `IDiskImage`.
+
+  Image handlers still own final validation and sector I/O semantics.
 endlegend
 
 ' ========= Request/config side =========
@@ -46,10 +44,10 @@ package "fujinet::disk service layer" as pkg_service {
         + readOnlyRequested
         + sectorSizeHint
         + typeOverride
+        + geometryHint
     }
 
     class ImageRegistry {
-        + guess_type_from_path(path): ImageType
         + create(type): unique_ptr<IDiskImage>
     }
 
@@ -134,42 +132,61 @@ AtrDiskImage ..|> IDiskImage
 SsdDiskImage ..|> IDiskImage
 UnsupportedImage ..|> IDiskImage
 
-' ========= Raw-image probing =========
-package "Raw image geometry probing" as pkg_raw_probe {
-    class RawImageProbeRegistry {
-        + registerProbe(IRawImageProbe)
-        + probe(file, sizeBytes): RawImageProbeResult
+' ========= Image probing =========
+package "Image type and geometry probing" as pkg_probe {
+    class ProbeRegistry {
+        + registerProbe(IImageProbe)
+        + probe(file, sizeBytes, path, opts): ImageProbeResult
     }
 
-    interface IRawImageProbe {
-        + probe(file, sizeBytes): RawImageProbeResult
+    interface IImageProbe {
+        + probe(file, sizeBytes, path, opts): ImageProbeResult
     }
 
-    class RawImageProbeResult <<struct>> {
+    class ImageProbeResult <<struct>> {
         + matched
+        + type
         + geometry
+        + confidence
     }
 
     class FatBpbSectorSizeProbe {
-        + probe(file, sizeBytes): RawImageProbeResult
+        + probe(file, sizeBytes, path, opts): ImageProbeResult
+    }
+
+    class "ATR header probe" as AtrHeaderProbe {
+        + probe(file, sizeBytes, path, opts): ImageProbeResult
+    }
+
+    class "SSD DFS probe" as SsdDfsProbe {
+        + probe(file, sizeBytes, path, opts): ImageProbeResult
+    }
+
+    class "Extension/hint probe" as ExtensionProbe {
+        + probe(file, sizeBytes, path, opts): ImageProbeResult
     }
 
 }
 
-FatBpbSectorSizeProbe ..|> IRawImageProbe
-RawImageProbeRegistry o-- "0..*" IRawImageProbe
-RawImageProbeResult --> DiskGeometry
+FatBpbSectorSizeProbe ..|> IImageProbe
+AtrHeaderProbe ..|> IImageProbe
+SsdDfsProbe ..|> IImageProbe
+ExtensionProbe ..|> IImageProbe
+ProbeRegistry o-- "0..*" IImageProbe
+ImageProbeResult --> ImageType
+ImageProbeResult --> DiskGeometry
 
 ' ========= Current geometry ownership =========
 note bottom of RawDiskImage
     Raw `.img`/`.ima`/`.raw` is ambiguous.
-    Hint -> raw geometry.
-    No hint -> raw probes -> fallback 256.
+    Hint or probe geometry can be supplied
+    through `MountOptions::geometryHint`.
+    Otherwise it falls back to 256-byte sectors.
 end note
 
 note bottom of FatBpbSectorSizeProbe
-    FAT BPB recognition lives here.
-    On match, returns complete `DiskGeometry`.
+    FAT BPB content recognition returns
+    `ImageType::Raw` plus `DiskGeometry`.
 end note
 
 note bottom of AtrDiskImage
@@ -188,27 +205,25 @@ DiskDeviceProtocol --> DiskService : direct mount command
 DiskService --> StorageManager : resolve URI
 StorageManager --> IFileSystem
 IFileSystem --> IFile : open image file
-DiskService --> ImageRegistry : choose image handler
-ImageRegistry --> ImageType : extension or override
+DiskService --> ProbeRegistry : detect candidate type\nand geometry
+ProbeRegistry --> ImageProbeResult
+DiskService --> ImageRegistry : construct handler
+ImageRegistry --> ImageType
 ImageRegistry --> IDiskImage : create(type)
 DiskService o-- IDiskImage : slot owns mounted image
 IDiskImage --> DiskGeometry : reports mount geometry
 
-RawDiskImage --> RawImageProbeRegistry : no hint;\nprobe raw content
-RawImageProbeRegistry --> RawImageProbeResult
-RawDiskImage --> DiskGeometry : hint/probe/fallback
+DiskService --> MountOptions : passes geometryHint
+RawDiskImage --> DiskGeometry : hint/geometryHint/fallback
 AtrDiskImage --> DiskGeometry : ATR header parsing
 SsdDiskImage --> DiskGeometry : SSD/DFS validation
 
 note bottom
-    Alignment question:
-
-    The common contract is `IDiskImage::mount()` plus `geometry()`.
-    ATR and SSD already own their selected-format validation there.
-
-    A future `IImageGeometryProbe`/`ImageDescriptor` layer would make
-    sense if NIO wants content-based type detection before choosing
-    Raw/ATR/SSD.
+    Extension point for new image formats:
+    1. Add/register an `IImageProbe` when content/path/hint detection
+       should recognize the format.
+    2. Add/register an `IDiskImage` implementation for final mount
+       validation and sector I/O.
 
     See `arch_disk_detection_flow.puml` for mount-time control flow.
 end note

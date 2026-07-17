@@ -212,17 +212,24 @@ int main()
         auto* diskDev = dynamic_cast<fujinet::io::DiskDevice*>(
             core.deviceManager().getDevice(diskDeviceId));
         if (diskDev) {
+            constexpr std::size_t activeBootDiskUnit = 0;
             std::size_t bootApplied = fujinet::apply_boot_mount(
                 diskDev->disk_service(),
                 core.storageManager(),
                 config.boot,
-                0);
+                activeBootDiskUnit);
             FN_LOGI(TAG, "Applied %zu boot config mount", bootApplied);
 
-            std::size_t applied = fujinet::apply_config_mounts(
-                diskDev->disk_service(),
-                core.storageManager(),
-                config.mounts);
+            std::size_t applied = bootApplied
+                ? fujinet::apply_config_mounts_excluding(
+                    diskDev->disk_service(),
+                    core.storageManager(),
+                    config.mounts,
+                    {activeBootDiskUnit})
+                : fujinet::apply_config_mounts(
+                    diskDev->disk_service(),
+                    core.storageManager(),
+                    config.mounts);
             FN_LOGI(TAG, "Applied %zu config mounts to disk slots", applied);
         } else {
             FN_LOGW(TAG, "Could not get DiskDevice to apply config mounts");

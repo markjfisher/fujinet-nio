@@ -156,7 +156,7 @@ TEST_CASE("Raw image skips seeks for sequential sector reads")
     CHECK(image->image_stats().seekOps == 2);
 }
 
-TEST_CASE("Raw image infers FAT bytes per sector when no hint is supplied")
+TEST_CASE("Raw image uses probe-supplied geometry hint")
 {
     FileStats stats;
     auto bytes = make_fat12_floppy_bytes();
@@ -164,7 +164,11 @@ TEST_CASE("Raw image infers FAT bytes per sector when no hint is supplied")
     auto file = std::make_unique<TrackingFile>(bytes, stats, true);
     auto image = fujinet::disk::make_raw_disk_image();
 
-    REQUIRE(image->mount(std::move(file), bytes.size(), fujinet::disk::MountOptions{}).ok());
+    fujinet::disk::MountOptions opts{};
+    opts.geometryHint.sectorSize = 512;
+    opts.geometryHint.sectorCount = 2880;
+
+    REQUIRE(image->mount(std::move(file), bytes.size(), opts).ok());
     CHECK(image->geometry().sectorSize == 512);
     CHECK(image->geometry().sectorCount == 2880);
 
@@ -174,7 +178,7 @@ TEST_CASE("Raw image infers FAT bytes per sector when no hint is supplied")
     CHECK(sector[12] == 0x02);
 }
 
-TEST_CASE("Raw image ignores isolated BPB bytes-per-sector without FAT markers")
+TEST_CASE("Raw image defaults isolated BPB bytes-per-sector without probe geometry")
 {
     FileStats stats;
     auto bytes = make_raw_bytes(256, 8);

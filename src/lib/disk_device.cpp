@@ -404,6 +404,11 @@ IOResponse DiskDevice::handle(const IORequest& request)
                 return make_base_response(request, StatusCode::InvalidRequest);
             }
 
+            if (_svc.get_pending_mount(idx).has_value()) {
+                DiskResult mountResult = _svc.ensure_mounted(idx);
+                if (!mountResult.ok()) return make_base_response(request, map_disk_error(mountResult.error));
+            }
+
             const auto info = _svc.info(idx);
 
             std::uint8_t flags = 0;

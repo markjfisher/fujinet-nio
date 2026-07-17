@@ -1,6 +1,7 @@
 #include "fujinet/disk/disk_service.h"
 
 #include "fujinet/core/logging.h"
+#include "fujinet/disk/image_probers/image_probe.h"
 #include "fujinet/disk/raw_image.h"
 
 namespace fujinet::disk {
@@ -113,15 +114,6 @@ DiskResult DiskService::mount(
         return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
     }
 
-    ImageType type = opts.typeOverride;
-    if (type == ImageType::Auto) {
-        type = guess_type_from_path(path);
-    }
-    if (type == ImageType::Auto) {
-        FN_LOGW(TAG, "Mount failed: could not infer image type from '%s'", path.c_str());
-        return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
-    }
-
     // Try open writeable if requested; if it fails, fall back to read-only.
     bool readOnlyEffective = opts.readOnlyRequested;
     std::unique_ptr<fs::IFile> f;
@@ -140,14 +132,34 @@ DiskResult DiskService::mount(
         return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
     }
 
+    MountOptions eff = opts;
+    eff.readOnlyRequested = readOnlyEffective;
+
+    ImageType type = opts.typeOverride;
+    if (type == ImageType::Auto) {
+        const auto probe = probe_image(*f, finfo.sizeBytes, path, opts);
+        if (probe.matched) {
+            type = probe.type;
+            eff.geometryHint = probe.geometry;
+        }
+    } else if (type == ImageType::Raw && opts.sectorSizeHint == 0) {
+        const auto probe = probe_image(*f, finfo.sizeBytes, path, opts);
+        if (probe.matched && probe.type == ImageType::Raw) {
+            eff.geometryHint = probe.geometry;
+        }
+    }
+
+    if (type == ImageType::Auto) {
+        FN_LOGW(TAG, "Mount failed: could not detect image type for '%s'", path.c_str());
+        return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
+    }
+
     auto img = _registry.create(type);
     if (!img) {
         FN_LOGW(TAG, "Mount failed: no image handler for type=%u", static_cast<unsigned>(type));
         return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
     }
 
-    MountOptions eff = opts;
-    eff.readOnlyRequested = readOnlyEffective;
     DiskResult r = img->mount(std::move(f), finfo.sizeBytes, eff);
     if (!r.ok()) {
         FN_LOGW(TAG,

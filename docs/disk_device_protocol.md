@@ -77,9 +77,15 @@ The `StorageManager::resolveUri()` function handles scheme parsing and authority
   - image geometry (sector size, sector count)
   - last error (`disk::DiskError`)
 
+When `boot.mode` is `config`, bootstrap policy installs `boot.config_uri` as a
+pending mount on the active runtime disk unit, currently slot index `0`
+(`D1`/`D:` depending on host convention). Persisted `mounts:` entries targeting
+that same runtime unit are skipped during startup so the host can see the config
+disk first. User-initiated mounts can still replace it later.
+
 ---
 
-## Image types and autodetect
+## Image types and detection
 
 Disk images are handled by `IDiskImage` implementations.
 
@@ -102,7 +108,30 @@ Planned image formats:
 
 - DSD (`.dsd`)
 
-Autodetect uses file extension (case-insensitive). A host may optionally override type detection.
+Detection is centralized in `ProbeRegistry`, not in individual mount callers.
+The default probe order is:
+
+- ATR header probe: content match for ATR magic/header.
+- FAT BPB probe: content match for FAT superfloppy images, returning `ImageType::Raw` plus geometry.
+- SSD DFS probe: `.ssd` path plus DFS catalogue sector-count validation.
+- Extension/hint fallback: case-insensitive extension and `sector_size_hint` handling for ambiguous raw images.
+
+`ImageRegistry` is only responsible for constructing the chosen `IDiskImage`
+handler. Image handlers still own final mount validation and sector I/O. A host
+may optionally override type detection with an explicit `ImageType`, but raw
+geometry can still come from `sector_size_hint` or probe-provided geometry.
+
+### Adding a new image format
+
+To add a new disk image type:
+
+- Add an `IDiskImage` implementation that owns final validation, geometry, and sector read/write mapping.
+- Register the implementation in the platform/default `ImageRegistry`.
+- Add an `IImageProbe` implementation when the format can be recognized from content, path, hints, or some combination.
+- Register the probe in `make_default_probe_registry()` with stronger content probes before weaker extension/hint fallbacks.
+
+Keep filesystem parsing inside the image separate from block I/O unless the
+parsing is required to establish image geometry or sector offsets.
 
 ---
 
@@ -284,9 +313,13 @@ Mount policy notes:
 ## Persisted config mounts
 
 Runtime configuration can define mounts in `fujinet.yaml`. These are applied at
-startup by `apply_config_mounts()` after `DiskDevice` has been registered. The
-mount is intentionally lazy: the config is stored as a pending mount and the
-image file is opened on first sector read/write.
+startup after `DiskDevice` has been registered. The mount is intentionally lazy:
+the config is stored as a pending mount and the image file is opened on first
+`Info`, sector read, or sector write for that slot.
+
+If config boot mode has already reserved the active boot disk unit,
+`apply_config_mounts_excluding()` is used so a persisted slot entry cannot
+overwrite the boot/config disk before the host reads it.
 
 Example:
 
@@ -411,6 +444,10 @@ Notes:
 ## Command: Info (0x05)
 
 Query slot state and geometry.
+
+If the requested slot has a pending lazy mount, `Info` activates that mount
+before reporting status. This lets clients build their local disk geometry from
+the real image before issuing filesystem reads.
 
 ### Request
 

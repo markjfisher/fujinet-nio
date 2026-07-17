@@ -50,7 +50,12 @@ static bool looks_like_fat_bpb(const std::uint8_t* sector, std::uint64_t sizeByt
 
 } // namespace
 
-RawImageProbeResult FatBpbSectorSizeProbe::probe(fs::IFile& file, std::uint64_t sizeBytes) const
+ImageProbeResult FatBpbSectorSizeProbe::probe(
+    fs::IFile& file,
+    std::uint64_t sizeBytes,
+    std::string_view,
+    const MountOptions&
+) const
 {
     if (sizeBytes < 512 || !file.seek(0)) {
         return {};
@@ -68,7 +73,7 @@ RawImageProbeResult FatBpbSectorSizeProbe::probe(fs::IFile& file, std::uint64_t 
     geometry.sectorSize = read_u16le(&sector[11]);
     geometry.sectorCount = static_cast<std::uint32_t>(sizeBytes / geometry.sectorSize);
     geometry.supportsVariableSectorSize = false;
-    return {true, geometry};
+    return {true, ImageType::Raw, geometry, ImageProbeConfidence::Content};
 }
 
 } // namespace fujinet::disk

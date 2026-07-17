@@ -61,4 +61,20 @@ std::size_t apply_config_mounts(
     const std::vector<config::MountConfig>& mounts
 );
 
+/**
+ * @brief Applies persisted config mounts, skipping runtime disk slots reserved by bootstrap policy.
+ *
+ * Used when boot/config mode has already installed a boot disk into a runtime
+ * unit. Persisted mounts remain user slot configuration and must not replace
+ * that boot disk before the host has a chance to read it.
+ *
+ * @param excludedRuntimeSlots 0-based DiskService slot indexes to leave untouched
+ */
+std::size_t apply_config_mounts_excluding(
+    disk::DiskService& diskService,
+    fs::StorageManager& storage,
+    const std::vector<config::MountConfig>& mounts,
+    const std::vector<std::size_t>& excludedRuntimeSlots
+);
+
 } // namespace fujinet

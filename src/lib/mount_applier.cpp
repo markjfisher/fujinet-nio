@@ -70,6 +70,15 @@ std::size_t apply_config_mounts(
     fs::StorageManager& storage,
     const std::vector<config::MountConfig>& mounts)
 {
+    return apply_config_mounts_excluding(diskService, storage, mounts, {});
+}
+
+std::size_t apply_config_mounts_excluding(
+    disk::DiskService& diskService,
+    fs::StorageManager& storage,
+    const std::vector<config::MountConfig>& mounts,
+    const std::vector<std::size_t>& excludedRuntimeSlots)
+{
     std::size_t applied = 0;
 
     for (const auto& mount : mounts) {
@@ -101,6 +110,15 @@ std::size_t apply_config_mounts(
             continue;
         }
 
+        const auto runtimeSlot = static_cast<std::size_t>(slotIndex);
+        if (std::find(excludedRuntimeSlots.begin(), excludedRuntimeSlots.end(), runtimeSlot) != excludedRuntimeSlots.end()) {
+            FN_LOGI(TAG,
+                    "Skipping config mount at slot %d because runtime slot %zu is reserved",
+                    mount.slot,
+                    runtimeSlot);
+            continue;
+        }
+
         // Validate that the URI can be resolved to a filesystem (but don't mount yet)
         auto [fs, resolvedPath] = storage.resolveUri(mount.uri);
         if (!fs) {
@@ -126,7 +144,7 @@ std::size_t apply_config_mounts(
                 static_cast<unsigned>(mount.sectorSizeHint));
 
         diskService.set_pending_mount(
-            static_cast<std::size_t>(slotIndex), 
+            runtimeSlot, 
             mount.uri, 
             mount.mode, 
             mount.enabled,
