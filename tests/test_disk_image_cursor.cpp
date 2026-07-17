@@ -68,6 +68,38 @@ std::vector<std::uint8_t> make_raw_bytes(std::uint16_t sectorSize, std::uint32_t
     return bytes;
 }
 
+std::vector<std::uint8_t> make_fat12_floppy_bytes()
+{
+    auto bytes = make_raw_bytes(512, 2880);
+
+    bytes[0] = 0xeb;
+    bytes[1] = 0x3c;
+    bytes[2] = 0x90;
+    const char oem[] = "mkfs.fat";
+    std::memcpy(&bytes[3], oem, 8);
+    bytes[11] = 0x00;
+    bytes[12] = 0x02; // bytes per sector: 512
+    bytes[13] = 0x01; // sectors per cluster
+    bytes[14] = 0x01;
+    bytes[15] = 0x00; // reserved sectors
+    bytes[16] = 0x02; // FAT count
+    bytes[17] = 0xe0;
+    bytes[18] = 0x00; // root entries
+    bytes[19] = 0x40;
+    bytes[20] = 0x0b; // total sectors: 2880
+    bytes[21] = 0xf0; // media descriptor
+    bytes[22] = 0x09;
+    bytes[23] = 0x00; // sectors per FAT
+    bytes[24] = 0x12;
+    bytes[25] = 0x00; // sectors per track
+    bytes[26] = 0x02;
+    bytes[27] = 0x00; // heads
+    bytes[510] = 0x55;
+    bytes[511] = 0xaa;
+
+    return bytes;
+}
+
 std::vector<std::uint8_t> make_atr_128_bytes(std::uint32_t sectors)
 {
     constexpr std::size_t headerBytes = 16;
@@ -122,6 +154,39 @@ TEST_CASE("Raw image skips seeks for sequential sector reads")
     REQUIRE(image->read_sector(0, sector, sizeof(sector)).ok());
     CHECK(stats.seeks == 2);
     CHECK(image->image_stats().seekOps == 2);
+}
+
+TEST_CASE("Raw image infers FAT bytes per sector when no hint is supplied")
+{
+    FileStats stats;
+    auto bytes = make_fat12_floppy_bytes();
+
+    auto file = std::make_unique<TrackingFile>(bytes, stats, true);
+    auto image = fujinet::disk::make_raw_disk_image();
+
+    REQUIRE(image->mount(std::move(file), bytes.size(), fujinet::disk::MountOptions{}).ok());
+    CHECK(image->geometry().sectorSize == 512);
+    CHECK(image->geometry().sectorCount == 2880);
+
+    std::uint8_t sector[512]{};
+    REQUIRE(image->read_sector(0, sector, sizeof(sector)).ok());
+    CHECK(sector[11] == 0x00);
+    CHECK(sector[12] == 0x02);
+}
+
+TEST_CASE("Raw image ignores isolated BPB bytes-per-sector without FAT markers")
+{
+    FileStats stats;
+    auto bytes = make_raw_bytes(256, 8);
+    bytes[11] = 0x00;
+    bytes[12] = 0x02;
+
+    auto file = std::make_unique<TrackingFile>(bytes, stats, true);
+    auto image = fujinet::disk::make_raw_disk_image();
+
+    REQUIRE(image->mount(std::move(file), bytes.size(), fujinet::disk::MountOptions{}).ok());
+    CHECK(image->geometry().sectorSize == 256);
+    CHECK(image->geometry().sectorCount == 8);
 }
 
 TEST_CASE("ATR image skips seeks for sequential sector reads")

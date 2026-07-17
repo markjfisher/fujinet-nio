@@ -2,6 +2,71 @@
 
 namespace fujinet::disk {
 
+namespace {
+
+static std::uint16_t get_u16le(const std::uint8_t* p) noexcept
+{
+    return static_cast<std::uint16_t>(p[0]) |
+           static_cast<std::uint16_t>(static_cast<std::uint16_t>(p[1]) << 8);
+}
+
+static bool is_valid_sector_size(std::uint16_t sectorSize) noexcept
+{
+    return sectorSize == 128 || sectorSize == 256 || sectorSize == 512 ||
+           sectorSize == 1024 || sectorSize == 2048 || sectorSize == 4096;
+}
+
+static bool is_power_of_two(std::uint8_t value) noexcept
+{
+    return value != 0 && (value & (value - 1)) == 0;
+}
+
+static bool looks_like_fat_bpb(const std::uint8_t* sector, std::uint64_t sizeBytes) noexcept
+{
+    const bool hasJump = (sector[0] == 0xeb && sector[2] == 0x90) || sector[0] == 0xe9;
+    if (!hasJump) return false;
+    if (sector[510] != 0x55 || sector[511] != 0xaa) return false;
+
+    const auto sectorSize = get_u16le(&sector[11]);
+    if (!is_valid_sector_size(sectorSize)) return false;
+    if ((sizeBytes % sectorSize) != 0) return false;
+
+    const auto sectorsPerCluster = sector[13];
+    const auto reservedSectors = get_u16le(&sector[14]);
+    const auto fatCount = sector[16];
+    const auto rootEntryCount = get_u16le(&sector[17]);
+    const auto totalSectors16 = get_u16le(&sector[19]);
+    const auto sectorsPerFat16 = get_u16le(&sector[22]);
+
+    if (!is_power_of_two(sectorsPerCluster)) return false;
+    if (reservedSectors == 0 || fatCount == 0 || sectorsPerFat16 == 0) return false;
+    if (rootEntryCount == 0) return false;
+
+    const std::uint32_t totalSectors32 =
+        static_cast<std::uint32_t>(sector[32]) |
+        (static_cast<std::uint32_t>(sector[33]) << 8) |
+        (static_cast<std::uint32_t>(sector[34]) << 16) |
+        (static_cast<std::uint32_t>(sector[35]) << 24);
+    const std::uint32_t totalSectors = totalSectors16 ? totalSectors16 : totalSectors32;
+    if (totalSectors == 0) return false;
+
+    return static_cast<std::uint64_t>(totalSectors) * sectorSize == sizeBytes;
+}
+
+static std::uint16_t infer_raw_sector_size(fs::IFile& file, std::uint64_t sizeBytes)
+{
+    if (sizeBytes >= 512 && file.seek(0)) {
+        std::uint8_t sector[512]{};
+        if (file.read(sector, sizeof(sector)) == sizeof(sector) && looks_like_fat_bpb(sector, sizeBytes)) {
+            return get_u16le(&sector[11]);
+        }
+    }
+
+    return 256;
+}
+
+} // namespace
+
 class RawDiskImage final : public IDiskImage {
 public:
     ImageType type() const noexcept override { return ImageType::Raw; }
@@ -16,8 +81,8 @@ public:
     {
         if (!file) return DiskResult{DiskError::OpenFailed};
 
-        const std::uint16_t sectorSize = opts.sectorSizeHint ? opts.sectorSizeHint : 256;
-        if (sectorSize == 0) return DiskResult{DiskError::BadImage};
+        const std::uint16_t sectorSize = opts.sectorSizeHint ? opts.sectorSizeHint : infer_raw_sector_size(*file, sizeBytes);
+        if (!is_valid_sector_size(sectorSize)) return DiskResult{DiskError::BadImage};
         if ((sizeBytes % sectorSize) != 0) return DiskResult{DiskError::BadImage};
 
         _file = std::move(file);
