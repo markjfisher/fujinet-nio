@@ -360,17 +360,31 @@ class C_0005932353517374970487 {
 +DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
 +DiskDevice(fs::StorageManager & storage) : void
 ..
+-clear_runtime_mount(std::size_t slotIndex) : void
+-clear_runtime_mounts() : bool
 +configure_boot_mount(std::string configUri, bool readOnly) : void
 +disk_service() : disk::DiskService &
 +disk_service() const : const disk::DiskService &
 +handle(const IORequest & request) : IOResponse
+-load_runtime_mounts() : bool
 +poll() : void
++restore_runtime_mounts() : std::vector<std::size_t>
+-save_runtime_mounts() : bool
+-set_runtime_mount(std::size_t slotIndex, RuntimeMountState state) : void
 __
 {static} -DISKPROTO_VERSION : const std::uint8_t
 -_bootConfigUri : std::string
 -_bootReadOnly : bool
+-_runtimeMounts : std::vector<std::optional<RuntimeMountState>>
 -_storage : fs::StorageManager &
 -_svc : disk::DiskService
+}
+class "io::DiskDevice::RuntimeMountState" as C_0016408095638929073935
+class C_0016408095638929073935 {
+__
++mode : std::string
++sectorSizeHint : std::uint16_t
++uri : std::string
 }
 class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
 class C_0016910926688454257733 {
@@ -1558,10 +1572,12 @@ C_0007645722238685656096 --> C_0015529497257294770104 : -_transports
 C_0005932353517374970487 ..> C_0008422084792172174393
 C_0005932353517374970487 ..> C_0002386736627821114488
 C_0005932353517374970487 ..> C_0002942984525013396621
+C_0005932353517374970487 ..> C_0016408095638929073935
 C_0005932353517374970487 --> C_0001279065520068563954 : -_storage
 C_0005932353517374970487 o-- C_0014804734580910690913 : -_svc
 C_0005932353517374970487 <.. C_0016910926688454257733 : +<<friend>>
 C_0010069830097413987109 <|-- C_0005932353517374970487
+C_0016408095638929073935 --+ C_0005932353517374970487
 C_0016910926688454257733 ..> C_0005932353517374970487
 C_0016910926688454257733 ..> C_0000494354313681174192
 C_0017938940343811357840 ..> C_0002332226688905710359

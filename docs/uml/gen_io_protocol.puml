@@ -22,6 +22,7 @@ Create
 ReadSectors
 WriteSectors
 RestoreBoot
+BeginHostSession
 }
 enum "io::protocol::FujiCommand" as C_0004628219160953719395
 enum C_0004628219160953719395 {
