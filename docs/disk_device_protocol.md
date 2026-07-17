@@ -252,6 +252,7 @@ Commands are encoded in the low 8 bits of `IORequest.command` (device masks to 8
 | `ClearChanged` | `0x06` | Clear the slot “changed” flag |
 | `Create`       | `0x07` | Create a new image file (blank) |
 | `RestoreBoot`  | `0x0A` | Mount configured `boot.config_uri` into a slot |
+| `BeginHostSession` | `0x0B` | Start a new host-side session and restore the configured boot disk |
 
 ### Slot numbering
 
@@ -345,6 +346,29 @@ Fields:
 For MS-DOS/FAT raw disk images with a valid FAT BPB, NIO can infer the sector
 size from the image. Use `sector_size_hint` for headerless raw images or
 ambiguous files whose geometry cannot be detected from content.
+
+## Runtime mount recovery
+
+Explicit runtime mount changes made through the DiskDevice protocol are stored
+outside `fujinet.yaml` in a small recovery file on the default persistent
+filesystem. This is intentionally runtime state, not user configuration.
+
+Runtime recovery covers:
+
+- `Mount (0x01)`: records the mounted URI, mode, and sector-size hint.
+- `Unmount (0x02)`: removes the slot from runtime recovery.
+- `RestoreBoot (0x0A)`: records the restored boot/config image as the current
+  runtime mount for that slot.
+
+On FujiNet startup, `DiskDevice` restores those runtime mounts as pending lazy
+mounts before applying configured `mounts:` entries or the boot/config disk.
+This keeps the device-side state aligned when FujiNet is reset while the host
+computer is still running and still believes a mounted disk is present.
+
+Host drivers should send `BeginHostSession (0x0B)` during driver or OS startup.
+That command declares that the host-side disk state is new, clears runtime
+recovery, unmounts existing slots, and restores the configured boot/config disk
+for that host session.
 
 ---
 
@@ -507,6 +531,57 @@ u32 sectorCount
 
 Returns `NotReady` when no boot/config image has been configured for the
 running `DiskDevice`.
+
+---
+
+## Command: BeginHostSession (0x0B)
+
+Begin a new host-side disk session. Host drivers call this during driver or OS
+initialization to make the FujiNet disk state match a freshly booted host.
+
+The command:
+
+- clears runtime mount recovery state,
+- unmounts all runtime disk slots,
+- restores the configured boot/config image into the requested slot when one is
+  configured.
+
+This is different from a FujiNet reset. A FujiNet reset should preserve and
+recover runtime mounts because the host computer may still be running with
+cached filesystem state. `BeginHostSession` is the explicit boundary where the
+host says that cached state should be discarded.
+
+### Request
+
+```
+u8 version
+u8 slot
+```
+
+### Response payload (on `Ok`)
+
+When a boot/config image is configured, the response has the same shape as
+`Mount`:
+
+```
+u8  version
+u8  flags          // bit0=mounted, bit1=readonly_effective
+u16 reserved       // = 0
+u8  slot
+u8  type
+u16 sectorSize
+u32 sectorCount
+```
+
+When no boot/config image is configured, the command still succeeds after
+clearing runtime state and returns:
+
+```
+u8  version
+u8  flags          // = 0
+u16 reserved       // = 0
+u8  slot
+```
 
 ---
 

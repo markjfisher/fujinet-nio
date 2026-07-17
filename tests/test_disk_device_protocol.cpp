@@ -61,6 +61,14 @@ static std::vector<std::uint8_t> make_fat12_floppy_bytes()
     return bytes;
 }
 
+static std::vector<std::uint8_t> make_ssd_bytes(std::uint32_t sectorCount = 800)
+{
+    std::vector<std::uint8_t> bytes(sectorCount * 256);
+    bytes[0x106] = static_cast<std::uint8_t>((sectorCount >> 8) & 0x03);
+    bytes[0x107] = static_cast<std::uint8_t>(sectorCount & 0xFF);
+    return bytes;
+}
+
 TEST_CASE("DiskService: mount raw + read/write sector")
 {
     fujinet::fs::StorageManager sm;
@@ -411,6 +419,175 @@ TEST_CASE("DiskDevice v1: RestoreBoot without configured boot image is NotReady"
 
     IOResponse resp = dev.handle(req);
     CHECK(resp.status == StatusCode::NotReady);
+}
+
+TEST_CASE("DiskDevice v1: mounted runtime state restores as pending in a new device instance")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("host");
+
+    const std::string path = "/disks/work.img";
+    auto& bytes = memfs->file_bytes(path);
+    bytes.resize(2 * 512);
+    bytes[0] = 0xEB;
+    bytes[1] = 0x3C;
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    {
+        DiskDevice dev(sm);
+
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 1);
+        diskproto::write_u8(p, 0);
+        diskproto::write_u8(p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+        diskproto::write_u16le(p, 512);
+        diskproto::write_lp_u16_string(p, "host:/disks/work.img");
+
+        IORequest req{};
+        req.id = 7;
+        req.deviceId = deviceId;
+        req.command = 0x01; // Mount
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+    }
+
+    DiskDevice restored(sm);
+    auto restoredSlots = restored.restore_runtime_mounts();
+    REQUIRE(restoredSlots.size() == 1);
+    CHECK(restoredSlots[0] == 0);
+    CHECK_FALSE(restored.disk_service().info(0).inserted);
+
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 1);
+
+    IORequest req{};
+    req.id = 8;
+    req.deviceId = deviceId;
+    req.command = 0x05; // Info
+    req.payload = to_vec(p);
+
+    IOResponse resp = restored.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+    CHECK(restored.disk_service().info(0).inserted);
+    CHECK(restored.disk_service().info(0).geometry.sectorSize == 512);
+}
+
+TEST_CASE("DiskDevice v1: BeginHostSession clears runtime state and restores boot disk")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("host");
+
+    auto& work = memfs->file_bytes("/disks/work.img");
+    work.resize(2 * 512);
+    work[0] = 0x11;
+
+    memfs->file_bytes("/boot/autorun.img") = make_fat12_floppy_bytes();
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    DiskDevice dev(sm);
+    dev.configure_boot_mount("host:/boot/autorun.img", true);
+
+    {
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 1);
+        diskproto::write_u8(p, 0);
+        diskproto::write_u8(p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+        diskproto::write_u16le(p, 512);
+        diskproto::write_lp_u16_string(p, "host:/disks/work.img");
+
+        IORequest req{};
+        req.id = 9;
+        req.deviceId = deviceId;
+        req.command = 0x01; // Mount
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+    }
+
+    {
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 1);
+
+        IORequest req{};
+        req.id = 10;
+        req.deviceId = deviceId;
+        req.command = 0x0B; // BeginHostSession
+        req.payload = to_vec(p);
+
+        IOResponse resp = dev.handle(req);
+        REQUIRE(resp.status == StatusCode::Ok);
+
+        auto info = dev.disk_service().info(0);
+        CHECK(info.inserted);
+        CHECK(info.readOnly);
+        CHECK(info.geometry.sectorSize == 512);
+        CHECK(info.geometry.sectorCount == 2880);
+    }
+
+    DiskDevice afterSession(sm);
+    CHECK(afterSession.restore_runtime_mounts().empty());
+}
+
+TEST_CASE("DiskDevice v1: BeginHostSession restores configured BBC SSD boot disk")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("host");
+
+    memfs->file_bytes("/boot/bbc/autorun.ssd") = make_ssd_bytes();
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    DiskDevice dev(sm);
+    dev.configure_boot_mount("host:/boot/bbc/autorun.ssd", true);
+
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 1);
+
+    IORequest req{};
+    req.id = 11;
+    req.deviceId = deviceId;
+    req.command = 0x0B; // BeginHostSession
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+
+    diskproto::Reader r(resp.payload.data(), resp.payload.size());
+    std::uint8_t ver = 0, flags = 0, slot = 0, type = 0;
+    std::uint16_t reserved = 0, sectorSize = 0;
+    std::uint32_t sectorCount = 0;
+
+    REQUIRE(r.read_u8(ver));
+    REQUIRE(r.read_u8(flags));
+    REQUIRE(r.read_u16le(reserved));
+    REQUIRE(r.read_u8(slot));
+    REQUIRE(r.read_u8(type));
+    REQUIRE(r.read_u16le(sectorSize));
+    REQUIRE(r.read_u32le(sectorCount));
+
+    CHECK(ver == V);
+    CHECK((flags & 0x01) != 0); // mounted
+    CHECK((flags & 0x02) != 0); // read-only
+    CHECK(slot == 1);
+    CHECK(type == static_cast<std::uint8_t>(fujinet::disk::ImageType::Ssd));
+    CHECK(sectorSize == 256);
+    CHECK(sectorCount == 800);
 }
 
 TEST_CASE("DiskDevice v1: Mount -> Info -> ReadSector -> WriteSector -> Close")

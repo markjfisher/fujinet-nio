@@ -40,6 +40,7 @@ extern "C" {
 
 #include <chrono>
 #include <memory>
+#include <vector>
 #include <unistd.h>
 
 static constexpr const char* TAG = "nio";
@@ -295,19 +296,31 @@ extern "C" void fujinet_core_task(void* arg)
             if (config.boot.mode == fujinet::config::BootMode::Config) {
                 diskDev->configure_boot_mount(config.boot.configUri, config.boot.readOnly);
             }
-            std::size_t bootApplied = fujinet::apply_boot_mount(
-                diskDev->disk_service(),
-                core.storageManager(),
-                config.boot,
-                activeBootDiskUnit);
+            std::vector<std::size_t> excludedRuntimeSlots = diskDev->restore_runtime_mounts();
+            bool bootUnitRestored = false;
+            for (const auto slot : excludedRuntimeSlots) {
+                if (slot == activeBootDiskUnit) {
+                    bootUnitRestored = true;
+                    break;
+                }
+            }
+
+            std::size_t bootApplied = bootUnitRestored ? 0 : fujinet::apply_boot_mount(
+                    diskDev->disk_service(),
+                    core.storageManager(),
+                    config.boot,
+                    activeBootDiskUnit);
+            if (bootApplied) {
+                excludedRuntimeSlots.push_back(activeBootDiskUnit);
+            }
             FN_LOGI(TAG, "Applied %zu boot config mount", bootApplied);
 
-            std::size_t applied = bootApplied
+            std::size_t applied = !excludedRuntimeSlots.empty()
                 ? fujinet::apply_config_mounts_excluding(
                     diskDev->disk_service(),
                     core.storageManager(),
                     config.mounts,
-                    {activeBootDiskUnit})
+                    excludedRuntimeSlots)
                 : fujinet::apply_config_mounts(
                     diskDev->disk_service(),
                     core.storageManager(),

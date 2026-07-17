@@ -6,6 +6,8 @@
 #include "fujinet/io/devices/virtual_device.h"
 
 #include <string>
+#include <vector>
+#include <optional>
 
 namespace fujinet::io {
 
@@ -23,6 +25,7 @@ public:
     void poll() override {}
 
     void configure_boot_mount(std::string configUri, bool readOnly);
+    std::vector<std::size_t> restore_runtime_mounts();
 
     // Access to the underlying DiskService for config mount application
     disk::DiskService& disk_service() { return _svc; }
@@ -34,11 +37,23 @@ private:
 
     static constexpr std::uint8_t DISKPROTO_VERSION = 1;
 
+    struct RuntimeMountState {
+        std::string uri;
+        std::string mode;
+        std::uint16_t sectorSizeHint{0};
+    };
+
+    bool save_runtime_mounts();
+    bool load_runtime_mounts();
+    bool clear_runtime_mounts();
+    void set_runtime_mount(std::size_t slotIndex, RuntimeMountState state);
+    void clear_runtime_mount(std::size_t slotIndex);
+
     fs::StorageManager& _storage;
     disk::DiskService _svc;
     std::string _bootConfigUri;
     bool _bootReadOnly{true};
+    std::vector<std::optional<RuntimeMountState>> _runtimeMounts;
 };
 
 } // namespace fujinet::io
-

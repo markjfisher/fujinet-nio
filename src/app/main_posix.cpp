@@ -6,6 +6,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <vector>
 #if __has_include(<sysexits.h>)
 #include <sysexits.h> // EX_TEMPFAIL=75
 #endif
@@ -216,19 +217,31 @@ int main()
             if (config.boot.mode == fujinet::config::BootMode::Config) {
                 diskDev->configure_boot_mount(config.boot.configUri, config.boot.readOnly);
             }
-            std::size_t bootApplied = fujinet::apply_boot_mount(
-                diskDev->disk_service(),
-                core.storageManager(),
-                config.boot,
-                activeBootDiskUnit);
+            std::vector<std::size_t> excludedRuntimeSlots = diskDev->restore_runtime_mounts();
+            bool bootUnitRestored = false;
+            for (const auto slot : excludedRuntimeSlots) {
+                if (slot == activeBootDiskUnit) {
+                    bootUnitRestored = true;
+                    break;
+                }
+            }
+
+            std::size_t bootApplied = bootUnitRestored ? 0 : fujinet::apply_boot_mount(
+                    diskDev->disk_service(),
+                    core.storageManager(),
+                    config.boot,
+                    activeBootDiskUnit);
+            if (bootApplied) {
+                excludedRuntimeSlots.push_back(activeBootDiskUnit);
+            }
             FN_LOGI(TAG, "Applied %zu boot config mount", bootApplied);
 
-            std::size_t applied = bootApplied
+            std::size_t applied = !excludedRuntimeSlots.empty()
                 ? fujinet::apply_config_mounts_excluding(
                     diskDev->disk_service(),
                     core.storageManager(),
                     config.mounts,
-                    {activeBootDiskUnit})
+                    excludedRuntimeSlots)
                 : fujinet::apply_config_mounts(
                     diskDev->disk_service(),
                     core.storageManager(),

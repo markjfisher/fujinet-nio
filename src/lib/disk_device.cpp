@@ -8,6 +8,9 @@
 #include "fujinet/io/devices/disk_commands.h"
 #include "fujinet/io/host_state.h"
 
+#include <charconv>
+#include <system_error>
+
 namespace fujinet::io {
 
 using fujinet::disk::DiskError;
@@ -19,6 +22,7 @@ using fujinet::io::protocol::DiskCommand;
 using fujinet::io::protocol::to_disk_command;
 
 static constexpr const char* TAG = "disk";
+static constexpr const char* RUNTIME_MOUNTS_PATH = "/fujinet-runtime-mounts.tsv";
 
 static const char* disk_error_name(DiskError e) noexcept
 {
@@ -74,6 +78,7 @@ static bool parse_slot_1based(std::uint8_t slot1, std::size_t& outIdx) noexcept
 DiskDevice::DiskDevice(fs::StorageManager& storage, disk::ImageRegistry registry)
     : _storage(storage)
     , _svc(storage, std::move(registry))
+    , _runtimeMounts(disk::DiskService::MAX_SLOTS)
 {
 }
 
@@ -86,6 +91,169 @@ void DiskDevice::configure_boot_mount(std::string configUri, bool readOnly)
 {
     _bootConfigUri = std::move(configUri);
     _bootReadOnly = readOnly;
+}
+
+static std::string read_all(fs::IFileSystem& fs, const std::string& path)
+{
+    auto f = fs.open(path, "rb");
+    if (!f) return {};
+
+    std::string out;
+    char buf[256];
+    for (;;) {
+        const std::size_t n = f->read(buf, sizeof(buf));
+        if (n == 0) break;
+        out.append(buf, n);
+    }
+    return out;
+}
+
+static bool write_all(fs::IFileSystem& fs, const std::string& path, const std::string& data)
+{
+    auto f = fs.open(path, "wb");
+    if (!f) return false;
+    if (!data.empty() && f->write(data.data(), data.size()) != data.size()) return false;
+    return f->flush();
+}
+
+static bool parse_u16(std::string_view s, std::uint16_t& out)
+{
+    unsigned value = 0;
+    auto* begin = s.data();
+    auto* end = s.data() + s.size();
+    auto [ptr, ec] = std::from_chars(begin, end, value);
+    if (ec != std::errc{} || ptr != end || value > 0xFFFFu) return false;
+    out = static_cast<std::uint16_t>(value);
+    return true;
+}
+
+static bool parse_size(std::string_view s, std::size_t& out)
+{
+    unsigned value = 0;
+    auto* begin = s.data();
+    auto* end = s.data() + s.size();
+    auto [ptr, ec] = std::from_chars(begin, end, value);
+    if (ec != std::errc{} || ptr != end) return false;
+    out = static_cast<std::size_t>(value);
+    return true;
+}
+
+bool DiskDevice::save_runtime_mounts()
+{
+    auto* fs = _storage.defaultPersistentFileSystem();
+    if (!fs) {
+        FN_LOGW(TAG, "No persistent filesystem available for runtime mount state");
+        return false;
+    }
+
+    std::string data = "v1\n";
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < _runtimeMounts.size(); ++i) {
+        const auto& m = _runtimeMounts[i];
+        if (!m || m->uri.empty()) continue;
+        data += std::to_string(i);
+        data += '\t';
+        data += std::to_string(m->sectorSizeHint);
+        data += '\t';
+        data += (m->mode.empty() ? "rw" : m->mode);
+        data += '\t';
+        data += m->uri;
+        data += '\n';
+        ++count;
+    }
+
+    if (count == 0) {
+        fs->removeFile(RUNTIME_MOUNTS_PATH);
+        return true;
+    }
+    return write_all(*fs, RUNTIME_MOUNTS_PATH, data);
+}
+
+bool DiskDevice::load_runtime_mounts()
+{
+    auto* fs = _storage.defaultPersistentFileSystem();
+    if (!fs || !fs->exists(RUNTIME_MOUNTS_PATH)) return false;
+
+    const std::string data = read_all(*fs, RUNTIME_MOUNTS_PATH);
+    if (data.empty()) return false;
+
+    _runtimeMounts.assign(disk::DiskService::MAX_SLOTS, std::nullopt);
+    std::size_t lineStart = 0;
+    bool sawVersion = false;
+    while (lineStart <= data.size()) {
+        std::size_t lineEnd = data.find('\n', lineStart);
+        if (lineEnd == std::string::npos) lineEnd = data.size();
+        std::string_view line(data.data() + lineStart, lineEnd - lineStart);
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+
+        if (!line.empty()) {
+            if (!sawVersion) {
+                sawVersion = (line == "v1");
+            } else {
+                const auto p1 = line.find('\t');
+                const auto p2 = p1 == std::string_view::npos ? p1 : line.find('\t', p1 + 1);
+                const auto p3 = p2 == std::string_view::npos ? p2 : line.find('\t', p2 + 1);
+                std::size_t slot = 0;
+                std::uint16_t hint = 0;
+                if (p1 != std::string_view::npos &&
+                    p2 != std::string_view::npos &&
+                    p3 != std::string_view::npos &&
+                    parse_size(line.substr(0, p1), slot) &&
+                    parse_u16(line.substr(p1 + 1, p2 - p1 - 1), hint) &&
+                    slot < _runtimeMounts.size()) {
+                    RuntimeMountState state{};
+                    state.sectorSizeHint = hint;
+                    state.mode = std::string(line.substr(p2 + 1, p3 - p2 - 1));
+                    state.uri = std::string(line.substr(p3 + 1));
+                    if (!state.uri.empty()) _runtimeMounts[slot] = std::move(state);
+                }
+            }
+        }
+
+        if (lineEnd == data.size()) break;
+        lineStart = lineEnd + 1;
+    }
+    return sawVersion;
+}
+
+bool DiskDevice::clear_runtime_mounts()
+{
+    _runtimeMounts.assign(disk::DiskService::MAX_SLOTS, std::nullopt);
+    auto* fs = _storage.defaultPersistentFileSystem();
+    if (!fs) return false;
+    fs->removeFile(RUNTIME_MOUNTS_PATH);
+    return true;
+}
+
+void DiskDevice::set_runtime_mount(std::size_t slotIndex, RuntimeMountState state)
+{
+    if (slotIndex >= _runtimeMounts.size()) return;
+    _runtimeMounts[slotIndex] = std::move(state);
+    save_runtime_mounts();
+}
+
+void DiskDevice::clear_runtime_mount(std::size_t slotIndex)
+{
+    if (slotIndex >= _runtimeMounts.size()) return;
+    _runtimeMounts[slotIndex].reset();
+    save_runtime_mounts();
+}
+
+std::vector<std::size_t> DiskDevice::restore_runtime_mounts()
+{
+    std::vector<std::size_t> restored;
+    if (!load_runtime_mounts()) return restored;
+
+    for (std::size_t i = 0; i < _runtimeMounts.size(); ++i) {
+        const auto& m = _runtimeMounts[i];
+        if (!m || m->uri.empty()) continue;
+        _svc.set_pending_mount(i, m->uri, m->mode.empty() ? "rw" : m->mode, true, m->sectorSizeHint);
+        restored.push_back(i);
+    }
+    if (!restored.empty()) {
+        FN_LOGI(TAG, "Restored %zu runtime mount(s) as pending", restored.size());
+    }
+    return restored;
 }
 
 IOResponse DiskDevice::handle(const IORequest& request)
@@ -156,6 +324,11 @@ IOResponse DiskDevice::handle(const IORequest& request)
             if (resp.status != StatusCode::Ok) return resp;
 
             const auto info = _svc.info(idx);
+            set_runtime_mount(idx, RuntimeMountState{
+                uriStr,
+                info.readOnly ? "r" : "rw",
+                sectorHint,
+            });
 
             std::vector<std::uint8_t> out;
             out.reserve(16);
@@ -187,6 +360,7 @@ IOResponse DiskDevice::handle(const IORequest& request)
             DiskResult dr = _svc.unmount(idx);
             IOResponse resp = make_base_response(request, map_disk_error(dr.error));
             if (resp.status != StatusCode::Ok) return resp;
+            clear_runtime_mount(idx);
 
             std::vector<std::uint8_t> out;
             diskproto::write_u8(out, DISKPROTO_VERSION);
@@ -501,6 +675,11 @@ IOResponse DiskDevice::handle(const IORequest& request)
             if (resp.status != StatusCode::Ok) return resp;
 
             const auto info = _svc.info(idx);
+            set_runtime_mount(idx, RuntimeMountState{
+                uriStr,
+                info.readOnly ? "r" : "rw",
+                0,
+            });
             std::uint8_t flags = 0x01; // mounted
             if (info.readOnly) flags |= 0x02;
 
@@ -514,6 +693,70 @@ IOResponse DiskDevice::handle(const IORequest& request)
             diskproto::write_u16le(out, info.geometry.sectorSize);
             diskproto::write_u32le(out, info.geometry.sectorCount);
 
+            resp.payload = std::move(out);
+            return resp;
+        }
+
+        case DiskCommand::BeginHostSession: {
+            std::uint8_t slot1 = 0;
+            if (!r.read_u8(slot1)) return make_base_response(request, StatusCode::InvalidRequest);
+
+            std::size_t idx = 0;
+            if (!parse_slot_1based(slot1, idx) || idx >= _svc.slot_count()) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+
+            clear_runtime_mounts();
+            for (std::size_t i = 0; i < _svc.slot_count(); ++i) {
+                _svc.unmount(i);
+            }
+
+            if (_bootConfigUri.empty()) {
+                IOResponse resp = make_success_response(request);
+                std::vector<std::uint8_t> out;
+                diskproto::write_u8(out, DISKPROTO_VERSION);
+                diskproto::write_u8(out, 0);
+                diskproto::write_u16le(out, 0);
+                diskproto::write_u8(out, slot1);
+                resp.payload = std::move(out);
+                return resp;
+            }
+
+            std::string uriStr(_bootConfigUri);
+            HostState hostState(_storage);
+            if (!hostState.resolve_target(uriStr, uriStr, nullptr)) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+            auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
+            if (!fs || resolvedPath.empty()) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+
+            MountOptions opts{};
+            opts.readOnlyRequested = _bootReadOnly;
+
+            FN_LOGI(TAG,
+                    "Begin host session: restore boot mount slot=%u uri='%s'",
+                    static_cast<unsigned>(slot1),
+                    uriStr.c_str());
+
+            DiskResult dr = _svc.mount(idx, fs->name(), resolvedPath, opts);
+            IOResponse resp = make_base_response(request, map_disk_error(dr.error));
+            if (resp.status != StatusCode::Ok) return resp;
+
+            const auto info = _svc.info(idx);
+            std::uint8_t flags = 0x01;
+            if (info.readOnly) flags |= 0x02;
+
+            std::vector<std::uint8_t> out;
+            out.reserve(1 + 1 + 2 + 1 + 1 + 2 + 4);
+            diskproto::write_u8(out, DISKPROTO_VERSION);
+            diskproto::write_u8(out, flags);
+            diskproto::write_u16le(out, 0);
+            diskproto::write_u8(out, slot1);
+            diskproto::write_u8(out, static_cast<std::uint8_t>(info.type));
+            diskproto::write_u16le(out, info.geometry.sectorSize);
+            diskproto::write_u32le(out, info.geometry.sectorCount);
             resp.payload = std::move(out);
             return resp;
         }

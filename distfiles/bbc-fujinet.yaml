@@ -1,0 +1,39 @@
+fujinet:
+  device_name: fn-bbc
+boot:
+  mode: config
+  config_uri: "persist:/boot/bbc/autorun.ssd"
+  readonly: true
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+mounts: []
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+netsio:
+  enabled: false
+  host: localhost
+  port: 9997
+clock:
+  timezone: UTC
+  enabled: true
+channel:
+  pty_path: ""
+  tcp_host: 127.0.0.1
+  tcp_port: 65504
+  serial_port: /dev/ttyUSB0
+  uart:
+    baud_rate: 115200
+    data_bits: 8
+    parity: none
+    stop_bits: 1
+    flow_control: none
+    tx_gap_us: 0
