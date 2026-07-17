@@ -47,62 +47,6 @@ abstract C_0012397556205933868732 {
 {abstract} +stat(const std::string & path, FileInfo & outInfo) = 0 : bool
 __
 }
-class "fs::UriParts" as C_0002767221591476794428
-class C_0002767221591476794428 {
-__
-+authority : std::string
-+path : std::string
-+scheme : std::string
-}
-class "fs::ParsedHttpUri" as C_0003962899456447828858
-class C_0003962899456447828858 {
-__
-+schemeLower : std::string
-+uri : std::string
-}
-class "fs::HttpTransferResult" as C_0012385150412243523288
-class C_0012385150412243523288 {
-__
-+body : std::vector<std::uint8_t>
-+info : io::NetworkInfo
-}
-class "fs::HttpFile" as C_0012346086479333951686
-class C_0012346086479333951686 {
-+HttpFile(std::vector<std::uint8_t> data) : void
-..
-+flush() : bool
-+read(void * dst, std::size_t maxBytes) : std::size_t
-+seek(std::uint64_t offset) : bool
-+tell() const : std::uint64_t
-+write(const void *, std::size_t) : std::size_t
-__
--_data : std::vector<std::uint8_t>
--_position : std::size_t
-}
-class "fs::HttpFileSystem" as C_0017926825113595461604
-class C_0017926825113595461604 {
-+HttpFileSystem(HttpProtocolFactory protocolFactory) : void
-..
-+createDirectory(const std::string &) : bool
-+exists(const std::string & path) : bool
-+isDirectory(const std::string &) : bool
-+kind() const : FileSystemKind
-+listDirectory(const std::string &, std::vector<FileInfo> & outEntries) : bool
-+name() const : std::string
-+open(const std::string & path, const char * mode) : std::unique_ptr<IFile>
--perform_get(const std::string & path, HttpTransferResult & out) : bool
--perform_head(const std::string & path, HttpTransferResult & out) : bool
--perform_request(const std::string & path, std::uint8_t method, bool readBody, HttpTransferResult & out) : bool
-{static} -read_response_body(io::INetworkProtocol & protocol, std::vector<std::uint8_t> & outBody) : bool
-+removeDirectory(const std::string &) : bool
-+removeFile(const std::string &) : bool
-+rename(const std::string &, const std::string &) : bool
-+stat(const std::string & path, FileInfo & outInfo) : bool
-+supportsScheme(std::string_view scheme) const : bool
-{static} -wait_for_info(io::INetworkProtocol & protocol, io::NetworkInfo & outInfo) : bool
-__
--_protocolFactory : HttpProtocolFactory
-}
 class "fs::TnfsEndpoint" as C_0014824357918949884358
 class C_0014824357918949884358 {
 __
@@ -112,6 +56,13 @@ __
 +port : std::uint16_t
 +useTcp : bool
 +user : std::string
+}
+class "fs::UriParts" as C_0002767221591476794428
+class C_0002767221591476794428 {
+__
++authority : std::string
++path : std::string
++scheme : std::string
 }
 class "fs::TnfsFile" as C_0001141488783119530799
 class C_0001141488783119530799 {
@@ -181,6 +132,76 @@ __
 +endpoint : TnfsEndpoint
 +path : std::string
 }
+class "fs::ParsedHttpUri" as C_0003962899456447828858
+class C_0003962899456447828858 {
+__
++schemeLower : std::string
++uri : std::string
+}
+class "fs::HttpTransferResult" as C_0012385150412243523288
+class C_0012385150412243523288 {
+__
++body : std::vector<std::uint8_t>
++info : io::NetworkInfo
+}
+class "fs::HttpFile" as C_0012346086479333951686
+class C_0012346086479333951686 {
++HttpFile(std::vector<std::uint8_t> data) : void
+..
++flush() : bool
++read(void * dst, std::size_t maxBytes) : std::size_t
++seek(std::uint64_t offset) : bool
++tell() const : std::uint64_t
++write(const void *, std::size_t) : std::size_t
+__
+-_data : std::vector<std::uint8_t>
+-_position : std::size_t
+}
+class "fs::HttpFileSystem" as C_0017926825113595461604
+class C_0017926825113595461604 {
++HttpFileSystem(HttpProtocolFactory protocolFactory) : void
+..
++createDirectory(const std::string &) : bool
++exists(const std::string & path) : bool
++isDirectory(const std::string &) : bool
++kind() const : FileSystemKind
++listDirectory(const std::string &, std::vector<FileInfo> & outEntries) : bool
++name() const : std::string
++open(const std::string & path, const char * mode) : std::unique_ptr<IFile>
+-perform_get(const std::string & path, HttpTransferResult & out) : bool
+-perform_head(const std::string & path, HttpTransferResult & out) : bool
+-perform_request(const std::string & path, std::uint8_t method, bool readBody, HttpTransferResult & out) : bool
+{static} -read_response_body(io::INetworkProtocol & protocol, std::vector<std::uint8_t> & outBody) : bool
++removeDirectory(const std::string &) : bool
++removeFile(const std::string &) : bool
++rename(const std::string &, const std::string &) : bool
++stat(const std::string & path, FileInfo & outInfo) : bool
++supportsScheme(std::string_view scheme) const : bool
+{static} -wait_for_info(io::INetworkProtocol & protocol, io::NetworkInfo & outInfo) : bool
+__
+-_protocolFactory : HttpProtocolFactory
+}
+class "fs::StorageManager" as C_0001279065520068563954
+class C_0001279065520068563954 {
++StorageManager() = default : void
++StorageManager(const StorageManager &) = deleted : void
++~StorageManager() = default : void
+..
++operator=(const StorageManager &) = deleted : StorageManager &
+..
++defaultPersistentFileSystem() : IFileSystem *
++defaultPersistentFileSystem() const : const IFileSystem *
++get(const std::string & name) : IFileSystem *
++get(const std::string & name) const : const IFileSystem *
++getByScheme(const std::string & scheme) : IFileSystem *
++getByScheme(const std::string & scheme) const : const IFileSystem *
++listNames() const : std::vector<std::string>
++registerFileSystem(std::unique_ptr<IFileSystem> fs) : bool
++resolveUri(const std::string & uri) : std::pair<IFileSystem *,std::string>
++unregisterFileSystem(const std::string & name) : bool
+__
+-_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
+}
 class "fs::PathContext" as C_0017149840192841842787
 class C_0017149840192841842787 {
 __
@@ -216,30 +237,6 @@ class C_0018164203139191836918 {
 __
 -_handlers : std::vector<std::unique_ptr<IPathHandler>>
 }
-class "fs::TnfsUriResolver" as C_0016978127350543900368
-class C_0016978127350543900368 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
-class "fs::TnfsRelativeResolver" as C_0004513185020093159945
-class C_0004513185020093159945 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
-class "fs::HttpRelativeResolver" as C_0010101945487096078154
-class C_0010101945487096078154 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
-class "fs::RelativePathResolver" as C_0009054822670205828333
-class C_0009054822670205828333 {
-+can_handle(std::string_view spec, const PathContext & ctx) const : bool
-+resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
-__
-}
 class "fs::TnfsPrefixResolver" as C_0006279482444175084267
 class C_0006279482444175084267 {
 +can_handle(std::string_view spec, const PathContext & ctx) const : bool
@@ -252,32 +249,35 @@ class C_0011250052154589645767 {
 +resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
 __
 }
+class "fs::HttpRelativeResolver" as C_0010101945487096078154
+class C_0010101945487096078154 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
+}
 class "fs::HttpUriResolver" as C_0002874891167610009768
 class C_0002874891167610009768 {
 +can_handle(std::string_view spec, const PathContext & ctx) const : bool
 +resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
 __
 }
-class "fs::StorageManager" as C_0001279065520068563954
-class C_0001279065520068563954 {
-+StorageManager() = default : void
-+StorageManager(const StorageManager &) = deleted : void
-+~StorageManager() = default : void
-..
-+operator=(const StorageManager &) = deleted : StorageManager &
-..
-+defaultPersistentFileSystem() : IFileSystem *
-+defaultPersistentFileSystem() const : const IFileSystem *
-+get(const std::string & name) : IFileSystem *
-+get(const std::string & name) const : const IFileSystem *
-+getByScheme(const std::string & scheme) : IFileSystem *
-+getByScheme(const std::string & scheme) const : const IFileSystem *
-+listNames() const : std::vector<std::string>
-+registerFileSystem(std::unique_ptr<IFileSystem> fs) : bool
-+resolveUri(const std::string & uri) : std::pair<IFileSystem *,std::string>
-+unregisterFileSystem(const std::string & name) : bool
+class "fs::RelativePathResolver" as C_0009054822670205828333
+class C_0009054822670205828333 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
 __
--_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
+}
+class "fs::TnfsRelativeResolver" as C_0004513185020093159945
+class C_0004513185020093159945 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
+}
+class "fs::TnfsUriResolver" as C_0016978127350543900368
+class C_0016978127350543900368 {
++can_handle(std::string_view spec, const PathContext & ctx) const : bool
++resolve(std::string_view spec, const PathContext & ctx, ResolvedTarget & out) const : bool
+__
 }
 class "fs::StdioFile" as C_0007693094110734758389
 class C_0007693094110734758389 {
@@ -317,12 +317,6 @@ __
 C_0012397556205933868732 ..> C_0014883681608496495557
 C_0012397556205933868732 ..> C_0014904826619290153445
 C_0012397556205933868732 ..> C_0007646493544420080876
-C_0014904826619290153445 <|-- C_0012346086479333951686
-C_0017926825113595461604 ..> C_0014883681608496495557
-C_0017926825113595461604 ..> C_0014904826619290153445
-C_0017926825113595461604 ..> C_0007646493544420080876
-C_0017926825113595461604 ..> C_0012385150412243523288
-C_0012397556205933868732 <|-- C_0017926825113595461604
 C_0014904826619290153445 <|-- C_0001141488783119530799
 C_0004815503964018113655 ..> C_0014883681608496495557
 C_0004815503964018113655 ..> C_0014904826619290153445
@@ -336,33 +330,39 @@ C_0014930310490567351521 --+ C_0004815503964018113655
 C_0014930310490567351521 o-- C_0014824357918949884358 : +endpoint
 C_0008873171637048110288 --+ C_0004815503964018113655
 C_0008873171637048110288 o-- C_0014824357918949884358 : +endpoint
+C_0014904826619290153445 <|-- C_0012346086479333951686
+C_0017926825113595461604 ..> C_0014883681608496495557
+C_0017926825113595461604 ..> C_0014904826619290153445
+C_0017926825113595461604 ..> C_0007646493544420080876
+C_0017926825113595461604 ..> C_0012385150412243523288
+C_0012397556205933868732 <|-- C_0017926825113595461604
+C_0001279065520068563954 o-- C_0012397556205933868732 : -_fileSystems
 C_0000734777446487978569 ..> C_0017149840192841842787
 C_0000734777446487978569 ..> C_0005227273030995872898
 C_0018164203139191836918 ..> C_0017149840192841842787
 C_0018164203139191836918 ..> C_0005227273030995872898
 C_0018164203139191836918 o-- C_0000734777446487978569 : -_handlers
-C_0016978127350543900368 ..> C_0017149840192841842787
-C_0016978127350543900368 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0016978127350543900368
-C_0004513185020093159945 ..> C_0017149840192841842787
-C_0004513185020093159945 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0004513185020093159945
-C_0010101945487096078154 ..> C_0017149840192841842787
-C_0010101945487096078154 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0010101945487096078154
-C_0009054822670205828333 ..> C_0017149840192841842787
-C_0009054822670205828333 ..> C_0005227273030995872898
-C_0000734777446487978569 <|-- C_0009054822670205828333
 C_0006279482444175084267 ..> C_0017149840192841842787
 C_0006279482444175084267 ..> C_0005227273030995872898
 C_0000734777446487978569 <|-- C_0006279482444175084267
 C_0011250052154589645767 ..> C_0017149840192841842787
 C_0011250052154589645767 ..> C_0005227273030995872898
 C_0000734777446487978569 <|-- C_0011250052154589645767
+C_0010101945487096078154 ..> C_0017149840192841842787
+C_0010101945487096078154 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0010101945487096078154
 C_0002874891167610009768 ..> C_0017149840192841842787
 C_0002874891167610009768 ..> C_0005227273030995872898
 C_0000734777446487978569 <|-- C_0002874891167610009768
-C_0001279065520068563954 o-- C_0012397556205933868732 : -_fileSystems
+C_0009054822670205828333 ..> C_0017149840192841842787
+C_0009054822670205828333 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0009054822670205828333
+C_0004513185020093159945 ..> C_0017149840192841842787
+C_0004513185020093159945 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0004513185020093159945
+C_0016978127350543900368 ..> C_0017149840192841842787
+C_0016978127350543900368 ..> C_0005227273030995872898
+C_0000734777446487978569 <|-- C_0016978127350543900368
 C_0014904826619290153445 <|-- C_0007693094110734758389
 C_0001007711765235056436 ..> C_0014904826619290153445
 C_0001007711765235056436 ..> C_0007646493544420080876
