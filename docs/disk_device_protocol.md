@@ -251,6 +251,7 @@ Commands are encoded in the low 8 bits of `IORequest.command` (device masks to 8
 | `Info`         | `0x05` | Query slot status + geometry |
 | `ClearChanged` | `0x06` | Clear the slot “changed” flag |
 | `Create`       | `0x07` | Create a new image file (blank) |
+| `RestoreBoot`  | `0x0A` | Mount configured `boot.config_uri` into a slot |
 
 ### Slot numbering
 
@@ -469,6 +470,43 @@ u16 sectorSize     // LE (0 if unknown)
 u32 sectorCount    // LE (0 if unknown)
 u8  lastError      // disk::DiskError
 ```
+
+---
+
+## Command: RestoreBoot (0x0A)
+
+Mount the configured boot/config image into the requested runtime disk slot.
+This command uses `boot.config_uri` and the configured boot read-only policy; it
+does not accept a URI from the caller. Host tools use this to restore the
+platform config disk without hardcoding platform paths.
+
+The command mounts immediately and marks the slot changed. Host drivers may
+still need a local media-change/cache invalidation step so the client operating
+system rebuilds its local BPB or equivalent disk metadata.
+
+### Request
+
+```
+u8 version
+u8 slot
+```
+
+### Response payload (on `Ok`)
+
+Same shape as `Mount`:
+
+```
+u8  version
+u8  flags          // bit0=mounted, bit1=readonly_effective
+u16 reserved       // = 0
+u8  slot
+u8  type
+u16 sectorSize
+u32 sectorCount
+```
+
+Returns `NotReady` when no boot/config image has been configured for the
+running `DiskDevice`.
 
 ---
 

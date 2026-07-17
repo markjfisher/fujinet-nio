@@ -5,6 +5,8 @@
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/devices/virtual_device.h"
 
+#include <string>
+
 namespace fujinet::io {
 
 // DiskDevice: generic disk-image mount + sector read/write service (v1).
@@ -20,6 +22,8 @@ public:
     IOResponse handle(const IORequest& request) override;
     void poll() override {}
 
+    void configure_boot_mount(std::string configUri, bool readOnly);
+
     // Access to the underlying DiskService for config mount application
     disk::DiskService& disk_service() { return _svc; }
     const disk::DiskService& disk_service() const { return _svc; }
@@ -32,8 +36,9 @@ private:
 
     fs::StorageManager& _storage;
     disk::DiskService _svc;
+    std::string _bootConfigUri;
+    bool _bootReadOnly{true};
 };
 
 } // namespace fujinet::io
-
 

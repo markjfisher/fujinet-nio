@@ -82,6 +82,12 @@ DiskDevice::DiskDevice(fs::StorageManager& storage)
 {
 }
 
+void DiskDevice::configure_boot_mount(std::string configUri, bool readOnly)
+{
+    _bootConfigUri = std::move(configUri);
+    _bootReadOnly = readOnly;
+}
+
 IOResponse DiskDevice::handle(const IORequest& request)
 {
     const auto cmd = to_disk_command(request.command);
@@ -453,6 +459,61 @@ IOResponse DiskDevice::handle(const IORequest& request)
             diskproto::write_u8(out, 0);
             diskproto::write_u16le(out, 0);
             diskproto::write_u8(out, slot1);
+            resp.payload = std::move(out);
+            return resp;
+        }
+
+        case DiskCommand::RestoreBoot: {
+            std::uint8_t slot1 = 0;
+            if (!r.read_u8(slot1)) return make_base_response(request, StatusCode::InvalidRequest);
+
+            std::size_t idx = 0;
+            if (!parse_slot_1based(slot1, idx) || idx >= _svc.slot_count()) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+            if (_bootConfigUri.empty()) {
+                return make_base_response(request, StatusCode::NotReady);
+            }
+
+            std::string uriStr(_bootConfigUri);
+            HostState hostState(_storage);
+            if (!hostState.resolve_target(uriStr, uriStr, nullptr)) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+            auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
+            if (!fs || resolvedPath.empty()) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+
+            MountOptions opts{};
+            opts.readOnlyRequested = _bootReadOnly;
+
+            FN_LOGI(TAG,
+                    "Restore boot mount: slot=%u uri='%s' fs='%s' path='%s' readonly_requested=%d",
+                    static_cast<unsigned>(slot1),
+                    uriStr.c_str(),
+                    fs->name().c_str(),
+                    resolvedPath.c_str(),
+                    opts.readOnlyRequested ? 1 : 0);
+
+            DiskResult dr = _svc.mount(idx, fs->name(), resolvedPath, opts);
+            IOResponse resp = make_base_response(request, map_disk_error(dr.error));
+            if (resp.status != StatusCode::Ok) return resp;
+
+            const auto info = _svc.info(idx);
+            std::uint8_t flags = 0x01; // mounted
+            if (info.readOnly) flags |= 0x02;
+
+            std::vector<std::uint8_t> out;
+            out.reserve(1 + 1 + 2 + 1 + 1 + 2 + 4);
+            diskproto::write_u8(out, DISKPROTO_VERSION);
+            diskproto::write_u8(out, flags);
+            diskproto::write_u16le(out, 0);
+            diskproto::write_u8(out, slot1);
+            diskproto::write_u8(out, static_cast<std::uint8_t>(info.type));
+            diskproto::write_u16le(out, info.geometry.sectorSize);
+            diskproto::write_u32le(out, info.geometry.sectorCount);
+
             resp.payload = std::move(out);
             return resp;
         }

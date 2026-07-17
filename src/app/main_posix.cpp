@@ -213,6 +213,9 @@ int main()
             core.deviceManager().getDevice(diskDeviceId));
         if (diskDev) {
             constexpr std::size_t activeBootDiskUnit = 0;
+            if (config.boot.mode == fujinet::config::BootMode::Config) {
+                diskDev->configure_boot_mount(config.boot.configUri, config.boot.readOnly);
+            }
             std::size_t bootApplied = fujinet::apply_boot_mount(
                 diskDev->disk_service(),
                 core.storageManager(),

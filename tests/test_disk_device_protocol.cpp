@@ -320,6 +320,99 @@ TEST_CASE("DiskDevice v1: Info activates config pending mount and reports geomet
     CHECK(info.geometry.sectorCount == 2880);
 }
 
+TEST_CASE("DiskDevice v1: RestoreBoot mounts configured boot image over existing slot")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+
+    const std::string oldPath = "/disks/old.img";
+    auto& oldBytes = memfs->file_bytes(oldPath);
+    oldBytes.resize(2 * 256);
+    oldBytes[0] = 0x11;
+
+    const std::string bootPath = "/boot/autorun.img";
+    memfs->file_bytes(bootPath) = make_fat12_floppy_bytes();
+
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    {
+        fujinet::disk::MountOptions opts{};
+        opts.typeOverride = fujinet::disk::ImageType::Raw;
+        opts.sectorSizeHint = 256;
+        REQUIRE(dev.disk_service().mount(0, "mem", oldPath, opts).ok());
+        CHECK(dev.disk_service().info(0).geometry.sectorSize == 256);
+    }
+
+    dev.configure_boot_mount("mem:/boot/autorun.img", true);
+
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 1);
+
+    IORequest req{};
+    req.id = 5;
+    req.deviceId = deviceId;
+    req.command = 0x0A; // RestoreBoot
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+
+    diskproto::Reader r(resp.payload.data(), resp.payload.size());
+    std::uint8_t ver = 0, flags = 0, slot = 0, type = 0;
+    std::uint16_t reserved = 0, sectorSize = 0;
+    std::uint32_t sectorCount = 0;
+
+    REQUIRE(r.read_u8(ver));
+    REQUIRE(r.read_u8(flags));
+    REQUIRE(r.read_u16le(reserved));
+    REQUIRE(r.read_u8(slot));
+    REQUIRE(r.read_u8(type));
+    REQUIRE(r.read_u16le(sectorSize));
+    REQUIRE(r.read_u32le(sectorCount));
+
+    CHECK(ver == V);
+    CHECK((flags & 0x01) != 0);
+    CHECK((flags & 0x02) != 0);
+    CHECK(slot == 1);
+    CHECK(type == static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+    CHECK(sectorSize == 512);
+    CHECK(sectorCount == 2880);
+
+    auto info = dev.disk_service().info(0);
+    CHECK(info.inserted);
+    CHECK(info.readOnly);
+    CHECK(info.changed);
+    CHECK(info.geometry.sectorSize == 512);
+    CHECK(info.geometry.sectorCount == 2880);
+}
+
+TEST_CASE("DiskDevice v1: RestoreBoot without configured boot image is NotReady")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 1);
+
+    IORequest req{};
+    req.id = 6;
+    req.deviceId = deviceId;
+    req.command = 0x0A; // RestoreBoot
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    CHECK(resp.status == StatusCode::NotReady);
+}
+
 TEST_CASE("DiskDevice v1: Mount -> Info -> ReadSector -> WriteSector -> Close")
 {
     fujinet::fs::StorageManager sm;
