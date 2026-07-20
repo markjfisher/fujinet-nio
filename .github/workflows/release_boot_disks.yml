@@ -1,0 +1,137 @@
+name: Release boot disks
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to upload assets to"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  boot-disks:
+    runs-on: ubuntu-latest
+
+    env:
+      WORKSPACE_DIR: nio-workspace
+
+    steps:
+      - name: Checkout workspace
+        uses: actions/checkout@v4
+        with:
+          repository: markjfisher/fujinet-nio-workspace
+          path: ${{ env.WORKSPACE_DIR }}
+          submodules: false
+          fetch-depth: 0
+          token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
+
+      - name: Checkout release fujinet-nio revision
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.WORKSPACE_DIR }}/repos/fujinet-nio
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Checkout fujinet-nio-lib
+        uses: actions/checkout@v4
+        with:
+          repository: markjfisher/fujinet-nio-lib
+          path: ${{ env.WORKSPACE_DIR }}/repos/fujinet-nio-lib
+          fetch-depth: 0
+          token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
+
+      - name: Checkout nio-apps
+        uses: actions/checkout@v4
+        with:
+          repository: markjfisher/nio-apps
+          path: ${{ env.WORKSPACE_DIR }}/repos/nio-apps
+          fetch-depth: 0
+          token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
+
+      - name: Checkout fn-rom
+        uses: actions/checkout@v4
+        with:
+          repository: markjfisher/fn-rom
+          path: ${{ env.WORKSPACE_DIR }}/repos/fn-rom
+          fetch-depth: 0
+          token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
+
+      - name: Checkout cc65
+        uses: actions/checkout@v4
+        with:
+          repository: markjfisher/cc65
+          ref: bbc-clib
+          path: ${{ env.WORKSPACE_DIR }}/repos/cc65
+          fetch-depth: 0
+          token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            dosfstools \
+            g++ \
+            git \
+            mtools \
+            python3 \
+            python3-venv \
+            zip
+
+      - name: Build dir2atr
+        run: |
+          git clone --depth 1 https://github.com/HiassofT/AtariSIO.git /tmp/AtariSIO
+          make -C /tmp/AtariSIO/tools -f Makefile.posix
+          echo "/tmp/AtariSIO/tools" >> "$GITHUB_PATH"
+
+      - name: Build cc65
+        working-directory: ${{ env.WORKSPACE_DIR }}/repos/cc65
+        run: |
+          make -j"$(nproc)"
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Setup Open Watcom
+        uses: open-watcom/setup-watcom@v0
+
+      - name: Build boot disks
+        working-directory: ${{ env.WORKSPACE_DIR }}
+        run: |
+          ./scripts/build.sh boot-disks
+
+      - name: Stage release assets
+        working-directory: ${{ env.WORKSPACE_DIR }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          asset_tag="${tag//\//-}"
+          mkdir -p build/release-assets
+          cp repos/fujinet-nio/distfiles/boot/atari/autorun.atr \
+            "build/release-assets/fujinet-nio-${asset_tag}-boot-atari-autorun.atr"
+          cp repos/fujinet-nio/distfiles/boot/bbc/autorun.ssd \
+            "build/release-assets/fujinet-nio-${asset_tag}-boot-bbc-autorun.ssd"
+          cp repos/fujinet-nio/distfiles/boot/msdos/autorun.img \
+            "build/release-assets/fujinet-nio-${asset_tag}-boot-msdos-autorun.img"
+          (
+            cd build/release-assets
+            sha256sum * > "fujinet-nio-${asset_tag}-boot-disks.sha256"
+          )
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fujinet-nio-boot-disks-${{ github.event.release.tag_name || inputs.tag }}
+          path: ${{ env.WORKSPACE_DIR }}/build/release-assets/*
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        working-directory: ${{ env.WORKSPACE_DIR }}
+        run: |
+          gh release upload "$RELEASE_TAG" build/release-assets/* --clobber

@@ -28,6 +28,15 @@ CMakeFiles/
 
 # a file for dumping ideas and thoughts that shouldn't go into repo
 /docs/todo.txt
+/docs/plans-local/
+
+# generated boot/config disk images
+/distfiles/boot/**/*.atr
+/distfiles/boot/**/*.img
+/distfiles/boot/**/*.ssd
+/distfiles/esp32-data/boot/**/*.atr
+/distfiles/esp32-data/boot/**/*.img
+/distfiles/esp32-data/boot/**/*.ssd
 
 # IDE files
 .vscode/
