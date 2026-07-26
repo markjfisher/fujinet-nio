@@ -475,6 +475,12 @@ The POSIX app currently registers:
 - `ModemDevice` for modem-style network workflows (`ModemService`, 0xFB)
 - `HostService` for current host state and host history management (`HostService`, 0xF0)
 
+`FileDevice::ResolvePath (0x05)` is the pure path-resolution endpoint for host
+tools and constrained clients. It resolves a caller-supplied base URI plus path
+fragment through the shared resolver stack and returns a canonical URI together
+with a display-path string. Unlike HostService state mutation, ResolvePath does
+not update `current-host`, `current-display-path`, or host history.
+
 ### API
 
 ```cpp

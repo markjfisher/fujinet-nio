@@ -498,7 +498,7 @@ u8[] displayPath        // user-displayable path/context string
 
 ### Status codes
 
-- `Ok`: resolution succeeded and target metadata probe succeeded
+- `Ok`: resolution succeeded; `exists`/`isDir` flags reflect any target metadata the resolved filesystem can report
 - `InvalidRequest`: malformed payload or unsupported protocol version
 - `DeviceNotFound`: base URI or resolved URI could not be mapped to a registered filesystem
 - `IOError`: resolver succeeded but target metadata probing failed, including remote access rejection such as HTTP `403` or missing/unreadable targets
@@ -509,6 +509,7 @@ Notes:
 - The command keeps future resolver changes isolated to fujinet-nio instead of requiring ROM-side URI logic.
 - When `argLen==0`, the device should canonicalize the supplied full URI directly. This is the intended path for [`*FHOST`](../../bbc/fn-rom/src/commands/cmd_fhost.s) to populate both current URI and display path without ROM-side URI parsing.
 - `displayPath` should be only the human-facing in-filesystem path component, such as `/root/NEXT` or `/some/path`, regardless of scheme; the full scheme/authority remains in `resolvedUri`.
+- Canonical directory results may omit a trailing slash. Callers must treat `/bbc` and `/bbc/` as equivalent display contexts.
 
 ---
 

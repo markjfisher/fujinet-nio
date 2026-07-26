@@ -139,6 +139,17 @@ std::vector<std::uint8_t> make_mkdir_request(
     return payload;
 }
 
+std::vector<std::uint8_t> make_resolve_path_request(std::string_view base_uri, std::string_view arg)
+{
+    std::vector<std::uint8_t> payload;
+    append_u8(payload, kVersion);
+    append_u16le(payload, static_cast<std::uint16_t>(base_uri.size()));
+    payload.insert(payload.end(), base_uri.begin(), base_uri.end());
+    append_u16le(payload, static_cast<std::uint16_t>(arg.size()));
+    payload.insert(payload.end(), arg.begin(), arg.end());
+    return payload;
+}
+
 std::size_t list_entry_span_bytes(std::uint8_t name_len, bool compact)
 {
     return 2U + static_cast<std::size_t>(name_len) + (compact ? 0U : 16U);
@@ -780,6 +791,65 @@ TEST_CASE("FileDevice resolves persist URI through default persistent filesystem
     auto* flash = storage.get("flash");
     REQUIRE(flash != nullptr);
     CHECK_FALSE(flash->exists("/FujiNet/fe0c0101.key"));
+}
+
+TEST_CASE("FileDevice ResolvePath returns canonical URI and display path for tnfs target")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("tnfs")));
+
+    FileDevice device(storage);
+
+    auto* tnfs = storage.get("tnfs");
+    REQUIRE(tnfs != nullptr);
+    CHECK(tnfs->createDirectory("/bbc"));
+    {
+        auto f = tnfs->open("/bbc/bwc.ssd", "wb");
+        REQUIRE(f != nullptr);
+        CHECK(f->write("x", 1) == 1);
+    }
+
+    IORequest req{};
+    req.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
+    req.payload = make_resolve_path_request("tnfs://192.168.1.101/bbc/", "bwc.ssd");
+    const auto response = device.handle(req);
+
+    CHECK(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= 8);
+    CHECK(response.payload[0] == kVersion);
+    CHECK((response.payload[1] & 0x01U) == 0x00U);
+    CHECK((response.payload[1] & 0x02U) == 0x00U);
+
+    std::size_t off = 4;
+    const auto resolved = read_len_string(response.payload, off);
+    const auto display = read_len_string(response.payload, off);
+    CHECK(resolved == "tnfs://192.168.1.101/bbc/bwc.ssd");
+    CHECK(display == "/bbc/bwc.ssd");
+}
+
+TEST_CASE("FileDevice ResolvePath canonicalizes base URI when arg is empty")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("tnfs")));
+
+    FileDevice device(storage);
+
+    auto* tnfs = storage.get("tnfs");
+    REQUIRE(tnfs != nullptr);
+    CHECK(tnfs->createDirectory("/bbc"));
+
+    IORequest req{};
+    req.command = static_cast<std::uint16_t>(FileCommand::ResolvePath);
+    req.payload = make_resolve_path_request("tnfs://192.168.1.101/bbc/", "");
+    const auto response = device.handle(req);
+
+    CHECK(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= 8);
+    std::size_t off = 4;
+    const auto resolved = read_len_string(response.payload, off);
+    const auto display = read_len_string(response.payload, off);
+    CHECK(resolved == "tnfs://192.168.1.101/bbc");
+    CHECK(display == "/bbc");
 }
 
 TEST_CASE("FileDevice AppStore write/read/stat stores namespaced values on host filesystem")
