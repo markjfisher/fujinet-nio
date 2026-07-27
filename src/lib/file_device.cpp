@@ -383,7 +383,11 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
     using fujinet::io::protocol::list_directory::kListFlagFormattedLines;
     using fujinet::io::protocol::list_directory::kListFlagSortByName;
+    using fujinet::io::protocol::list_directory::kListLegacyMaxNameBytes;
+    using fujinet::io::protocol::list_directory::kListEntryFlagDirectory;
+    using fujinet::io::protocol::list_directory::kListEntryFlagNameTruncated;
     using fujinet::io::protocol::list_directory::kListResponseFlagFormatted;
+    using fujinet::io::protocol::list_directory::kListResponseFlagNameTruncated;
 
     auto resp = make_success_response(request);
 
@@ -409,11 +413,26 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
         }
     }
 
+    std::uint8_t maxNameBytes = kListLegacyMaxNameBytes;
+    if (r.remaining() > 0) {
+        if (!r.read_u8(maxNameBytes)) {
+            resp.status = StatusCode::InvalidRequest;
+            return resp;
+        }
+        if (maxNameBytes == 0) {
+            maxNameBytes = kListLegacyMaxNameBytes;
+        }
+    }
+
     const bool formatted = (listFlags & kListFlagFormattedLines) != 0;
     const bool compact = (listFlags & kListFlagCompactOmitMetadata) != 0;
     const bool sortName = (listFlags & kListFlagSortByName) != 0;
 
     if (formatted && compact) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+    if (!formatted && maxPayloadBytes < 2U + (compact ? 0U : 16U)) {
         resp.status = StatusCode::InvalidRequest;
         return resp;
     }
@@ -486,6 +505,7 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
 
     const std::size_t entriesStart = out.size();
     std::uint16_t returned = 0;
+    bool truncatedName = false;
 
     if (formatted) {
         for (std::size_t i = start; i < total; ++i) {
@@ -504,8 +524,12 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
             const auto& e = (*source)[i];
             const auto name = basename_sv(e.path);
 
-            const std::uint8_t nameLen =
-                static_cast<std::uint8_t>(std::min<std::size_t>(name.size(), 220));
+            const std::size_t entryOverhead = 2U + (compact ? 0U : 16U);
+            const std::size_t payloadNameLimit =
+                (maxPayloadBytes > entryOverhead) ? (maxPayloadBytes - entryOverhead) : 0U;
+            const std::uint8_t nameLen = static_cast<std::uint8_t>(
+                std::min<std::size_t>({name.size(), maxNameBytes, payloadNameLimit, kListLegacyMaxNameBytes}));
+            const bool entryNameTruncated = nameLen < name.size();
             const std::size_t entryBytes =
                 2U + static_cast<std::size_t>(nameLen) + (compact ? 0U : 16U);
             const std::size_t entriesUsed = out.size() - entriesStart;
@@ -513,7 +537,11 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
                 break;
             }
 
-            std::uint8_t eflags = e.isDirectory ? 0x01 : 0x00;
+            std::uint8_t eflags = e.isDirectory ? kListEntryFlagDirectory : 0x00;
+            if (entryNameTruncated) {
+                eflags |= kListEntryFlagNameTruncated;
+                truncatedName = true;
+            }
             fileproto::write_u8(out, eflags);
             fileproto::write_u8(out, nameLen);
             fileproto::write_bytes(out, name.data(), nameLen);
@@ -538,6 +566,9 @@ IOResponse FileDevice::handle_list_directory(const IORequest& request)
     }
     if (formatted) {
         flags |= kListResponseFlagFormatted;
+    }
+    if (truncatedName) {
+        flags |= kListResponseFlagNameTruncated;
     }
     out[1] = static_cast<char>(flags);
 

@@ -34,6 +34,8 @@ using fujinet::io::protocol::HostCommand;
 using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
 using fujinet::io::protocol::list_directory::kListFlagFormattedLines;
 using fujinet::io::protocol::list_directory::kListFlagSortByName;
+using fujinet::io::protocol::list_directory::kListEntryFlagNameTruncated;
+using fujinet::io::protocol::list_directory::kListResponseFlagNameTruncated;
 
 constexpr std::uint8_t kVersion = 1;
 constexpr std::size_t kListDirHeaderBytes = 10;
@@ -106,6 +108,18 @@ std::vector<std::uint8_t> make_list_request_with_flags(
 {
     auto payload = make_list_request(uri, start, max_payload_bytes);
     append_u8(payload, list_flags);
+    return payload;
+}
+
+std::vector<std::uint8_t> make_list_request_with_limits(
+    std::string_view uri,
+    std::uint16_t start,
+    std::uint16_t max_payload_bytes,
+    std::uint8_t list_flags,
+    std::uint8_t max_name_bytes)
+{
+    auto payload = make_list_request_with_flags(uri, start, max_payload_bytes, list_flags);
+    append_u8(payload, max_name_bytes);
     return payload;
 }
 
@@ -603,6 +617,34 @@ TEST_CASE("FileDevice ListDirectory respects maxPayloadBytes for long names")
     CHECK(first_list_entry_name(response.payload) == "short");
     CHECK((response.payload[1] & 0x01U) == 0x01U);
     CHECK(read_u16le(response.payload, 8) <= 30);
+}
+
+TEST_CASE("FileDevice ListDirectory maxNameBytes truncates names and guarantees progress")
+{
+    constexpr const char* kDir = "tnfs://server/ld-name-limit";
+    StorageManager storage;
+    auto fs = std::make_unique<MemoryFs>("tnfs");
+    fs->set_directory(kDir, {
+        FileInfo{std::string(kDir) + "/this_name_is_much_longer_than_the_client_window.ssd", false, 1, {}},
+        FileInfo{std::string(kDir) + "/second.ssd", false, 1, {}},
+    });
+    CHECK(storage.registerFileSystem(std::move(fs)));
+
+    FileDevice device(storage);
+    IORequest request{};
+    request.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
+    request.payload = make_list_request_with_limits(
+        kDir, 0, 32, kListFlagCompactOmitMetadata, 30);
+
+    const auto response = device.handle(request);
+    CHECK(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= kListDirHeaderBytes + 32);
+    CHECK(read_u16le(response.payload, 6) == 1);
+    CHECK(read_u16le(response.payload, 8) == 32);
+    CHECK((response.payload[1] & kListResponseFlagNameTruncated) == kListResponseFlagNameTruncated);
+    CHECK((response.payload[kListDirHeaderBytes] & kListEntryFlagNameTruncated) == kListEntryFlagNameTruncated);
+    CHECK(first_list_entry_name(response.payload) == "this_name_is_much_longer_than_");
+    CHECK((response.payload[1] & 0x01U) == 0x01U);
 }
 
 TEST_CASE("FileDevice ListDirectory caches listing and skips repeated filesystem reads")

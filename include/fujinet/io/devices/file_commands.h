@@ -18,8 +18,10 @@ enum class FileCommand : std::uint8_t {
 };
 
 // ListDirectory (0x02) request: after startIndex and maxPayloadBytes (u16le each), an
-// optional u8 `listFlags` is read if the payload is long enough. maxPayloadBytes limits the
-// variable entries blob in the response (complete entries only).
+// optional u8 `listFlags` is read if the payload is long enough, followed by an optional
+// u8 `maxNameBytes`. maxPayloadBytes limits the variable entries blob in the response
+// (complete entries only). maxNameBytes lets small clients request bounded display names;
+// zero or omitted means the legacy protocol ceiling.
 // Bit 0: compact — omit u64 size+mtime per entry (binary entries blob).
 // Bit 1: sort by basename (full directory is collected before paging).
 // Bit 2: formatted — entries blob is UTF-8 text lines (newline-terminated, whole lines only).
@@ -29,6 +31,10 @@ inline constexpr std::uint8_t kListFlagCompactOmitMetadata = 0x01U;
 inline constexpr std::uint8_t kListFlagSortByName        = 0x02U;
 inline constexpr std::uint8_t kListFlagFormattedLines    = 0x04U;
 inline constexpr std::uint8_t kListResponseFlagFormatted = 0x04U;
+inline constexpr std::uint8_t kListResponseFlagNameTruncated = 0x08U;
+inline constexpr std::uint8_t kListEntryFlagDirectory = 0x01U;
+inline constexpr std::uint8_t kListEntryFlagNameTruncated = 0x80U;
+inline constexpr std::uint8_t kListLegacyMaxNameBytes = 220U;
 } // namespace list_directory
 
 inline FileCommand to_file_command(std::uint16_t raw)
