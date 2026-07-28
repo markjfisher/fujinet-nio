@@ -6,11 +6,11 @@ Do not commit generated `.atr`, `.img`, or `.ssd` files from this directory.
 Generate them from the workspace boot-disk build tasks when packaging a local
 build or release.
 
-BBC FujiBus hosts use `bbc/autorun.ssd`; on ESP32 set:
+BBC FujiBus hosts use `bbc/FN-BOOT.ssd`; on ESP32 set:
 
 ```yaml
 boot:
   mode: config
-  config_uri: "flash:/boot/bbc/autorun.ssd"
+  config_uri: "flash:/boot/bbc/FN-BOOT.ssd"
   readonly: true
 ```

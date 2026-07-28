@@ -546,14 +546,14 @@ TEST_CASE("DiskDevice v1: BeginHostSession restores configured BBC SSD boot disk
     fujinet::fs::StorageManager sm;
     auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("host");
 
-    memfs->file_bytes("/boot/bbc/autorun.ssd") = make_ssd_bytes();
+    memfs->file_bytes("/boot/bbc/FN-BOOT.ssd") = make_ssd_bytes();
 
     REQUIRE(sm.registerFileSystem(std::move(memfs)));
 
     const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
 
     DiskDevice dev(sm);
-    dev.configure_boot_mount("host:/boot/bbc/autorun.ssd", true);
+    dev.configure_boot_mount("host:/boot/bbc/FN-BOOT.ssd", true);
 
     std::string p;
     diskproto::write_u8(p, V);

@@ -2,7 +2,7 @@ fujinet:
   device_name: fn-bbc
 boot:
   mode: config
-  config_uri: "persist:/boot/bbc/autorun.ssd"
+  config_uri: "persist:/boot/bbc/FN-BOOT.ssd"
   readonly: true
 wifi:
   enabled: false
