@@ -53,7 +53,6 @@ private:
                                          std::string_view uri,
                                          std::string_view mode,
                                          bool enabled);
-
     void load_config();
     void save_config();
 

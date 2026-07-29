@@ -236,17 +236,6 @@ int main()
             }
             FN_LOGI(TAG, "Applied %zu boot config mount", bootApplied);
 
-            std::size_t applied = !excludedRuntimeSlots.empty()
-                ? fujinet::apply_config_mounts_excluding(
-                    diskDev->disk_service(),
-                    core.storageManager(),
-                    config.mounts,
-                    excludedRuntimeSlots)
-                : fujinet::apply_config_mounts(
-                    diskDev->disk_service(),
-                    core.storageManager(),
-                    config.mounts);
-            FN_LOGI(TAG, "Applied %zu config mounts to disk slots", applied);
         } else {
             FN_LOGW(TAG, "Could not get DiskDevice to apply config mounts");
         }

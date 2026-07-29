@@ -191,16 +191,8 @@ clock:
     CHECK(cfg.wifi.ssid == "MyWiFi");
     CHECK(cfg.wifi.passphrase == "secret123");
 
-    REQUIRE(cfg.mounts.size() == 2);
-    CHECK(cfg.mounts[0].slot == 1);
-    CHECK(cfg.mounts[0].uri == "sd:/disks");
-    CHECK(cfg.mounts[0].mode == "rw");
-    CHECK(cfg.mounts[0].sectorSizeHint == 512);
-
-    CHECK(cfg.mounts[1].slot == 2);
-    CHECK(cfg.mounts[1].uri == "tnfs://fujinet.online/atari");
-    CHECK(cfg.mounts[1].mode == "r");
-    CHECK(cfg.mounts[1].sectorSizeHint == 0);
+    // Mount catalog state lives in AppStore and legacy YAML mounts are ignored.
+    CHECK(cfg.mounts.empty());
 
     CHECK(cfg.modem.enabled == true);
     CHECK(cfg.modem.snifferEnabled == true);
@@ -397,19 +389,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load")
     original.wifi.ssid = "RoundTripWiFi";
     original.wifi.passphrase = "secretpass";
 
-    MountConfig m1{};
-    m1.slot = 1;
-    m1.uri = "sd:/disks";
-    m1.mode = "rw";
-    m1.sectorSizeHint = 512;
-    original.mounts.push_back(m1);
-
-    MountConfig m2{};
-    m2.slot = 2;
-    m2.uri = "tnfs://server.example.com/atari";
-    m2.mode = "r";
-    original.mounts.push_back(m2);
-
     original.modem.enabled = true;
     original.modem.snifferEnabled = true;
     original.cpm.enabled = true;
@@ -562,7 +541,7 @@ devices:
     CHECK(cfg3.boot.mode == BootMode::Unknown);
 }
 
-TEST_CASE("YamlFujiConfigStoreFs: Multiple mounts")
+TEST_CASE("YamlFujiConfigStoreFs: Legacy id mounts are ignored")
 {
     auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
 
@@ -601,24 +580,10 @@ devices:
     YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg = store.load();
 
-    REQUIRE(cfg.mounts.size() == 3);
-
-    // Note: 'id' is no longer read from YAML, so slot will be 0 (unassigned)
-    // This test documents that 'id' in YAML is NOT supported - use 'slot' instead
-    CHECK(cfg.mounts[0].slot == 0);
-    CHECK(cfg.mounts[0].uri == "sd:/disks1");
-    CHECK(cfg.mounts[0].mode == "rw");
-
-    CHECK(cfg.mounts[1].slot == 0);
-    CHECK(cfg.mounts[1].uri == "tnfs://host2.com/atari2");
-    CHECK(cfg.mounts[1].mode == "r");
-
-    CHECK(cfg.mounts[2].slot == 0);
-    CHECK(cfg.mounts[2].uri == "tnfs://host2.com/atari3");
-    CHECK(cfg.mounts[2].mode == "rw");
+    CHECK(cfg.mounts.empty());
 }
 
-TEST_CASE("YamlFujiConfigStoreFs: Load config with new slot field")
+TEST_CASE("YamlFujiConfigStoreFs: Legacy slot mounts are ignored")
 {
     auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
 
@@ -661,23 +626,7 @@ devices:
     YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg = store.load();
 
-    REQUIRE(cfg.mounts.size() == 3);
-
-    // Check slot field
-    CHECK(cfg.mounts[0].slot == 1);
-    CHECK(cfg.mounts[0].uri == "sd:/disks/boot.atr");
-    CHECK(cfg.mounts[0].mode == "rw");
-    CHECK(cfg.mounts[0].enabled == true);
-
-    CHECK(cfg.mounts[1].slot == 2);
-    CHECK(cfg.mounts[1].uri == "tnfs://192.168.1.100:16384/atari/games.atr");
-    CHECK(cfg.mounts[1].mode == "r");
-    CHECK(cfg.mounts[1].enabled == true);
-
-    CHECK(cfg.mounts[2].slot == 3);
-    CHECK(cfg.mounts[2].uri == "host:/images/data.atr");
-    CHECK(cfg.mounts[2].mode == "rw");
-    CHECK(cfg.mounts[2].enabled == false);
+    CHECK(cfg.mounts.empty());
 }
 
 TEST_CASE("MountConfig: effective_slot")
@@ -945,18 +894,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Round-trip save and load with ptyPath")
     original.wifi.enabled = true;
     original.wifi.ssid = "RoundTripWiFi";
     original.wifi.passphrase = "secretpass";
-
-    MountConfig m1{};
-    m1.slot = 1;
-    m1.uri = "sd:/disks";
-    m1.mode = "rw";
-    original.mounts.push_back(m1);
-
-    MountConfig m2{};
-    m2.slot = 2;
-    m2.uri = "tnfs://server.example.com/atari";
-    m2.mode = "r";
-    original.mounts.push_back(m2);
 
     original.modem.enabled = true;
     original.modem.snifferEnabled = true;

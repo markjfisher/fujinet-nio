@@ -26,7 +26,6 @@ public:
 
     void configure_boot_mount(std::string configUri, bool readOnly);
     std::vector<std::size_t> restore_runtime_mounts();
-
     // Access to the underlying DiskService for config mount application
     disk::DiskService& disk_service() { return _svc; }
     const disk::DiskService& disk_service() const { return _svc; }

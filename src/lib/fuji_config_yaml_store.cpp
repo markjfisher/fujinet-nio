@@ -219,15 +219,6 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
         from_yaml(n, cfg.wifi);
     }
 
-    if (auto mounts = root["mounts"]; mounts && mounts.IsSequence()) {
-        cfg.mounts.clear();
-        for (const auto& mn : mounts) {
-            MountConfig mc{};
-            from_yaml(mn, mc);
-            cfg.mounts.push_back(std::move(mc));
-        }
-    }
-
     if (auto devs = root["devices"]) {
         if (auto n = devs["modem"])   from_yaml(n, cfg.modem);
         if (auto n = devs["cpm"])     from_yaml(n, cfg.cpm);
@@ -271,23 +262,6 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     out << YAML::Key << "ssid"       << YAML::Value << cfg.wifi.ssid;
     out << YAML::Key << "passphrase" << YAML::Value << cfg.wifi.passphrase;
     out << YAML::EndMap;
-
-    // mounts:
-    out << YAML::Key << "mounts" << YAML::Value << YAML::BeginSeq;
-    for (const auto& m : cfg.mounts) {
-        out << YAML::BeginMap;
-        if (m.slot >= 1 && m.slot <= 8) {
-            out << YAML::Key << "slot" << YAML::Value << m.slot;
-        }
-        out << YAML::Key << "uri"     << YAML::Value << m.uri;
-        out << YAML::Key << "mode"    << YAML::Value << m.mode;
-        out << YAML::Key << "enabled" << YAML::Value << m.enabled;
-        if (m.sectorSizeHint != 0) {
-            out << YAML::Key << "sector_size_hint" << YAML::Value << m.sectorSizeHint;
-        }
-        out << YAML::EndMap;
-    }
-    out << YAML::EndSeq;
 
     // devices:
     out << YAML::Key << "devices" << YAML::Value << YAML::BeginMap;

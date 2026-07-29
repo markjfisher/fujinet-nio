@@ -304,6 +304,15 @@ IOResponse DiskDevice::handle(const IORequest& request)
                 return make_base_response(request, StatusCode::InvalidRequest);
             }
 
+            if ((flags & 0x02) != 0) {
+                const std::string mode = opts.readOnlyRequested ? "r" : "rw";
+                _svc.set_pending_mount(idx, uriStr, mode, true, sectorHint);
+                set_runtime_mount(idx, RuntimeMountState{uriStr, mode, sectorHint});
+                IOResponse resp = make_success_response(request);
+                resp.payload = {DISKPROTO_VERSION, 0, 0, 0, slot1, 0, 0, 0, 0, 0, 0, 0};
+                return resp;
+            }
+
             FN_LOGI(TAG,
                     "Mount request: slot=%u uri='%s' fs='%s' path='%s' readonly_requested=%d type=%u sector_hint=%u",
                     static_cast<unsigned>(slot1),

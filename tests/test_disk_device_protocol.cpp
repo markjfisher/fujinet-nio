@@ -479,6 +479,35 @@ TEST_CASE("DiskDevice v1: mounted runtime state restores as pending in a new dev
     CHECK(restored.disk_service().info(0).geometry.sectorSize == 512);
 }
 
+TEST_CASE("DiskDevice v1: lazy mount flag stages URI without opening the image")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("host");
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 8);
+    diskproto::write_u8(p, 0x03); // read-only + lazy
+    diskproto::write_u8(p, 0);
+    diskproto::write_u16le(p, 0);
+    diskproto::write_lp_u16_string(p, "host:/images/not-opened-yet.ssd");
+
+    IORequest req{};
+    req.deviceId = to_device_id(WireDeviceId::DiskService);
+    req.command = 0x01;
+    req.payload = to_vec(p);
+
+    const IOResponse resp = dev.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+    CHECK_FALSE(dev.disk_service().info(7).inserted);
+    const auto pending = dev.disk_service().get_pending_mount(7);
+    REQUIRE(pending.has_value());
+    CHECK(pending->uri == "host:/images/not-opened-yet.ssd");
+    CHECK(pending->mode == "r");
+}
+
 TEST_CASE("DiskDevice v1: BeginHostSession clears runtime state and restores boot disk")
 {
     fujinet::fs::StorageManager sm;
