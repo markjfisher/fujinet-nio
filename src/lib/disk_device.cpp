@@ -75,6 +75,21 @@ static bool parse_slot_1based(std::uint8_t slot1, std::size_t& outIdx) noexcept
     return true;
 }
 
+static std::string format_runtime_mount_line(
+    std::size_t slotIndex,
+    const std::string& uri,
+    const std::string& mode
+) {
+    std::string line;
+    line.reserve(uri.size() + 20);
+    line += std::to_string(slotIndex);
+    line += ": ";
+    line += (mode == "r" || mode == "ro") ? "RO " : "AUTO ";
+    line += uri;
+    line.push_back('\n');
+    return line;
+}
+
 DiskDevice::DiskDevice(fs::StorageManager& storage, disk::ImageRegistry registry)
     : _storage(storage)
     , _svc(storage, std::move(registry))
@@ -766,6 +781,93 @@ IOResponse DiskDevice::handle(const IORequest& request)
             diskproto::write_u8(out, static_cast<std::uint8_t>(info.type));
             diskproto::write_u16le(out, info.geometry.sectorSize);
             diskproto::write_u32le(out, info.geometry.sectorCount);
+            resp.payload = std::move(out);
+            return resp;
+        }
+
+        case DiskCommand::ListMounts: {
+            std::uint8_t flags = 0;
+            std::uint16_t firstSlot = 0;
+            std::uint16_t lastSlot = 0;
+            std::uint16_t startIndex = 0;
+            std::uint16_t maxPayloadBytes = 0;
+            if (!r.read_u8(flags) ||
+                !r.read_u16le(firstSlot) ||
+                !r.read_u16le(lastSlot) ||
+                !r.read_u16le(startIndex) ||
+                !r.read_u16le(maxPayloadBytes) ||
+                r.remaining() != 0 ||
+                (flags & 0x01U) == 0 ||
+                maxPayloadBytes == 0) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+
+            struct ActiveMount {
+                std::size_t slotIndex;
+                std::string uri;
+                std::string mode;
+            };
+            std::vector<ActiveMount> active;
+            active.reserve(_runtimeMounts.size());
+            const bool allSlots = firstSlot == 0 && lastSlot == 0;
+            if (!allSlots && (firstSlot > lastSlot || lastSlot >= _runtimeMounts.size())) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+            for (std::size_t i = 0; i < _runtimeMounts.size(); ++i) {
+                if (!allSlots && (i < firstSlot || i > lastSlot)) continue;
+
+                if (_runtimeMounts[i] && !_runtimeMounts[i]->uri.empty()) {
+                    active.push_back(ActiveMount{
+                        i, _runtimeMounts[i]->uri, _runtimeMounts[i]->mode});
+                    continue;
+                }
+                if (const auto pending = _svc.get_pending_mount(i);
+                    pending && !pending->uri.empty()) {
+                    active.push_back(ActiveMount{i, pending->uri, pending->mode});
+                    continue;
+                }
+
+                const auto info = _svc.info(i);
+                if (!info.inserted || info.path.empty()) continue;
+                std::string uri = info.path;
+                if (uri.find(':') == std::string::npos && !info.fsName.empty()) {
+                    uri = info.fsName + ":" + uri;
+                }
+                active.push_back(ActiveMount{
+                    i, std::move(uri), info.readOnly ? "r" : "rw"});
+            }
+
+            const std::size_t start = std::min<std::size_t>(startIndex, active.size());
+            std::vector<std::uint8_t> data;
+            data.reserve(maxPayloadBytes);
+            std::uint16_t entryCount = 0;
+            for (std::size_t i = start; i < active.size(); ++i) {
+                const std::string line = format_runtime_mount_line(
+                    active[i].slotIndex, active[i].uri, active[i].mode);
+                if (line.size() > maxPayloadBytes) {
+                    return make_base_response(request, StatusCode::InvalidRequest);
+                }
+                if (data.size() + line.size() > maxPayloadBytes) break;
+                data.insert(data.end(), line.begin(), line.end());
+                ++entryCount;
+            }
+
+            const bool more = start + entryCount < active.size();
+            IOResponse resp = make_success_response(request);
+            std::vector<std::uint8_t> out;
+            out.reserve(10 + data.size());
+            diskproto::write_u8(out, DISKPROTO_VERSION);
+            diskproto::write_u8(
+                out, static_cast<std::uint8_t>(0x02U | (more ? 0x01U : 0x00U)));
+            diskproto::write_u16le(
+                out,
+                active.empty()
+                    ? 0U
+                    : static_cast<std::uint16_t>(active.front().slotIndex));
+            diskproto::write_u16le(out, startIndex);
+            diskproto::write_u16le(out, entryCount);
+            diskproto::write_u16le(out, static_cast<std::uint16_t>(data.size()));
+            out.insert(out.end(), data.begin(), data.end());
             resp.payload = std::move(out);
             return resp;
         }

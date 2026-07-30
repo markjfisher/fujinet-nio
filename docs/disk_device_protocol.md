@@ -255,6 +255,7 @@ Commands are encoded in the low 8 bits of `IORequest.command` (device masks to 8
 | `RestoreBoot`  | `0x0A` | Mount configured `boot.config_uri` into a slot |
 | `BeginHostSession` | `0x0B` | Start a new host-side session and restore the configured boot disk |
 | `Reinitialize` | `0x0C` | Recreate the image mounted in a slot with new geometry and remount it |
+| `ListMounts` | `0x0D` | Page through active runtime disk-unit mappings |
 
 `Reinitialize` is a destructive image operation, not a machine-specific
 filesystem formatter. It retains the active slot's filesystem URI, image type,
@@ -274,6 +275,36 @@ u32 sector_count
 The slot must already contain writable mounted media. The response uses the
 same mounted-image summary fields as `Mount`: version, flags, slot, image type,
 sector size, and sector count.
+
+`ListMounts` reports DiskDevice runtime mappings, including restored lazy
+mappings, rather than the obsolete `fujinet.yaml` mount list. Its request is:
+
+```
+u8  version
+u8  flags              // bit0 = formatted text
+u16 first_unit         // 0 with last_unit=0 means all active units
+u16 last_unit
+u16 start_index
+u16 max_payload_bytes
+```
+
+The formatted response is:
+
+```
+u8  version
+u8  flags              // bit0=more; bit1=formatted
+u16 first_unit
+u16 start_index
+u16 entry_count
+u16 entries_len
+u8  entries[entries_len]
+```
+
+Each formatted entry is one newline-terminated
+`<unit>: <RO|AUTO> <uri>` line. Empty runtime state returns a valid response
+with zero entries and zero data bytes. These runtime unit labels are 0-based;
+the 1-based slot rule below applies to commands whose request contains a
+singular `slot` field.
 
 ### Slot numbering
 

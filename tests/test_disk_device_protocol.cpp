@@ -496,6 +496,73 @@ TEST_CASE("DiskDevice v1: mounted runtime state restores as pending in a new dev
     CHECK(restored.disk_service().info(0).geometry.sectorSize == 512);
 }
 
+TEST_CASE("DiskDevice v1: ListMounts reports only active runtime mappings")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    memfs->file_bytes("/chuck.ssd") = make_ssd_bytes();
+    memfs->file_bytes("/bwc.ssd") = make_ssd_bytes();
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
+
+    auto list_mounts = [&]() {
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, 0x01); // formatted
+        diskproto::write_u16le(p, 0);
+        diskproto::write_u16le(p, 0);
+        diskproto::write_u16le(p, 0);
+        diskproto::write_u16le(p, 220);
+
+        IORequest req{};
+        req.id = 30;
+        req.deviceId = deviceId;
+        req.command = 0x0D; // ListMounts
+        req.payload = to_vec(p);
+        return dev.handle(req);
+    };
+
+    const auto empty = list_mounts();
+    REQUIRE(empty.status == StatusCode::Ok);
+    REQUIRE(empty.payload.size() == 10);
+    CHECK(empty.payload[0] == V);
+    CHECK(empty.payload[1] == 0x02);
+    CHECK(empty.payload[6] == 0);
+    CHECK(empty.payload[8] == 0);
+
+    auto mount = [&](std::uint8_t slot, const char* uri) {
+        std::string p;
+        diskproto::write_u8(p, V);
+        diskproto::write_u8(p, slot);
+        diskproto::write_u8(p, 0);
+        diskproto::write_u8(
+            p, static_cast<std::uint8_t>(fujinet::disk::ImageType::Ssd));
+        diskproto::write_u16le(p, 0);
+        diskproto::write_lp_u16_string(p, uri);
+
+        IORequest req{};
+        req.id = slot;
+        req.deviceId = deviceId;
+        req.command = 0x01;
+        req.payload = to_vec(p);
+        return dev.handle(req);
+    };
+
+    REQUIRE(mount(1, "mem:/chuck.ssd").status == StatusCode::Ok);
+    REQUIRE(mount(2, "mem:/bwc.ssd").status == StatusCode::Ok);
+
+    const auto listed = list_mounts();
+    REQUIRE(listed.status == StatusCode::Ok);
+    REQUIRE(listed.payload.size() >= 10);
+    CHECK(listed.payload[0] == V);
+    CHECK(listed.payload[1] == 0x02);
+    CHECK(listed.payload[6] == 2);
+    const std::string text(listed.payload.begin() + 10, listed.payload.end());
+    CHECK(text == "0: AUTO mem:/chuck.ssd\n1: AUTO mem:/bwc.ssd\n");
+}
+
 TEST_CASE("DiskDevice v1: lazy mount flag stages URI without opening the image")
 {
     fujinet::fs::StorageManager sm;
