@@ -142,7 +142,9 @@ static std::uint64_t to_unix_seconds(std::chrono::system_clock::time_point tp)
 }
 
 FileDevice::FileDevice(StorageManager& storage)
-    : _storage(storage)
+    : _storage(storage),
+      _appStore(storage),
+      _slotCatalog(_appStore)
 {}
 
 IOResponse FileDevice::handle(const IORequest& request)
@@ -172,6 +174,8 @@ IOResponse FileDevice::handle(const IORequest& request)
             return handle_app_store_delete(request);
         case protocol::FileCommand::AppStoreList:
             return handle_app_store_list(request);
+        case protocol::FileCommand::SlotCatalogRange:
+            return handle_slot_catalog_range(request);
         default:
             return make_base_response(request, StatusCode::Unsupported);
     }
@@ -807,14 +811,13 @@ IOResponse FileDevice::handle_app_store_stat(const IORequest& request)
         return resp;
     }
 
-    AppStore store(_storage);
-    if (!store.available()) {
+    if (!_appStore.available()) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     AppStore::Stat st{};
-    if (!store.stat(p.ns, p.key, st)) {
+    if (!_appStore.stat(p.ns, p.key, st)) {
         resp.status = StatusCode::IOError;
         return resp;
     }
@@ -848,14 +851,13 @@ IOResponse FileDevice::handle_app_store_read(const IORequest& request)
         return resp;
     }
 
-    AppStore store(_storage);
-    if (!store.available()) {
+    if (!_appStore.available()) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     AppStore::ReadResult result{};
-    if (!store.read(p.ns, p.key, offset, max_bytes, result)) {
+    if (!_appStore.read(p.ns, p.key, offset, max_bytes, result)) {
         resp.status = StatusCode::IOError;
         return resp;
     }
@@ -902,17 +904,17 @@ IOResponse FileDevice::handle_app_store_write(const IORequest& request)
         return resp;
     }
 
-    AppStore store(_storage);
-    if (!store.available()) {
+    if (!_appStore.available()) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     AppStore::WriteResult result{};
-    if (!store.write(p.ns, p.key, offset, data, data_len, result)) {
+    if (!_appStore.write(p.ns, p.key, offset, data, data_len, result)) {
         resp.status = StatusCode::IOError;
         return resp;
     }
+    _slotCatalog.note_write(p.ns, p.key);
 
     std::string out;
     out.reserve(1 + 1 + 2 + 4 + 2);
@@ -936,17 +938,17 @@ IOResponse FileDevice::handle_app_store_delete(const IORequest& request)
         return resp;
     }
 
-    AppStore store(_storage);
-    if (!store.available()) {
+    if (!_appStore.available()) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     AppStore::DeleteResult result{};
-    if (!store.remove(p.ns, p.key, result)) {
+    if (!_appStore.remove(p.ns, p.key, result)) {
         resp.status = StatusCode::IOError;
         return resp;
     }
+    _slotCatalog.note_delete(p.ns, p.key);
 
     std::string out;
     out.reserve(1 + 1 + 2);
@@ -975,14 +977,13 @@ IOResponse FileDevice::handle_app_store_list(const IORequest& request)
         return resp;
     }
 
-    AppStore store(_storage);
-    if (!store.available()) {
+    if (!_appStore.available()) {
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
 
     AppStore::ListResult result{};
-    if (!store.list(p.ns, start_index, max_payload_bytes, result)) {
+    if (!_appStore.list(p.ns, start_index, max_payload_bytes, result)) {
         resp.status = StatusCode::IOError;
         return resp;
     }
@@ -1006,6 +1007,81 @@ IOResponse FileDevice::handle_app_store_list(const IORequest& request)
     out[keys_len_pos + 0] = static_cast<char>(keys_len & 0xFF);
     out[keys_len_pos + 1] = static_cast<char>((keys_len >> 8) & 0xFF);
 
+    resp.payload.assign(out.begin(), out.end());
+    return resp;
+}
+
+IOResponse FileDevice::handle_slot_catalog_range(const IORequest& request)
+{
+    auto resp = make_success_response(request);
+    Reader r(request.payload.data(), request.payload.size());
+    std::uint8_t version = 0;
+    std::uint8_t lower = 0;
+    std::uint8_t upper = 0;
+    std::uint8_t cursor = 0;
+    std::uint8_t flags = 0;
+    std::uint8_t max_uri_bytes = 0;
+    std::uint16_t max_payload_bytes = 0;
+    if (!r.read_u8(version) || version != FILEPROTO_VERSION ||
+        !r.read_u8(lower) || !r.read_u8(upper) || !r.read_u8(cursor) ||
+        !r.read_u8(flags) || !r.read_u8(max_uri_bytes) ||
+        !r.read_u16le(max_payload_bytes) || r.remaining() != 0 ||
+        (flags & ~(protocol::slot_catalog::kRequestTailUri |
+                   protocol::slot_catalog::kRequestFormatted)) != 0) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+    if (!_appStore.available()) {
+        resp.status = StatusCode::DeviceNotFound;
+        return resp;
+    }
+
+    SlotCatalog::RangeResult result{};
+    if (!_slotCatalog.range(lower, upper, cursor, flags, max_uri_bytes,
+                            max_payload_bytes, result)) {
+        resp.status = StatusCode::InvalidRequest;
+        return resp;
+    }
+
+    std::string out;
+    out.reserve(7 + result.presence.size());
+    fileproto::write_u8(out, FILEPROTO_VERSION);
+    std::uint8_t response_flags =
+        result.more ? protocol::slot_catalog::kResponseMore : 0;
+    if ((flags & protocol::slot_catalog::kRequestFormatted) != 0) {
+        response_flags |= protocol::slot_catalog::kResponseFormatted;
+    }
+    fileproto::write_u8(out, response_flags);
+    fileproto::write_u8(out, result.nextIndex);
+    fileproto::write_u8(out, static_cast<std::uint8_t>(result.presence.size()));
+    fileproto::write_u8(out, static_cast<std::uint8_t>(result.entries.size()));
+    const std::size_t entries_len_pos = out.size();
+    fileproto::write_u16le(out, 0);
+    if (!result.presence.empty()) {
+        fileproto::write_bytes(out, result.presence.data(), result.presence.size());
+    }
+    const std::size_t entries_start = out.size();
+    for (const auto& entry : result.entries) {
+        if ((flags & protocol::slot_catalog::kRequestFormatted) != 0) {
+            out += std::to_string(entry.index);
+            out += ": ";
+            if ((entry.flags & protocol::slot_catalog::kEntryValid) != 0) {
+                out += entry.uri;
+            } else {
+                out += "<invalid>";
+            }
+            out.push_back('\n');
+        } else {
+            fileproto::write_u8(out, entry.index);
+            fileproto::write_u8(out, entry.flags);
+            fileproto::write_u8(out, static_cast<std::uint8_t>(entry.uri.size()));
+            fileproto::write_bytes(out, entry.uri.data(), entry.uri.size());
+        }
+    }
+    const auto entries_len =
+        static_cast<std::uint16_t>(out.size() - entries_start);
+    out[entries_len_pos] = static_cast<char>(entries_len & 0xFFU);
+    out[entries_len_pos + 1] = static_cast<char>((entries_len >> 8U) & 0xFFU);
     resp.payload.assign(out.begin(), out.end());
     return resp;
 }

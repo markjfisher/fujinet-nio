@@ -74,6 +74,7 @@ Command IDs (initial set):
 | `AppStoreWrite` | `0x22` | Write bytes to an application storage key |
 | `AppStoreDelete` | `0x23` | Delete an application storage key |
 | `AppStoreList`  | `0x24` | List keys in an application storage namespace |
+| `SlotCatalogRange` | `0x25` | Read a sparse range of config-nio slots |
 
 (IDs are intentionally compact to allow use by 8-bit transports.)
 
@@ -236,6 +237,65 @@ repeat keyCount times:
 ```
 
 Keys are returned sorted by key bytes. Only whole keys are encoded; if `maxPayloadBytes` is too small for the next key, the response returns the keys that fit and sets `more` when additional keys remain.
+
+---
+
+## SlotCatalogRange (0x25)
+
+This is a read-only, batched view of the sparse `config-nio/slot-NNN`
+AppStore keys described in [Slot catalogue and active disk
+mounts](slot_state.md). AppStore is the persistent source of truth; the device
+uses a rebuildable in-memory occupancy bitmap to avoid probing all 256 keys for
+each request.
+
+Request:
+
+```
+u8   version             // = 1
+u8   lower               // first index in inclusive range
+u8   upper               // last index in inclusive range; >= lower
+u8   cursor              // first index to consider; lower..upper
+u8   flags               // bit0=return URI tail, bit1=formatted text
+u8   maxUriBytes         // 1..255; per-entry URI limit
+u16  maxPayloadBytes     // LE; maximum response size after the header
+```
+
+Response:
+
+```
+u8   version             // = 1
+u8   flags               // bit0=more, bit1=formatted text
+u8   nextIndex           // continuation cursor when more is set
+u8   presenceLen
+u8   entryCount
+u16  entriesLen          // LE
+u8[] presence            // one bit per index in lower..upper
+u8[] entries
+```
+
+The presence bitmap always describes the complete requested range; bit zero of
+its first byte represents `lower`. Empty indexes have no entry record.
+Responses contain only complete entries. If another populated entry remains
+after the response budget is exhausted, `more` is set and the client repeats
+the request with `cursor=nextIndex`.
+
+Without the formatted flag, each entry is:
+
+```
+u8   index
+u8   flags               // bit0=valid, bit1=read-only, bit2=URI truncated
+u8   uriLen
+u8[] uri
+```
+
+With the formatted flag, `entries` is printable text containing one
+`<index>: <uri>\n` line per populated entry. This form lets small CLI utilities
+stream catalogue output without storing or formatting URIs locally.
+
+The URI-tail flag keeps the rightmost `maxUriBytes` bytes when truncation is
+needed; otherwise truncation keeps the leftmost bytes. Invalid stored values
+are represented by an entry without the valid flag (or as `<invalid>` in
+formatted output).
 
 ---
 

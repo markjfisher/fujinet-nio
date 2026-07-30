@@ -1364,6 +1364,7 @@ enum class FileCommand : std::uint8_t {
     AppStoreWrite  = 0x22,
     AppStoreDelete = 0x23,
     AppStoreList   = 0x24,
+    SlotCatalogRange = 0x25,
 };
 
 inline FileCommand to_file_command(std::uint16_t raw)
@@ -1401,10 +1402,17 @@ App-store data is implemented by `AppStore`, backed by `StorageManager`, and is
 also exposed through a diagnostic provider for listing, reading, deleting, and
 other administrative workflows.
 
+The slot catalogue remains sparse AppStore state. `SlotCatalog` adds a
+read-only range projection with a lazy, rebuildable 32-byte occupancy bitmap,
+so 8-bit clients can retrieve display pages or enumerate populated slots
+without issuing one file request per possible index. Active DiskDevice mounts
+remain a separate, bounded runtime concern.
+
 Related docs:
 
 - [`docs/file_device_protocol.md`](file_device_protocol.md)
 - [`docs/host_service_protocol.md`](host_service_protocol.md)
+- [`docs/slot_state.md`](slot_state.md)
 
 ---
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "fujinet/io/devices/virtual_device.h"
+#include "fujinet/io/devices/app_store.h"
+#include "fujinet/io/devices/slot_catalog.h"
 #include "fujinet/fs/storage_manager.h"
 
 namespace fujinet::io {
@@ -14,6 +16,8 @@ public:
 
 private:
     fs::StorageManager& _storage;
+    AppStore _appStore;
+    SlotCatalog _slotCatalog;
 
     IOResponse handle_stat(const IORequest& request);
     IOResponse handle_list_directory(const IORequest& request);
@@ -26,6 +30,7 @@ private:
     IOResponse handle_app_store_write(const IORequest& request);
     IOResponse handle_app_store_delete(const IORequest& request);
     IOResponse handle_app_store_list(const IORequest& request);
+    IOResponse handle_slot_catalog_range(const IORequest& request);
 };
 
 } // namespace fujinet::io

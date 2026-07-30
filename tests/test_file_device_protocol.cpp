@@ -228,6 +228,25 @@ std::vector<std::uint8_t> make_app_store_list_request(
     return payload;
 }
 
+std::vector<std::uint8_t> make_slot_catalog_range_request(
+    std::uint8_t lower,
+    std::uint8_t upper,
+    std::uint8_t cursor,
+    std::uint8_t flags,
+    std::uint8_t max_uri_bytes,
+    std::uint16_t max_payload_bytes)
+{
+    std::vector<std::uint8_t> payload;
+    append_u8(payload, kVersion);
+    append_u8(payload, lower);
+    append_u8(payload, upper);
+    append_u8(payload, cursor);
+    append_u8(payload, flags);
+    append_u8(payload, max_uri_bytes);
+    append_u16le(payload, max_payload_bytes);
+    return payload;
+}
+
 std::vector<std::uint8_t> make_host_set_request(std::string_view spec)
 {
     std::vector<std::uint8_t> payload;
@@ -1028,6 +1047,140 @@ TEST_CASE("FileDevice AppStore reports missing keys without hard failure")
     CHECK((read_response.payload[1] & 0x01U) == 0x01U);
     CHECK((read_response.payload[1] & 0x02U) == 0);
     CHECK(read_u16le(read_response.payload, 8) == 0);
+}
+
+TEST_CASE("FileDevice slot catalogue returns sparse ranges and URI tails")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    FileDevice device(storage);
+
+    IORequest write{};
+    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    std::string record{"\x01\x01", 2};
+    record += "tnfs://server/archive/games/elite.ssd";
+    write.payload = make_app_store_write_request("config-nio", "slot-020", 0, record);
+    CHECK(device.handle(write).status == StatusCode::Ok);
+    write.payload = make_app_store_write_request(
+        "config-nio", "slot-022", 0, std::string{"\x01\x00host:/dev.ssd", 15});
+    CHECK(device.handle(write).status == StatusCode::Ok);
+
+    IORequest range{};
+    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.payload = make_slot_catalog_range_request(
+        16, 23, 16, fujinet::io::protocol::slot_catalog::kRequestTailUri, 12, 128);
+    const auto response = device.handle(range);
+    CHECK(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= 8);
+    CHECK((response.payload[1] & fujinet::io::protocol::slot_catalog::kResponseMore) == 0);
+    CHECK(response.payload[3] == 1);
+    CHECK(response.payload[4] == 2);
+    CHECK(response.payload[7] == 0x50);
+
+    std::size_t offset = 8;
+    CHECK(response.payload[offset++] == 20);
+    CHECK((response.payload[offset] &
+           fujinet::io::protocol::slot_catalog::kEntryValid) != 0);
+    CHECK((response.payload[offset] &
+           fujinet::io::protocol::slot_catalog::kEntryReadOnly) != 0);
+    CHECK((response.payload[offset++] &
+           fujinet::io::protocol::slot_catalog::kEntryUriTruncated) != 0);
+    const auto uri_len = response.payload[offset++];
+    CHECK(std::string(response.payload.begin() + static_cast<std::ptrdiff_t>(offset),
+                      response.payload.begin() + static_cast<std::ptrdiff_t>(offset + uri_len)) ==
+          "es/elite.ssd");
+}
+
+TEST_CASE("FileDevice slot catalogue cache follows writes and deletes")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    FileDevice device(storage);
+
+    IORequest range{};
+    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.payload = make_slot_catalog_range_request(64, 71, 64, 0, 128, 220);
+    auto response = device.handle(range);
+    REQUIRE(response.payload.size() >= 8);
+    CHECK(response.payload[7] == 0);
+
+    IORequest write{};
+    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.payload = make_app_store_write_request(
+        "config-nio", "slot-069", 0, std::string{"\x01\x00host:/elite.ssd", 17});
+    CHECK(device.handle(write).status == StatusCode::Ok);
+
+    response = device.handle(range);
+    REQUIRE(response.payload.size() >= 8);
+    CHECK(response.payload[7] == 0x20);
+    CHECK(response.payload[4] == 1);
+
+    IORequest del{};
+    del.command = static_cast<std::uint16_t>(FileCommand::AppStoreDelete);
+    del.payload = make_app_store_delete_request("config-nio", "slot-069");
+    CHECK(device.handle(del).status == StatusCode::Ok);
+    response = device.handle(range);
+    REQUIRE(response.payload.size() >= 8);
+    CHECK(response.payload[7] == 0);
+    CHECK(response.payload[4] == 0);
+}
+
+TEST_CASE("FileDevice slot catalogue continues at a complete record")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    FileDevice device(storage);
+
+    IORequest write{};
+    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    for (const auto index : {0, 1, 2}) {
+        const std::string key = "slot-00" + std::to_string(index);
+        write.payload = make_app_store_write_request(
+            "config-nio", key, 0, std::string{"\x01\x00host:/disk.ssd", 16});
+        CHECK(device.handle(write).status == StatusCode::Ok);
+    }
+
+    IORequest range{};
+    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.payload = make_slot_catalog_range_request(0, 7, 0, 0, 128, 22);
+    const auto first = device.handle(range);
+    REQUIRE(first.payload.size() >= 8);
+    CHECK((first.payload[1] &
+           fujinet::io::protocol::slot_catalog::kResponseMore) != 0);
+    CHECK(first.payload[2] == 1);
+    CHECK(first.payload[4] == 1);
+
+    range.payload = make_slot_catalog_range_request(0, 7, first.payload[2], 0, 128, 64);
+    const auto second = device.handle(range);
+    REQUIRE(second.payload.size() >= 8);
+    CHECK((second.payload[1] &
+           fujinet::io::protocol::slot_catalog::kResponseMore) == 0);
+    CHECK(second.payload[4] == 2);
+}
+
+TEST_CASE("FileDevice slot catalogue formats populated entries for CLI clients")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    FileDevice device(storage);
+
+    IORequest write{};
+    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.payload = make_app_store_write_request(
+        "config-nio", "slot-069", 0, std::string{"\x01\x00games/elite.ssd", 17});
+    CHECK(device.handle(write).status == StatusCode::Ok);
+
+    IORequest range{};
+    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.payload = make_slot_catalog_range_request(
+        64, 72, 64, fujinet::io::protocol::slot_catalog::kRequestFormatted, 128, 220);
+    const auto response = device.handle(range);
+    REQUIRE(response.payload.size() >= 9);
+    CHECK((response.payload[1] &
+           fujinet::io::protocol::slot_catalog::kResponseFormatted) != 0);
+    const std::size_t text_offset = 7 + response.payload[3];
+    CHECK(std::string(response.payload.begin() + static_cast<std::ptrdiff_t>(text_offset),
+                      response.payload.end()) == "69: games/elite.ssd\n");
 }
 
 } // namespace

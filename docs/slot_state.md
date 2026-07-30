@@ -14,11 +14,29 @@ The catalogue is application state, not `fujinet.yaml` configuration.
   URI bytes without a terminator
 
 An absent key is an empty slot. Deleting a key leaves that index empty and does
-not move or renumber any other entry. Applications fetch only the exact indexes
-needed for a page or direct lookup; a 256-entry in-memory table is unnecessary.
+not move or renumber any other entry.
 
-The format belongs to `config-nio`. AppStore supplies namespaced byte storage
-and deliberately does not interpret slots, URIs, or mappings.
+AppStore remains the source of truth. `SlotCatalog` is a thin, read-only view of
+these keys for clients which need to browse them efficiently. On the first
+catalogue request after startup it lists the namespace once and builds a
+32-byte occupancy bitmap. AppStore writes and deletes of valid `slot-NNN` keys
+update that bitmap while it is resident. The bitmap is transient, may be
+discarded and rebuilt at any time, and is never a second persistent index.
+
+The File device `SlotCatalogRange` command returns the presence bitmap for an
+inclusive index range plus the populated entries that fit in the requested
+payload. This lets a configuration UI fetch a complete display page in one
+request, and lets an informational CLI enumerate only populated slots. See
+[FileDevice Binary Protocol](file_device_protocol.md#slotcatalogrange-0x25).
+
+The BBC `config-nio` client requests eight indexes at a time and retains its
+current and previous display pages, so normal back-and-forth paging is served
+from BBC memory. `FSLOTS` requests formatted batches and prints only populated
+entries. Neither client enumerates all 256 AppStore keys at startup.
+
+The value format belongs to the slot catalogue contract. AppStore itself still
+supplies generic namespaced byte storage and does not interpret arbitrary
+application data.
 
 ## Resolving a catalogue entry
 
@@ -38,8 +56,9 @@ until the host first accesses that drive. Runtime mount state is persisted so
 active drives can be restored after restart.
 
 Thus hundreds of catalogue choices do not consume `DiskService` slots or image
-objects. Memory use is bounded primarily by the active-drive ceiling; catalogue
-storage grows only for populated AppStore keys.
+objects. Apart from the fixed 32-byte occupancy bitmap and bounded response
+buffers, memory use is governed by the active-drive ceiling; persistent
+catalogue storage grows only for populated AppStore keys.
 
 The former `mounts` list in `fujinet.yaml` is not loaded as the user catalogue.
 Early-development installations may delete that obsolete configuration

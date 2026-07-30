@@ -175,6 +175,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/path_resolvers/tnfs_relative_resolver.cpp
         src/lib/path_resolvers/tnfs_uri_resolver.cpp
         src/lib/routing_manager.cpp
+        src/lib/slot_catalog.cpp
         src/lib/storage_manager.cpp
         src/lib/tcp_channel.cpp
         src/lib/tcp_network_protocol_common.cpp

@@ -45,6 +45,7 @@ class TestAppStoreFileProto(unittest.TestCase):
         )
         self.assertEqual(req, expected)
         self.assertEqual(fp.CMD_APPSTORE_LIST, 0x24)
+        self.assertEqual(fp.CMD_SLOT_CATALOG_RANGE, 0x25)
 
     def test_parse_stat_response(self) -> None:
         resp = (
