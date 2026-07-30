@@ -447,56 +447,28 @@ This keeps the interface *minimal* but extensible.
 
 ---
 
-## 12. Config-Driven Mounts
+## 12. Runtime Disk Mounts
 
-Fujinet-nio supports **config-driven mounts** that are applied to disk runtime slots at startup, similar to the legacy `mount_all()` behavior in FujiNet firmware.
-
-### Mount Configuration Model
-
-The `MountConfig` struct in `fujinet/config/fuji_config.h` defines a mount entry:
-
-```cpp
-struct MountConfig {
-    int         slot;     // Slot number (1-8). 0 means unassigned.
-    std::string uri;      // URI of the resource (e.g., "sd:/disks/img.atr", "tnfs://server/dir/img.atr")
-    std::string mode;    // persisted slot policy/default, e.g. "auto", "ro"
-    bool        enabled;  // Whether this mount is active
-};
-```
-
-**Slot semantics**:
-- Slots are numbered 1-8 in config (matching user-facing Atari disk slots)
-- Internally converted to 0-7 indices for `DiskService`
-- `effective_slot()` method returns 0-based index or -1 if unassigned
-
-### Lazy Mounting
-
-Config-defined mounts use **lazy activation** - the mount is stored but not activated until first disk access (read or write). This is critical for network-based filesystems like TNFS:
+DiskDevice can record an active drive mapping as a **pending lazy mount**. The
+URI is validated and associated with a bounded runtime disk unit, but the image
+is not opened until first disk access. This is critical for network-based
+filesystems like TNFS:
 
 - **TNFS servers don't need to be available at startup** - no blocking or delays
 - **Network connections are created only when needed** - saves resources
 - **Startup time is predictable** regardless of network availability
 
-When a slot has a pending mount:
+When a runtime unit has a pending mount:
 1. First read/write operation triggers mount activation
 2. URI is resolved to filesystem + path
 3. Image is opened and becomes available
 
-The pending mount info is stored in `DiskService::Slot::pendingMount` and activated automatically in `read_sector()` and `write_sector()` if needed.
+The pending mount info is stored in `DiskService::Slot::pendingMount` and
+activated automatically by operations that require the image.
 
-### YAML Format
-
-```yaml
-mounts:
-  - slot: 1
-    uri: "sd:/disks/boot.atr"
-    mode: "auto"
-    enabled: true
-  - slot: 2
-    uri: "tnfs://192.168.1.100:16384/atari/games.atr"
-    mode: "ro"
-    enabled: true
-```
+Persistent catalogue choices are not filesystem configuration. Applications
+store them through FileDevice AppStore and send a selected URI to DiskDevice.
+See [Slot catalogue and active disk mounts](slot_state.md).
 
 ### URI Resolution and Authority Preservation
 
@@ -506,18 +478,6 @@ mounts:
 - Output: filesystem=`tnfs`, path=`tnfs://192.168.1.100:16384/atari/disk.atr`
 
 This ensures the TNFS filesystem can connect to the correct host and port.
-
-### Applying Config Mounts
-
-The `apply_config_mounts()` function in `fujinet/fs/mount_applier.h` iterates through config mounts and mounts each to the corresponding disk slot:
-
-1. Skips disabled mounts (`enabled: false`)
-2. Skips empty URIs
-3. Uses `effective_slot()` to resolve slot index
-4. Resolves URI via `StorageManager::resolveUri()`
-5. Calls `DiskService::mount()` with resolved filesystem and path
-
-This runs during app startup after DiskDevice registration in both POSIX and ESP32 entry points.
 
 ### Disk Image Types and Lazy Loading
 
@@ -586,8 +546,9 @@ Use this quick list at the start/end of a filesystem-related session:
 5. If touching TNFS path behavior, verify both:
    - `integration-tests/steps/35_tnfs.yaml` (UDP)
    - `integration-tests/steps/36_tnfs_tcp.yaml` (TCP)
-6. If adding/modifying config mount behavior, verify:
-   - `tests/test_fuji_config_yaml.cpp`
+6. If adding/modifying boot or persistent runtime mount behavior, verify:
+   - `tests/test_boot_mount.cpp`
+   - `tests/test_disk_device_protocol.cpp`
    - `tests/test_storage_manager.cpp`
 
 When adding a new URI family (for example SMB), prefer:

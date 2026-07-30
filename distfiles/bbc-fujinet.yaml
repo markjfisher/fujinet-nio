@@ -8,7 +8,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false

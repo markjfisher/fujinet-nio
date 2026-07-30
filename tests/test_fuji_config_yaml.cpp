@@ -11,7 +11,6 @@
 
 using fujinet::config::BootMode;
 using fujinet::config::FujiConfig;
-using fujinet::config::MountConfig;
 using fujinet::config::UartFlowControl;
 using fujinet::config::UartParity;
 using fujinet::config::UartStopBits;
@@ -53,15 +52,6 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.wifi.enabled != b.wifi.enabled) return false;
     if (a.wifi.ssid != b.wifi.ssid) return false;
     if (a.wifi.passphrase != b.wifi.passphrase) return false;
-
-    if (a.mounts.size() != b.mounts.size()) return false;
-    for (std::size_t i = 0; i < a.mounts.size(); ++i) {
-        if (a.mounts[i].slot != b.mounts[i].slot) return false;
-        if (a.mounts[i].uri != b.mounts[i].uri) return false;
-        if (a.mounts[i].mode != b.mounts[i].mode) return false;
-        if (a.mounts[i].enabled != b.mounts[i].enabled) return false;
-        if (a.mounts[i].sectorSizeHint != b.mounts[i].sectorSizeHint) return false;
-    }
 
     if (a.modem.enabled != b.modem.enabled) return false;
     if (a.modem.snifferEnabled != b.modem.snifferEnabled) return false;
@@ -105,7 +95,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -133,7 +122,6 @@ clock:
     CHECK(cfg.boot.mode == BootMode::Config);
     CHECK(cfg.boot.configUri == "persist:/boot/autorun.img");
     CHECK(cfg.wifi.enabled == false);
-    CHECK(cfg.mounts.empty());
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Load full config from primary")
@@ -152,14 +140,6 @@ wifi:
   enabled: true
   ssid: "MyWiFi"
   passphrase: "secret123"
-mounts:
-  - slot: 1
-    uri: "sd:/disks"
-    mode: "rw"
-    sector_size_hint: 512
-  - slot: 2
-    uri: "tnfs://fujinet.online/atari"
-    mode: "r"
 devices:
   modem:
     enabled: true
@@ -191,9 +171,6 @@ clock:
     CHECK(cfg.wifi.ssid == "MyWiFi");
     CHECK(cfg.wifi.passphrase == "secret123");
 
-    // Mount catalog state lives in AppStore and legacy YAML mounts are ignored.
-    CHECK(cfg.mounts.empty());
-
     CHECK(cfg.modem.enabled == true);
     CHECK(cfg.modem.snifferEnabled == true);
 
@@ -219,7 +196,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -265,7 +241,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -306,7 +281,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Load defaults when both missing")
     CHECK(cfg.general.deviceName == ""); // empty string default
     CHECK(cfg.boot.mode == BootMode::Config); // struct default
     CHECK(cfg.wifi.enabled == false);
-    CHECK(cfg.mounts.empty());
 
     // Should have written defaults to primary
     CHECK(primary->exists("fujinet.yaml"));
@@ -328,13 +302,6 @@ TEST_CASE("YamlFujiConfigStoreFs: Save to primary only")
     cfg.wifi.enabled = true;
     cfg.wifi.ssid = "TestSSID";
     cfg.wifi.passphrase = "password";
-
-    MountConfig mount1{};
-    mount1.slot = 1;
-    mount1.uri = "sd:/disks";
-    mount1.mode = "rw";
-    mount1.sectorSizeHint = 512;
-    cfg.mounts.push_back(mount1);
 
     cfg.modem.enabled = true;
     cfg.modem.snifferEnabled = false;
@@ -444,7 +411,6 @@ wifi:
     CHECK(cfg.wifi.ssid == "MySSID");
     CHECK(cfg.wifi.passphrase == ""); // default
 
-    CHECK(cfg.mounts.empty()); // default
     CHECK(cfg.modem.enabled == false); // default
     CHECK(cfg.cpm.enabled == false); // default
     CHECK(cfg.printer.enabled == false); // default
@@ -464,7 +430,6 @@ boot:
   readonly: true
 wifi:
   enabled: false
-mounts: []
 devices:
   modem:
     enabled: false
@@ -497,7 +462,6 @@ boot:
   readonly: true
 wifi:
   enabled: false
-mounts: []
 devices:
   modem:
     enabled: false
@@ -523,7 +487,6 @@ boot:
   readonly: true
 wifi:
   enabled: false
-mounts: []
 devices:
   modem:
     enabled: false
@@ -580,7 +543,7 @@ devices:
     YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg = store.load();
 
-    CHECK(cfg.mounts.empty());
+    CHECK(cfg.general.deviceName == "multi-test");
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Legacy slot mounts are ignored")
@@ -626,32 +589,7 @@ devices:
     YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
     FujiConfig cfg = store.load();
 
-    CHECK(cfg.mounts.empty());
-}
-
-TEST_CASE("MountConfig: effective_slot")
-{
-    using fujinet::config::MountConfig;
-
-    // Test explicit slot
-    MountConfig m1;
-    m1.slot = 3;
-    CHECK(m1.effective_slot() == 2);  // slot 3 -> index 2
-
-    // Test slot 1
-    MountConfig m2;
-    m2.slot = 1;
-    CHECK(m2.effective_slot() == 0);  // slot 1 -> index 0
-
-    // Test slot 8
-    MountConfig m3;
-    m3.slot = 8;
-    CHECK(m3.effective_slot() == 7);  // slot 8 -> index 7
-
-    // Test unassigned
-    MountConfig m4;
-    m4.slot = 0;
-    CHECK(m4.effective_slot() == -1);  // Unassigned
+    CHECK(cfg.general.deviceName == "slot-test");
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Channel ptyPath config")
@@ -666,7 +604,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -689,7 +626,6 @@ channel:
     CHECK(cfg.boot.mode == BootMode::Config);
     CHECK(cfg.boot.configUri == "persist:/boot/autorun.img");
     CHECK(cfg.wifi.enabled == false);
-    CHECK(cfg.mounts.empty());
     CHECK(cfg.channel.ptyPath == "/dev/fujinet-pty");
     CHECK(cfg.channel.tcpHost == "127.0.0.1");
     CHECK(cfg.channel.tcpPort == 65504);
@@ -707,7 +643,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -742,7 +677,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -784,7 +718,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -820,7 +753,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -856,7 +788,6 @@ wifi:
   enabled: false
   ssid: ""
   passphrase: ""
-mounts: []
 devices:
   modem:
     enabled: false
@@ -877,7 +808,6 @@ devices:
     CHECK(cfg.boot.mode == BootMode::Config);
     CHECK(cfg.boot.configUri == "persist:/boot/autorun.img");
     CHECK(cfg.wifi.enabled == false);
-    CHECK(cfg.mounts.empty());
     CHECK(cfg.channel.ptyPath.empty());  // Should be empty by default
     CHECK(cfg.channel.tcpHost == "127.0.0.1");
     CHECK(cfg.channel.tcpPort == 65504);

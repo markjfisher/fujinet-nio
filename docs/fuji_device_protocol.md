@@ -1,304 +1,34 @@
 # FujiDevice Binary Protocol
 
-This document specifies the **binary, non-JSON** request/response format used by the **FujiDevice** (`WireDeviceId::FujiNet`, currently `0x70`).
+FujiDevice (`WireDeviceId::FujiNet`, currently `0x70`) provides small,
+instance-level control operations. Persistent slot choices are application
+state stored through FileDevice AppStore, while active disk mappings are owned
+by DiskDevice.
 
-The FujiDevice is the **configuration and control** device for FujiNet-NIO. It
-contains an older eight-entry mount-configuration API retained for protocol
-compatibility. It is not the config-nio slot catalogue:
+See:
 
-- resetting the FujiNet instance
-- querying the legacy FujiNet mount configuration
-- updating the legacy FujiNet mount configuration
+- [Slot catalogue and active disk mounts](slot_state.md)
+- [FileDevice protocol](file_device_protocol.md)
+- [DiskDevice protocol](disk_device_protocol.md)
 
-New clients store their sparse 0..255 catalogue through FileDevice AppStore and
-mount resolved URIs through DiskDevice. See
-[Slot catalogue and active disk mounts](slot_state.md).
-
-This protocol is intentionally small and 8-bit-host friendly.
-
----
-
-## Terminology
-
-- **Host**: the remote client sending requests (for this work, fn-rom on the BBC Micro).
-- **Device**: `FujiDevice` in fujinet-nio.
-- **Legacy mount slot**: a FujiNet configuration entry, indexed **0..7 on the wire**.
-- **Persisted slot number**: internal config/YAML representation, stored as **1..8** in [`MountConfig::slot`](include/fujinet/config/fuji_config.h:29).
-
----
-
-## Common Encoding Rules
-
-### Byte order
-All multi-byte numeric values are **little-endian**.
-
-### Strings
-Strings are raw bytes with an explicit length prefix and are **not null-terminated**.
-
-For FujiDevice v1 mount commands, string lengths are `u8`:
-
-```text
-u8 len
-u8[] bytes
-```
-
-### Versioning
-Unlike [`FileDevice`](docs/file_device_protocol.md) and [`DiskDevice`](docs/disk_device_protocol.md), the current FujiDevice protocol does **not** carry a payload version byte.
-
-It is a compact command-specific protocol, and versioning is currently implicit in the command definitions.
-
----
-
-## Device and Command IDs
-
-- Device: `WireDeviceId::FujiNet` (`0x70`)
-- Commands: [`FujiCommand`](include/fujinet/io/devices/fuji_commands.h:6)
+## Commands
 
 | Command | ID | Purpose |
 |--------:|---:|---------|
-| `Reset`     | `0xFF` | Request FujiNet reset/restart |
-| `GetSsid`   | `0xFE` | Reserved / not currently implemented |
-| `GetMounts` | `0xFD` | Enumerate persisted FujiNet mount slots |
-| `SetMount`  | `0xFC` | Create, update, or remove one persisted mount slot |
-| `GetMount`  | `0xFB` | Query one persisted mount slot |
+| `Reset`   | `0xFF` | Request a FujiNet reset/restart |
+| `GetSsid` | `0xFE` | Reserved; not currently implemented |
 
----
+## Reset (`0xFF`)
 
-## Transport Wrapping
+The request and successful response have no payload.
 
-As with other devices carried over FujiBus:
+`IOResponse.status` is returned through the FujiBus status metadata:
 
-- `IOResponse.status` is exposed by the transport as FujiBus status metadata
-- the payload bytes defined below are carried in the FujiBus data payload
+- `Ok`: reset accepted.
+- `Unsupported`: no reset handler is available or the command is unknown.
 
-The host must validate both:
+On an MCU the reset handler may restart the device before returning a response.
 
-1. transport-level status
-2. command-specific FujiDevice payload
-
----
-
-## Command: Reset (`0xFF`)
-
-Requests a FujiNet reset.
-
-### Request
-
-```text
-(no payload)
-```
-
-### Response
-
-```text
-(no payload)
-```
-
-### Status codes
-
-- `Ok`: reset request accepted
-- `Unsupported`: if the device implementation does not support reset handling
-
-Notes:
-- On POSIX builds this usually means a controlled process restart path.
-- On MCU targets this may reboot the device and never return to the caller.
-
----
-
-## Command: GetMounts (`0xFD`)
-
-Returns the persisted FujiNet mount table.
-
-### Request
-
-```text
-(no payload)
-```
-
-### Response
-
-```text
-u8 count
-repeat count times:
-  u8 slotIndex        // 0..7 on the wire
-  u8 flags            // bit0=enabled
-  u8 uriLen
-  u8[] uri
-  u8 modeLen
-  u8[] mode
-```
-
-### Status codes
-
-- `Ok`: table returned
-- `InternalError`: table could not be encoded safely
-
-Notes:
-- Returned entries are sorted ascending by persisted slot number.
-- Only valid persisted mount entries are returned.
-- Slot indices are translated from persisted [`MountConfig::slot`](include/fujinet/config/fuji_config.h:29) values into **0-based wire indices**.
-
-### Extended request/response
-
-The extended `GetMounts` request supports binary and formatted output. The
-request range uses persisted 1-based slot numbers because it filters persisted
-configuration entries:
-
-```text
-u8  flags             // bit0=formatted text response
-u16 firstSlot         // persisted 1-based slot number; 0=device default
-u16 lastSlot          // persisted 1-based slot number; 0=device default
-u16 startIndex        // pagination index within filtered entries
-u16 maxPayloadBytes   // max bytes for binary/formatted entries
-```
-
-The extended response header echoes the persisted 1-based range start:
-
-```text
-u8  version           // 1
-u8  flags             // bit0=more, bit1=formatted
-u16 firstSlot         // persisted 1-based slot number used for filtering
-u16 startIndex
-u16 entryCount
-u16 entriesLen
-u8[] entries
-```
-
-For binary extended responses, each entry starts with the persisted 1-based slot
-number. This keeps the binary extended API aligned with persisted config.
-
-For formatted extended responses, the leading text label is presentation, not a
-binary API field. Valid runtime mounts (`MountConfig::slot` 1..8) are displayed
-using the 0-based runtime/wire slot index so 8-bit client UX can match commands
-such as `GetMount`, `SetMount`, and BBC `*FMOUNT`. Persisted entries outside the
-runtime range are displayed with their persisted slot number.
-
----
-
-## Command: GetMount (`0xFB`)
-
-Returns one persisted FujiNet mount slot.
-
-### Request
-
-```text
-u8 slotIndex         // 0..7
-```
-
-### Response
-
-```text
-u8 slotIndex         // echoed slot index
-u8 flags             // bit0=enabled
-u8 uriLen
-u8[] uri
-u8 modeLen
-u8[] mode
-```
-
-### Status codes
-
-- `Ok`: record returned
-- `InvalidRequest`: malformed payload or slot index out of range
-
-Notes:
-- If the slot has no persisted mount entry, the response is still `Ok`.
-- In that case, the record is returned as:
-
-```text
-slotIndex = requested slot
-flags     = 0
-uriLen    = 0
-modeLen   = 1
-mode      = "r"
-```
-
-This makes the command easy for small ROM clients to consume.
-
----
-
-## Command: SetMount (`0xFC`)
-
-Creates, updates, or removes one persisted FujiNet mount slot.
-
-### Request
-
-```text
-u8 slotIndex         // 0..7
-u8 flags             // bit0=enabled
-u8 uriLen
-u8[] uri
-u8 modeLen
-u8[] mode
-```
-
-### Semantics
-
-- `slotIndex` is always **0-based on the wire**.
-- Internally, FujiDevice converts that to persisted config slot numbering using [`MountConfig::from_index()`](include/fujinet/config/fuji_config.h:42).
-- If `modeLen == 0`, the device normalizes mode to `"r"`.
-- The `mode` field is persisted slot metadata/default policy. It is distinct from the live access mode requested through DiskDevice `Mount`.
-- If `uriLen == 0`, the persisted entry for that slot is removed.
-- If `uriLen > 0`, the slot is upserted and the config is saved immediately.
-- `enabled` is only meaningful when `uriLen > 0`.
-
-### Response
-
-```text
-(no payload)
-```
-
-### Status codes
-
-- `Ok`: update/removal persisted successfully
-- `InvalidRequest`: malformed payload or slot index out of range
-
----
-
-## Reserved Command: GetSsid (`0xFE`)
-
-This command identifier exists in [`FujiCommand`](include/fujinet/io/devices/fuji_commands.h:8) but is not currently implemented by [`FujiDevice`](src/lib/fuji_device.cpp:33).
-
-### Current behavior
-
-- requests currently return `Unsupported`
-
----
-
-## Config Mapping Notes
-
-The persisted mount data is stored in [`FujiConfig::mounts`](include/fujinet/config/fuji_config.h:74) as [`MountConfig`](include/fujinet/config/fuji_config.h:28) entries.
-
-Important mapping rules:
-
-- runtime/wire slot index: `0..7`
-- persisted config slot number: `1..8`
-- variable names should make this explicit:
-  - `slotIndex` means runtime/wire 0-based
-  - `slotNumber`, `slot1`, or `MountConfig::slot` means persisted/config 1-based
-- conversion helpers:
-  - [`MountConfig::effective_slot()`](include/fujinet/config/fuji_config.h:35) maps persisted `1..8` → wire/runtime `0..7`
-  - [`MountConfig::from_index()`](include/fujinet/config/fuji_config.h:42) maps wire/runtime `0..7` → persisted `1..8`
-
-This is specifically intended to make 8-bit client code simpler while preserving config compatibility.
-
----
-
-## Error Handling and Robustness
-
-- malformed payloads should return `StatusCode::InvalidRequest`
-- unknown command IDs should return `StatusCode::Unsupported`
-- slot indices outside `0..7` must return `StatusCode::InvalidRequest`
-- hosts should not assume any strings are null-terminated
-
----
-
-## fn-rom usage
-
-Current fn-rom uses FujiDevice for control operations such as reset, but no
-longer uses its legacy mount table. `*FIN` writes `config-nio/slot-NNN` through
-FileDevice AppStore; `*FMOUNT` reads that key and sends the resolved URI to an
-active DiskDevice unit. `*FHOST`, `*FCD`, `*FLIST`, and `*FLS` also use
-FileDevice URI/path resolution and listing.
-
-This split keeps URI parsing and traversal logic on the more capable FujiNet side while leaving the ROM comparatively small.
+FujiDevice does not expose slot catalogue or disk mount commands. Clients use
+FileDevice AppStore for catalogue entries and DiskDevice `Mount`, `Unmount`,
+and `ListMounts` for active disk units.

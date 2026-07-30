@@ -60,15 +60,6 @@ static void from_yaml(const YAML::Node& node, WifiConfig& out)
     out.passphrase = get_or<std::string>(node, "passphrase", "");
 }
 
-static void from_yaml(const YAML::Node& node, MountConfig& out)
-{
-    out.slot           = get_or<int>(node, "slot", 0);
-    out.uri            = get_or<std::string>(node, "uri", "");
-    out.mode           = get_or<std::string>(node, "mode", "r");
-    out.enabled        = get_or<bool>(node, "enabled", true);
-    out.sectorSizeHint = static_cast<std::uint16_t>(get_or<int>(node, "sector_size_hint", 0));
-}
-
 static void from_yaml(const YAML::Node& node, ModemConfig& out)
 {
     out.enabled        = get_or<bool>(node, "enabled", false);

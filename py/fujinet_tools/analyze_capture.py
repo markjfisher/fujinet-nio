@@ -26,9 +26,6 @@ COMMAND_NAMES: dict[int, dict[int, str]] = {
     0x70: {
         0xFF: "Reset",
         0xFE: "GetSsid",
-        0xFD: "GetMounts",
-        0xFC: "SetMount",
-        0xFB: "GetMount",
     },
     0x45: {
         0x01: "GetTime",

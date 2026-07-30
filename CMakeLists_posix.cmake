@@ -158,7 +158,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/list_directory_format.cpp
         src/lib/modem_device.cpp
         src/lib/modem_device_init.cpp
-        src/lib/mount_applier.cpp
+        src/lib/boot_mount.cpp
         src/lib/network_device.cpp
         src/lib/network_device_init.cpp
         src/lib/network_protocol_registry.cpp

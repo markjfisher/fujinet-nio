@@ -96,7 +96,7 @@ v1 includes (image-format understanding required for sector I/O):
   - used for tests and tooling
   - probes known filesystem/image signatures to infer geometry when possible
   - falls back to 256-byte sectors when no probe recognizes the file
-  - persisted config mounts can provide `sector_size_hint` for headerless raw
+  - persisted runtime mounts can provide `sector_size_hint` for headerless raw
     images where geometry cannot be inferred from file content
 
 - **SSD** (`ImageType::Ssd`, `.ssd`): BBC DFS SSD image (flat 256-byte sectors)

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <cstdint>
 
 namespace fujinet::config {
@@ -26,26 +25,6 @@ struct WifiConfig {
     bool        enabled{false};
     std::string ssid;
     std::string passphrase;
-};
-
-struct MountConfig {
-    int         slot{0};            // Persisted slot number (1-8). 0 means unassigned.
-    std::string uri;                // URI of the resource to mount (e.g., "sd:/disks/img.ssd", "tnfs://server/dir/img.atr")
-    std::string mode{"r"};          // "r", "rw", etc.
-    bool        enabled{true};      // Whether this mount is active
-    std::uint16_t sectorSizeHint{0}; // Optional hint for raw images; 0 uses image default.
-
-    // Get effective runtime/wire slot index (0-7) or -1 if unassigned/invalid.
-    int effective_slot() const {
-        if (slot >= 1 && slot <= 8) {
-            return slot - 1;  // Convert 1-8 to 0-7
-        }
-        return -1;  // Unassigned
-    }
-
-    static constexpr int from_index(int slotIndex) {
-        return (slotIndex >= 0 && slotIndex < 8) ? (slotIndex + 1) : 0;
-    }
 };
 
 struct ModemConfig {
@@ -116,8 +95,6 @@ struct FujiConfig {
     GeneralConfig        general;
     BootConfig           boot;
     WifiConfig           wifi;
-
-    std::vector<MountConfig> mounts;  // Mounted resources (URI-based)
 
     ModemConfig          modem;
     CpmConfig            cpm;

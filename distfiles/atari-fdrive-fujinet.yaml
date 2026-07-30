@@ -11,22 +11,6 @@ wifi:
   ssid: ""
   passphrase: ""
 
-# fdrive.xex displays 0-based user slots. These persisted config slots are
-# 1-based, so slot 1 appears as "slot 0", slot 2 as "slot 1", and so on.
-mounts:
-  - slot: 1
-    uri: "host:/disks/slot0-fdrive-test.atr"
-    mode: "r"
-    enabled: true
-  - slot: 2
-    uri: "host:/disks/slot1-readwrite-test.atr"
-    mode: "rw"
-    enabled: true
-  - slot: 3
-    uri: "tnfs://fujinet.online/atari/fujinet-nio-slot2.atr"
-    mode: "r"
-    enabled: true
-
 devices:
   modem:
     enabled: false

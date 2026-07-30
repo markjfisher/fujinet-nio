@@ -21,7 +21,7 @@
 #include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
-#include "fujinet/fs/mount_applier.h"
+#include "fujinet/fs/boot_mount.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/devices/disk_device.h"
@@ -206,8 +206,8 @@ int main()
     
     fujinet::core::register_disk_device(core);
 
-    // Apply persisted config mounts to disk slots (equivalent to legacy mount_all)
-    // This must happen after DiskDevice is registered so we have access to DiskService
+    // Restore live drive mappings and then apply the configured boot disk.
+    // This must happen after DiskDevice is registered.
     {
         fujinet::io::DeviceID diskDeviceId = fujinet::io::protocol::to_device_id(fujinet::io::protocol::WireDeviceId::DiskService);
         auto* diskDev = dynamic_cast<fujinet::io::DiskDevice*>(
@@ -217,9 +217,9 @@ int main()
             if (config.boot.mode == fujinet::config::BootMode::Config) {
                 diskDev->configure_boot_mount(config.boot.configUri, config.boot.readOnly);
             }
-            std::vector<std::size_t> excludedRuntimeSlots = diskDev->restore_runtime_mounts();
+            const std::vector<std::size_t> restoredRuntimeSlots = diskDev->restore_runtime_mounts();
             bool bootUnitRestored = false;
-            for (const auto slot : excludedRuntimeSlots) {
+            for (const auto slot : restoredRuntimeSlots) {
                 if (slot == activeBootDiskUnit) {
                     bootUnitRestored = true;
                     break;
@@ -232,12 +232,11 @@ int main()
                     config.boot,
                     activeBootDiskUnit);
             if (bootApplied) {
-                excludedRuntimeSlots.push_back(activeBootDiskUnit);
             }
             FN_LOGI(TAG, "Applied %zu boot config mount", bootApplied);
 
         } else {
-            FN_LOGW(TAG, "Could not get DiskDevice to apply config mounts");
+            FN_LOGW(TAG, "Could not get DiskDevice to restore runtime or boot mounts");
         }
     }
 

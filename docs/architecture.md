@@ -670,17 +670,15 @@ Unlike many C++ codebases, VirtualDevices do **not**:
 
 Instead, all dependencies are passed in at creation time by the platform bootstrap code.
 
-### Example: Injecting StorageManager
+### Example: Injecting a configuration store
 
 ```cpp
 class FujiDevice : public VirtualDevice {
 public:
     FujiDevice(ResetHandler reset,
-               std::unique_ptr<FujiConfigStore> configStore,
-               fs::StorageManager& storage)
+               std::unique_ptr<FujiConfigStore> configStore)
         : _reset(std::move(reset))
         , _configStore(std::move(configStore))
-        , _storage(storage)
     {}
 };
 ```
@@ -691,8 +689,7 @@ Wiring occurs at the platform level (ESP32 or POSIX):
 auto config = create_fuji_config_store(core.storageManager());
 auto device = std::make_unique<FujiDevice>(
     reset_handler,
-    std::move(config),
-    core.storageManager()
+    std::move(config)
 );
 
 core.deviceManager().registerDevice(WireDeviceId::FujiNet,
@@ -705,7 +702,7 @@ core.deviceManager().registerDevice(WireDeviceId::FujiNet,
    Each VirtualDevice knows only what it needs; nothing more.
 
 2. **Testability**  
-   Devices can be tested in isolation using mock `StorageManager`, mock network clients, etc.
+   Devices can be tested in isolation using mock stores, storage managers, network clients, etc.
 
 3. **Platform independence**  
    ESP32-specific or POSIX-specific behavior never leaks into device code.
@@ -1073,14 +1070,14 @@ boot:
   readonly: true
 ```
 
-At startup, platform bootstrap loads config, registers `DiskDevice`, then
-projects the boot/config disk into a bootstrap-selected active disk unit only
-when `boot.mode` is `config`. That active unit is not a persisted user slot and
-not a host drive name. Host-side drive selection remains client-specific: Atari
-sees the first SIO disk unit as `D1:`, the MS-DOS driver exposes its first block
-unit as the next DOS drive assigned by DOS, and BBC tooling can map a FujiNet
-slot to a BBC drive number explicitly. Ordinary `mounts:` remain persisted user
-slots and are applied separately afterward.
+At startup, platform bootstrap loads config, registers `DiskDevice`, restores
+the persisted live drive mappings, then projects the boot/config disk into the
+bootstrap-selected active disk unit when `boot.mode` is `config` and that unit
+was not already restored. The boot unit is not a catalogue slot or host drive
+name. Host-side drive selection remains client-specific: Atari sees the first
+SIO disk unit as `D1:`, the MS-DOS driver exposes its first block unit as the
+next DOS drive assigned by DOS, and BBC tooling maps a sparse AppStore catalogue
+entry to a bounded active drive explicitly.
 
 ---
 

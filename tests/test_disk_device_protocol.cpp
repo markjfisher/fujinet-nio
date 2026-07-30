@@ -3,7 +3,6 @@
 #include "fake_fs.h"
 
 #include "fujinet/disk/disk_service.h"
-#include "fujinet/fs/mount_applier.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/disk_codec.h"
@@ -153,7 +152,7 @@ TEST_CASE("DiskService: central probes detect FAT raw geometry without sector hi
     CHECK(info.geometry.sectorCount == 2880);
 }
 
-TEST_CASE("DiskService: config pending raw mount uses sector size hint")
+TEST_CASE("DiskService: pending raw mount uses sector size hint")
 {
     fujinet::fs::StorageManager sm;
     auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
@@ -168,14 +167,7 @@ TEST_CASE("DiskService: config pending raw mount uses sector size hint")
 
     fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
 
-    fujinet::config::MountConfig mount{};
-    mount.slot = 1;
-    mount.uri = "mem:/disks/fn-dos.img";
-    mount.mode = "rw";
-    mount.enabled = true;
-    mount.sectorSizeHint = 512;
-
-    REQUIRE(fujinet::apply_config_mounts(svc, sm, {mount}) == 1);
+    svc.set_pending_mount(0, "mem:/disks/fn-dos.img", "rw", true, 512);
 
     auto pending = svc.get_pending_mount(0);
     REQUIRE(pending.has_value());
@@ -211,7 +203,7 @@ TEST_CASE("DiskService: unmount cancels a pending lazy mount")
     CHECK(svc.ensure_mounted(0).error == fujinet::disk::DiskError::NotMounted);
 }
 
-TEST_CASE("DiskDevice v1: ReadSector activates config pending raw mount")
+TEST_CASE("DiskDevice v1: ReadSector activates pending raw mount")
 {
     fujinet::fs::StorageManager sm;
     auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
@@ -227,14 +219,8 @@ TEST_CASE("DiskDevice v1: ReadSector activates config pending raw mount")
     DiskDevice dev(sm);
     const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
 
-    fujinet::config::MountConfig mount{};
-    mount.slot = 1;
-    mount.uri = "mem:/disks/fn-dos.img";
-    mount.mode = "rw";
-    mount.enabled = true;
-    mount.sectorSizeHint = 512;
-
-    REQUIRE(fujinet::apply_config_mounts(dev.disk_service(), sm, {mount}) == 1);
+    dev.disk_service().set_pending_mount(
+        0, "mem:/disks/fn-dos.img", "rw", true, 512);
     CHECK_FALSE(dev.disk_service().info(0).inserted);
 
     std::string p;
@@ -280,7 +266,7 @@ TEST_CASE("DiskDevice v1: ReadSector activates config pending raw mount")
     CHECK(info.geometry.sectorCount == 2);
 }
 
-TEST_CASE("DiskDevice v1: Info activates config pending mount and reports geometry")
+TEST_CASE("DiskDevice v1: Info activates pending mount and reports geometry")
 {
     fujinet::fs::StorageManager sm;
     auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
@@ -293,13 +279,8 @@ TEST_CASE("DiskDevice v1: Info activates config pending mount and reports geomet
     DiskDevice dev(sm);
     const DeviceID deviceId = to_device_id(WireDeviceId::DiskService);
 
-    fujinet::config::MountConfig mount{};
-    mount.slot = 1;
-    mount.uri = "mem:/disks/fn-boot.img";
-    mount.mode = "r";
-    mount.enabled = true;
-
-    REQUIRE(fujinet::apply_config_mounts(dev.disk_service(), sm, {mount}) == 1);
+    dev.disk_service().set_pending_mount(
+        0, "mem:/disks/fn-boot.img", "r", true, 0);
     CHECK_FALSE(dev.disk_service().info(0).inserted);
 
     std::string p;

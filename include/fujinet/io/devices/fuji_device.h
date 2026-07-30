@@ -2,11 +2,8 @@
 
 #include <functional>
 #include <memory>
-#include <string>
-#include <string_view>
 
 #include "fujinet/config/fuji_config.h"
-#include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/virtual_device.h"
 
@@ -17,8 +14,7 @@ public:
     using ResetHandler = std::function<void()>;
 
     FujiDevice(ResetHandler resetHandler,
-               std::unique_ptr<fujinet::config::FujiConfigStore> configStore,
-               fs::StorageManager& storage);
+               std::unique_ptr<fujinet::config::FujiConfigStore> configStore);
 
     IOResponse handle(const IORequest& request) override;
     void       poll() override;
@@ -37,30 +33,12 @@ public:
 private:
     IOResponse handle_reset(const IORequest& request);
     IOResponse handle_unknown(const IORequest& request);
-    IOResponse handle_get_mounts(const IORequest& request);
-    IOResponse handle_get_mount(const IORequest& request);
-    IOResponse handle_set_mount(const IORequest& request);
-
-    config::MountConfig* find_mount_by_slot_number(int slotNumber);
-    const config::MountConfig* find_mount_by_slot_number(int slotNumber) const;
-    static bool is_valid_mount_slot_index(std::uint8_t slotIndex);
-    static std::vector<std::uint8_t> encode_mount_record(std::uint8_t slotIndex,
-                                                         const std::string& uri,
-                                                         const std::string& mode,
-                                                         bool enabled);
-    static int formatted_mount_slot_label(const config::MountConfig& mount);
-    static std::string format_mount_line(int slotLabel,
-                                         std::string_view uri,
-                                         std::string_view mode,
-                                         bool enabled);
     void load_config();
-    void save_config();
 
 private:
     ResetHandler                                      _resetHandler;
     std::unique_ptr<fujinet::config::FujiConfigStore> _configStore;
     fujinet::config::FujiConfig                       _config;
-    fs::StorageManager&                               _storage;
 };
 
 } // namespace fujinet::io
