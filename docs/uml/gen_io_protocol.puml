@@ -95,6 +95,7 @@ ReadSectors
 WriteSectors
 RestoreBoot
 BeginHostSession
+Reinitialize
 }
 enum "io::protocol::NetworkCommand" as C_0007700754280455587098
 enum C_0007700754280455587098 {

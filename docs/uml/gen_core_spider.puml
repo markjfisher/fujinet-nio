@@ -948,6 +948,7 @@ class C_0014804734580910690913 {
 +mount(std::size_t slotIndex, const std::string & fsName, const std::string & path, const MountOptions & opts) : DiskResult
 +read_sector(std::size_t slotIndex, std::uint32_t lba, std::uint8_t * dst, std::size_t dstBytes) : DiskResult
 +read_sectors(std::size_t slotIndex, std::uint32_t lba, std::uint16_t count, std::uint8_t * dst, std::size_t dstBytes) : DiskResult
++reinitialize(std::size_t slotIndex, std::uint16_t sectorSize, std::uint32_t sectorCount) : DiskResult
 +reset_all_stats() : void
 +reset_stats(std::size_t slotIndex) : void
 -set_error(std::size_t slotIndex, DiskError e) : DiskError
@@ -1674,6 +1675,7 @@ C_0008422084792172174393 ..> C_0011001454402567554105
 C_0008422084792172174393 ..> C_0009299638825477999089 : -_factories
 C_0008422084792172174393 ..> C_0011001454402567554105 : -_creators
 C_0008422084792172174393 --> C_0014904826619290153445 : -_creators
+C_0008422084792172174393 ..> C_0011001454402567554105 : -_createValidators
 C_0007238535882053790625 ..> C_0008566044437912091269
 C_0007238535882053790625 ..> C_0014904826619290153445
 C_0007238535882053790625 ..> C_0017121056686289896594
