@@ -611,9 +611,14 @@ void DiskService::set_pending_mount(
 {
     auto* s = slot_ptr(slotIndex);
     if (!s) return;
-    
+
+    // A pending mount replaces the media currently in this active unit.
+    // Eject it now so ensure_mounted() cannot mistake the old image for the
+    // requested lazy mount on the next sector access.
+    (void)unmount(slotIndex);
+    s = slot_ptr(slotIndex);
     s->pendingMount = PendingMountInfo{uri, mode, enabled, sectorSizeHint};
-    
+
     // Also store fsName and path for display purposes (will be updated on actual mount)
     // Parse the URI to extract filesystem name
     auto slashPos = uri.find('/');

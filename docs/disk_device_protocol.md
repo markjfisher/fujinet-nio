@@ -362,7 +362,9 @@ Mount policy notes:
 
 - DiskDevice `Mount` carries the **live** access request.
 - With `flags bit1` set, the URI is resolved and recorded but the image is not
-  opened until the runtime unit is first accessed.
+  opened until the runtime unit is first accessed. Installing that pending
+  mount ejects any image previously active in the same unit, so subsequent
+  sector reads cannot continue using the replaced media.
 - If `bit0` is clear, the service may try writable access first and then fall back to read-only.
 - The actual outcome is reported in response `flags bit1` (`readonly_effective`).
 

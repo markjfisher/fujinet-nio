@@ -187,6 +187,37 @@ TEST_CASE("DiskService: pending raw mount uses sector size hint")
     CHECK(info.geometry.sectorCount == 2);
 }
 
+TEST_CASE("DiskService: pending mount replaces an active image on next access")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto& boot = memfs->file_bytes("/boot.ssd");
+    auto& replacement = memfs->file_bytes("/replacement.ssd");
+    boot = make_ssd_bytes();
+    replacement = make_ssd_bytes();
+    boot[0] = 'B';
+    replacement[0] = 'R';
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    fujinet::disk::MountOptions opts{};
+    REQUIRE(svc.mount(0, "mem", "/boot.ssd", opts).ok());
+
+    std::vector<std::uint8_t> sector(256);
+    REQUIRE(svc.read_sector(0, 0, sector.data(), sector.size()).ok());
+    CHECK(sector[0] == 'B');
+
+    svc.set_pending_mount(0, "mem:/replacement.ssd", "rw", true);
+    CHECK_FALSE(svc.info(0).inserted);
+    REQUIRE(svc.get_pending_mount(0).has_value());
+
+    REQUIRE(svc.read_sector(0, 0, sector.data(), sector.size()).ok());
+    CHECK(sector[0] == 'R');
+    CHECK_FALSE(svc.get_pending_mount(0).has_value());
+    CHECK(svc.info(0).inserted);
+    CHECK(svc.info(0).path == "/replacement.ssd");
+}
+
 TEST_CASE("DiskService: unmount cancels a pending lazy mount")
 {
     fujinet::fs::StorageManager sm;
