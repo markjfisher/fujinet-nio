@@ -187,11 +187,28 @@ TEST_CASE("DiskService: config pending raw mount uses sector size hint")
     CHECK(rr.bytes == 512);
     CHECK(sec[0] == 0xEB);
     CHECK(sec[1] == 0x3C);
+    CHECK_FALSE(svc.get_pending_mount(0).has_value());
 
     auto info = svc.info(0);
     CHECK(info.inserted);
     CHECK(info.geometry.sectorSize == 512);
     CHECK(info.geometry.sectorCount == 2);
+}
+
+TEST_CASE("DiskService: unmount cancels a pending lazy mount")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    memfs->file_bytes("/lazy.ssd") = make_ssd_bytes();
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    svc.set_pending_mount(0, "mem:/lazy.ssd", "rw", true);
+    REQUIRE(svc.get_pending_mount(0).has_value());
+
+    REQUIRE(svc.unmount(0).ok());
+    CHECK_FALSE(svc.get_pending_mount(0).has_value());
+    CHECK(svc.ensure_mounted(0).error == fujinet::disk::DiskError::NotMounted);
 }
 
 TEST_CASE("DiskDevice v1: ReadSector activates config pending raw mount")
@@ -934,6 +951,136 @@ TEST_CASE("DiskDevice v1: Create raw image then mount and read/write")
         CHECK(bytes[0] == 0xAA);
         CHECK(bytes[1] == 0x55);
     }
+}
+
+TEST_CASE("DiskDevice v1: Reinitialize recreates and remounts the active SSD")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* memfsPtr = memfs.get();
+    auto& original = memfs->file_bytes("/games/work.ssd");
+    original = make_ssd_bytes(800);
+    std::memcpy(original.data(), "OLD-DISK", 8);
+    original[512] = 0xA5;
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    fujinet::disk::MountOptions opts{};
+    opts.typeOverride = fujinet::disk::ImageType::Ssd;
+    REQUIRE(dev.disk_service().mount(0, "mem", "/games/work.ssd", opts).ok());
+
+    std::string p;
+    diskproto::write_u8(p, V);
+    diskproto::write_u8(p, 1);
+    diskproto::write_u16le(p, 256);
+    diskproto::write_u32le(p, 400);
+
+    IORequest req{};
+    req.id = 20;
+    req.deviceId = to_device_id(WireDeviceId::DiskService);
+    req.command = 0x0C; // Reinitialize
+    req.payload = to_vec(p);
+
+    IOResponse resp = dev.handle(req);
+    REQUIRE(resp.status == StatusCode::Ok);
+
+    diskproto::Reader r(resp.payload.data(), resp.payload.size());
+    std::uint8_t ver = 0, flags = 0, slot = 0, type = 0;
+    std::uint16_t reserved = 0, sectorSize = 0;
+    std::uint32_t sectorCount = 0;
+    REQUIRE(r.read_u8(ver));
+    REQUIRE(r.read_u8(flags));
+    REQUIRE(r.read_u16le(reserved));
+    REQUIRE(r.read_u8(slot));
+    REQUIRE(r.read_u8(type));
+    REQUIRE(r.read_u16le(sectorSize));
+    REQUIRE(r.read_u32le(sectorCount));
+    CHECK(ver == V);
+    CHECK((flags & 0x01) != 0);
+    CHECK(slot == 1);
+    CHECK(type == static_cast<std::uint8_t>(fujinet::disk::ImageType::Ssd));
+    CHECK(sectorSize == 256);
+    CHECK(sectorCount == 400);
+
+    const auto info = dev.disk_service().info(0);
+    CHECK(info.inserted);
+    CHECK(info.geometry.sectorCount == 400);
+    const auto& recreated = memfsPtr->file_bytes("/games/work.ssd");
+    REQUIRE(recreated.size() == 400 * 256);
+    CHECK(std::memcmp(recreated.data(), "BLANK", 5) == 0);
+    CHECK(recreated[512] == 0);
+}
+
+TEST_CASE("DiskService: Reinitialize rejects read-only media without changing it")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* memfsPtr = memfs.get();
+    memfs->file_bytes("/readonly.ssd") = make_ssd_bytes(800);
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    fujinet::disk::MountOptions opts{};
+    opts.typeOverride = fujinet::disk::ImageType::Ssd;
+    opts.readOnlyRequested = true;
+    REQUIRE(svc.mount(0, "mem", "/readonly.ssd", opts).ok());
+
+    const auto before = memfsPtr->file_bytes("/readonly.ssd");
+    CHECK(svc.reinitialize(0, 256, 400).error == fujinet::disk::DiskError::ReadOnly);
+    CHECK(memfsPtr->file_bytes("/readonly.ssd") == before);
+    CHECK(svc.info(0).inserted);
+    CHECK(svc.info(0).geometry.sectorCount == 800);
+}
+
+TEST_CASE("DiskService: Reinitialize rejects invalid geometry without unmounting media")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* memfsPtr = memfs.get();
+    memfs->file_bytes("/work.ssd") = make_ssd_bytes(800);
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    fujinet::disk::MountOptions opts{};
+    opts.typeOverride = fujinet::disk::ImageType::Ssd;
+    REQUIRE(svc.mount(0, "mem", "/work.ssd", opts).ok());
+
+    const auto before = memfsPtr->file_bytes("/work.ssd");
+    CHECK(svc.reinitialize(0, 256, 123).error == fujinet::disk::DiskError::InvalidGeometry);
+    CHECK(memfsPtr->file_bytes("/work.ssd") == before);
+    CHECK(svc.info(0).inserted);
+    CHECK(svc.info(0).geometry.sectorCount == 800);
+}
+
+TEST_CASE("DiskService: unsupported creator is rejected before an existing file is truncated")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* memfsPtr = memfs.get();
+    memfs->file_bytes("/keep.dsd") = {1, 2, 3, 4};
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    const auto result = svc.create_image(
+        "mem", "/keep.dsd", fujinet::disk::ImageType::Dsd, 256, 800, true);
+    CHECK(result.error == fujinet::disk::DiskError::UnsupportedImageType);
+    CHECK(memfsPtr->file_bytes("/keep.dsd") == std::vector<std::uint8_t>{1, 2, 3, 4});
+}
+
+TEST_CASE("DiskService: invalid creator geometry is rejected before an existing file is truncated")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* memfsPtr = memfs.get();
+    memfs->file_bytes("/keep.ssd") = make_ssd_bytes(800);
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    const auto before = memfsPtr->file_bytes("/keep.ssd");
+    const auto result = svc.create_image(
+        "mem", "/keep.ssd", fujinet::disk::ImageType::Ssd, 256, 123, true);
+    CHECK(result.error == fujinet::disk::DiskError::InvalidGeometry);
+    CHECK(memfsPtr->file_bytes("/keep.ssd") == before);
 }
 
 TEST_CASE("AtrDiskImage: 256-byte ATR has 128-byte first three sectors")

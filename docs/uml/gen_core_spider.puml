@@ -866,9 +866,11 @@ class "disk::ImageRegistry" as C_0008422084792172174393
 class C_0008422084792172174393 {
 +create(ImageType type) const : std::unique_ptr<IDiskImage>
 +create_file(ImageType type, fs::IFile & file, std::uint16_t sectorSize, std::uint32_t sectorCount) const : DiskResult
-+register_creator(ImageType type, Creator creator) : bool
++register_creator(ImageType type, Creator creator, CreateValidator validator) : bool
 +register_type(ImageType type, Factory factory) : bool
++validate_create(ImageType type, std::uint16_t sectorSize, std::uint32_t sectorCount) const : DiskResult
 __
+-_createValidators : std::unordered_map<std::uint8_t,CreateValidator>
 -_creators : std::unordered_map<std::uint8_t,Creator>
 -_factories : std::unordered_map<std::uint8_t,Factory>
 }

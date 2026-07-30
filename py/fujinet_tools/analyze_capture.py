@@ -55,6 +55,7 @@ COMMAND_NAMES: dict[int, dict[int, str]] = {
         dp.CMD_CLEAR_CHANGED: "ClearChanged",
         dp.CMD_CREATE: "Create",
         dp.CMD_RESTORE_BOOT: "RestoreBoot",
+        dp.CMD_REINITIALIZE: "Reinitialize",
     },
     np.NETWORK_DEVICE_ID: {
         np.CMD_OPEN: "Open",

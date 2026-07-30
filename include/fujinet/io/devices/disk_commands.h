@@ -16,6 +16,7 @@ enum class DiskCommand : std::uint8_t {
     WriteSectors = 0x09,
     RestoreBoot  = 0x0A,
     BeginHostSession = 0x0B,
+    Reinitialize = 0x0C,
 };
 
 inline DiskCommand to_disk_command(std::uint16_t raw)

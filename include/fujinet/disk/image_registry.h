@@ -14,20 +14,22 @@ class ImageRegistry {
 public:
     using Factory = std::function<std::unique_ptr<IDiskImage>()>;
     using Creator = std::function<DiskResult(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)>;
+    using CreateValidator = std::function<DiskResult(std::uint16_t sectorSize, std::uint32_t sectorCount)>;
 
     bool register_type(ImageType type, Factory factory);
     std::unique_ptr<IDiskImage> create(ImageType type) const;
 
-    bool register_creator(ImageType type, Creator creator);
+    bool register_creator(ImageType type, Creator creator, CreateValidator validator);
+    DiskResult validate_create(ImageType type, std::uint16_t sectorSize, std::uint32_t sectorCount) const;
     DiskResult create_file(ImageType type, fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount) const;
 
 private:
     std::unordered_map<std::uint8_t, Factory> _factories;
     std::unordered_map<std::uint8_t, Creator> _creators;
+    std::unordered_map<std::uint8_t, CreateValidator> _createValidators;
 };
 
 // Default registry (pure/core): provides Raw (implemented) and placeholders for Atr/Ssd/Dsd.
 ImageRegistry make_default_image_registry();
 
 } // namespace fujinet::disk
-

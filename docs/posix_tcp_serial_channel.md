@@ -136,18 +136,17 @@ The QEMU boot disk and the NIO-exposed disk are separate concerns:
 - The MS-DOS driver talks to `DiskDevice` over FujiBus and sees that raw image
   as a sector device.
 
-Example NIO config for a DOS/FAT raw image:
+Example NIO channel configuration:
 
 ```yaml
-mounts:
-  - slot: 1
-    uri: "host:/dos/fn-dos.img"
-    mode: "rw"
-    enabled: true
 channel:
   tcp_host: "127.0.0.1"
   tcp_port: 65504
 ```
+
+The DOS client selects a catalogue URI and sends it to an active DiskDevice
+unit; `mounts:` lists in YAML are obsolete. See
+[Slot catalogue and active disk mounts](slot_state.md).
 
 Raw DOS/FAT images with a valid FAT BPB can be mounted without a sector-size
 hint. Use `sector_size_hint` only for headerless raw images or ambiguous files

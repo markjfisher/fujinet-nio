@@ -4,6 +4,10 @@
 
 ---
 
+Persistent user slot choices and active disk units have separate lifecycles.
+See [Slot catalogue and active disk mounts](slot_state.md) for the AppStore
+format, sparse-index semantics, and lazy-mount interaction.
+
 ## **Table of Contents**
 1. [Overview](#overview)  
 2. [Design Principles](#design-principles)  
@@ -1038,6 +1042,8 @@ Disk image format support is selected via a registry, not hard-coded in `DiskSer
 - `disk::ImageRegistry` contains:
   - **factories** (ImageType → `IDiskImage`) for mounting/sector I/O
   - **creators** (ImageType → create function) for creating blank image files
+  - **create validators** (ImageType → geometry check) so destructive recreate
+    operations reject unsupported geometry before opening/truncating an image
 - `DiskDevice` is constructed with an `ImageRegistry` instance.
 
 The **platform layer** is responsible for building the default registry (this mirrors how NetworkDevice selects protocol backends):

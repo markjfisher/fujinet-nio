@@ -216,19 +216,26 @@ std::unique_ptr<IDiskImage> make_atr_disk_image()
     return std::make_unique<AtrDiskImage>();
 }
 
-DiskResult create_atr_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+DiskResult validate_atr_image_geometry(std::uint16_t sectorSize, std::uint32_t sectorCount)
 {
-    // Minimal ATR create derived from classic firmware behavior.
-    // Header is 16 bytes.
     if (!(sectorSize == 128 || sectorSize == 256 || sectorSize == 512)) {
         return DiskResult{DiskError::InvalidGeometry};
     }
     if (sectorCount == 0) return DiskResult{DiskError::InvalidGeometry};
+    if (sectorSize == 256 && sectorCount < 3) return DiskResult{DiskError::InvalidGeometry};
+    return DiskResult{DiskError::None};
+}
+
+DiskResult create_atr_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+{
+    // Minimal ATR create derived from classic firmware behavior.
+    // Header is 16 bytes.
+    DiskResult validation = validate_atr_image_geometry(sectorSize, sectorCount);
+    if (!validation.ok()) return validation;
 
     std::uint64_t totalData = static_cast<std::uint64_t>(sectorSize) * sectorCount;
     // Adjust for first 3 sectors being 128 bytes when sectorSize == 256 (matches old firmware logic).
     if (sectorSize == 256) {
-        if (sectorCount < 3) return DiskResult{DiskError::InvalidGeometry};
         totalData -= 384ull;
     }
 

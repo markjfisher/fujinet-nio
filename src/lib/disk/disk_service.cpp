@@ -95,6 +95,7 @@ DiskResult DiskService::mount(
     s->statsWriteCursorValid = false;
     s->statsNextReadLba = 0;
     s->statsNextWriteLba = 0;
+    s->pendingMount.reset();
     _stats[slotIndex] = {};
 
     auto* pfs = _storage.get(fsName);
@@ -197,6 +198,8 @@ DiskResult DiskService::create_image(
 ) {
     if (type == ImageType::Auto) return DiskResult{DiskError::UnsupportedImageType};
     if (sectorSize == 0 || sectorCount == 0) return DiskResult{DiskError::InvalidGeometry};
+    DiskResult validation = _registry.validate_create(type, sectorSize, sectorCount);
+    if (!validation.ok()) return validation;
 
     auto* pfs = _storage.get(fsName);
     if (!pfs) return DiskResult{DiskError::NoSuchFileSystem};
@@ -212,6 +215,41 @@ DiskResult DiskService::create_image(
     if (!r.ok()) return r;
     if (!f->flush()) return DiskResult{DiskError::IoError};
     return DiskResult{DiskError::None};
+}
+
+DiskResult DiskService::reinitialize(
+    std::size_t slotIndex,
+    std::uint16_t sectorSize,
+    std::uint32_t sectorCount
+) {
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return DiskResult{DiskError::InvalidSlot};
+    if (!s->inserted || !s->image) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    if (s->readOnly) return DiskResult{set_error(slotIndex, DiskError::ReadOnly)};
+    if (sectorSize == 0 || sectorCount == 0) {
+        return DiskResult{set_error(slotIndex, DiskError::InvalidGeometry)};
+    }
+    DiskResult validation = _registry.validate_create(s->type, sectorSize, sectorCount);
+    if (!validation.ok()) return DiskResult{set_error(slotIndex, validation.error)};
+
+    const std::string fsName = s->fsName;
+    const std::string path = s->path;
+    const ImageType type = s->type;
+
+    MountOptions opts{};
+    opts.readOnlyRequested = false;
+    opts.typeOverride = type;
+    opts.sectorSizeHint = sectorSize;
+
+    DiskResult ur = unmount(slotIndex);
+    if (!ur.ok()) return ur;
+
+    DiskResult cr = create_image(fsName, path, type, sectorSize, sectorCount, true);
+    if (!cr.ok()) {
+        return DiskResult{set_error(slotIndex, cr.error)};
+    }
+
+    return mount(slotIndex, fsName, path, opts);
 }
 
 DiskResult DiskService::unmount(std::size_t slotIndex)
@@ -238,6 +276,7 @@ DiskResult DiskService::unmount(std::size_t slotIndex)
     s->statsWriteCursorValid = false;
     s->statsNextReadLba = 0;
     s->statsNextWriteLba = 0;
+    s->pendingMount.reset();
 
     return DiskResult{DiskError::None};
 }
@@ -516,16 +555,22 @@ DiskResult DiskService::activate_pending_mount(std::size_t slotIndex)
     if (!s) return DiskResult{DiskError::InvalidSlot};
     if (!s->pendingMount) return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
 
-    auto [fs, resolvedPath] = _storage.resolveUri(s->pendingMount->uri);
+    const PendingMountInfo pending = *s->pendingMount;
+    auto [fs, resolvedPath] = _storage.resolveUri(pending.uri);
     if (!fs) {
         return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
     }
 
     MountOptions opts{};
-    opts.readOnlyRequested = (s->pendingMount->mode.find('w') == std::string::npos);
-    opts.sectorSizeHint = s->pendingMount->sectorSizeHint;
+    opts.readOnlyRequested = (pending.mode.find('w') == std::string::npos);
+    opts.sectorSizeHint = pending.sectorSizeHint;
 
-    return mount(slotIndex, fs->name(), resolvedPath, opts);
+    DiskResult result = mount(slotIndex, fs->name(), resolvedPath, opts);
+    if (!result.ok()) {
+        // A lazy mount may be retried after transient storage/network failure.
+        if (auto* failedSlot = slot_ptr(slotIndex)) failedSlot->pendingMount = pending;
+    }
+    return result;
 }
 
 DiskSlotInfo DiskService::info(std::size_t slotIndex) const

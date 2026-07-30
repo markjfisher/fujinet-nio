@@ -10,9 +10,10 @@ namespace fujinet::disk {
 // v1 scope: geometry + sector read/write only (no catalog parsing).
 std::unique_ptr<IDiskImage> make_ssd_disk_image();
 
+DiskResult validate_ssd_image_geometry(std::uint16_t sectorSize, std::uint32_t sectorCount);
+
 // Create a blank SSD image into an already-open file (expected truncate/opened "wb").
 DiskResult create_ssd_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount);
 
 } // namespace fujinet::disk
-
 

@@ -2,11 +2,17 @@
 
 This document specifies the **binary, non-JSON** request/response format used by the **FujiDevice** (`WireDeviceId::FujiNet`, currently `0x70`).
 
-The FujiDevice is the **configuration and control** device for FujiNet-NIO. In the current fn-rom integration it is used primarily for:
+The FujiDevice is the **configuration and control** device for FujiNet-NIO. It
+contains an older eight-entry mount-configuration API retained for protocol
+compatibility. It is not the config-nio slot catalogue:
 
 - resetting the FujiNet instance
-- querying persisted FujiNet mount-slot configuration
-- updating persisted FujiNet mount-slot configuration
+- querying the legacy FujiNet mount configuration
+- updating the legacy FujiNet mount configuration
+
+New clients store their sparse 0..255 catalogue through FileDevice AppStore and
+mount resolved URIs through DiskDevice. See
+[Slot catalogue and active disk mounts](slot_state.md).
 
 This protocol is intentionally small and 8-bit-host friendly.
 
@@ -16,7 +22,7 @@ This protocol is intentionally small and 8-bit-host friendly.
 
 - **Host**: the remote client sending requests (for this work, fn-rom on the BBC Micro).
 - **Device**: `FujiDevice` in fujinet-nio.
-- **Mount slot**: a FujiNet persisted mount entry, indexed **0..7 on the wire**.
+- **Legacy mount slot**: a FujiNet configuration entry, indexed **0..7 on the wire**.
 - **Persisted slot number**: internal config/YAML representation, stored as **1..8** in [`MountConfig::slot`](include/fujinet/config/fuji_config.h:29).
 
 ---
@@ -287,12 +293,12 @@ This is specifically intended to make 8-bit client code simpler while preserving
 
 ---
 
-## Intended fn-rom usage
+## fn-rom usage
 
-The current fn-rom design uses FujiDevice for the persisted FujiNet mount table and FileDevice for path traversal:
-
-- [`*FIN`](../../bbc/fn-rom/src/commands/cmd_fin.s) writes a URI into a persisted FujiNet mount slot via `SetMount`, currently storing default slot policy `auto`
-- [`*FMOUNT`](../../bbc/fn-rom/src/commands/cmd_fmount.s) bridges a FujiNet mount slot to one of the BBC’s local DFS drives
-- [`*FHOST`](../../bbc/fn-rom/src/commands/cmd_fhost.s), `*FCD`, `*FLIST`, and `*FLS` use FileDevice URI/path resolution and listing
+Current fn-rom uses FujiDevice for control operations such as reset, but no
+longer uses its legacy mount table. `*FIN` writes `config-nio/slot-NNN` through
+FileDevice AppStore; `*FMOUNT` reads that key and sends the resolved URI to an
+active DiskDevice unit. `*FHOST`, `*FCD`, `*FLIST`, and `*FLS` also use
+FileDevice URI/path resolution and listing.
 
 This split keeps URI parsing and traversal logic on the more capable FujiNet side while leaving the ROM comparatively small.

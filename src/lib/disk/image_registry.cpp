@@ -62,9 +62,9 @@ std::unique_ptr<IDiskImage> ImageRegistry::create(ImageType type) const
     return (it->second)();
 }
 
-bool ImageRegistry::register_creator(ImageType type, Creator creator)
+bool ImageRegistry::register_creator(ImageType type, Creator creator, CreateValidator validator)
 {
-    if (type == ImageType::Auto || !creator) {
+    if (type == ImageType::Auto || !creator || !validator) {
         return false;
     }
     const auto key = static_cast<std::uint8_t>(type);
@@ -72,7 +72,19 @@ bool ImageRegistry::register_creator(ImageType type, Creator creator)
         return false;
     }
     _creators.emplace(key, std::move(creator));
+    _createValidators.emplace(key, std::move(validator));
     return true;
+}
+
+DiskResult ImageRegistry::validate_create(
+    ImageType type,
+    std::uint16_t sectorSize,
+    std::uint32_t sectorCount
+) const {
+    if (type == ImageType::Auto) return DiskResult{DiskError::UnsupportedImageType};
+    auto it = _createValidators.find(static_cast<std::uint8_t>(type));
+    if (it == _createValidators.end()) return DiskResult{DiskError::UnsupportedImageType};
+    return (it->second)(sectorSize, sectorCount);
 }
 
 DiskResult ImageRegistry::create_file(ImageType type, fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount) const
@@ -97,15 +109,18 @@ ImageRegistry make_default_image_registry()
     reg.register_type(ImageType::Dsd, [] { return std::make_unique<UnsupportedImage>(ImageType::Dsd); });
 
     // Creators (blank image creation).
-    reg.register_creator(ImageType::Raw, [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) {
-        return create_raw_image_file(f, ss, sc);
-    });
-    reg.register_creator(ImageType::Atr, [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) {
-        return create_atr_image_file(f, ss, sc);
-    });
-    reg.register_creator(ImageType::Ssd, [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) {
-        return create_ssd_image_file(f, ss, sc);
-    });
+    reg.register_creator(
+        ImageType::Raw,
+        [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) { return create_raw_image_file(f, ss, sc); },
+        validate_raw_image_geometry);
+    reg.register_creator(
+        ImageType::Atr,
+        [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) { return create_atr_image_file(f, ss, sc); },
+        validate_atr_image_geometry);
+    reg.register_creator(
+        ImageType::Ssd,
+        [](fs::IFile& f, std::uint16_t ss, std::uint32_t sc) { return create_ssd_image_file(f, ss, sc); },
+        validate_ssd_image_geometry);
 
     return reg;
 }

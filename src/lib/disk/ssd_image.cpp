@@ -138,10 +138,17 @@ std::unique_ptr<IDiskImage> make_ssd_disk_image()
     return std::make_unique<SsdDiskImage>();
 }
 
-DiskResult create_ssd_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+DiskResult validate_ssd_image_geometry(std::uint16_t sectorSize, std::uint32_t sectorCount)
 {
     if (sectorSize != 256) return DiskResult{DiskError::InvalidGeometry};
     if (!(sectorCount == 400 || sectorCount == 800)) return DiskResult{DiskError::InvalidGeometry};
+    return DiskResult{DiskError::None};
+}
+
+DiskResult create_ssd_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+{
+    DiskResult validation = validate_ssd_image_geometry(sectorSize, sectorCount);
+    if (!validation.ok()) return validation;
 
     // Write a minimal DFS 0.90 catalogue header (2 sectors).
     // Reference: https://beebwiki.mdfs.net/Acorn_DFS_disc_format
@@ -176,5 +183,4 @@ DiskResult create_ssd_image_file(fs::IFile& file, std::uint16_t sectorSize, std:
 }
 
 } // namespace fujinet::disk
-
 

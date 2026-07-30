@@ -69,6 +69,8 @@ The `StorageManager::resolveUri()` function handles scheme parsing and authority
 `DiskService` owns a fixed array of **slots**:
 
 - Slot numbers are **1-based** in the DiskDevice protocol (D1=1 … Dn=n).
+- These are active runtime units, not the sparse user catalogue maintained by
+  config-nio. See [Slot catalogue and active disk mounts](slot_state.md).
 - Slots contain:
   - “inserted” state (image mounted or not)
   - readonly state (requested vs effective)
@@ -79,9 +81,8 @@ The `StorageManager::resolveUri()` function handles scheme parsing and authority
 
 When `boot.mode` is `config`, bootstrap policy installs `boot.config_uri` as a
 pending mount on the active runtime disk unit, currently slot index `0`
-(`D1`/`D:` depending on host convention). Persisted `mounts:` entries targeting
-that same runtime unit are skipped during startup so the host can see the config
-disk first. User-initiated mounts can still replace it later.
+(`D1`/`D:` depending on host convention). User-initiated mounts can replace it
+later.
 
 ---
 
@@ -253,6 +254,26 @@ Commands are encoded in the low 8 bits of `IORequest.command` (device masks to 8
 | `Create`       | `0x07` | Create a new image file (blank) |
 | `RestoreBoot`  | `0x0A` | Mount configured `boot.config_uri` into a slot |
 | `BeginHostSession` | `0x0B` | Start a new host-side session and restore the configured boot disk |
+| `Reinitialize` | `0x0C` | Recreate the image mounted in a slot with new geometry and remount it |
+
+`Reinitialize` is a destructive image operation, not a machine-specific
+filesystem formatter. It retains the active slot's filesystem URI, image type,
+and runtime mapping, and delegates blank-image creation to that image type's
+registered creator. For SSD this produces the same mountable blank DFS image as
+`Create`; other image types retain their own creator semantics.
+
+Request:
+
+```
+u8  version
+u8  slot
+u16 sector_size
+u32 sector_count
+```
+
+The slot must already contain writable mounted media. The response uses the
+same mounted-image summary fields as `Mount`: version, flags, slot, image type,
+sector size, and sector count.
 
 ### Slot numbering
 
@@ -314,40 +335,12 @@ Mount policy notes:
 - If `bit0` is clear, the service may try writable access first and then fall back to read-only.
 - The actual outcome is reported in response `flags bit1` (`readonly_effective`).
 
-## Persisted config mounts
+## Obsolete YAML mount lists
 
-Runtime configuration can define mounts in `fujinet.yaml`. These are applied at
-startup after `DiskDevice` has been registered. The mount is intentionally lazy:
-the config is stored as a pending mount and the image file is opened on first
-`Info`, sector read, or sector write for that slot.
-
-If config boot mode has already reserved the active boot disk unit,
-`apply_config_mounts_excluding()` is used so a persisted slot entry cannot
-overwrite the boot/config disk before the host reads it.
-
-Example:
-
-```yaml
-mounts:
-  - slot: 1
-    uri: "host:/dos/fn-dos.img"
-    mode: "rw"
-    enabled: true
-    sector_size_hint: 512
-```
-
-Fields:
-
-- `slot`: 1-based disk slot (`1` maps to internal slot index `0`)
-- `uri`: full storage URI resolved through `StorageManager`
-- `mode`: `r` or `rw`; `rw` attempts writable open and may fall back read-only
-- `enabled`: disabled mounts are skipped
-- `sector_size_hint`: optional raw-image sector size hint; `0` or omission lets
-  NIO probe known raw-container formats, then fall back to 256-byte raw sectors
-
-For MS-DOS/FAT raw disk images with a valid FAT BPB, NIO can infer the sector
-size from the image. Use `sector_size_hint` for headerless raw images or
-ambiguous files whose geometry cannot be detected from content.
+The former `mounts:` list in `fujinet.yaml` is not applied at startup. User
+catalogue entries belong to config-nio and are stored as sparse AppStore keys;
+only a URI selected for an active host drive is sent to DiskDevice `Mount`.
+There is no migration from the early-development YAML format.
 
 ## Runtime mount recovery
 
@@ -363,7 +356,7 @@ Runtime recovery covers:
   runtime mount for that slot.
 
 On FujiNet startup, `DiskDevice` restores those runtime mounts as pending lazy
-mounts before applying configured `mounts:` entries or the boot/config disk.
+mounts before applying the boot/config disk.
 This keeps the device-side state aligned when FujiNet is reset while the host
 computer is still running and still believes a mounted disk is present.
 

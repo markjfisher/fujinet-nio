@@ -811,6 +811,44 @@ IOResponse DiskDevice::handle(const IORequest& request)
             resp.payload = std::move(out);
             return resp;
         }
+
+        case DiskCommand::Reinitialize: {
+            std::uint8_t slot1 = 0;
+            std::uint16_t sectorSize = 0;
+            std::uint32_t sectorCount = 0;
+            if (!r.read_u8(slot1)) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!r.read_u16le(sectorSize)) return make_base_response(request, StatusCode::InvalidRequest);
+            if (!r.read_u32le(sectorCount)) return make_base_response(request, StatusCode::InvalidRequest);
+
+            std::size_t idx = 0;
+            if (!parse_slot_1based(slot1, idx) || idx >= _svc.slot_count()) {
+                return make_base_response(request, StatusCode::InvalidRequest);
+            }
+
+            DiskResult mountResult = _svc.ensure_mounted(idx);
+            if (!mountResult.ok()) return make_base_response(request, map_disk_error(mountResult.error));
+
+            DiskResult dr = _svc.reinitialize(idx, sectorSize, sectorCount);
+            IOResponse resp = make_base_response(request, map_disk_error(dr.error));
+            if (resp.status != StatusCode::Ok) return resp;
+
+            const auto info = _svc.info(idx);
+            std::uint8_t flags = 0;
+            if (info.inserted) flags |= 0x01;
+            if (info.readOnly) flags |= 0x02;
+
+            std::vector<std::uint8_t> out;
+            out.reserve(12);
+            diskproto::write_u8(out, DISKPROTO_VERSION);
+            diskproto::write_u8(out, flags);
+            diskproto::write_u16le(out, 0);
+            diskproto::write_u8(out, slot1);
+            diskproto::write_u8(out, static_cast<std::uint8_t>(info.type));
+            diskproto::write_u16le(out, info.geometry.sectorSize);
+            diskproto::write_u32le(out, info.geometry.sectorCount);
+            resp.payload = std::move(out);
+            return resp;
+        }
     }
 
     FN_LOGW(TAG, "Unsupported DiskCommand %u", static_cast<unsigned>(static_cast<std::uint8_t>(cmd)));

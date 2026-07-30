@@ -142,11 +142,19 @@ std::unique_ptr<IDiskImage> make_raw_disk_image()
     return std::make_unique<RawDiskImage>();
 }
 
-DiskResult create_raw_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+DiskResult validate_raw_image_geometry(std::uint16_t sectorSize, std::uint32_t sectorCount)
 {
     if (sectorSize == 0 || sectorCount == 0) return DiskResult{DiskError::InvalidGeometry};
     const std::uint64_t total = static_cast<std::uint64_t>(sectorSize) * sectorCount;
     if (total == 0) return DiskResult{DiskError::InvalidGeometry};
+    return DiskResult{DiskError::None};
+}
+
+DiskResult create_raw_image_file(fs::IFile& file, std::uint16_t sectorSize, std::uint32_t sectorCount)
+{
+    DiskResult validation = validate_raw_image_geometry(sectorSize, sectorCount);
+    if (!validation.ok()) return validation;
+    const std::uint64_t total = static_cast<std::uint64_t>(sectorSize) * sectorCount;
     if (!file.seek(total - 1)) return DiskResult{DiskError::IoError};
     const std::uint8_t z = 0;
     if (file.write(&z, 1) != 1) return DiskResult{DiskError::IoError};

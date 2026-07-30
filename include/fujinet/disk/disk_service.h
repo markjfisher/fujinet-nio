@@ -64,6 +64,14 @@ public:
         bool overwrite
     );
 
+    // Destructively recreate the image currently mounted in a slot using its
+    // existing filesystem, path, image type, and access mode, then remount it.
+    DiskResult reinitialize(
+        std::size_t slotIndex,
+        std::uint16_t sectorSize,
+        std::uint32_t sectorCount
+    );
+
     DiskResult unmount(std::size_t slotIndex);
 
     DiskResult read_sector(std::size_t slotIndex, std::uint32_t lba, std::uint8_t* dst, std::size_t dstBytes);

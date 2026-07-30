@@ -151,6 +151,9 @@ public:
             } else {
                 return nullptr;
             }
+        } else if (m.find('w') != std::string::npos) {
+            // Match fopen("w"/"wb"): opening an existing file truncates it.
+            it->second.clear();
         }
 
         return std::make_unique<MemoryFile>(it->second, readOnly);
@@ -249,5 +252,4 @@ private:
 };
 
 } // namespace fujinet::tests
-
 
