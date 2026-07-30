@@ -542,38 +542,21 @@ __
 }
 class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
-+FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
++FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore) : void
 ..
 +config() const : const config::FujiConfig &
 +config_mut() : config::FujiConfig &
 +config_store() : config::FujiConfigStore *
-{static} -encode_mount_record(std::uint8_t slotIndex, const std::string & uri, const std::string & mode, bool enabled) : std::vector<std::uint8_t>
--find_mount_by_slot_number(int slotNumber) const : const config::MountConfig *
--find_mount_by_slot_number(int slotNumber) : config::MountConfig *
-{static} -format_mount_line(int slotLabel, std::string_view uri, std::string_view mode, bool enabled) : std::string
-{static} -formatted_mount_slot_label(const config::MountConfig & mount) : int
 +handle(const IORequest & request) : IOResponse
--handle_get_mount(const IORequest & request) : IOResponse
--handle_get_mounts(const IORequest & request) : IOResponse
 -handle_reset(const IORequest & request) : IOResponse
--handle_set_mount(const IORequest & request) : IOResponse
 -handle_unknown(const IORequest & request) : IOResponse
-{static} -is_valid_mount_slot_index(std::uint8_t slotIndex) : bool
 -load_config() : void
 +poll() : void
--save_config() : void
 +start() : void
 __
 -_config : config::FujiConfig
 -_configStore : std::unique_ptr<config::FujiConfigStore>
 -_resetHandler : ResetHandler
--_storage : fs::StorageManager &
-}
-class "io::UriDisplayParts" as C_0017616616105646512159
-class C_0017616616105646512159 {
-__
-+detail : std::string
-+summary : std::string
 }
 class "io::IOService" as C_0007645722238685656096
 class C_0007645722238685656096 {
@@ -910,6 +893,12 @@ __
 -_openReq : NetworkOpenRequest
 -_requestBody : std::vector<std::uint8_t>
 }
+class "io::UriDisplayParts" as C_0017616616105646512159
+class C_0017616616105646512159 {
+__
++detail : std::string
++summary : std::string
+}
 class "io::NetworkDeviceDiagnosticsAccessor::SessionRow" as C_0007753937317853453679
 class C_0007753937317853453679 {
 __
@@ -1063,7 +1052,6 @@ C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
 C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
-C_0016024516082849980408 --> C_0001279065520068563954 : -_storage
 C_0010069830097413987109 <|-- C_0016024516082849980408
 C_0007645722238685656096 ..> C_0015529497257294770104
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler

@@ -25,17 +25,6 @@ __
 +passphrase : std::string
 +ssid : std::string
 }
-class "config::MountConfig" as C_0013943630642961179492
-class C_0013943630642961179492 {
-+effective_slot() const : int
-{static} +from_index(int slotIndex) constexpr : int
-__
-+enabled : bool
-+mode : std::string
-+sectorSizeHint : std::uint16_t
-+slot : int
-+uri : std::string
-}
 class "config::ModemConfig" as C_0005975997772767504221
 class C_0005975997772767504221 {
 __
@@ -111,7 +100,6 @@ __
 +cpm : CpmConfig
 +general : GeneralConfig
 +modem : ModemConfig
-+mounts : std::vector<MountConfig>
 +netsio : NetSioConfig
 +printer : PrinterConfig
 +wifi : WifiConfig
@@ -145,7 +133,6 @@ C_0014601375190208620155 o-- C_0010483269678483040323 : +uart
 C_0013064010099190715901 o-- C_0016837659718836839167 : +general
 C_0013064010099190715901 o-- C_0007703634119308578859 : +boot
 C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
-C_0013064010099190715901 o-- C_0013943630642961179492 : +mounts
 C_0013064010099190715901 o-- C_0005975997772767504221 : +modem
 C_0013064010099190715901 o-- C_0006472023737076814481 : +cpm
 C_0013064010099190715901 o-- C_0011654528465957303447 : +printer

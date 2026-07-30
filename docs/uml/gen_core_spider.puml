@@ -467,32 +467,21 @@ __
 }
 class "io::FujiDevice" as C_0016024516082849980408
 class C_0016024516082849980408 {
-+FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore, fs::StorageManager & storage) : void
++FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore) : void
 ..
 +config() const : const config::FujiConfig &
 +config_mut() : config::FujiConfig &
 +config_store() : config::FujiConfigStore *
-{static} -encode_mount_record(std::uint8_t slotIndex, const std::string & uri, const std::string & mode, bool enabled) : std::vector<std::uint8_t>
--find_mount_by_slot_number(int slotNumber) const : const config::MountConfig *
--find_mount_by_slot_number(int slotNumber) : config::MountConfig *
-{static} -format_mount_line(int slotLabel, std::string_view uri, std::string_view mode, bool enabled) : std::string
-{static} -formatted_mount_slot_label(const config::MountConfig & mount) : int
 +handle(const IORequest & request) : IOResponse
--handle_get_mount(const IORequest & request) : IOResponse
--handle_get_mounts(const IORequest & request) : IOResponse
 -handle_reset(const IORequest & request) : IOResponse
--handle_set_mount(const IORequest & request) : IOResponse
 -handle_unknown(const IORequest & request) : IOResponse
-{static} -is_valid_mount_slot_index(std::uint8_t slotIndex) : bool
 -load_config() : void
 +poll() : void
--save_config() : void
 +start() : void
 __
 -_config : config::FujiConfig
 -_configStore : std::unique_ptr<config::FujiConfigStore>
 -_resetHandler : ResetHandler
--_storage : fs::StorageManager &
 }
 class "io::IOService" as C_0007645722238685656096
 class C_0007645722238685656096 {
@@ -1083,17 +1072,6 @@ __
 +passphrase : std::string
 +ssid : std::string
 }
-class "config::MountConfig" as C_0013943630642961179492
-class C_0013943630642961179492 {
-+effective_slot() const : int
-{static} +from_index(int slotIndex) constexpr : int
-__
-+enabled : bool
-+mode : std::string
-+sectorSizeHint : std::uint16_t
-+slot : int
-+uri : std::string
-}
 class "config::ModemConfig" as C_0005975997772767504221
 class C_0005975997772767504221 {
 __
@@ -1142,7 +1120,6 @@ __
 +cpm : CpmConfig
 +general : GeneralConfig
 +modem : ModemConfig
-+mounts : std::vector<MountConfig>
 +netsio : NetSioConfig
 +printer : PrinterConfig
 +wifi : WifiConfig
@@ -1595,10 +1572,8 @@ C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
 C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
-C_0016024516082849980408 ..> C_0013943630642961179492
 C_0016024516082849980408 o-- C_0010708806357379257038 : -_configStore
 C_0016024516082849980408 o-- C_0013064010099190715901 : -_config
-C_0016024516082849980408 --> C_0001279065520068563954 : -_storage
 C_0010069830097413987109 <|-- C_0016024516082849980408
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
 C_0007645722238685656096 --> C_0015529497257294770104 : -_transports
@@ -1747,7 +1722,6 @@ C_0005653965888165700902 <|-- C_0018260908211426513164
 C_0013064010099190715901 o-- C_0016837659718836839167 : +general
 C_0013064010099190715901 o-- C_0007703634119308578859 : +boot
 C_0013064010099190715901 o-- C_0016905784937528219397 : +wifi
-C_0013064010099190715901 o-- C_0013943630642961179492 : +mounts
 C_0013064010099190715901 o-- C_0005975997772767504221 : +modem
 C_0013064010099190715901 o-- C_0006472023737076814481 : +cpm
 C_0013064010099190715901 o-- C_0011654528465957303447 : +printer

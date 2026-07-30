@@ -78,9 +78,6 @@ enum "io::protocol::FujiCommand" as C_0004628219160953719395
 enum C_0004628219160953719395 {
 Reset
 GetSsid
-GetMounts
-SetMount
-GetMount
 }
 enum "io::protocol::DiskCommand" as C_0015699043703645047876
 enum C_0015699043703645047876 {
@@ -96,6 +93,7 @@ WriteSectors
 RestoreBoot
 BeginHostSession
 Reinitialize
+ListMounts
 }
 enum "io::protocol::NetworkCommand" as C_0007700754280455587098
 enum C_0007700754280455587098 {
