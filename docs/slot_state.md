@@ -43,10 +43,41 @@ application data.
 A client mounting catalogue slot 69 reads `config-nio/slot-069`, then sends the
 resolved URI to the Disk device. The catalogue number is not a Disk unit.
 
+Slot records contain canonical URIs. A target-side command such as BBC
+`*FIN 69 elite.ssd` first asks HostService to resolve the relative name against
+the current host/path, then stores the resulting full URI. A configuration UI
+which selected the same file while browsing stores that same canonical form.
+Changing the current host later therefore does not silently change an existing
+catalogue entry.
+
 Disk units are the bounded active drives required by the host adapter. For
 example, mounting catalogue slot 69 into BBC drive 0 resolves slot 69 once and
 installs its URI in active Disk unit 1 (the protocol uses one-based units).
 Sector I/O subsequently addresses active unit 1.
+
+## Persistent drive mappings
+
+The catalogue and the active Disk device remain separate, but configuration
+clients share the desired catalogue-to-drive assignments in the AppStore key
+`config-nio/mappings`. Its fixed binary v1 value is:
+
+```
+u8 version = 1
+repeat 8 times:
+    u8 flags       // bit 0 valid, bit 1 read-only
+    u8 catalogSlot // 0..255
+```
+
+The fixed pairs let a small client update one drive without enumerating the
+catalogue or rewriting variable-length text. BBC `*FMOUNT` updates the selected
+pair only after the live lazy mount succeeds; `*FUMOUNT` clears it only after
+the live unmount succeeds. `config-nio` reads and writes the same value, so a
+mapping made at the CLI is visible in the UI and vice versa.
+
+This mapping value describes user intent and retains the catalogue index needed
+for display and later remounting. DiskService separately persists its bounded
+runtime mounts as canonical URIs so sector I/O and restart recovery do not
+depend on reading the application catalogue.
 
 ## Lazy mounting
 

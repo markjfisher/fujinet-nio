@@ -256,6 +256,11 @@ std::vector<std::uint8_t> make_host_set_request(std::string_view spec)
     return payload;
 }
 
+std::vector<std::uint8_t> make_host_resolve_request(std::string_view spec)
+{
+    return make_host_set_request(spec);
+}
+
 std::vector<std::uint8_t> make_host_list_request(std::uint16_t offset, std::uint16_t max_bytes)
 {
     std::vector<std::uint8_t> payload;
@@ -743,6 +748,63 @@ TEST_CASE("HostService manipulates current host and LRU history")
     CHECK(device.handle(request).status == StatusCode::Ok);
     CHECK(host_current_uri(device) == "tnfs://server/a");
     CHECK(host_history_text(device) == "0 tnfs://server/c\n1 tnfs://server/b\n");
+}
+
+TEST_CASE("HostService resolves a relative target without changing current host")
+{
+    StorageManager storage;
+    auto fs = std::make_unique<MemoryFs>("tnfs");
+    fs->add_entry("tnfs://server/root", true);
+    CHECK(storage.registerFileSystem(std::move(fs)));
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+
+    HostService device(storage);
+
+    IORequest request{};
+    request.command = static_cast<std::uint16_t>(HostCommand::SetCurrent);
+    request.payload = make_host_set_request("tnfs://server/root");
+    REQUIRE(device.handle(request).status == StatusCode::Ok);
+
+    request.command = static_cast<std::uint16_t>(HostCommand::ResolveTarget);
+    request.payload = make_host_resolve_request("chuck.ssd");
+    const auto response = device.handle(request);
+    REQUIRE(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= 3);
+    const auto uriLen = read_u16le(response.payload, 1);
+    REQUIRE(response.payload.size() == 3U + uriLen);
+    CHECK(std::string(response.payload.begin() + 3, response.payload.end()) ==
+          "tnfs://server/root/chuck.ssd");
+    CHECK(host_current_uri(device) == "tnfs://server/root");
+}
+
+TEST_CASE("HostService cannot resolve a relative target before a host is set")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    HostService device(storage);
+
+    IORequest request{};
+    request.command = static_cast<std::uint16_t>(HostCommand::ResolveTarget);
+    request.payload = make_host_resolve_request("chuck.ssd");
+    CHECK(device.handle(request).status == StatusCode::DeviceNotFound);
+}
+
+TEST_CASE("HostService resolves an absolute target before a current host is set")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    HostService device(storage);
+
+    IORequest request{};
+    request.command = static_cast<std::uint16_t>(HostCommand::ResolveTarget);
+    request.payload = make_host_resolve_request("host:/games/elite.ssd");
+    const auto response = device.handle(request);
+    REQUIRE(response.status == StatusCode::Ok);
+    REQUIRE(response.payload.size() >= 3);
+    const auto uriLen = read_u16le(response.payload, 1);
+    REQUIRE(response.payload.size() == 3U + uriLen);
+    CHECK(std::string(response.payload.begin() + 3, response.payload.end()) ==
+          "host:/games/elite.ssd");
 }
 
 TEST_CASE("AppStore current-host key is plain key/value storage")

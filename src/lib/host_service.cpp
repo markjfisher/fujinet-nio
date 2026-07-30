@@ -143,6 +143,28 @@ IOResponse HostService::handle(const IORequest& request)
         return resp;
     }
 
+    case HostCommand::ResolveTarget: {
+        std::uint16_t specLen = 0;
+        if (!read_u16le(request.payload, 1, specLen) ||
+            request.payload.size() != 3U + specLen) {
+            return make_base_response(request, StatusCode::InvalidRequest);
+        }
+
+        const std::string spec(request.payload.begin() + 3, request.payload.end());
+        std::string uri;
+        if (!hostState.resolve_target(spec, uri, nullptr)) {
+            return make_base_response(request, StatusCode::DeviceNotFound);
+        }
+        if (uri.empty() || uri.size() > 0xFFFFU) {
+            return make_base_response(request, StatusCode::InternalError);
+        }
+
+        write_u8(resp.payload, HOSTPROTO_VERSION);
+        write_u16le(resp.payload, static_cast<std::uint16_t>(uri.size()));
+        resp.payload.insert(resp.payload.end(), uri.begin(), uri.end());
+        return resp;
+    }
+
     default:
         return make_base_response(request, StatusCode::Unsupported);
     }
