@@ -41,6 +41,84 @@ bool SlotCatalog::parse_slot_key(
     return true;
 }
 
+std::string SlotCatalog::slot_key(std::uint8_t index)
+{
+    std::string key{"slot-000"};
+    key[5] = static_cast<char>('0' + index / 100U);
+    key[6] = static_cast<char>('0' + (index / 10U) % 10U);
+    key[7] = static_cast<char>('0' + index % 10U);
+    return key;
+}
+
+bool SlotCatalog::get(std::uint8_t index, Entry& out)
+{
+    out = {};
+    out.index = index;
+
+    AppStore::ReadResult read{};
+    if (!_store.read(kNamespace, slot_key(index), 0, 0xFFFFU, read)) {
+        invalidate();
+        return false;
+    }
+    if (!read.exists) {
+        if (_indexValid) set_occupied(index, false);
+        return true;
+    }
+    if (_indexValid) set_occupied(index, true);
+    if (read.data.size() < 3 || read.data[0] != kRecordVersion) {
+        return true;
+    }
+
+    out.flags = kEntryValid;
+    if ((read.data[1] & 0x01U) != 0) out.flags |= kEntryReadOnly;
+    out.uri.assign(read.data.begin() + 2, read.data.end());
+    return true;
+}
+
+bool SlotCatalog::put(
+    std::uint8_t index, std::uint8_t flags, std::string_view uri, Entry& out)
+{
+    // The private record adds version and flags before the URI and AppStore's
+    // per-call write length is u16.
+    if (uri.empty() || uri.size() > (0xFFFFU - 2U) ||
+        (flags & ~kEntryReadOnly) != 0) {
+        return false;
+    }
+
+    std::vector<std::uint8_t> record;
+    record.reserve(2 + uri.size());
+    record.push_back(kRecordVersion);
+    record.push_back((flags & kEntryReadOnly) != 0 ? 0x01U : 0x00U);
+    record.insert(record.end(), uri.begin(), uri.end());
+
+    AppStore::WriteResult write{};
+    if (!_store.write(kNamespace, slot_key(index), 0, record.data(),
+                      static_cast<std::uint16_t>(record.size()), write) ||
+        write.written != record.size()) {
+        invalidate();
+        return false;
+    }
+    if (_indexValid) set_occupied(index, true);
+
+    out = {};
+    out.index = index;
+    out.flags = static_cast<std::uint8_t>(kEntryValid | (flags & kEntryReadOnly));
+    out.uri.assign(uri);
+    return true;
+}
+
+bool SlotCatalog::remove(std::uint8_t index, bool& deleted)
+{
+    AppStore::DeleteResult result{};
+    if (!_store.remove(kNamespace, slot_key(index), result)) {
+        invalidate();
+        return false;
+    }
+    if (_indexValid) set_occupied(index, false);
+    deleted = result.deleted;
+    return true;
+}
+
 bool SlotCatalog::occupied(std::uint8_t index) const
 {
     return (_occupancy[index >> 3U] & (1U << (index & 7U))) != 0;
@@ -114,38 +192,27 @@ bool SlotCatalog::range(std::uint8_t lower,
         const auto index = static_cast<std::uint8_t>(raw);
         if (!occupied(index)) continue;
 
-        char key[] = "slot-000";
-        key[5] = static_cast<char>('0' + index / 100U);
-        key[6] = static_cast<char>('0' + (index / 10U) % 10U);
-        key[7] = static_cast<char>('0' + index % 10U);
-
-        AppStore::ReadResult read{};
-        if (!_store.read(kNamespace, key, 0, 0xFFFFU, read)) {
+        Entry entry{};
+        if (!get(index, entry)) {
             invalidate();
             return false;
         }
-        if (!read.exists) {
-            set_occupied(index, false);
+        if ((entry.flags & kEntryValid) == 0 && !occupied(index)) {
             continue;
         }
 
-        Entry entry{};
-        entry.index = index;
-        if (read.data.size() >= 3 && read.data[0] == kRecordVersion) {
-            entry.flags |= kEntryValid;
-            if ((read.data[1] & 0x01U) != 0) entry.flags |= kEntryReadOnly;
-
-            const auto uriBegin = read.data.begin() + 2;
-            const auto uriSize = read.data.size() - 2;
+        if ((entry.flags & kEntryValid) != 0) {
+            const auto uriSize = entry.uri.size();
             const auto copySize = std::min<std::size_t>(uriSize, maxUriBytes);
-            auto copyBegin = uriBegin;
+            auto copyBegin = entry.uri.begin();
             if (copySize < uriSize) {
                 entry.flags |= kEntryUriTruncated;
                 if ((requestFlags & kRequestTailUri) != 0) {
-                    copyBegin = read.data.end() - static_cast<std::ptrdiff_t>(copySize);
+                    copyBegin = entry.uri.end() - static_cast<std::ptrdiff_t>(copySize);
                 }
             }
-            entry.uri.assign(copyBegin, copyBegin + static_cast<std::ptrdiff_t>(copySize));
+            entry.uri = std::string(
+                copyBegin, copyBegin + static_cast<std::ptrdiff_t>(copySize));
         }
 
         const bool formatted = (requestFlags & kRequestFormatted) != 0;

@@ -4,10 +4,14 @@
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/app_store.h"
+#include "fujinet/io/devices/app_store_commands.h"
+#include "fujinet/io/devices/app_store_service.h"
 #include "fujinet/io/devices/file_commands.h"
 #include "fujinet/io/devices/file_device.h"
 #include "fujinet/io/devices/host_commands.h"
 #include "fujinet/io/devices/host_service.h"
+#include "fujinet/io/devices/slot_catalog_commands.h"
+#include "fujinet/io/devices/slot_catalog_service.h"
 #include "fake_fs.h"
 
 #include <cstring>
@@ -25,12 +29,16 @@ using fujinet::fs::IFile;
 using fujinet::fs::IFileSystem;
 using fujinet::fs::StorageManager;
 using fujinet::io::AppStore;
+using fujinet::io::AppStoreService;
 using fujinet::io::FileDevice;
 using fujinet::io::HostService;
 using fujinet::io::IORequest;
 using fujinet::io::StatusCode;
+using fujinet::io::SlotCatalogService;
+using fujinet::io::protocol::AppStoreCommand;
 using fujinet::io::protocol::FileCommand;
 using fujinet::io::protocol::HostCommand;
+using fujinet::io::protocol::SlotCatalogCommand;
 using fujinet::io::protocol::list_directory::kListFlagCompactOmitMetadata;
 using fujinet::io::protocol::list_directory::kListFlagFormattedLines;
 using fujinet::io::protocol::list_directory::kListFlagSortByName;
@@ -247,6 +255,25 @@ std::vector<std::uint8_t> make_slot_catalog_range_request(
     return payload;
 }
 
+std::vector<std::uint8_t> make_slot_catalog_get_request(std::uint8_t index)
+{
+    return {kVersion, index};
+}
+
+std::vector<std::uint8_t> make_slot_catalog_put_request(
+    std::uint8_t index, std::uint8_t flags, std::string_view target)
+{
+    std::vector<std::uint8_t> payload{kVersion, index, flags};
+    append_u16le(payload, static_cast<std::uint16_t>(target.size()));
+    payload.insert(payload.end(), target.begin(), target.end());
+    return payload;
+}
+
+std::vector<std::uint8_t> make_slot_catalog_delete_request(std::uint8_t index)
+{
+    return {kVersion, index};
+}
+
 std::vector<std::uint8_t> make_host_set_request(std::string_view spec)
 {
     std::vector<std::uint8_t> payload;
@@ -254,11 +281,6 @@ std::vector<std::uint8_t> make_host_set_request(std::string_view spec)
     append_u16le(payload, static_cast<std::uint16_t>(spec.size()));
     payload.insert(payload.end(), spec.begin(), spec.end());
     return payload;
-}
-
-std::vector<std::uint8_t> make_host_resolve_request(std::string_view spec)
-{
-    return make_host_set_request(spec);
 }
 
 std::vector<std::uint8_t> make_host_list_request(std::uint16_t offset, std::uint16_t max_bytes)
@@ -433,6 +455,17 @@ TEST_CASE("FileDevice ListDirectory accepts full URI requests")
     CHECK(response.payload[1] == 0);
     CHECK(read_u16le(response.payload, 4) == 0);
     CHECK(read_u16le(response.payload, 6) == 2);
+}
+
+TEST_CASE("FileDevice rejects application-state commands from its former range")
+{
+    StorageManager storage;
+    FileDevice device(storage);
+    IORequest request{};
+    request.command = 0x20;
+    CHECK(device.handle(request).status == StatusCode::Unsupported);
+    request.command = 0x25;
+    CHECK(device.handle(request).status == StatusCode::Unsupported);
 }
 
 TEST_CASE("FileDevice ListDirectory without listFlags uses full entries and clears compact in response")
@@ -750,63 +783,6 @@ TEST_CASE("HostService manipulates current host and LRU history")
     CHECK(host_history_text(device) == "0 tnfs://server/c\n1 tnfs://server/b\n");
 }
 
-TEST_CASE("HostService resolves a relative target without changing current host")
-{
-    StorageManager storage;
-    auto fs = std::make_unique<MemoryFs>("tnfs");
-    fs->add_entry("tnfs://server/root", true);
-    CHECK(storage.registerFileSystem(std::move(fs)));
-    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-
-    HostService device(storage);
-
-    IORequest request{};
-    request.command = static_cast<std::uint16_t>(HostCommand::SetCurrent);
-    request.payload = make_host_set_request("tnfs://server/root");
-    REQUIRE(device.handle(request).status == StatusCode::Ok);
-
-    request.command = static_cast<std::uint16_t>(HostCommand::ResolveTarget);
-    request.payload = make_host_resolve_request("chuck.ssd");
-    const auto response = device.handle(request);
-    REQUIRE(response.status == StatusCode::Ok);
-    REQUIRE(response.payload.size() >= 3);
-    const auto uriLen = read_u16le(response.payload, 1);
-    REQUIRE(response.payload.size() == 3U + uriLen);
-    CHECK(std::string(response.payload.begin() + 3, response.payload.end()) ==
-          "tnfs://server/root/chuck.ssd");
-    CHECK(host_current_uri(device) == "tnfs://server/root");
-}
-
-TEST_CASE("HostService cannot resolve a relative target before a host is set")
-{
-    StorageManager storage;
-    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-    HostService device(storage);
-
-    IORequest request{};
-    request.command = static_cast<std::uint16_t>(HostCommand::ResolveTarget);
-    request.payload = make_host_resolve_request("chuck.ssd");
-    CHECK(device.handle(request).status == StatusCode::DeviceNotFound);
-}
-
-TEST_CASE("HostService resolves an absolute target before a current host is set")
-{
-    StorageManager storage;
-    CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-    HostService device(storage);
-
-    IORequest request{};
-    request.command = static_cast<std::uint16_t>(HostCommand::ResolveTarget);
-    request.payload = make_host_resolve_request("host:/games/elite.ssd");
-    const auto response = device.handle(request);
-    REQUIRE(response.status == StatusCode::Ok);
-    REQUIRE(response.payload.size() >= 3);
-    const auto uriLen = read_u16le(response.payload, 1);
-    REQUIRE(response.payload.size() == 3U + uriLen);
-    CHECK(std::string(response.payload.begin() + 3, response.payload.end()) ==
-          "host:/games/elite.ssd");
-}
-
 TEST_CASE("AppStore current-host key is plain key/value storage")
 {
     StorageManager storage;
@@ -843,10 +819,13 @@ TEST_CASE("FileDevice ListDirectory resolves empty and relative specs through cu
 
     FileDevice device(storage);
 
-    IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
-    write.payload = make_app_store_write_request("fujinet-nio", "current-host", 0, "tnfs://server/root");
-    CHECK(device.handle(write).status == StatusCode::Ok);
+    AppStore store(storage);
+    AppStore::WriteResult write{};
+    const std::string currentHost = "tnfs://server/root";
+    CHECK(store.write(
+        "fujinet-nio", "current-host", 0,
+        reinterpret_cast<const std::uint8_t*>(currentHost.data()),
+        static_cast<std::uint16_t>(currentHost.size()), write));
 
     IORequest list{};
     list.command = static_cast<std::uint16_t>(FileCommand::ListDirectory);
@@ -975,15 +954,15 @@ TEST_CASE("FileDevice ResolvePath canonicalizes base URI when arg is empty")
     CHECK(display == "/bbc");
 }
 
-TEST_CASE("FileDevice AppStore write/read/stat stores namespaced values on host filesystem")
+TEST_CASE("AppStoreService write/read/stat stores namespaced values on host filesystem")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
-    FileDevice device(storage);
+    AppStoreService device(std::make_shared<AppStore>(storage));
 
     IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.command = static_cast<std::uint16_t>(AppStoreCommand::Write);
     write.payload = make_app_store_write_request("config-ng", "colour.preference", 0, "blue");
     const auto write_response = device.handle(write);
     CHECK(write_response.status == StatusCode::Ok);
@@ -991,7 +970,7 @@ TEST_CASE("FileDevice AppStore write/read/stat stores namespaced values on host 
     CHECK(read_u16le(write_response.payload, 8) == 4);
 
     IORequest stat{};
-    stat.command = static_cast<std::uint16_t>(FileCommand::AppStoreStat);
+    stat.command = static_cast<std::uint16_t>(AppStoreCommand::Stat);
     stat.payload = make_app_store_stat_request("config-ng", "colour.preference");
     const auto stat_response = device.handle(stat);
     CHECK(stat_response.status == StatusCode::Ok);
@@ -1000,7 +979,7 @@ TEST_CASE("FileDevice AppStore write/read/stat stores namespaced values on host 
     CHECK(read_u64le(stat_response.payload, 4) == 4);
 
     IORequest read{};
-    read.command = static_cast<std::uint16_t>(FileCommand::AppStoreRead);
+    read.command = static_cast<std::uint16_t>(AppStoreCommand::Read);
     read.payload = make_app_store_read_request("config-ng", "colour.preference", 0, 16);
     const auto read_response = device.handle(read);
     CHECK(read_response.status == StatusCode::Ok);
@@ -1013,15 +992,15 @@ TEST_CASE("FileDevice AppStore write/read/stat stores namespaced values on host 
     CHECK(value == "blue");
 }
 
-TEST_CASE("FileDevice AppStore supports chunked writes and offset reads")
+TEST_CASE("AppStoreService supports chunked writes and offset reads")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
-    FileDevice device(storage);
+    AppStoreService device(std::make_shared<AppStore>(storage));
 
     IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.command = static_cast<std::uint16_t>(AppStoreCommand::Write);
     write.payload = make_app_store_write_request("app", "state", 0, "hello ");
     CHECK(device.handle(write).status == StatusCode::Ok);
 
@@ -1029,7 +1008,7 @@ TEST_CASE("FileDevice AppStore supports chunked writes and offset reads")
     CHECK(device.handle(write).status == StatusCode::Ok);
 
     IORequest read{};
-    read.command = static_cast<std::uint16_t>(FileCommand::AppStoreRead);
+    read.command = static_cast<std::uint16_t>(AppStoreCommand::Read);
     read.payload = make_app_store_read_request("app", "state", 6, 8);
     const auto response = device.handle(read);
     CHECK(response.status == StatusCode::Ok);
@@ -1039,21 +1018,21 @@ TEST_CASE("FileDevice AppStore supports chunked writes and offset reads")
     CHECK(value == "world");
 }
 
-TEST_CASE("FileDevice AppStore list and delete expose namespace keys")
+TEST_CASE("AppStoreService list and delete expose namespace keys")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
-    FileDevice device(storage);
+    AppStoreService device(std::make_shared<AppStore>(storage));
     IORequest request{};
-    request.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    request.command = static_cast<std::uint16_t>(AppStoreCommand::Write);
     request.payload = make_app_store_write_request("prefs", "zeta", 0, "z");
     CHECK(device.handle(request).status == StatusCode::Ok);
     request.payload = make_app_store_write_request("prefs", "alpha", 0, "a");
     CHECK(device.handle(request).status == StatusCode::Ok);
 
     IORequest list{};
-    list.command = static_cast<std::uint16_t>(FileCommand::AppStoreList);
+    list.command = static_cast<std::uint16_t>(AppStoreCommand::List);
     list.payload = make_app_store_list_request("prefs", 0, 512);
     const auto list_response = device.handle(list);
     CHECK(list_response.status == StatusCode::Ok);
@@ -1068,7 +1047,7 @@ TEST_CASE("FileDevice AppStore list and delete expose namespace keys")
     CHECK(second == "zeta");
 
     IORequest del{};
-    del.command = static_cast<std::uint16_t>(FileCommand::AppStoreDelete);
+    del.command = static_cast<std::uint16_t>(AppStoreCommand::Delete);
     del.payload = make_app_store_delete_request("prefs", "alpha");
     const auto delete_response = device.handle(del);
     CHECK(delete_response.status == StatusCode::Ok);
@@ -1084,15 +1063,15 @@ TEST_CASE("FileDevice AppStore list and delete expose namespace keys")
     CHECK(read_len_string(after_delete.payload, offset) == "zeta");
 }
 
-TEST_CASE("FileDevice AppStore reports missing keys without hard failure")
+TEST_CASE("AppStoreService reports missing keys without hard failure")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
 
-    FileDevice device(storage);
+    AppStoreService device(std::make_shared<AppStore>(storage));
 
     IORequest stat{};
-    stat.command = static_cast<std::uint16_t>(FileCommand::AppStoreStat);
+    stat.command = static_cast<std::uint16_t>(AppStoreCommand::Stat);
     stat.payload = make_app_store_stat_request("missing", "key");
     const auto stat_response = device.handle(stat);
     CHECK(stat_response.status == StatusCode::Ok);
@@ -1101,7 +1080,7 @@ TEST_CASE("FileDevice AppStore reports missing keys without hard failure")
     CHECK(read_u64le(stat_response.payload, 4) == 0);
 
     IORequest read{};
-    read.command = static_cast<std::uint16_t>(FileCommand::AppStoreRead);
+    read.command = static_cast<std::uint16_t>(AppStoreCommand::Read);
     read.payload = make_app_store_read_request("missing", "key", 0, 16);
     const auto read_response = device.handle(read);
     CHECK(read_response.status == StatusCode::Ok);
@@ -1111,24 +1090,74 @@ TEST_CASE("FileDevice AppStore reports missing keys without hard failure")
     CHECK(read_u16le(read_response.payload, 8) == 0);
 }
 
-TEST_CASE("FileDevice slot catalogue returns sparse ranges and URI tails")
+TEST_CASE("SlotCatalogService owns canonical put get and delete operations")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(
+        std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    auto store = std::make_shared<AppStore>(storage);
+    AppStore::WriteResult currentWrite{};
+    const std::string currentHost = "host:/games";
+    CHECK(store->write(
+        "fujinet-nio", "current-host", 0,
+        reinterpret_cast<const std::uint8_t*>(currentHost.data()),
+        static_cast<std::uint16_t>(currentHost.size()), currentWrite));
+
+    SlotCatalogService device(storage, store);
+    IORequest put{};
+    put.command = static_cast<std::uint16_t>(SlotCatalogCommand::Put);
+    put.payload = make_slot_catalog_put_request(100, 0, "elite.ssd");
+    const auto putResponse = device.handle(put);
+    REQUIRE(putResponse.status == StatusCode::Ok);
+    REQUIRE(putResponse.payload.size() >= 5);
+    CHECK(putResponse.payload[1] ==
+          fujinet::io::protocol::slot_catalog::kEntryValid);
+    CHECK(putResponse.payload[2] == 100);
+    CHECK(std::string(putResponse.payload.begin() + 5,
+                      putResponse.payload.end()) == "host:/games/elite.ssd");
+
+    IORequest get{};
+    get.command = static_cast<std::uint16_t>(SlotCatalogCommand::Get);
+    get.payload = make_slot_catalog_get_request(100);
+    const auto getResponse = device.handle(get);
+    CHECK(getResponse.status == StatusCode::Ok);
+    CHECK(getResponse.payload == putResponse.payload);
+
+    AppStore::ReadResult stored{};
+    REQUIRE(store->read("config-nio", "slot-100", 0, 128, stored));
+    REQUIRE(stored.exists);
+    CHECK(std::string(stored.data.begin(), stored.data.end()) ==
+          std::string{"\x01\x00host:/games/elite.ssd", 23});
+
+    IORequest del{};
+    del.command = static_cast<std::uint16_t>(SlotCatalogCommand::Delete);
+    del.payload = make_slot_catalog_delete_request(100);
+    const auto deleteResponse = device.handle(del);
+    REQUIRE(deleteResponse.status == StatusCode::Ok);
+    REQUIRE(deleteResponse.payload.size() == 3);
+    CHECK(deleteResponse.payload[1] ==
+          fujinet::io::protocol::slot_catalog::kDeleteRemoved);
+    CHECK(device.handle(get).status == StatusCode::DeviceNotFound);
+}
+
+TEST_CASE("SlotCatalogService returns sparse ranges and URI tails")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-    FileDevice device(storage);
+    auto store = std::make_shared<AppStore>(storage);
+    SlotCatalogService device(storage, store);
 
     IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
-    std::string record{"\x01\x01", 2};
-    record += "tnfs://server/archive/games/elite.ssd";
-    write.payload = make_app_store_write_request("config-nio", "slot-020", 0, record);
+    write.command = static_cast<std::uint16_t>(SlotCatalogCommand::Put);
+    write.payload = make_slot_catalog_put_request(
+        20, fujinet::io::protocol::slot_catalog::kEntryReadOnly,
+        "tnfs://server/archive/games/elite.ssd");
     CHECK(device.handle(write).status == StatusCode::Ok);
-    write.payload = make_app_store_write_request(
-        "config-nio", "slot-022", 0, std::string{"\x01\x00host:/dev.ssd", 15});
+    write.payload = make_slot_catalog_put_request(22, 0, "host:/dev.ssd");
     CHECK(device.handle(write).status == StatusCode::Ok);
 
     IORequest range{};
-    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.command = static_cast<std::uint16_t>(SlotCatalogCommand::Range);
     range.payload = make_slot_catalog_range_request(
         16, 23, 16, fujinet::io::protocol::slot_catalog::kRequestTailUri, 12, 128);
     const auto response = device.handle(range);
@@ -1153,23 +1182,23 @@ TEST_CASE("FileDevice slot catalogue returns sparse ranges and URI tails")
           "es/elite.ssd");
 }
 
-TEST_CASE("FileDevice slot catalogue cache follows writes and deletes")
+TEST_CASE("SlotCatalogService cache follows writes and deletes")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-    FileDevice device(storage);
+    auto store = std::make_shared<AppStore>(storage);
+    SlotCatalogService device(storage, store);
 
     IORequest range{};
-    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.command = static_cast<std::uint16_t>(SlotCatalogCommand::Range);
     range.payload = make_slot_catalog_range_request(64, 71, 64, 0, 128, 220);
     auto response = device.handle(range);
     REQUIRE(response.payload.size() >= 8);
     CHECK(response.payload[7] == 0);
 
     IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
-    write.payload = make_app_store_write_request(
-        "config-nio", "slot-069", 0, std::string{"\x01\x00host:/elite.ssd", 17});
+    write.command = static_cast<std::uint16_t>(SlotCatalogCommand::Put);
+    write.payload = make_slot_catalog_put_request(69, 0, "host:/elite.ssd");
     CHECK(device.handle(write).status == StatusCode::Ok);
 
     response = device.handle(range);
@@ -1178,8 +1207,8 @@ TEST_CASE("FileDevice slot catalogue cache follows writes and deletes")
     CHECK(response.payload[4] == 1);
 
     IORequest del{};
-    del.command = static_cast<std::uint16_t>(FileCommand::AppStoreDelete);
-    del.payload = make_app_store_delete_request("config-nio", "slot-069");
+    del.command = static_cast<std::uint16_t>(SlotCatalogCommand::Delete);
+    del.payload = make_slot_catalog_delete_request(69);
     CHECK(device.handle(del).status == StatusCode::Ok);
     response = device.handle(range);
     REQUIRE(response.payload.size() >= 8);
@@ -1187,23 +1216,23 @@ TEST_CASE("FileDevice slot catalogue cache follows writes and deletes")
     CHECK(response.payload[4] == 0);
 }
 
-TEST_CASE("FileDevice slot catalogue continues at a complete record")
+TEST_CASE("SlotCatalogService continues at a complete record")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-    FileDevice device(storage);
+    auto store = std::make_shared<AppStore>(storage);
+    SlotCatalogService device(storage, store);
 
     IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
+    write.command = static_cast<std::uint16_t>(SlotCatalogCommand::Put);
     for (const auto index : {0, 1, 2}) {
-        const std::string key = "slot-00" + std::to_string(index);
-        write.payload = make_app_store_write_request(
-            "config-nio", key, 0, std::string{"\x01\x00host:/disk.ssd", 16});
+        write.payload = make_slot_catalog_put_request(
+            static_cast<std::uint8_t>(index), 0, "host:/disk.ssd");
         CHECK(device.handle(write).status == StatusCode::Ok);
     }
 
     IORequest range{};
-    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.command = static_cast<std::uint16_t>(SlotCatalogCommand::Range);
     range.payload = make_slot_catalog_range_request(0, 7, 0, 0, 128, 22);
     const auto first = device.handle(range);
     REQUIRE(first.payload.size() >= 8);
@@ -1220,20 +1249,20 @@ TEST_CASE("FileDevice slot catalogue continues at a complete record")
     CHECK(second.payload[4] == 2);
 }
 
-TEST_CASE("FileDevice slot catalogue formats populated entries for CLI clients")
+TEST_CASE("SlotCatalogService formats populated entries for CLI clients")
 {
     StorageManager storage;
     CHECK(storage.registerFileSystem(std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
-    FileDevice device(storage);
+    auto store = std::make_shared<AppStore>(storage);
+    SlotCatalogService device(storage, store);
 
     IORequest write{};
-    write.command = static_cast<std::uint16_t>(FileCommand::AppStoreWrite);
-    write.payload = make_app_store_write_request(
-        "config-nio", "slot-069", 0, std::string{"\x01\x00games/elite.ssd", 17});
+    write.command = static_cast<std::uint16_t>(SlotCatalogCommand::Put);
+    write.payload = make_slot_catalog_put_request(69, 0, "host:/games/elite.ssd");
     CHECK(device.handle(write).status == StatusCode::Ok);
 
     IORequest range{};
-    range.command = static_cast<std::uint16_t>(FileCommand::SlotCatalogRange);
+    range.command = static_cast<std::uint16_t>(SlotCatalogCommand::Range);
     range.payload = make_slot_catalog_range_request(
         64, 72, 64, fujinet::io::protocol::slot_catalog::kRequestFormatted, 128, 220);
     const auto response = device.handle(range);
@@ -1242,7 +1271,7 @@ TEST_CASE("FileDevice slot catalogue formats populated entries for CLI clients")
            fujinet::io::protocol::slot_catalog::kResponseFormatted) != 0);
     const std::size_t text_offset = 7 + response.payload[3];
     CHECK(std::string(response.payload.begin() + static_cast<std::ptrdiff_t>(text_offset),
-                      response.payload.end()) == "69: games/elite.ssd\n");
+                      response.payload.end()) == "69: host:/games/elite.ssd\n");
 }
 
 } // namespace

@@ -371,8 +371,10 @@ Mount policy notes:
 ## Obsolete YAML mount lists
 
 The former `mounts:` list in `fujinet.yaml` is not applied at startup. User
-catalogue entries belong to config-nio and are stored as sparse AppStore keys;
-only a URI selected for an active host drive is sent to DiskDevice `Mount`.
+catalogue entries belong to config-nio and are accessed through
+SlotCatalogService. The service currently uses sparse AppStore records as its
+private persistence mechanism. Only a URI selected for an active host drive is
+sent to DiskDevice `Mount`.
 There is no migration from the early-development YAML format.
 
 ## Runtime mount recovery

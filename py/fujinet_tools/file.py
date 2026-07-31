@@ -4,6 +4,7 @@ import sys
 
 from .fujibus import FujiBusSession
 from . import fileproto as fp
+from . import appstoreproto as ap
 from .common import open_serial, status_ok
 
 # ----------------------------------------------------------------------
@@ -60,6 +61,35 @@ def _send_file_command(
         command=command,
         payload=payload,
         expect_device=fp.FILE_DEVICE_ID,
+        expect_command=command,
+        timeout=args.timeout,
+        cmd_txt=cmd_txt,
+    )
+    if pkt is None:
+        print("No response", file=sys.stderr)
+        return None
+    if not status_ok(pkt):
+        print(
+            f"Device status={pkt.params[0] if pkt.params else '??'}",
+            file=sys.stderr,
+        )
+        return None
+    return pkt
+
+
+def _send_appstore_command(
+    *,
+    args,
+    bus: FujiBusSession,
+    command: int,
+    payload: bytes,
+    cmd_txt: str,
+):
+    pkt = bus.send_command_expect(
+        device=ap.APPSTORE_DEVICE_ID,
+        command=command,
+        payload=payload,
+        expect_device=ap.APPSTORE_DEVICE_ID,
         expect_command=command,
         timeout=args.timeout,
         cmd_txt=cmd_txt,
@@ -399,19 +429,19 @@ def cmd_write(args) -> int:
 
 
 def cmd_appstore_stat(args) -> int:
-    req = fp.build_appstore_stat_req(args.namespace, args.key)
+    req = ap.build_stat_req(args.namespace, args.key)
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
-        pkt = _send_file_command(
+        pkt = _send_appstore_command(
             args=args,
             bus=bus,
-            command=fp.CMD_APPSTORE_STAT,
+            command=ap.CMD_STAT,
             payload=req,
             cmd_txt="APPSTORE_STAT",
         )
         if pkt is None:
             return 1
-        st = fp.parse_appstore_stat_resp(pkt.payload)
+        st = ap.parse_stat_resp(pkt.payload)
         print(f"{args.namespace}/{args.key}")
         print(f"  exists: {st.exists}")
         print(f"  size:   {st.size_bytes}")
@@ -432,18 +462,18 @@ def cmd_appstore_get(args) -> int:
         total = 0
 
         while True:
-            req = fp.build_appstore_read_req(args.namespace, args.key, offset, args.chunk)
-            pkt = _send_file_command(
+            req = ap.build_read_req(args.namespace, args.key, offset, args.chunk)
+            pkt = _send_appstore_command(
                 args=args,
                 bus=bus,
-                command=fp.CMD_APPSTORE_READ,
+                command=ap.CMD_READ,
                 payload=req,
                 cmd_txt="APPSTORE_READ",
             )
             if pkt is None:
                 return 1
 
-            rr = fp.parse_appstore_read_resp(pkt.payload)
+            rr = ap.parse_read_resp(pkt.payload)
             if rr.offset != offset:
                 print(
                     f"Offset echo mismatch: expected {offset}, got {rr.offset}",
@@ -494,34 +524,34 @@ def cmd_appstore_put(args) -> int:
         total_written = 0
 
         if not data:
-            req = fp.build_appstore_write_req(args.namespace, args.key, offset, b"")
-            pkt = _send_file_command(
+            req = ap.build_write_req(args.namespace, args.key, offset, b"")
+            pkt = _send_appstore_command(
                 args=args,
                 bus=bus,
-                command=fp.CMD_APPSTORE_WRITE,
+                command=ap.CMD_WRITE,
                 payload=req,
                 cmd_txt="APPSTORE_WRITE",
             )
             if pkt is None:
                 return 1
-            wr = fp.parse_appstore_write_resp(pkt.payload)
+            wr = ap.parse_write_resp(pkt.payload)
             if args.verbose:
                 print(f"write chunk: offset={wr.offset} requested=0 written={wr.written}")
         else:
             while idx < len(data):
                 chunk = data[idx : idx + args.chunk]
-                req = fp.build_appstore_write_req(args.namespace, args.key, offset, chunk)
-                pkt = _send_file_command(
+                req = ap.build_write_req(args.namespace, args.key, offset, chunk)
+                pkt = _send_appstore_command(
                     args=args,
                     bus=bus,
-                    command=fp.CMD_APPSTORE_WRITE,
+                    command=ap.CMD_WRITE,
                     payload=req,
                     cmd_txt="APPSTORE_WRITE",
                 )
                 if pkt is None:
                     return 1
 
-                wr = fp.parse_appstore_write_resp(pkt.payload)
+                wr = ap.parse_write_resp(pkt.payload)
                 if wr.offset != offset:
                     print(
                         f"Offset echo mismatch: expected {offset}, got {wr.offset}",
@@ -549,19 +579,19 @@ def cmd_appstore_put(args) -> int:
 
 
 def cmd_appstore_delete(args) -> int:
-    req = fp.build_appstore_delete_req(args.namespace, args.key)
+    req = ap.build_delete_req(args.namespace, args.key)
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
-        pkt = _send_file_command(
+        pkt = _send_appstore_command(
             args=args,
             bus=bus,
-            command=fp.CMD_APPSTORE_DELETE,
+            command=ap.CMD_DELETE,
             payload=req,
             cmd_txt="APPSTORE_DELETE",
         )
         if pkt is None:
             return 1
-        dr = fp.parse_appstore_delete_resp(pkt.payload)
+        dr = ap.parse_delete_resp(pkt.payload)
         if args.verbose:
             print(f"deleted: {dr.deleted}")
     return 0
@@ -572,18 +602,18 @@ def cmd_appstore_list(args) -> int:
     with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
         bus = FujiBusSession().attach(ser, debug=args.debug)
         while True:
-            req = fp.build_appstore_list_req(args.namespace, start, args.max_payload)
-            pkt = _send_file_command(
+            req = ap.build_list_req(args.namespace, start, args.max_payload)
+            pkt = _send_appstore_command(
                 args=args,
                 bus=bus,
-                command=fp.CMD_APPSTORE_LIST,
+                command=ap.CMD_LIST,
                 payload=req,
                 cmd_txt="APPSTORE_LIST",
             )
             if pkt is None:
                 return 1
 
-            lr = fp.parse_appstore_list_resp(pkt.payload)
+            lr = ap.parse_list_resp(pkt.payload)
             if lr.start_index != start:
                 print(
                     f"startIndex echo mismatch: expected {start}, got {lr.start_index}",

@@ -68,6 +68,12 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
 
 - **HostService** (management service over the normal endpoint table):
   - header: `include/fujinet/io/devices/host_service.h`
+
+- **AppStoreService / SlotCatalogService** (application-state boundaries):
+  - headers: `include/fujinet/io/devices/app_store_service.h`,
+    `include/fujinet/io/devices/slot_catalog_service.h`
+  - protocols: `docs/app_store_service_protocol.md`,
+    `docs/slot_catalog_service_protocol.md`
   - commands: `include/fujinet/io/devices/host_commands.h`
   - impl: `src/lib/host_service.cpp`, `src/lib/host_service_init.cpp`
   - state layer: `include/fujinet/io/host_state.h`, `src/lib/host_state.cpp`

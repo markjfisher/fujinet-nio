@@ -467,7 +467,7 @@ The pending mount info is stored in `DiskService::Slot::pendingMount` and
 activated automatically by operations that require the image.
 
 Persistent catalogue choices are not filesystem configuration. Applications
-store them through FileDevice AppStore and send a selected URI to DiskDevice.
+manage them through SlotCatalogService and send a selected URI to DiskDevice.
 See [Slot catalogue and active disk mounts](slot_state.md).
 
 ### URI Resolution and Authority Preservation

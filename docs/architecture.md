@@ -6,7 +6,8 @@
 
 Persistent user slot choices and active disk units have separate lifecycles.
 See [Slot catalogue and active disk mounts](slot_state.md) for the AppStore
-format, sparse-index semantics, and lazy-mount interaction.
+backing model, typed service boundary, sparse-index semantics, and lazy-mount
+interaction.
 
 ## **Table of Contents**
 1. [Overview](#overview)  
@@ -472,7 +473,9 @@ virtual peripheral.
 The POSIX app currently registers:
 
 - `FujiDevice` for core/config/reset behavior (`WireDeviceId::FujiNet`, 0x70)
-- `FileDevice` for filesystem commands and app-store commands (`FileService`, 0xFE)
+- `FileDevice` for filesystem commands (`FileService`, 0xFE)
+- `AppStoreService` for generic namespaced application state (`AppStoreService`, 0xF1)
+- `SlotCatalogService` for typed sparse slot entries (`SlotCatalogService`, 0xF2)
 - `ClockDevice` for time/date commands (`Clock`, 0x45)
 - `DiskDevice` for image mounting and sector I/O (`DiskService`, 0xFC)
 - `NetworkDevice` for handle-based network sessions (`NetworkService`, 0xFD)
@@ -1076,7 +1079,7 @@ bootstrap-selected active disk unit when `boot.mode` is `config` and that unit
 was not already restored. The boot unit is not a catalogue slot or host drive
 name. Host-side drive selection remains client-specific: Atari sees the first
 SIO disk unit as `D1:`, the MS-DOS driver exposes its first block unit as the
-next DOS drive assigned by DOS, and BBC tooling maps a sparse AppStore catalogue
+next DOS drive assigned by DOS, and BBC tooling maps a sparse Slot Catalog
 entry to a bounded active drive explicitly.
 
 ---
@@ -1256,6 +1259,9 @@ enum class WireDeviceId : std::uint8_t {
     Clock           = 0x45,
 
     // FujiNet-NIO extensions
+    HostService     = 0xF0,
+    AppStoreService = 0xF1,
+    SlotCatalogService = 0xF2,
     ModemService    = 0xFB,
     DiskService     = 0xFC,
     NetworkService  = 0xFD,
@@ -1358,21 +1364,22 @@ enum class FileCommand : std::uint8_t {
     WriteFile      = 0x04,
     ResolvePath    = 0x05,
     MakeDirectory  = 0x06,
+};
+```
 
-    AppStoreStat   = 0x20,
-    AppStoreRead   = 0x21,
-    AppStoreWrite  = 0x22,
-    AppStoreDelete = 0x23,
-    AppStoreList   = 0x24,
-    SlotCatalogRange = 0x25,
+#### Application-state service commands
+
+Commands are scoped to their service, so the compact values may overlap:
+
+```
+enum class AppStoreCommand : std::uint8_t {
+    Stat = 0x01, Read = 0x02, Write = 0x03,
+    Delete = 0x04, List = 0x05,
 };
 
-inline FileCommand to_file_command(std::uint16_t raw)
-{
-    return static_cast<FileCommand>(
-        static_cast<std::uint8_t>(raw)
-    );
-}
+enum class SlotCatalogCommand : std::uint8_t {
+    Get = 0x01, Put = 0x02, Delete = 0x03, Range = 0x04,
+};
 ```
 
 Key principles:
@@ -1384,7 +1391,7 @@ Key principles:
 
 ---
 
-## File System and App Store Architecture
+## File System and Application State Architecture
 
 FujiNet-NIO exposes file-oriented services through `StorageManager` and named
 filesystem providers. POSIX currently registers:
@@ -1394,23 +1401,24 @@ filesystem providers. POSIX currently registers:
 - `http:` / `https:` backed by dynamic URL filesystem providers
 
 `FileDevice` is the host-facing virtual device for generic filesystem
-operations. Its app-store commands provide key/value-style application storage
-on top of the same filesystem semantics rather than lifting legacy 64-byte
-appkeys into the core model.
+operations. It does not expose application-state or slot commands.
 
-App-store data is implemented by `AppStore`, backed by `StorageManager`, and is
-also exposed through a diagnostic provider for listing, reading, deleting, and
-other administrative workflows.
+Generic application data is exposed by `AppStoreService`. Its `AppStore`
+implementation is backed by `StorageManager` and is also available through a
+diagnostic provider for administrative workflows.
 
-The slot catalogue remains sparse AppStore state. `SlotCatalog` adds a
-read-only range projection with a lazy, rebuildable 32-byte occupancy bitmap,
-so 8-bit clients can retrieve display pages or enumerate populated slots
-without issuing one file request per possible index. Active DiskDevice mounts
-remain a separate, bounded runtime concern.
+`SlotCatalogService` is the only client-facing owner of slot entry semantics.
+It resolves Put targets to canonical URIs and exposes Get, Put, Delete, and
+Range. `SlotCatalog` currently stores sparse records through AppStore and uses
+a lazy, rebuildable 32-byte occupancy bitmap, but clients do not know its
+namespace, keys, or record encoding. Active DiskDevice mounts remain a
+separate, bounded runtime concern.
 
 Related docs:
 
 - [`docs/file_device_protocol.md`](file_device_protocol.md)
+- [`docs/app_store_service_protocol.md`](app_store_service_protocol.md)
+- [`docs/slot_catalog_service_protocol.md`](slot_catalog_service_protocol.md)
 - [`docs/host_service_protocol.md`](host_service_protocol.md)
 - [`docs/slot_state.md`](slot_state.md)
 

@@ -12,6 +12,9 @@ idf_component_register(
         app/console_parse.cpp
         app/main_esp32.cpp
         lib/app_store.cpp
+        lib/app_store_service.cpp
+        lib/application_state_service_init.cpp
+        lib/boot_mount.cpp
         lib/bootstrap.cpp
         lib/build_profile.cpp
         lib/clock_device.cpp
@@ -54,7 +57,6 @@ idf_component_register(
         lib/list_directory_format.cpp
         lib/modem_device.cpp
         lib/modem_device_init.cpp
-        lib/boot_mount.cpp
         lib/network_device.cpp
         lib/network_device_init.cpp
         lib/network_protocol_registry.cpp
@@ -72,6 +74,7 @@ idf_component_register(
         lib/path_resolvers/tnfs_uri_resolver.cpp
         lib/routing_manager.cpp
         lib/slot_catalog.cpp
+        lib/slot_catalog_service.cpp
         lib/storage_manager.cpp
         lib/tcp_channel.cpp
         lib/tcp_network_protocol_common.cpp

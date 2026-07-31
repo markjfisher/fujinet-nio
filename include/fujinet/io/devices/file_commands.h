@@ -10,23 +10,7 @@ enum class FileCommand : std::uint8_t {
     WriteFile     = 0x04,
     ResolvePath   = 0x05,
     MakeDirectory = 0x06,
-    AppStoreStat  = 0x20,
-    AppStoreRead  = 0x21,
-    AppStoreWrite = 0x22,
-    AppStoreDelete = 0x23,
-    AppStoreList  = 0x24,
-    SlotCatalogRange = 0x25,
 };
-
-namespace slot_catalog {
-inline constexpr std::uint8_t kRequestTailUri = 0x01U;
-inline constexpr std::uint8_t kRequestFormatted = 0x02U;
-inline constexpr std::uint8_t kResponseMore = 0x01U;
-inline constexpr std::uint8_t kResponseFormatted = 0x02U;
-inline constexpr std::uint8_t kEntryValid = 0x01U;
-inline constexpr std::uint8_t kEntryReadOnly = 0x02U;
-inline constexpr std::uint8_t kEntryUriTruncated = 0x04U;
-} // namespace slot_catalog
 
 // ListDirectory (0x02) request: after startIndex and maxPayloadBytes (u16le each), an
 // optional u8 `listFlags` is read if the payload is long enough, followed by an optional

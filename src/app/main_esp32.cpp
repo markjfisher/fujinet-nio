@@ -283,6 +283,7 @@ extern "C" void fujinet_core_task(void* arg)
     // If we load config at this point to find out if the services should be enabled or not, it adds 80ms before the main loop starts
     fujinet::core::register_host_service(core);
     fujinet::core::register_file_device(core);
+    fujinet::core::register_application_state_services(core);
     fujinet::core::register_disk_device(core);
 
     // Restore live drive mappings and then apply the configured boot disk.

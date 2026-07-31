@@ -9,6 +9,8 @@ from typing import Any, Iterable, Optional
 
 from . import diskproto as dp
 from . import fileproto as fp
+from . import appstoreproto as ap
+from . import slotproto as sp
 from . import modemproto as mp
 from . import netproto as np
 from .host_analysis.base import HostAnnotation
@@ -42,6 +44,19 @@ COMMAND_NAMES: dict[int, dict[int, str]] = {
         fp.CMD_READ: "ReadFile",
         fp.CMD_WRITE: "WriteFile",
         fp.CMD_MAKE_DIRECTORY: "MakeDirectory",
+    },
+    ap.APPSTORE_DEVICE_ID: {
+        ap.CMD_STAT: "Stat",
+        ap.CMD_READ: "Read",
+        ap.CMD_WRITE: "Write",
+        ap.CMD_DELETE: "Delete",
+        ap.CMD_LIST: "List",
+    },
+    sp.SLOT_CATALOG_DEVICE_ID: {
+        sp.CMD_GET: "Get",
+        sp.CMD_PUT: "Put",
+        sp.CMD_DELETE: "Delete",
+        sp.CMD_RANGE: "Range",
     },
     dp.DISK_DEVICE_ID: {
         dp.CMD_MOUNT: "Mount",

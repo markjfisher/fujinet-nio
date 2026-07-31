@@ -116,6 +116,9 @@ target_compile_definitions(fujinet-nio
 set(FUJINET_NIO_SOURCES
 # __TARGET_SOURCES_START__
         src/lib/app_store.cpp
+        src/lib/app_store_service.cpp
+        src/lib/application_state_service_init.cpp
+        src/lib/boot_mount.cpp
         src/lib/bootstrap.cpp
         src/lib/build_profile.cpp
         src/lib/clock_device.cpp
@@ -158,7 +161,6 @@ set(FUJINET_NIO_SOURCES
         src/lib/list_directory_format.cpp
         src/lib/modem_device.cpp
         src/lib/modem_device_init.cpp
-        src/lib/boot_mount.cpp
         src/lib/network_device.cpp
         src/lib/network_device_init.cpp
         src/lib/network_protocol_registry.cpp
@@ -176,6 +178,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/path_resolvers/tnfs_uri_resolver.cpp
         src/lib/routing_manager.cpp
         src/lib/slot_catalog.cpp
+        src/lib/slot_catalog_service.cpp
         src/lib/storage_manager.cpp
         src/lib/tcp_channel.cpp
         src/lib/tcp_network_protocol_common.cpp

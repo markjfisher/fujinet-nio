@@ -117,7 +117,8 @@ For ESP32 integration runs, use a reachable service IP (not localhost), e.g.:
 - **Lazy TNFS mounts**: clients can send a TNFS URI (for example,
   `tnfs://192.168.1.100:16384/atari/disk.atr`) to DiskDevice `Mount` with the
   lazy flag. The TNFS connection is then deferred until the active drive is
-  first accessed. User catalogue entries are AppStore state, not YAML mounts;
+  first accessed. User catalogue entries are SlotCatalogService state backed
+  by AppStore, not YAML mounts;
   see [Slot catalogue and active disk mounts](slot_state.md).
 
 ## Session Handover Checklist

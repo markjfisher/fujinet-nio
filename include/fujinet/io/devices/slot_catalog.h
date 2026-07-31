@@ -34,6 +34,9 @@ public:
 
     explicit SlotCatalog(AppStore& store);
 
+    bool get(std::uint8_t index, Entry& out);
+    bool put(std::uint8_t index, std::uint8_t flags, std::string_view uri, Entry& out);
+    bool remove(std::uint8_t index, bool& deleted);
     bool range(std::uint8_t lower,
                std::uint8_t upper,
                std::uint8_t cursor,
@@ -49,6 +52,7 @@ public:
 private:
     bool ensure_index();
     static bool parse_slot_key(std::string_view ns, std::string_view key, std::uint8_t& index);
+    static std::string slot_key(std::uint8_t index);
     bool occupied(std::uint8_t index) const;
     void set_occupied(std::uint8_t index, bool value);
 
