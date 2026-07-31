@@ -79,6 +79,20 @@ for display and later remounting. DiskService separately persists its bounded
 runtime mounts as canonical URIs so sector I/O and restart recovery do not
 depend on reading the application catalogue.
 
+## Runtime mounts in configuration clients
+
+`DiskService` runtime state is authoritative for what is currently available to
+the host. The Disk `ListMounts` command (`0x0D`) reports persisted mounts,
+restored mounts, and pending lazy boot mounts as formatted `unit: mode URI`
+entries. A client may combine this response with `config-nio/mappings` when it
+draws its drive-assignment screen.
+
+An active boot mount, including the initial lazy boot disk or a BBC `*FBOOT`
+mount, does not acquire a synthetic catalogue slot and does not modify the
+desired mapping table. It should be shown as a runtime/boot entry by the UI;
+catalogue mappings continue to be shown with their `S<n>` index. This keeps
+boot infrastructure state from colliding with a user's real slot 0.
+
 ## Lazy mounting
 
 Disk `Mount` request flag bit 1 requests a lazy mount. FujiNet validates and

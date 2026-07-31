@@ -602,6 +602,24 @@ TEST_CASE("DiskDevice v1: lazy mount flag stages URI without opening the image")
     REQUIRE(pending.has_value());
     CHECK(pending->uri == "host:/images/not-opened-yet.ssd");
     CHECK(pending->mode == "r");
+
+    std::string list;
+    diskproto::write_u8(list, V);
+    diskproto::write_u8(list, 0x01); // formatted
+    diskproto::write_u16le(list, 0);
+    diskproto::write_u16le(list, 0);
+    diskproto::write_u16le(list, 0);
+    diskproto::write_u16le(list, 220);
+    IORequest listReq{};
+    listReq.deviceId = to_device_id(WireDeviceId::DiskService);
+    listReq.command = 0x0D; // ListMounts
+    listReq.payload = to_vec(list);
+    const IOResponse listed = dev.handle(listReq);
+    REQUIRE(listed.status == StatusCode::Ok);
+    REQUIRE(listed.payload.size() >= 10);
+    CHECK(listed.payload[6] == 1);
+    CHECK(std::string(listed.payload.begin() + 10, listed.payload.end()) ==
+          "7: RO host:/images/not-opened-yet.ssd\n");
 }
 
 TEST_CASE("DiskDevice v1: BeginHostSession clears runtime state and restores boot disk")
