@@ -5,6 +5,8 @@ enum C_0015225225004340369839 {
 FujiNet
 Clock
 HostService
+AppStoreService
+SlotCatalogService
 ModemService
 DiskService
 NetworkService
@@ -18,11 +20,6 @@ ReadFile
 WriteFile
 ResolvePath
 MakeDirectory
-AppStoreStat
-AppStoreRead
-AppStoreWrite
-AppStoreDelete
-AppStoreList
 }
 enum "io::protocol::SlipByte" as C_0010627602090167488081
 enum C_0010627602090167488081 {
@@ -120,6 +117,14 @@ ListHistory
 SelectHistory
 DeleteHistory
 }
+enum "io::protocol::AppStoreCommand" as C_0006374947442224284008
+enum C_0006374947442224284008 {
+Stat
+Read
+Write
+Delete
+List
+}
 class "io::protocol::FujiBusHeader" as C_0009954510640382192371
 class C_0009954510640382192371 {
 __
@@ -128,6 +133,13 @@ __
 +descr : std::uint8_t
 +device : std::uint8_t
 +length : std::uint16_t
+}
+enum "io::protocol::SlotCatalogCommand" as C_0000459409847653698260
+enum C_0000459409847653698260 {
+Get
+Put
+Delete
+Range
 }
 C_0017232777488057089840 o-- C_0015225225004340369839 : -_device
 C_0017232777488057089840 o-- C_0003277087640557799971 : -_params
