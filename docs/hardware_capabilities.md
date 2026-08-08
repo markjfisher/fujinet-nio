@@ -138,13 +138,18 @@ if (profile.hw.network.hasLocalNetwork) {
 }
 ```
 
-### Only allow Wi-Fi config on ESP32
+### Advertise Wi-Fi management capabilities
 
 ```cpp
-if (profile.hw.network.managesItsOwnLink) {
-    manager.registerDevice<WifiConfigDevice>();
+if (profile.hw.network.hasLocalNetwork) {
+    manager.registerDevice<WifiService>();
 }
 ```
+
+`WifiService` is also exposed by POSIX when its selected backend is simulated,
+host-observational, or unavailable. `managesItsOwnLink` and the Wi-Fi
+capability flags determine whether connect, disconnect, BSSID selection, and
+scan operations are supported; they do not control service registration.
 
 ### Memory-aware tuning
 

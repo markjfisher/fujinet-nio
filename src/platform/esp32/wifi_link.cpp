@@ -42,6 +42,25 @@ static bool is_same_ssid(const std::string& a, const std::string& b)
     return a == b;
 }
 
+static bool parse_bssid(const std::string& text, std::uint8_t out[6])
+{
+    if (text.size() != 17) return false;
+    auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for (int i = 0; i < 6; ++i) {
+        if (i && text[i * 3 - 1] != ':') return false;
+        const int hi = hex(text[i * 3]);
+        const int lo = hex(text[i * 3 + 1]);
+        if (hi < 0 || lo < 0) return false;
+        out[i] = static_cast<std::uint8_t>((hi << 4) | lo);
+    }
+    return true;
+}
+
 Esp32WifiLink::Esp32WifiLink() = default;
 
 Esp32WifiLink::~Esp32WifiLink()
@@ -206,6 +225,11 @@ void Esp32WifiLink::connect(std::string ssid, std::string pass)
     wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_cfg.sta.pmf_cfg.capable = true;
     wifi_cfg.sta.pmf_cfg.required = false;
+    std::uint8_t configured_bssid[6]{};
+    if (parse_bssid(_configured_bssid, configured_bssid)) {
+        std::memcpy(wifi_cfg.sta.bssid, configured_bssid, sizeof(configured_bssid));
+        wifi_cfg.sta.bssid_set = true;
+    }
 
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
     if (err != ESP_OK) {
@@ -236,6 +260,11 @@ void Esp32WifiLink::connect(std::string ssid, std::string pass)
     if (!try_wifi_connect()) {
         FN_LOGE(TAG, "esp_wifi_connect failed after start");
     }
+}
+
+void Esp32WifiLink::set_bssid(std::string bssid)
+{
+    _configured_bssid = std::move(bssid);
 }
 
 void Esp32WifiLink::disconnect()
@@ -271,6 +300,70 @@ void Esp32WifiLink::poll()
 std::string Esp32WifiLink::ip_address() const
 {
     return _ip;
+}
+
+fujinet::net::WifiBssid Esp32WifiLink::current_bssid() const
+{
+    fujinet::net::WifiBssid result;
+    wifi_ap_record_t ap{};
+    if (_inited && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        std::memcpy(result.bytes, ap.bssid, sizeof(result.bytes));
+        result.valid = true;
+    }
+    return result;
+}
+
+std::int8_t Esp32WifiLink::rssi() const
+{
+    wifi_ap_record_t ap{};
+    return _inited && esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;
+}
+
+std::string Esp32WifiLink::subnet_mask() const
+{
+    esp_netif_ip_info_t info{};
+    if (!_netif || esp_netif_get_ip_info(_netif, &info) != ESP_OK) return {};
+    char text[16]{};
+    std::snprintf(text, sizeof(text), IPSTR, IP2STR(&info.netmask));
+    return text;
+}
+
+std::string Esp32WifiLink::gateway() const
+{
+    esp_netif_ip_info_t info{};
+    if (!_netif || esp_netif_get_ip_info(_netif, &info) != ESP_OK) return {};
+    char text[16]{};
+    std::snprintf(text, sizeof(text), IPSTR, IP2STR(&info.gw));
+    return text;
+}
+
+std::string Esp32WifiLink::dns_server() const
+{
+    if (!_netif) return {};
+    esp_netif_dns_info_t info{};
+    if (esp_netif_get_dns_info(_netif, ESP_NETIF_DNS_MAIN, &info) != ESP_OK) return {};
+    char text[16]{};
+    std::snprintf(text, sizeof(text), IPSTR, IP2STR(&info.ip.u_addr.ip4));
+    return text;
+}
+
+fujinet::net::WifiScanResult Esp32WifiLink::scan_wifi()
+{
+    const auto raw = scan();
+    fujinet::net::WifiScanResult result;
+    result.success = raw.success;
+    result.records.reserve(raw.aps.size());
+    for (const auto& ap : raw.aps) {
+        fujinet::net::WifiScanRecord record;
+        record.ssid = ap.ssid;
+        record.bssid = ap.bssid;
+        record.rssi = ap.rssi;
+        record.channel = ap.channel;
+        // Keep the stable wire value for the current human-readable labels.
+        record.auth = ap.auth == "open" ? 0 : 1;
+        result.records.push_back(std::move(record));
+    }
+    return result;
 }
 
 bool Esp32WifiLink::wait_wifi_started(int timeout_ms)
@@ -406,6 +499,8 @@ WifiScanResult Esp32WifiLink::scan()
     for (const auto& rec : records) {
         WifiScanAp ap;
         ap.ssid = std::string(reinterpret_cast<const char*>(rec.ssid));
+        std::memcpy(ap.bssid.bytes, rec.bssid, sizeof(ap.bssid.bytes));
+        ap.bssid.valid = true;
         ap.rssi = rec.rssi;
         ap.channel = rec.primary;
         ap.auth = auth_mode_label(rec.authmode);
@@ -497,4 +592,3 @@ void Esp32WifiLink::on_got_ip(const ip_event_got_ip_t* ev)
 }
 
 } // namespace fujinet::platform::esp32
-

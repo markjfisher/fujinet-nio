@@ -199,6 +199,9 @@ set(FUJINET_NIO_SOURCES
         src/lib/uri_display_formatter.cpp
         src/lib/uri_parser.cpp
         src/lib/utils.cpp
+        src/lib/wifi_controller.cpp
+        src/lib/wifi_service.cpp
+        src/lib/wifi_service_init.cpp
         src/platform/posix/atari_netsio_fujibus_channel.cpp
         src/platform/posix/channel_factory.cpp
         src/platform/posix/console_transport_default.cpp
@@ -227,6 +230,7 @@ set(FUJINET_NIO_SOURCES
         src/platform/posix/udp_channel.cpp
         src/platform/posix/udp_socket_ops_default.cpp
         src/platform/posix/udp_socket_ops_posix.cpp
+        src/platform/posix/wifi_link.cpp
 # __TARGET_SOURCES_END__
 )
 

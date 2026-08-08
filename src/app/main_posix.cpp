@@ -30,6 +30,7 @@
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
 #include "fujinet/platform/posix/fs_factory.h"
+#include "fujinet/platform/posix/wifi_link.h"
 
 // Quick forward declaration (we’ll make a proper header later).
 namespace fujinet {
@@ -86,7 +87,8 @@ int main()
     // Diagnostics + console (cooperative; no extra threads).
     fujinet::diag::DiagnosticRegistry diagRegistry;
     auto coreDiag = fujinet::diag::create_core_diagnostic_provider(core);
-    auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core);
+    auto wifiDiagCtx = std::make_shared<fujinet::diag::NetworkDiagWifiContext>();
+    auto netDiag  = fujinet::diag::create_network_diagnostic_provider(core, wifiDiagCtx);
     auto diskDiag = fujinet::diag::create_disk_diagnostic_provider(core);
     auto modemDiag = fujinet::diag::create_modem_diagnostic_provider(core);
     auto appStoreDiag = fujinet::diag::create_app_store_diagnostic_provider(core);
@@ -188,6 +190,22 @@ int main()
     fujiConcrete->start();
     const auto& config = fujiConcrete->config();
 
+    auto wifiLink = std::make_unique<fujinet::platform::posix::PosixWifiLink>(
+        fujinet::platform::posix::PosixWifiLink::mode_from_environment(),
+        [] {
+            const char* value = std::getenv("FN_POSIX_WIFI_INTERFACE");
+            return value ? std::string(value) : std::string{};
+        }());
+    auto* wifiLinkPtr = wifiLink.get();
+    wifiDiagCtx->fuji = fujiConcrete;
+    wifiDiagCtx->ensure_wifi = [wifiLinkPtr]() { return wifiLinkPtr; };
+    wifiLink->set_bssid(config.wifi.bssid);
+    if (config.wifi.enabled && !config.wifi.ssid.empty()) {
+        wifiLink->connect(config.wifi.ssid, config.wifi.passphrase);
+    } else {
+        wifiLink->poll();
+    }
+
     {
         auto httpFs = fujinet::platform::posix::create_http_filesystem();
         if (!core.storageManager().registerFileSystem(std::move(httpFs))) {
@@ -206,6 +224,9 @@ int main()
     fujinet::core::register_clock_device(core, fujiConcrete->config_store());
     
     fujinet::core::register_disk_device(core);
+    fujinet::core::register_wifi_service(
+        core, fujiConcrete->config_mut(), fujiConcrete->config_store(),
+        [wifiLinkPtr]() { return wifiLinkPtr; });
 
     // Restore live drive mappings and then apply the configured boot disk.
     // This must happen after DiskDevice is registered.

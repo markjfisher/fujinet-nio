@@ -57,6 +57,7 @@ static void from_yaml(const YAML::Node& node, WifiConfig& out)
 {
     out.enabled    = get_or<bool>(node, "enabled", false);
     out.ssid       = get_or<std::string>(node, "ssid", "");
+    out.bssid      = get_or<std::string>(node, "bssid", "");
     out.passphrase = get_or<std::string>(node, "passphrase", "");
 }
 
@@ -251,6 +252,7 @@ static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
     out << YAML::Key << "wifi" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled"    << YAML::Value << cfg.wifi.enabled;
     out << YAML::Key << "ssid"       << YAML::Value << cfg.wifi.ssid;
+    out << YAML::Key << "bssid"      << YAML::Value << cfg.wifi.bssid;
     out << YAML::Key << "passphrase" << YAML::Value << cfg.wifi.passphrase;
     out << YAML::EndMap;
 

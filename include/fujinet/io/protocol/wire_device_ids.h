@@ -17,6 +17,7 @@ enum class WireDeviceId : std::uint8_t {
     HostService     = 0xF0,
     AppStoreService = 0xF1,
     SlotCatalogService = 0xF2,
+    WifiService     = 0xF3,
     ModemService    = 0xFB,
     DiskService     = 0xFC,
     NetworkService  = 0xFD,

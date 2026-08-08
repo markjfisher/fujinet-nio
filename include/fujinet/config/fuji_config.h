@@ -24,6 +24,7 @@ struct BootConfig {
 struct WifiConfig {
     bool        enabled{false};
     std::string ssid;
+    std::string bssid;
     std::string passphrase;
 };
 

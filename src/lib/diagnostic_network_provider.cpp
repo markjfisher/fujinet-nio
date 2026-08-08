@@ -3,14 +3,11 @@
 #include "fujinet/core/core.h"
 #include "fujinet/diag/diagnostic_parse.h"
 #include "fujinet/io/devices/fuji_device.h"
+#include "fujinet/io/devices/wifi_controller.h"
 #include "fujinet/io/devices/network_device.h"
 #include "fujinet/io/devices/network_device_diagnostics.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/net/network_link.h"
-
-#if !defined(FN_PLATFORM_POSIX)
-#include "fujinet/platform/esp32/wifi_link.h"
-#endif
 
 #include <cctype>
 #include <cstdio>
@@ -117,14 +114,14 @@ public:
             });
             out.push_back(DiagCommandSpec{
                 .name = "net.wifi.get",
-                .summary = "show configured Wi-Fi SSID and password",
+                .summary = "show configured Wi-Fi SSID and password presence",
                 .usage = "net.wifi.get",
                 .safe = true,
             });
             out.push_back(DiagCommandSpec{
                 .name = "net.wifi.set",
                 .summary = "set configured SSID or password, save, and reconnect",
-                .usage = "net.wifi.set <ssid|password|passphrase> <value...>",
+                .usage = "net.wifi.set <ssid|bssid|password|passphrase> <value...>",
                 .safe = false,
             });
             out.push_back(DiagCommandSpec{
@@ -176,41 +173,11 @@ private:
         return _wifi_ctx ? _wifi_ctx->fuji : nullptr;
     }
 
-    fujinet::net::INetworkLink* wifi_link() const
-    {
-        if (!_wifi_ctx || !_wifi_ctx->ensure_wifi) {
-            return nullptr;
-        }
-        return _wifi_ctx->ensure_wifi();
-    }
-
-    DiagResult reconnect_wifi()
+    fujinet::io::WifiController wifi_controller() const
     {
         auto* fuji = fuji_device();
-        if (!fuji) {
-            return DiagResult::not_ready("FujiDevice not available");
-        }
-
-        const auto& wifi_cfg = fuji->config().wifi;
-        if (wifi_cfg.ssid.empty()) {
-            return DiagResult::invalid_args("ssid not configured");
-        }
-
-        auto* link = wifi_link();
-        if (!link) {
-            return DiagResult::not_ready("Wi-Fi link not available");
-        }
-
-        fuji->config_mut().wifi.enabled = true;
-        link->connect(wifi_cfg.ssid, wifi_cfg.passphrase);
-
-        std::string text = "reconnecting to ssid='";
-        text += wifi_cfg.ssid;
-        text += "'\r\n";
-
-        DiagResult r = DiagResult::ok(std::move(text));
-        r.kv.emplace_back("ssid", wifi_cfg.ssid);
-        return r;
+        return fujinet::io::WifiController(
+            fuji->config_mut(), fuji->config_store(), _wifi_ctx->ensure_wifi);
     }
 
     static std::string join_args(const DiagArgsView& args, std::size_t from)
@@ -225,18 +192,6 @@ private:
         return out;
     }
 
-    void append_wifi_save_status(fujinet::io::FujiDevice* fuji, DiagResult& r)
-    {
-        auto* store = fuji->config_store();
-        if (!store) {
-            r.text += "warning: config store unavailable; not persisted\r\n";
-            return;
-        }
-
-        store->save(fuji->config());
-        r.text += "saved to config store\r\n";
-    }
-
     DiagResult cmd_wifi_get()
     {
         auto* fuji = fuji_device();
@@ -244,20 +199,22 @@ private:
             return DiagResult::not_ready("FujiDevice not available");
         }
 
-        const auto& wifi_cfg = fuji->config().wifi;
+        auto controller = wifi_controller();
+        const auto& wifi_cfg = controller.config();
         std::string text;
         text += "enabled: ";
         text += (wifi_cfg.enabled ? "1" : "0");
         text += "\r\nssid: ";
         text += wifi_cfg.ssid;
-        text += "\r\npassword: ";
-        text += wifi_cfg.passphrase;
-        text += "\r\n";
+        text += "\r\nbssid: ";
+        text += wifi_cfg.bssid;
+        text += "\r\npassword_present: ";
+        text += wifi_cfg.passphrase.empty() ? "0\r\n" : "1\r\n";
 
         DiagResult r = DiagResult::ok(std::move(text));
         r.kv.emplace_back("enabled", wifi_cfg.enabled ? "1" : "0");
         r.kv.emplace_back("ssid", wifi_cfg.ssid);
-        r.kv.emplace_back("password", wifi_cfg.passphrase);
+        r.kv.emplace_back("password_present", wifi_cfg.passphrase.empty() ? "0" : "1");
         return r;
     }
 
@@ -268,8 +225,9 @@ private:
             return DiagResult::not_ready("FujiDevice not available");
         }
 
-        const auto& wifi_cfg = fuji->config().wifi;
-        auto* link = wifi_link();
+        auto controller = wifi_controller();
+        const auto& wifi_cfg = controller.config();
+        auto* link = controller.link();
 
         std::string text;
         text += "configured_enabled: ";
@@ -287,6 +245,16 @@ private:
         text += link_state_name(link->state());
         text += "\r\nip: ";
         text += link->ip_address();
+        text += "\r\nrssi: ";
+        text += std::to_string(link->rssi());
+        text += "\r\nsubnet: ";
+        text += link->subnet_mask();
+        text += "\r\ngateway: ";
+        text += link->gateway();
+        text += "\r\ndns: ";
+        text += link->dns_server();
+        text += "\r\ncapabilities: ";
+        text += std::to_string(link->capabilities().flags);
         text += "\r\n";
 
         DiagResult r = DiagResult::ok(text);
@@ -303,7 +271,7 @@ private:
         }
 
         if (args.argv.size() < 3) {
-            return DiagResult::invalid_args("usage: net.wifi.set <ssid|password|passphrase> <value...>");
+            return DiagResult::invalid_args("usage: net.wifi.set <ssid|bssid|password|passphrase> <value...>");
         }
 
         const std::string_view field = args.argv[1];
@@ -312,54 +280,65 @@ private:
             return DiagResult::invalid_args("value must not be empty");
         }
 
-        auto& wifi_cfg = fuji->config_mut().wifi;
+        auto controller = wifi_controller();
+        auto next = controller.config();
         bool changed = false;
         const bool is_password_field =
             ascii_iequals(field, "password") || ascii_iequals(field, "passphrase");
 
         if (ascii_iequals(field, "ssid")) {
-            if (wifi_cfg.ssid != value) {
-                wifi_cfg.ssid = value;
+            if (next.ssid != value) {
+                next.ssid = value;
+                changed = true;
+            }
+        } else if (ascii_iequals(field, "bssid")) {
+            if (next.bssid != value) {
+                next.bssid = value;
                 changed = true;
             }
         } else if (is_password_field) {
-            if (wifi_cfg.passphrase != value) {
-                wifi_cfg.passphrase = value;
+            if (next.passphrase != value) {
+                next.passphrase = value;
                 changed = true;
             }
         } else {
-            return DiagResult::invalid_args("field must be ssid, password, or passphrase");
+            return DiagResult::invalid_args("field must be ssid, bssid, password, or passphrase");
         }
 
         if (!changed) {
             return DiagResult::ok("unchanged\r\n");
         }
 
-        wifi_cfg.enabled = true;
+        next.enabled = true;
 
         std::string text;
         if (is_password_field) {
             text += "password updated\r\n";
+        } else if (ascii_iequals(field, "bssid")) {
+            text += "bssid updated\r\n";
         } else {
             text += "ssid updated\r\n";
         }
 
-        auto* link = wifi_link();
-        if (!link) {
-            DiagResult r = DiagResult::ok(std::move(text));
-            append_wifi_save_status(fuji, r);
-            r.text += "warning: Wi-Fi link not available; reconnect skipped\r\n";
-            return r;
+        const auto updateStatus = controller.update(next, true, false);
+        if (updateStatus == fujinet::io::StatusCode::InvalidRequest)
+            return DiagResult::invalid_args("invalid Wi-Fi configuration");
+        if (updateStatus == fujinet::io::StatusCode::Unsupported)
+            return DiagResult::error("Wi-Fi configuration is unsupported\r\n");
+        if (updateStatus != fujinet::io::StatusCode::Ok)
+            return DiagResult::not_ready("Wi-Fi configuration could not be saved");
+
+        const auto reconnectStatus = controller.reconnect();
+        if (reconnectStatus == fujinet::io::StatusCode::Ok) {
+            text += "reconnecting to ssid='";
+            text += controller.config().ssid;
+            text += "'\r\n";
+        } else {
+            text += "warning: Wi-Fi reconnect unavailable; settings saved\r\n";
         }
 
-        link->connect(wifi_cfg.ssid, wifi_cfg.passphrase);
-        text += "reconnecting to ssid='";
-        text += wifi_cfg.ssid;
-        text += "'\r\n";
-
         DiagResult r = DiagResult::ok(std::move(text));
-        r.kv.emplace_back("ssid", wifi_cfg.ssid);
-        append_wifi_save_status(fuji, r);
+        r.kv.emplace_back("ssid", controller.config().ssid);
         return r;
     }
 
@@ -370,43 +349,27 @@ private:
             return DiagResult::not_ready("FujiDevice not available");
         }
 
-        auto* store = fuji->config_store();
-        if (!store) {
+        auto controller = wifi_controller();
+        if (controller.save() != fujinet::io::StatusCode::Ok)
             return DiagResult::not_ready("config store not available");
-        }
-
-        store->save(fuji->config());
         return DiagResult::ok("saved wifi settings to config store\r\n");
     }
 
     DiagResult cmd_wifi_scan()
     {
-#if defined(FN_PLATFORM_POSIX)
-        (void)0;
-        return DiagResult::not_ready("Wi-Fi scan not available on this platform");
-#else
-        auto* link = wifi_link();
-        if (!link) {
-            return DiagResult::not_ready("Wi-Fi link not available");
-        }
-
-        auto* wifi = dynamic_cast<fujinet::platform::esp32::Esp32WifiLink*>(link);
-        if (!wifi) {
-            return DiagResult::not_ready("Wi-Fi scan requires Esp32WifiLink");
-        }
-
-        const auto scan = wifi->scan();
+        auto controller = wifi_controller();
+        const auto scan = controller.scan();
         if (!scan.success) {
-            return DiagResult::error(scan.error + "\r\n");
+            return DiagResult::not_ready("Wi-Fi scan unavailable\r\n");
         }
 
         std::string text;
-        text.reserve(scan.aps.size() * 72 + 32);
+        text.reserve(scan.records.size() * 72 + 32);
         text += "ap_count: ";
-        text += std::to_string(scan.aps.size());
+        text += std::to_string(scan.records.size());
         text += "\r\n";
 
-        for (const auto& ap : scan.aps) {
+        for (const auto& ap : scan.records) {
             text += "ssid=";
             text += ap.ssid;
             text += " rssi=";
@@ -414,18 +377,17 @@ private:
             text += " channel=";
             text += std::to_string(ap.channel);
             text += " auth=";
-            text += ap.auth;
+            text += std::to_string(ap.auth);
             text += "\r\n";
         }
 
-        if (scan.aps.empty()) {
+        if (scan.records.empty()) {
             text += "note: scan completed but no access points were reported\r\n";
         }
 
         DiagResult r = DiagResult::ok(std::move(text));
-        r.kv.emplace_back("ap_count", std::to_string(scan.aps.size()));
+        r.kv.emplace_back("ap_count", std::to_string(scan.records.size()));
         return r;
-#endif
     }
 
     DiagResult cmd_sessions()

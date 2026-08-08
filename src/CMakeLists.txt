@@ -95,6 +95,9 @@ idf_component_register(
         lib/uri_display_formatter.cpp
         lib/uri_parser.cpp
         lib/utils.cpp
+        lib/wifi_controller.cpp
+        lib/wifi_service.cpp
+        lib/wifi_service_init.cpp
         platform/esp32/atari_sio_fujibus_channel.cpp
         platform/esp32/button_manager.cpp
         platform/esp32/channel_factory.cpp

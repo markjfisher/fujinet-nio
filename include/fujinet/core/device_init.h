@@ -3,6 +3,7 @@
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/core/core.h"
 #include "fujinet/io/devices/network_protocol_registry.h"
+#include "fujinet/core/wifi_service_init.h"
 
 namespace fujinet::core {
 

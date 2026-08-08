@@ -1557,3 +1557,19 @@ network availability, time synchronization, or other cross-cutting conditions.
 
 This document is the **authoritative** description of FujiNet-NIO architecture.  
 If core concepts change (BuildProfile, Channel/Transport split, HardwareCapabilities), update this file alongside the code and UML diagrams.
+# Wi-Fi management service
+
+The `WifiService` management endpoint is wire device `0xF3`. It is registered
+when the platform can expose the management endpoint, not only when it owns a
+physical Wi-Fi radio. The service receives a configuration reference, config
+store, and abstract network-link provider; it does not depend on transport or
+ESP-IDF code.
+Clients read status/configuration, submit validated configuration updates, and
+page bounded scan results through the normal channel -> transport -> core ->
+device-manager path. Passwords are write-only and are never placed in a
+response. Platform link implementations provide BSSID, signal, IP details,
+and scan capability behind the shared network-link abstraction. ESP32 uses the
+hardware provider; POSIX uses a host-managed, deterministic simulated, or
+explicitly unavailable provider selected by `FN_POSIX_WIFI_BACKEND`. Capability
+flags and backend kind in `GET_STATUS` allow the same client to work across all
+of these modes, including BBC and other emulators connected over PTY.

@@ -51,6 +51,7 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
 
     if (a.wifi.enabled != b.wifi.enabled) return false;
     if (a.wifi.ssid != b.wifi.ssid) return false;
+    if (a.wifi.bssid != b.wifi.bssid) return false;
     if (a.wifi.passphrase != b.wifi.passphrase) return false;
 
     if (a.modem.enabled != b.modem.enabled) return false;

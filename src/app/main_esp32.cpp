@@ -83,6 +83,7 @@ struct Esp32Services {
         if (connect_from_config && fuji) {
             const auto& cfg = fuji->config();
             if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
+                wifi->set_bssid(cfg.wifi.bssid);
                 wifi->connect(cfg.wifi.ssid, cfg.wifi.passphrase);
             }
         }
@@ -135,6 +136,10 @@ struct Esp32Services {
         if (cfg.wifi.enabled && !cfg.wifi.ssid.empty()) {
             ensure_wifi(true);
         }
+
+        fujinet::core::register_wifi_service(
+            core, fuji->config_mut(), fuji->config_store(),
+            [this]() { return ensure_wifi(false); });
 
         // start all the devices that can be delayed
         // We can now check if they should be started too

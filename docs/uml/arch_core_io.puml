@@ -69,7 +69,7 @@ package "fujinet::io (devices & routing)" as pkg_io_dev {
     note bottom of VirtualDevice
         Concrete devices (all in **fujinet::io**):
         **FujiDevice**, **FileDevice**, **DiskDevice**,
-        **ClockDevice**, **NetworkDevice**, **ModemDevice**
+         **ClockDevice**, **NetworkDevice**, **WifiService**, **ModemDevice**
     end note
 
     class IODeviceManager {
@@ -100,6 +100,16 @@ package "fujinet::io (devices & routing)" as pkg_io_dev {
     RoutingManager ..|> IRequestHandler
     RoutingManager --> IODeviceManager : forwards to\n(unless override)
     IODeviceManager "1" o-- "0..*" VirtualDevice : owns
+
+    class WifiService {
+        + handle(const IORequest& request): IOResponse
+    }
+    class WifiController {
+        + update(config, persist, reconnect): StatusCode
+        + reconnect(): StatusCode
+        + scan(): WifiScanResult
+    }
+    WifiService --> WifiController : shared state boundary
 }
 
 ' ========= Channels & transports =========
