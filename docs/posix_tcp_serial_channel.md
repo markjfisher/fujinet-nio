@@ -12,6 +12,12 @@ The short version:
 - Disk, file, network, clock, and config behavior still lives in normal
   `VirtualDevice` implementations.
 
+The client-side driver and channel contract is documented in
+[`driver_architecture.md`](driver_architecture.md). TCP uses the same raw-byte
+FujiBus-over-SLIP stream as the RS-232 development path; a future packet
+channel such as Zorro may use a different outer framing while retaining the
+FujiBus packet contract.
+
 ## Layering
 
 The TCP channel sits at the same layer as PTY, USB CDC, and UART channels:

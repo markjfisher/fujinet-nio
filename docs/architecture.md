@@ -416,6 +416,12 @@ This separation allows:
 - Direct unit tests of protocol logic
 - Reuse of FujiBus on other channels (TCP, WebSocket, etc.)
 
+For client-side operating-system drivers, the corresponding layering is
+documented in [`docs/driver_architecture.md`](driver_architecture.md). In
+particular, FujiBus is the logical packet protocol while SLIP is stream
+framing; a faster packet-oriented channel may replace SLIP without changing
+DiskDevice commands.
+
 ---
 
 ## **4. IODeviceManager (endpoint routing and lifecycle)**
@@ -1042,6 +1048,9 @@ The same DiskService path therefore serves Atari, BBC, MS-DOS, and Amiga
 clients without Amiga-specific build flags or conditionals. The Amiga client
 uses the existing `0xFC` DiskDevice mount/info/read/write contract; transport
 selection remains independent of disk handling.
+
+See [`docs/driver_architecture.md`](driver_architecture.md) for the client-side
+driver, typed DiskDevice codec, FujiBus, and channel-backend boundaries.
 
 ### Registry-based format wiring (no core ifdefs)
 

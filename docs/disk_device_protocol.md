@@ -11,6 +11,12 @@ Design goals:
 - **No platform ifdefs** in shared/core code.
 - **8-bit friendly protocol**: binary, fixed-endian, small parsing surface.
 
+Client-side driver layering, including the distinction between FujiBus packet
+protocol, SLIP stream framing, and physical channels, is defined in
+[`docs/driver_architecture.md`](driver_architecture.md). DiskDevice is the
+logical block-device protocol; it is independent of whether the client reaches
+NIO over RS-232, TCP, Zorro, or another channel.
+
 ---
 
 ## Components and layering
