@@ -41,6 +41,11 @@ static bool is_raw_extension(std::string_view ext) noexcept
     return ext == "img" || ext == "ima" || ext == "raw";
 }
 
+static bool is_adf_extension(std::string_view ext) noexcept
+{
+    return ext == "adf";
+}
+
 class AtrHeaderProbe final : public IImageProbe {
 public:
     ImageProbeResult probe(
@@ -117,6 +122,20 @@ public:
         if (ext == "atr") return {true, ImageType::Atr, {}, ImageProbeConfidence::Extension};
         if (ext == "ssd") return {true, ImageType::Ssd, {}, ImageProbeConfidence::Extension};
         if (ext == "dsd") return {true, ImageType::Dsd, {}, ImageProbeConfidence::Extension};
+        if (is_adf_extension(ext)) {
+            // ADF is a flat Amiga block image.  Keep it generic/raw, but do
+            // not let the raw handler's 256-byte fallback hide malformed
+            // ADF sizes.
+            if (sizeBytes == 0 || (sizeBytes % 512) != 0) {
+                DiskGeometry malformed{};
+                malformed.sectorSize = 512;
+                return {true, ImageType::Raw, malformed, ImageProbeConfidence::Extension};
+            }
+            DiskGeometry geometry{};
+            geometry.sectorSize = 512;
+            geometry.sectorCount = static_cast<std::uint32_t>(sizeBytes / 512);
+            return {true, ImageType::Raw, geometry, ImageProbeConfidence::Extension};
+        }
         if (is_raw_extension(ext)) {
             DiskGeometry geometry{};
             if (opts.sectorSizeHint != 0 && (sizeBytes % opts.sectorSizeHint) == 0) {

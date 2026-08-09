@@ -23,7 +23,8 @@ public:
             geometry.sectorSize = opts.sectorSizeHint;
             if ((sizeBytes % geometry.sectorSize) != 0) return DiskResult{DiskError::BadImage};
             geometry.sectorCount = static_cast<std::uint32_t>(sizeBytes / geometry.sectorSize);
-        } else if (has_geometry(opts.geometryHint)) {
+        } else if (opts.geometryHint.sectorSize != 0 || opts.geometryHint.sectorCount != 0) {
+            if (!has_geometry(opts.geometryHint)) return DiskResult{DiskError::BadImage};
             geometry = opts.geometryHint;
         } else {
             constexpr std::uint16_t defaultRawSectorSize = 256;

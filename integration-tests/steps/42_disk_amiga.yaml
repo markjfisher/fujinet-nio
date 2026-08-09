@@ -1,0 +1,41 @@
+group: Disk / Amiga ADF
+steps:
+  - name: "Disk ADF: setup image"
+    setup_cmd:
+      - argv: ["python3", "integration-tests/scripts/mk_adf_disk.py"]
+    argv: ["{CLI}", "write", "--chunk", "4096", "{FS}:/amiga_test.ADF", "{STEP_TMP}/amiga_test.ADF"]
+    timeout_s: 30
+
+  - name: "Disk ADF: mount and verify geometry"
+    argv: ["{CLI}", "disk", "mount", "--slot", "1", "{FS}:/amiga_test.ADF", "--type", "auto"]
+    expect: ["mounted=1", "readonly=0", "type=raw", "sector_size=512", "sector_count=1760"]
+    timeout_s: 10
+
+  - name: "Disk ADF: read first and final blocks"
+    argv: ["{CLI}", "disk", "read-sector", "--slot", "1", "--lba", "0", "--max-bytes", "512"]
+    capture: {mode: file}
+    expect_file: {path: "{CAPTURED_OUT}", size_exact: 512, contains_bytes_hex: ["0000"]}
+    timeout_s: 10
+
+  - name: "Disk ADF: read final block"
+    argv: ["{CLI}", "disk", "read-sector", "--slot", "1", "--lba", "1759", "--max-bytes", "512"]
+    capture: {mode: file}
+    expect_file: {path: "{CAPTURED_OUT}", size_exact: 512, contains_bytes_hex: ["df06"]}
+    timeout_s: 10
+
+  - name: "Disk ADF: write and reread block"
+    setup_cmd:
+      - argv: ["python3", "integration-tests/scripts/mk_adf_disk.py"]
+    argv: ["{CLI}", "disk", "write-sector", "--slot", "1", "--lba", "0", "{STEP_TMP}/write.bin"]
+    expect: ["written_len=512", "lba=0"]
+    timeout_s: 10
+
+  - name: "Disk ADF: reject out of range"
+    argv: ["{CLI}", "disk", "read-sector", "--slot", "1", "--lba", "1760", "--max-bytes", "512"]
+    expect: ["error="]
+    timeout_s: 10
+
+  - name: "Disk ADF: unmount"
+    argv: ["{CLI}", "disk", "unmount", "--slot", "1"]
+    expect: ["unmounted=1"]
+    timeout_s: 10

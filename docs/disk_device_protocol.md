@@ -98,6 +98,8 @@ v1 includes (image-format understanding required for sector I/O):
   - falls back to 256-byte sectors when no probe recognizes the file
   - persisted runtime mounts can provide `sector_size_hint` for headerless raw
     images where geometry cannot be inferred from file content
+  - `.adf` is recognized case-insensitively as raw 512-byte media; its geometry
+    is `file_size / 512` blocks and non-512-aligned files are rejected
 
 - **SSD** (`ImageType::Ssd`, `.ssd`): BBC DFS SSD image (flat 256-byte sectors)
   - supported sizes (validated on mount):
@@ -108,6 +110,7 @@ v1 includes (image-format understanding required for sector I/O):
 Planned image formats:
 
 - DSD (`.dsd`)
+- HDF/RDB semantics are intentionally not inferred from `.hdf` yet.
 
 Detection is centralized in `ProbeRegistry`, not in individual mount callers.
 The default probe order is:
@@ -394,6 +397,26 @@ On FujiNet startup, `DiskDevice` restores those runtime mounts as pending lazy
 mounts before applying the boot/config disk.
 This keeps the device-side state aligned when FujiNet is reset while the host
 computer is still running and still believes a mounted disk is present.
+
+## Amiga block-device client profile
+
+The Amiga client uses the existing generic `DiskDevice` at wire device ID
+`0xFC`; no Amiga-specific wire ID or command is required. The driver mounts an
+ADF in slot 1, reads the returned geometry (or follows with `Info`), and then
+uses `ReadSector (0x03)` and `WriteSector (0x04)` with 512-byte blocks. It may
+use `ClearChanged (0x06)`, `Unmount (0x02)`, and the normal runtime-mount
+recovery commands as needed.
+
+For a standard 880 KiB ADF, the geometry is `sectorSize = 512` and
+`sectorCount = 1760`. A successful read returns one complete 512-byte block
+unless the requested host buffer is smaller, in which case the existing
+truncation flag and length apply. Writes require a complete 512-byte block.
+Out-of-range, read-only, malformed, and short-buffer requests use the existing
+DiskDevice status mappings. `ReadSectors`/`WriteSectors` remain available for
+future throughput improvements but are not required by the first Amiga driver.
+
+NIO exposes only the block device. AmigaDOS, MountList handling, directories,
+files, OFS, and FFS remain in the Amiga driver/OS and are not parsed here.
 
 Host drivers should send `BeginHostSession (0x0B)` during driver or OS startup.
 That command declares that the host-side disk state is new, clears runtime

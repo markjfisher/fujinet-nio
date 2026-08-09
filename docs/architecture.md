@@ -1033,7 +1033,15 @@ FujiNet NIO treats “disk” as a **reusable core service**:
 
 - **DiskService (core)**: mounts disk image files from a named filesystem (`StorageManager`) and exposes sector-level reads/writes.
 - **DiskDevice (VirtualDevice)**: wraps DiskService and exposes a small v1 binary command set for tooling and generic hosts.
-- **Machine-specific disk protocols** (Atari SIO disk, BBC DFS/MMFS, etc.) should reuse DiskService and implement only their own bus semantics.
+- **Machine-specific disk protocols** (Atari SIO disk, BBC DFS/MMFS, MS-DOS,
+  and Amiga block-device clients) should reuse DiskService and implement only
+  their own bus semantics. ADF images are served as generic raw 512-byte media;
+  AmigaDOS, MountLists, OFS/FFS, directories, and files remain outside NIO.
+
+The same DiskService path therefore serves Atari, BBC, MS-DOS, and Amiga
+clients without Amiga-specific build flags or conditionals. The Amiga client
+uses the existing `0xFC` DiskDevice mount/info/read/write contract; transport
+selection remains independent of disk handling.
 
 ### Registry-based format wiring (no core ifdefs)
 

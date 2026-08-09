@@ -9,6 +9,7 @@
 #include "fujinet/io/devices/disk_device.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -66,6 +67,128 @@ static std::vector<std::uint8_t> make_ssd_bytes(std::uint32_t sectorCount = 800)
     bytes[0x106] = static_cast<std::uint8_t>((sectorCount >> 8) & 0x03);
     bytes[0x107] = static_cast<std::uint8_t>(sectorCount & 0xFF);
     return bytes;
+}
+
+static std::vector<std::uint8_t> make_adf_bytes()
+{
+    constexpr std::size_t sectorSize = 512;
+    constexpr std::size_t sectorCount = 1760;
+    std::vector<std::uint8_t> bytes(sectorSize * sectorCount);
+    for (std::size_t sector = 0; sector < sectorCount; ++sector) {
+        bytes[sector * sectorSize] = static_cast<std::uint8_t>(sector);
+        bytes[sector * sectorSize + 1] = static_cast<std::uint8_t>(sector >> 8);
+    }
+    return bytes;
+}
+
+TEST_CASE("DiskService: ADF probes as raw 512-byte media")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    memfs->file_bytes("/disks/work.AdF") = make_adf_bytes();
+    memfs->file_bytes("/disks/bad.ADF").resize(1760 * 512 - 1);
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    fujinet::disk::MountOptions opts{};
+    REQUIRE(svc.mount(0, "mem", "/disks/work.AdF", opts).ok());
+
+    const auto info = svc.info(0);
+    CHECK(info.type == fujinet::disk::ImageType::Raw);
+    CHECK(info.geometry.sectorSize == 512);
+    CHECK(info.geometry.sectorCount == 1760);
+
+    std::vector<std::uint8_t> sector(512);
+    REQUIRE(svc.read_sector(0, 1759, sector.data(), sector.size()).ok());
+    CHECK(sector[0] == 0xdf);
+    CHECK(sector[1] == 0x06);
+
+    std::fill(sector.begin(), sector.end(), 0xa5);
+    REQUIRE(svc.write_sector(0, 0, sector.data(), sector.size()).ok());
+    std::fill(sector.begin(), sector.end(), 0);
+    REQUIRE(svc.read_sector(0, 0, sector.data(), sector.size()).ok());
+    CHECK(sector[0] == 0xa5);
+
+    CHECK(svc.read_sector(0, 1760, sector.data(), sector.size()).error == fujinet::disk::DiskError::OutOfRange);
+    CHECK(svc.write_sector(0, 1760, sector.data(), sector.size()).error == fujinet::disk::DiskError::OutOfRange);
+    CHECK(svc.write_sector(0, 0, sector.data(), 511).error == fujinet::disk::DiskError::InvalidSlot);
+
+    REQUIRE(svc.unmount(0).ok());
+    opts.readOnlyRequested = true;
+    REQUIRE(svc.mount(0, "mem", "/disks/work.AdF", opts).ok());
+    CHECK(svc.write_sector(0, 0, sector.data(), sector.size()).error == fujinet::disk::DiskError::ReadOnly);
+
+    CHECK(svc.mount(1, "mem", "/disks/bad.ADF", fujinet::disk::MountOptions{}).error == fujinet::disk::DiskError::BadImage);
+}
+
+TEST_CASE("DiskDevice v1: ADF uses the generic 512-byte wire contract")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    memfs->file_bytes("/disk.ADF") = make_adf_bytes();
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    DiskDevice dev(sm);
+    const auto deviceId = to_device_id(WireDeviceId::DiskService);
+    std::string mountPayload;
+    diskproto::write_u8(mountPayload, V);
+    diskproto::write_u8(mountPayload, 1);
+    diskproto::write_u8(mountPayload, 0);
+    diskproto::write_u8(mountPayload, 0); // automatic/raw by extension
+    diskproto::write_u16le(mountPayload, 0);
+    diskproto::write_lp_u16_string(mountPayload, "mem:/disk.ADF");
+
+    IORequest mount{};
+    mount.deviceId = deviceId;
+    mount.command = 0x01;
+    mount.payload = to_vec(mountPayload);
+    const auto mounted = dev.handle(mount);
+    REQUIRE(mounted.status == StatusCode::Ok);
+    REQUIRE(mounted.payload.size() == 12);
+    CHECK(mounted.payload[0] == V);
+    CHECK(mounted.payload[1] == 1);
+    CHECK(mounted.payload[4] == 1);
+    CHECK(mounted.payload[5] == static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+    CHECK(mounted.payload[6] == 0x00);
+    CHECK(mounted.payload[7] == 0x02);
+    CHECK(mounted.payload[8] == 0xe0);
+    CHECK(mounted.payload[9] == 0x06);
+    CHECK(mounted.payload[10] == 0x00);
+    CHECK(mounted.payload[11] == 0x00);
+
+    std::string readPayload;
+    diskproto::write_u8(readPayload, V);
+    diskproto::write_u8(readPayload, 1);
+    diskproto::write_u32le(readPayload, 1759);
+    diskproto::write_u16le(readPayload, 512);
+    IORequest read{};
+    read.deviceId = deviceId;
+    read.command = 0x03;
+    read.payload = to_vec(readPayload);
+    const auto readResponse = dev.handle(read);
+    REQUIRE(readResponse.status == StatusCode::Ok);
+    REQUIRE(readResponse.payload.size() == 523);
+    CHECK(readResponse.payload[0] == V);
+    CHECK(readResponse.payload[4] == 1);
+    CHECK(readResponse.payload[5] == 0xdf);
+    CHECK(readResponse.payload[6] == 0x06);
+
+    std::string writePayload;
+    diskproto::write_u8(writePayload, V);
+    diskproto::write_u8(writePayload, 1);
+    diskproto::write_u32le(writePayload, 0);
+    diskproto::write_u16le(writePayload, 512);
+    writePayload.append(512, static_cast<char>(0xa5));
+    IORequest write{};
+    write.deviceId = deviceId;
+    write.command = 0x04;
+    write.payload = to_vec(writePayload);
+    const auto writeResponse = dev.handle(write);
+    REQUIRE(writeResponse.status == StatusCode::Ok);
+    REQUIRE(writeResponse.payload.size() == 11);
+    CHECK(writeResponse.payload[0] == V);
+    CHECK(writeResponse.payload[9] == 0x00);
+    CHECK(writeResponse.payload[10] == 0x02);
 }
 
 TEST_CASE("DiskService: mount raw + read/write sector")
