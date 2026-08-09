@@ -5,6 +5,9 @@ drivers and other FujiNet clients. It complements
 [`disk_device_protocol.md`](disk_device_protocol.md), which defines the NIO
 server-side block-device contract.
 
+The Amiga floppy-port/Pico channel design is described separately in
+[`amiga-floppy-channel.md`](amiga-floppy-channel.md).
+
 The immediate target is an Amiga `fujinet-disk.device` client, with the
 existing MS-DOS driver as the first related implementation. The design is
 intended to support RS-232 initially and faster channels such as Zorro later,
@@ -92,8 +95,8 @@ does not change when the channel changes.
 
 ### Channel framing and transport
 
-SLIP is a byte-stream framing mechanism used to delimit FujiBus packets when
-the underlying channel is a stream. For example:
+SLIP is the existing byte-stream framing mechanism used by the current
+RS-232, PTY, and TCP-style FujiBus paths. For example:
 
 ```text
 FujiBus packet -> SLIP encode -> serial.device -> RS-232
@@ -111,17 +114,16 @@ A channel adapter owns:
 - channel capabilities and maximum transfer sizes;
 - translating the channel into the interface expected by the FujiBus client.
 
-For RS-232, SLIP framing is appropriate and should be retained. For TCP used
-by Amiberry, the same raw-byte FujiBus-over-SLIP stream can be used. For Zorro
-or another shared-memory/mailbox channel, there are two valid designs:
+For RS-232 and existing TCP/PTY compatibility paths, SLIP remains appropriate.
+For new high-speed channels—SPI, the Amiga floppy-port/Pico link, Zorro, or a
+parallel interface—the preferred design is packet-native FujiBus transport,
+without SLIP. Such a channel should provide packet boundaries, length, and
+integrity checking in its own link envelope while preserving the FujiBus packet
+and DiskDevice commands unchanged.
 
-1. Present a byte-stream abstraction and retain SLIP for maximum code reuse.
-2. Present a native packet abstraction and use a Zorro-specific mailbox frame,
-   while preserving the FujiBus packet inside it.
-
-The second option can remove unnecessary SLIP overhead, but it does not
-require a new DiskDevice protocol. The decision belongs to the channel
-contract, not the disk driver.
+This is a deliberate direction rather than an unresolved choice: SLIP is for
+legacy or stream compatibility; new high-speed interfaces should not add SLIP
+overhead unless a concrete interoperability requirement justifies it.
 
 ## Channel independence of the Amiga driver
 
@@ -138,9 +140,10 @@ channel_flush()
 channel_capabilities()
 ```
 
-The actual implementation may use byte-oriented operations if the shared
-FujiBus layer owns SLIP. The important rule is that the driver above this
-interface sees FujiBus packets, not physical bytes.
+The actual implementation may use byte-oriented operations for a legacy SLIP
+stream, or packet-oriented operations for a new high-speed link. The important
+rule is that the driver above this interface sees FujiBus packets, not physical
+bytes or SLIP details.
 
 There may be separate channel binaries or build variants because different
 channels must know how to access their hardware. There should not be separate
@@ -251,7 +254,8 @@ require a faster channel.
 Every new channel should document:
 
 - whether it carries raw bytes or complete FujiBus packets;
-- whether SLIP is retained;
+- whether the channel is a legacy SLIP byte stream or a preferred packet-native
+  FujiBus link;
 - maximum request and response sizes;
 - ordering and delivery guarantees;
 - timeout and reset behavior;

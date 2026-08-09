@@ -419,8 +419,14 @@ This separation allows:
 For client-side operating-system drivers, the corresponding layering is
 documented in [`docs/driver_architecture.md`](driver_architecture.md). In
 particular, FujiBus is the logical packet protocol while SLIP is stream
-framing; a faster packet-oriented channel may replace SLIP without changing
+framing. New high-speed packet-oriented channels should omit SLIP and carry
+complete FujiBus packets with channel-native boundaries, without changing
 DiskDevice commands.
+
+The proposed Amiga floppy-port/Pico channel is documented in
+[`docs/amiga-floppy-channel.md`](amiga-floppy-channel.md). It is a channel
+adapter beneath the existing FujiBus/DiskDevice layers, not an Amiga-specific
+NIO device.
 
 ---
 
