@@ -829,6 +829,23 @@ class C_0017366619222000823646 {
 {static} +state(const ModemDevice & d) noexcept : StateRow
 __
 }
+class "io::WifiController" as C_0001833966047295824140
+class C_0001833966047295824140 {
++WifiController(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
+..
++config() const : const config::WifiConfig &
++config_mut() : config::WifiConfig &
++disconnect() : StatusCode
++link() const : net::INetworkLink *
++reconnect() : StatusCode
++save() const : StatusCode
++scan() const : net::WifiScanResult
++update(const config::WifiConfig & next, bool persist, bool reconnect) : StatusCode
+__
+-_config : config::FujiConfig &
+-_linkProvider : LinkProvider
+-_store : config::FujiConfigStore *
+}
 class "io::HostService" as C_0014542562225987093978
 class C_0014542562225987093978 {
 +HostService(fs::StorageManager & storage) : void
@@ -883,6 +900,16 @@ class C_0003612394856745364043 {
 __
 +key : std::string
 +ns : std::string
+}
+class "io::WifiService" as C_0008827731424709454558
+class C_0008827731424709454558 {
++WifiService(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
+..
++handle(const IORequest & request) : IOResponse
+__
+-_controller : WifiController
+-_scanCache : std::vector<net::WifiScanRecord>
+-_scanCacheValid : bool
 }
 class "io::StubNetworkProtocol" as C_0011683483391837494806
 class C_0011683483391837494806 {
@@ -1161,6 +1188,7 @@ C_0010884110720104182508 --+ C_0012713930330229444348
 C_0006448478138904809358 --+ C_0012713930330229444348
 C_0017366619222000823646 ..> C_0012713930330229444348
 C_0017366619222000823646 ..> C_0015390871890377655918
+C_0001833966047295824140 ..> C_0012496700434923238249
 C_0014542562225987093978 ..> C_0002386736627821114488
 C_0014542562225987093978 ..> C_0002942984525013396621
 C_0014542562225987093978 --> C_0001279065520068563954 : -_storage
@@ -1173,6 +1201,10 @@ C_0008366653720214799347 ..> C_0002386736627821114488
 C_0008366653720214799347 ..> C_0002942984525013396621
 C_0008366653720214799347 --> C_0017938940343811357840 : -_store
 C_0010069830097413987109 <|-- C_0008366653720214799347
+C_0008827731424709454558 ..> C_0002386736627821114488
+C_0008827731424709454558 ..> C_0002942984525013396621
+C_0008827731424709454558 o-- C_0001833966047295824140 : -_controller
+C_0010069830097413987109 <|-- C_0008827731424709454558
 C_0011683483391837494806 ..> C_0012496700434923238249
 C_0011683483391837494806 ..> C_0007100525671922339382
 C_0011683483391837494806 o-- C_0001159279330674149840 : -_openReq

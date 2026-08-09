@@ -21,6 +21,7 @@ __
 class "config::WifiConfig" as C_0016905784937528219397
 class C_0016905784937528219397 {
 __
++bssid : std::string
 +enabled : bool
 +passphrase : std::string
 +ssid : std::string

@@ -7,6 +7,7 @@ Clock
 HostService
 AppStoreService
 SlotCatalogService
+WifiService
 ModemService
 DiskService
 NetworkService
@@ -124,6 +125,13 @@ Read
 Write
 Delete
 List
+}
+enum "io::protocol::WifiCommand" as C_0015484389551772629797
+enum C_0015484389551772629797 {
+GetStatus
+GetConfig
+SetConfig
+Scan
 }
 class "io::protocol::FujiBusHeader" as C_0009954510640382192371
 class C_0009954510640382192371 {

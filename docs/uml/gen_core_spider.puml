@@ -723,6 +723,23 @@ class C_0017366619222000823646 {
 {static} +state(const ModemDevice & d) noexcept : StateRow
 __
 }
+class "io::WifiController" as C_0001833966047295824140
+class C_0001833966047295824140 {
++WifiController(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
+..
++config() const : const config::WifiConfig &
++config_mut() : config::WifiConfig &
++disconnect() : StatusCode
++link() const : net::INetworkLink *
++reconnect() : StatusCode
++save() const : StatusCode
++scan() const : net::WifiScanResult
++update(const config::WifiConfig & next, bool persist, bool reconnect) : StatusCode
+__
+-_config : config::FujiConfig &
+-_linkProvider : LinkProvider
+-_store : config::FujiConfigStore *
+}
 class "io::HostService" as C_0014542562225987093978
 class C_0014542562225987093978 {
 +HostService(fs::StorageManager & storage) : void
@@ -753,6 +770,16 @@ class C_0008366653720214799347 {
 -handle_write(const IORequest & request) : IOResponse
 __
 -_store : std::shared_ptr<AppStore>
+}
+class "io::WifiService" as C_0008827731424709454558
+class C_0008827731424709454558 {
++WifiService(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
+..
++handle(const IORequest & request) : IOResponse
+__
+-_controller : WifiController
+-_scanCache : std::vector<net::WifiScanRecord>
+-_scanCacheValid : bool
 }
 class "io::StubNetworkProtocol" as C_0011683483391837494806
 class C_0011683483391837494806 {
@@ -1132,6 +1159,7 @@ __
 class "config::WifiConfig" as C_0016905784937528219397
 class C_0016905784937528219397 {
 __
++bssid : std::string
 +enabled : bool
 +passphrase : std::string
 +ssid : std::string
@@ -1393,7 +1421,6 @@ class "diag::NetworkDiagnosticProvider" as C_0005339174589336306392
 class C_0005339174589336306392 {
 +NetworkDiagnosticProvider(core::FujinetCore & core, std::shared_ptr<NetworkDiagWifiContext> wifi_ctx) : void
 ..
--append_wifi_save_status(io::FujiDevice * fuji, DiagResult & r) : void
 -cmd_close(const DiagArgsView & args) : DiagResult
 -cmd_sessions() : DiagResult
 -cmd_wifi_get() : DiagResult
@@ -1406,8 +1433,7 @@ class C_0005339174589336306392 {
 {static} -join_args(const DiagArgsView & args, std::size_t from) : std::string
 +list_commands(std::vector<DiagCommandSpec> & out) const : void
 +provider_id() const noexcept : std::string_view
--reconnect_wifi() : DiagResult
--wifi_link() const : net::INetworkLink *
+-wifi_controller() const : io::WifiController
 __
 -_core : core::FujinetCore &
 -_wifi_ctx : std::shared_ptr<NetworkDiagWifiContext>
@@ -1416,11 +1442,20 @@ abstract "net::INetworkLink" as C_0001548601329560013188
 abstract C_0001548601329560013188 {
 +~INetworkLink() constexpr = default : void
 ..
++capabilities() const : WifiLinkCapabilities
 {abstract} +connect(std::string ssid, std::string pass) = 0 : void
++current_bssid() const : WifiBssid
 {abstract} +disconnect() = 0 : void
++dns_server() const : std::string
++gateway() const : std::string
 {abstract} +ip_address() const = 0 : std::string
 {abstract} +poll() = 0 : void
++rssi() const : std::int8_t
++scan_wifi() : WifiScanResult
++set_bssid(std::string) : void
 {abstract} +state() const = 0 : LinkState
++subnet_mask() const : std::string
++supports_scan() const : bool
 __
 }
 abstract "net::ITcpSocketOps" as C_0000293687568532163494
@@ -1539,6 +1574,33 @@ Disconnected
 Connecting
 Connected
 Failed
+}
+class "net::WifiBssid" as C_0010145170192686328925
+class C_0010145170192686328925 {
+__
++bytes : std::uint8_t[6]
++valid : bool
+}
+class "net::WifiScanRecord" as C_0004628671242044821433
+class C_0004628671242044821433 {
+__
++auth : std::uint8_t
++bssid : WifiBssid
++channel : std::uint8_t
++rssi : std::int8_t
++ssid : std::string
+}
+class "net::WifiScanResult" as C_0017008327188014981563
+class C_0017008327188014981563 {
+__
++records : std::vector<WifiScanRecord>
++success : bool
+}
+class "net::WifiLinkCapabilities" as C_0018317739752130872933
+class C_0018317739752130872933 {
+__
++backend : WifiBackendKind
++flags : std::uint16_t
 }
 enum "time::TimeEventKind" as C_0003871058920514508987
 enum C_0003871058920514508987 {
@@ -1686,6 +1748,12 @@ C_0012713930330229444348 <.. C_0017366619222000823646 : +<<friend>>
 C_0010069830097413987109 <|-- C_0012713930330229444348
 C_0010884110720104182508 --+ C_0012713930330229444348
 C_0017366619222000823646 ..> C_0012713930330229444348
+C_0001833966047295824140 ..> C_0016905784937528219397
+C_0001833966047295824140 ..> C_0001548601329560013188
+C_0001833966047295824140 ..> C_0012496700434923238249
+C_0001833966047295824140 ..> C_0017008327188014981563
+C_0001833966047295824140 --> C_0013064010099190715901 : -_config
+C_0001833966047295824140 --> C_0010708806357379257038 : -_store
 C_0014542562225987093978 ..> C_0002386736627821114488
 C_0014542562225987093978 ..> C_0002942984525013396621
 C_0014542562225987093978 --> C_0001279065520068563954 : -_storage
@@ -1698,6 +1766,13 @@ C_0008366653720214799347 ..> C_0002386736627821114488
 C_0008366653720214799347 ..> C_0002942984525013396621
 C_0008366653720214799347 --> C_0017938940343811357840 : -_store
 C_0010069830097413987109 <|-- C_0008366653720214799347
+C_0008827731424709454558 ..> C_0013064010099190715901
+C_0008827731424709454558 ..> C_0010708806357379257038
+C_0008827731424709454558 ..> C_0002386736627821114488
+C_0008827731424709454558 ..> C_0002942984525013396621
+C_0008827731424709454558 o-- C_0001833966047295824140 : -_controller
+C_0008827731424709454558 o-- C_0004628671242044821433 : -_scanCache
+C_0010069830097413987109 <|-- C_0008827731424709454558
 C_0011683483391837494806 ..> C_0012496700434923238249
 C_0010613333864250568344 <|-- C_0011683483391837494806
 C_0008803738469954244850 ..> C_0006689317867316634981
@@ -1864,15 +1939,20 @@ C_0005339174589336306392 ..> C_0014265545497805753192
 C_0005339174589336306392 ..> C_0018340176854803608744
 C_0005339174589336306392 ..> C_0011046427244206106114
 C_0005339174589336306392 ..> C_0016024516082849980408
-C_0005339174589336306392 ..> C_0001548601329560013188
+C_0005339174589336306392 ..> C_0001833966047295824140
 C_0005339174589336306392 --> C_0011474842863539673819 : -_core
 C_0005339174589336306392 --> C_0003130400837978442922 : -_wifi_ctx
 C_0007944674237235781138 <|-- C_0005339174589336306392
 C_0001548601329560013188 ..> C_0014292031979356073071
+C_0001548601329560013188 ..> C_0010145170192686328925
+C_0001548601329560013188 ..> C_0018317739752130872933
+C_0001548601329560013188 ..> C_0017008327188014981563
 C_0018080614400737831579 ..> C_0012496700434923238249
 C_0018080614400737831579 --> C_0000293687568532163494 : -_socket_ops
 C_0011340228097429469319 o-- C_0014656238790804323890 : +kind
 C_0011340228097429469319 o-- C_0003572434641464952782 : +gotIp
+C_0004628671242044821433 o-- C_0010145170192686328925 : +bssid
+C_0017008327188014981563 o-- C_0004628671242044821433 : +records
 C_0009904927253814442249 o-- C_0003871058920514508987 : +kind
 C_0009904927253814442249 o-- C_0009331148645708671483 : +synced
 
