@@ -61,6 +61,25 @@ path without changing the existing public API used by 8-bit clients.
   Linux, and Amiga targets and host tests.
 - The complete workspace Amiberry suite passes.
 
+## Building and trying the implementation
+
+The implementation does not require the FujiNet NIO workspace tooling. Add
+`fujinet-nio-lib` and `fujinet-nio-driver` as sibling git submodules, then use
+the following reading order:
+
+1. [`fujinet-nio-lib/README.md`](https://github.com/markjfisher/fujinet-nio-lib/blob/master/README.md)
+   for the supported targets and library build entry points.
+2. [`fujinet-nio-lib/docs/building.md`](https://github.com/markjfisher/fujinet-nio-lib/blob/master/docs/building.md)
+   for the Amiga toolchain prerequisites and the separate application and
+   resident-driver library variants.
+3. [`fujinet-nio-driver/README.md`](https://github.com/markjfisher/fujinet-nio-driver/blob/master/README.md)
+   for the sibling layout, `LIB_ROOT` override, tests, native build,
+   installation, MountList setup, mount sequence, and current limitations.
+
+The parent repository should pin both submodule revisions together. The
+driver README records the minimum compatible library revision; no workspace
+scripts or environment files are part of the build contract.
+
 ## Deliberately deferred
 
 - Writes remain disabled until cache ownership, flush ordering, and failure
