@@ -24,8 +24,7 @@ The main points we need to make explicit are:
 3. The Amiga driver should start against an abstract FujiNet channel, not
    directly against `serial.device` or a particular PHY.
 4. The driver source should be developed in a broader driver repository, while
-   reusable FujiBus and DiskDevice codecs can live in `fujinet-nio-lib` or a
-   shared driver library.
+   reusable FujiBus and DiskDevice codecs can live in `fujinet-nio-lib`.
 5. Hot-swap and larger HDF/RDB semantics are intentionally later phases.
 
 This is intended to prevent duplicate work and to give us a shared boundary
@@ -70,7 +69,8 @@ The initial Amiga profile is:
 
 - mount an ADF into DiskDevice slot 1;
 - obtain geometry from the Mount response or `Info`;
-- read and write 512-byte blocks using `ReadSector` and `WriteSector`;
+- read 512-byte blocks using `ReadSector`; writes are deferred until the
+  driver cache and flush policy are defined;
 - use `ClearChanged`, `Unmount`, and runtime-mount recovery where needed;
 - let AmigaDOS interpret the resulting media.
 
@@ -256,21 +256,16 @@ NIO already supports complete-sector writes and verifies short writes,
 read-only media, and out-of-range writes. The wire contract requires a full
 512-byte block.
 
-The first Amiga driver may choose either of these delivery strategies:
-
-- implement reads first and keep the device read-only until cache/write policy
-  is settled; or
-- implement complete-block writes immediately and test write/reread behavior.
-
-Both are compatible with the NIO work. The choice is a driver milestone, not a
-server-side blocker. If writes are enabled, the driver must define flush and
-failure behavior rather than silently assuming every write is durable.
+The first Amiga driver is read-only. Complete-block writes remain supported by
+the NIO protocol, but will be enabled only after the driver has an explicit
+cache, flush, and failure policy.
 
 ## Where the code should live
 
-The proposed expansion of `fujinet-nio-msdos` is a good direction. We suggest
-renaming it to `fujinet-nio-driver` while preserving history, then moving the
-existing MS-DOS implementation under a platform directory:
+The proposed expansion of `fujinet-nio-msdos` is a good direction. The
+repository is being renamed to `fujinet-nio-driver` while preserving history,
+then the existing MS-DOS implementation will move under a platform
+directory:
 
 ```text
 fujinet-nio-driver/
@@ -296,7 +291,7 @@ Suggested ownership:
 |---|---|
 | NIO DiskService, ADF probe, image handling | `fujinet-nio` |
 | Generic DiskDevice wire contract | `fujinet-nio` documentation + tests |
-| Typed client DiskDevice codecs | `fujinet-nio-lib` or driver `common/` |
+| Typed client DiskDevice codecs | `fujinet-nio-lib` |
 | FujiBus packet codec | shared library/common driver code |
 | Amiga Exec device | `fujinet-nio-driver/amiga` |
 | Amiga MountList/startup tooling | `fujinet-nio-driver/amiga` |
@@ -321,9 +316,8 @@ channel capability reporting.
 - Confirm `0xFC` and the existing DiskDevice v1 command set as the wire API.
 - Confirm 512-byte sectors and 1760 blocks for the first ADF profile.
 - Confirm no HDF/RDB inference in the first phase.
-- Decide whether typed DiskDevice codecs start in `fujinet-nio-lib` or the new
-  driver repository's `common/` directory.
-- Define the channel/session interface.
+- Use `fujinet-nio-lib` for typed DiskDevice codecs.
+- Define the channel/session interface and its capability/error contract.
 
 ### Milestone 2: typed client and standalone device tests
 
@@ -339,7 +333,8 @@ channel capability reporting.
 - Add the Kickstart 1.3-compatible MountList entry.
 - Mount `DN0:`.
 - Run `Dir`, `Type`, and a known-file read.
-- Add a write/reread test if write support is enabled in the first driver.
+- Keep the first integration read-only; add write/reread only after the
+  driver’s cache and flush policy is agreed.
 
 ### Milestone 4: faster channel
 
@@ -349,23 +344,24 @@ channel capability reporting.
   packets.
 - Measure throughput, latency, queue depth, and error recovery.
 
-## Items needing explicit agreement
+## Resolved agreements and remaining contract work
 
-Before either side commits to a large implementation, please confirm:
+The following points are now agreed with Jeff:
 
-1. Is `fujinet-nio-driver` the preferred home for the Amiga device, with the
-   current MS-DOS driver moved underneath it?
-2. Should typed DiskDevice client codecs live in `fujinet-nio-lib`, in the
-   driver's `common/` directory, or be split into a small shared package?
-3. Is RS-232 acceptable as a correctness path even though it is not the target
-   performance path?
-4. Is the first Amiga acceptance profile a standard 880 KiB/1760-block ADF?
-5. Is explicit unmount/remount sufficient for the first phase, with hot swap
-   deferred?
-6. Should the first driver be read-only, or should it support complete-block
-   writes from the start?
-7. For the faster channel, do we initially retain SLIP for reuse or define a
-   native packet framing layer beneath the same FujiBus packets?
+1. `fujinet-nio-driver` is the home for the Amiga device, with MS-DOS moved
+   underneath it.
+2. Typed DiskDevice client codecs live in `fujinet-nio-lib`.
+3. RS-232 remains a correctness path, not a performance target.
+4. The first acceptance profile is a standard 880 KiB/1760-block ADF.
+5. Explicit unmount/remount is sufficient for phase one; hot swap is deferred.
+6. The first driver is read-only; complete-block writes follow after cache and
+   flush semantics are defined.
+7. Faster channels use native packet framing beneath the same FujiBus packets;
+   SLIP remains for RS-232/TCP and other byte-stream compatibility paths.
+
+The remaining contract work is to turn the conceptual channel/session API
+above into the shared interface and document its capability values, error
+taxonomy, retry ownership, and one-outstanding-request phase-one limit.
 
 ## Conclusion
 

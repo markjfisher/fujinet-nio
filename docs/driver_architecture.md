@@ -121,6 +121,12 @@ without SLIP. Such a channel should provide packet boundaries, length, and
 integrity checking in its own link envelope while preserving the FujiBus packet
 and DiskDevice commands unchanged.
 
+For the Amiga work, these typed DiskDevice codecs belong in
+`fujinet-nio-lib`. The driver repository may provide thin AmigaOS adapters,
+but it should not fork the wire-payload implementation. This keeps the
+codec available to `fnctl`-style tools and other clients as well as the Amiga
+driver.
+
 This is a deliberate direction rather than an unresolved choice: SLIP is for
 legacy or stream compatibility; new high-speed interfaces should not add SLIP
 overhead unless a concrete interoperability requirement justifies it.
@@ -139,6 +145,30 @@ channel_receive_packet(packet, timeout)
 channel_flush()
 channel_capabilities()
 ```
+
+The first session contract is deliberately small and request/response based:
+
+```text
+open(configuration) -> Result<Capabilities>
+close()
+request(fujibus_packet, timeout) -> Result<fujibus_packet>
+flush() -> Result<void>
+capabilities() -> Capabilities
+```
+
+`request` sends one complete FujiBus packet and waits for its matching
+response. The initial Amiga driver permits one outstanding request per
+session; channel implementations must preserve request/response ordering.
+The returned capabilities report at least maximum packet size, maximum
+payload size, whether the channel is byte-stream/SLIP or packet-native, and
+the maximum number of outstanding requests (which is `1` initially).
+
+Timeout, framing/checksum failure, peer reset, and transport I/O failure are
+distinct session errors. A failed request does not get retried implicitly by
+the channel: retry policy belongs to the driver/session owner, which may
+flush, reset, reopen, and retry only idempotent operations. The exact
+packet-envelope fields for packet-native links remain channel-specific, but
+they must deliver the same FujiBus packet contract above.
 
 The actual implementation may use byte-oriented operations for a legacy SLIP
 stream, or packet-oriented operations for a new high-speed link. The important
@@ -183,7 +213,9 @@ lifecycle and concurrency model.
 The existing `fujinet-nio-msdos` repository is a reasonable starting point
 for a broader driver repository. Rename it to `fujinet-nio-driver` while
 preserving history, then move the current MS-DOS implementation under a
-platform directory:
+platform directory. The repository rename is now underway; existing workspace
+build variables retain a `FUJINET_NIO_MSDOS` compatibility alias during the
+transition:
 
 ```text
 fujinet-nio-driver/
@@ -216,7 +248,7 @@ builds.
 
 ### Stage 1: protocol client
 
-- Add typed DiskDevice request/response codecs.
+- Add typed DiskDevice request/response codecs to `fujinet-nio-lib`.
 - Validate exact geometry and payload lengths.
 - Add tests using captured FujiBus payloads.
 - Keep the API independent of RS-232 and AmigaOS.
@@ -225,16 +257,17 @@ builds.
 
 - Implement one unit mapped to DiskDevice slot 1.
 - Mount an ADF and obtain geometry through `Mount`/`Info`.
-- Implement block reads and complete 512-byte writes.
+- Implement read-only block reads using complete 512-byte sectors.
 - Translate NIO status codes to Amiga device errors.
-- Use a transport abstraction, with RS-232 as the first backend.
+- Use the session abstraction, with RS-232 as the first backend.
 
 ### Stage 3: Amiga integration
 
 - Add MountList/CLI configuration.
 - Boot a driver-containing ADF in Amiberry.
 - Mount a configured ADF.
-- Exercise `Dir`, `Type`, known-file reads, and write/reread.
+- Exercise `Dir`, `Type`, and known-file reads. Keep the mounted unit
+  read-only in this phase.
 - Capture CLI output/framebuffer and retain NIO traffic logs.
 
 ### Stage 4: robustness and performance
@@ -242,7 +275,8 @@ builds.
 - Media-change and cache invalidation behavior.
 - Timeout/link-loss recovery.
 - Multiple units and runtime mount recovery.
-- Larger request batching using `ReadSectors`/`WriteSectors` where useful.
+- Larger request batching using `ReadSectors` where useful; writes remain a
+  later milestone with an explicit flush and failure policy.
 - Zorro channel backend and throughput measurements.
 
 RS-232 should remain a valid correctness and hardware test path, but it should

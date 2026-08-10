@@ -1,8 +1,10 @@
 # Amiga Floppy-Port FujiNet Channel
 
-This document records the proposed use of the Amiga floppy connector as a
+This document records a proposed use of the Amiga floppy connector as a
 FujiNet channel. It is a design note, not yet a hardware or wire-protocol
-contract.
+contract. PaulaNET is approach-level reference material only: it demonstrates
+that useful data movement can be built around the floppy interface, but it is
+not a source of reusable code or hardware.
 
 Related documents:
 
@@ -38,7 +40,7 @@ Amiga CPU driver can request raw track operations, but reliably converting
 those operations into and out of the floppy electrical/timing protocol is a
 specialized real-time job.
 
-The Pico provides that missing adapter:
+The Pico is the proposed adapter in this design:
 
 - samples and drives the floppy-port signals;
 - handles timing-sensitive MFM/track data;
@@ -262,11 +264,12 @@ operations documented in [`disk_device_protocol.md`](disk_device_protocol.md).
 
 ## Suggested implementation order
 
-1. Study PaulaNET’s hardware and protocol approach. Its public project shows
-   that the floppy connector can provide a useful DMA-backed data channel and
-   reports approximately 43 KB/s sustained transfer performance. Treat its
-   implementation and hardware files as reference material unless reuse
-   permission is established.
+1. Study PaulaNET’s approach at a high level. It is primarily a standard
+   floppy-drive emulator using the Amiga’s normal trackdisk path, with
+   networking carried through reserved tracks. Its reported throughput and
+   track allocation should not be treated as FujiNet channel requirements.
+   Its implementation and hardware files are reference material only; do not
+   reuse them without permission.
 2. Define a small Pico-to-endpoint packet envelope.
 3. Implement Pico floppy receive/transmit and local packet buffering.
 4. Add a temporary TCP or host-bridge backend for POSIX NIO.
@@ -288,6 +291,13 @@ operations documented in [`disk_device_protocol.md`](disk_device_protocol.md).
   floppy connector require?
 - Can the Pico expose enough buffering to keep Paula DMA and the ESP32 link
   decoupled?
+
+The product boot path is also separate from the driver transport question. A
+device connected only to the floppy connector cannot use expansion-bus
+autoboot; a floppy-emulation boot volume may instead load the driver and have
+its Startup-Sequence mount the larger DiskDevice volume. That dual floppy/
+hard-disk direction is still a product-level trade study and does not change
+the driver’s channel-independent contract.
 
 ## Summary
 
