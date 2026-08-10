@@ -214,6 +214,21 @@ codecs, and stream session as the application library, but omits process
 `atexit()` registration because an Exec resident device owns its lifecycle.
 The ordinary Amiga application library retains process-exit cleanup.
 
+The implemented read-only driver also gives each resident unit an explicit
+DiskDevice client context containing packet request, packet response, parser,
+and codec scratch storage. Large buffers therefore live in the device base
+rather than on caller-owned AmigaDOS task stacks or in mutable process-global
+DiskDevice state. The legacy public API remains unchanged for cc65 and
+existing application clients.
+
+Amiga Exec enters `BeginIO()` in the requesting task's context. The initial
+one-unit driver uses a unit-owned `SignalSemaphore` to serialize `BeginIO()`
+and `AbortIO()` access to its single physical RS-232 session. Operations are
+synchronous and do not overlap; an internal unit task and bounded asynchronous
+queue are not part of the read-only implementation. Host tests interleave two
+independent client contexts, and the Amiberry acceptance test issues reads
+from two independent Amiga CLI callers to validate this ownership rule.
+
 ## Proposed repository layout
 
 The existing `fujinet-nio-driver` repository is the home for the broader
@@ -250,12 +265,16 @@ simple and deterministic.
 
 ### Stage 1: protocol client
 
+**Status: complete.**
+
 - Add typed DiskDevice request/response codecs to `fujinet-nio-lib`.
 - Validate exact geometry and payload lengths.
 - Add tests using captured FujiBus payloads.
 - Keep the API independent of RS-232 and AmigaOS.
 
 ### Stage 2: minimal Amiga driver
+
+**Status: complete for the read-only standard ADF profile.**
 
 - Implement one unit mapped to DiskDevice slot 1.
 - Mount an ADF and obtain geometry through `Mount`/`Info`.
@@ -264,6 +283,8 @@ simple and deterministic.
 - Use the session abstraction, with RS-232 as the first backend.
 
 ### Stage 3: Amiga integration
+
+**Status: complete for Mount, Info, block reads, `Dir`, and `Type`.**
 
 - Add MountList/CLI configuration.
 - Boot a driver-containing ADF in Amiberry.

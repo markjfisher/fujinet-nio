@@ -14,6 +14,12 @@ This project is a fresh start, intentionally designed to:
 
 Read the [developer onboarding docs](docs/developer_onboarding.md)
 
+## Documentation
+
+See the [`docs/` documentation index](docs/README.md) for current architecture,
+protocols, testing guidance, and the policy for preserving historical plans
+and design discussions.
+
 ## Building TL;DR:
 
 ### prerequisites
