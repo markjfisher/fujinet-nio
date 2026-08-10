@@ -210,12 +210,10 @@ lifecycle and concurrency model.
 
 ## Proposed repository layout
 
-The existing `fujinet-nio-msdos` repository is a reasonable starting point
-for a broader driver repository. Rename it to `fujinet-nio-driver` while
-preserving history, then move the current MS-DOS implementation under a
-platform directory. The repository rename is now underway; existing workspace
-build variables retain a `FUJINET_NIO_MSDOS` compatibility alias during the
-transition:
+The existing `fujinet-nio-driver` repository is the home for the broader
+driver repository. Its MS-DOS implementation will move under a platform
+directory. Existing workspace build variables retain a
+`FUJINET_NIO_MSDOS` compatibility alias during the transition:
 
 ```text
 fujinet-nio-driver/

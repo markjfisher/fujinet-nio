@@ -262,9 +262,8 @@ cache, flush, and failure policy.
 
 ## Where the code should live
 
-The proposed expansion of `fujinet-nio-msdos` is a good direction. The
-repository is being renamed to `fujinet-nio-driver` while preserving history,
-then the existing MS-DOS implementation will move under a platform
+The renamed `fujinet-nio-driver` repository is the home for the broader driver
+repository. Its existing MS-DOS implementation will move under a platform
 directory:
 
 ```text
