@@ -208,12 +208,17 @@ The driver may reuse common FujiBus framing and codecs, but it should not
 simply call an application-oriented global transport without adapting its
 lifecycle and concurrency model.
 
+The initial native driver therefore links the dedicated
+`fujinet-nio-amiga-driver.a` library variant. It shares the same typed APIs,
+codecs, and stream session as the application library, but omits process
+`atexit()` registration because an Exec resident device owns its lifecycle.
+The ordinary Amiga application library retains process-exit cleanup.
+
 ## Proposed repository layout
 
 The existing `fujinet-nio-driver` repository is the home for the broader
-driver repository. Its MS-DOS implementation will move under a platform
-directory. Existing workspace build variables retain a
-The workspace build uses `FUJINET_NIO_DRIVER` for this repository:
+driver repository. Its MS-DOS implementation lives under its platform
+directory. The workspace build uses `FUJINET_NIO_DRIVER` for this repository:
 
 ```text
 fujinet-nio-driver/
