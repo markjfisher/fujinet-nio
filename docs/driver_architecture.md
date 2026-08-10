@@ -213,7 +213,7 @@ lifecycle and concurrency model.
 The existing `fujinet-nio-driver` repository is the home for the broader
 driver repository. Its MS-DOS implementation will move under a platform
 directory. Existing workspace build variables retain a
-`FUJINET_NIO_MSDOS` compatibility alias during the transition:
+The workspace build uses `FUJINET_NIO_DRIVER` for this repository:
 
 ```text
 fujinet-nio-driver/
@@ -237,10 +237,9 @@ Shared directories should contain protocol and interfaces, not OS-specific
 disk semantics. MS-DOS and Amiga should share codecs, status mappings, and
 channel concepts where useful, while retaining independent native drivers.
 
-The repository move should preserve compatibility for existing MS-DOS build
-scripts during the transition. A compatibility top-level build entry point or
-redirecting documentation is preferable to silently breaking downstream
-builds.
+The repository move should keep the root build entry point and generated
+artifact path at their documented locations so workspace build scripts remain
+simple and deterministic.
 
 ## Amiga implementation stages
 
