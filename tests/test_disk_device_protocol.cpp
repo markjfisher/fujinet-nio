@@ -121,6 +121,39 @@ TEST_CASE("DiskService: ADF probes as raw 512-byte media")
     CHECK(svc.mount(1, "mem", "/disks/bad.ADF", fujinet::disk::MountOptions{}).error == fujinet::disk::DiskError::BadImage);
 }
 
+TEST_CASE("DiskService: dirty and flush failure preserve mounted media")
+{
+    fujinet::fs::StorageManager sm;
+    auto owned = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* memfs = owned.get();
+    memfs->file_bytes("/disk.adf") = make_adf_bytes();
+    REQUIRE(sm.registerFileSystem(std::move(owned)));
+    fujinet::disk::DiskService svc(
+        sm, fujinet::disk::make_default_image_registry());
+    REQUIRE(svc.mount(0, "mem", "/disk.adf", {}).ok());
+
+    CHECK(svc.flush(0).ok());
+    CHECK(memfs->flush_count() == 0);
+    std::vector<std::uint8_t> sector(512, 0x5a);
+    REQUIRE(svc.write_sector(0, 0, sector.data(), sector.size()).ok());
+    CHECK(svc.info(0).dirty);
+
+    memfs->set_fail_flush(true);
+    CHECK(svc.flush(0).error == fujinet::disk::DiskError::IoError);
+    CHECK(svc.info(0).dirty);
+    CHECK(svc.info(0).lastError == fujinet::disk::DiskError::IoError);
+    CHECK(svc.unmount(0).error == fujinet::disk::DiskError::IoError);
+    CHECK(svc.info(0).inserted);
+
+    memfs->set_fail_flush(false);
+    REQUIRE(svc.flush(0).ok());
+    CHECK_FALSE(svc.info(0).dirty);
+    CHECK(svc.info(0).lastError == fujinet::disk::DiskError::None);
+    const auto count = memfs->flush_count();
+    REQUIRE(svc.flush(0).ok());
+    CHECK(memfs->flush_count() == count);
+}
+
 TEST_CASE("DiskDevice v1: ADF uses the generic 512-byte wire contract")
 {
     fujinet::fs::StorageManager sm;
@@ -189,6 +222,40 @@ TEST_CASE("DiskDevice v1: ADF uses the generic 512-byte wire contract")
     CHECK(writeResponse.payload[0] == V);
     CHECK(writeResponse.payload[9] == 0x00);
     CHECK(writeResponse.payload[10] == 0x02);
+}
+
+TEST_CASE("DiskDevice v1: Flush 0x0E has the exact v1 slot vector")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    memfs->file_bytes("/disk.adf") = make_adf_bytes();
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+    DiskDevice dev(sm);
+    const auto deviceId = to_device_id(WireDeviceId::DiskService);
+
+    std::string mountPayload;
+    diskproto::write_u8(mountPayload, V);
+    diskproto::write_u8(mountPayload, 1);
+    diskproto::write_u8(mountPayload, 0);
+    diskproto::write_u8(mountPayload, 0);
+    diskproto::write_u16le(mountPayload, 512);
+    diskproto::write_lp_u16_string(mountPayload, "mem:/disk.adf");
+    IORequest mount{};
+    mount.deviceId = deviceId;
+    mount.command = 0x01;
+    mount.payload = to_vec(mountPayload);
+    REQUIRE(dev.handle(mount).status == StatusCode::Ok);
+
+    IORequest flush{};
+    flush.deviceId = deviceId;
+    flush.command = 0x0E;
+    flush.payload = {0x01, 0x01};
+    const auto response = dev.handle(flush);
+    REQUIRE(response.status == StatusCode::Ok);
+    CHECK(response.payload == std::vector<std::uint8_t>{0x01, 0, 0, 0, 1});
+
+    flush.payload.push_back(0);
+    CHECK(dev.handle(flush).status == StatusCode::InvalidRequest);
 }
 
 TEST_CASE("DiskService: mount raw + read/write sector")

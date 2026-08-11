@@ -13,8 +13,10 @@ namespace fujinet::tests {
 
 class MemoryFile final : public fujinet::fs::IFile {
 public:
-    MemoryFile(std::vector<std::uint8_t>& bytes, bool readOnly)
-        : _bytes(bytes), _readOnly(readOnly) {}
+    MemoryFile(std::vector<std::uint8_t>& bytes, bool readOnly,
+               std::size_t* flushCount, bool* failFlush)
+        : _bytes(bytes), _readOnly(readOnly), _flushCount(flushCount),
+          _failFlush(failFlush) {}
 
     std::size_t read(void* dst, std::size_t maxBytes) override
     {
@@ -50,12 +52,18 @@ public:
     }
 
     std::uint64_t tell() const override { return _pos; }
-    bool flush() override { return true; }
+    bool flush() override
+    {
+        if (_flushCount) ++*_flushCount;
+        return _failFlush == nullptr || !*_failFlush;
+    }
 
 private:
     std::vector<std::uint8_t>& _bytes;
     bool _readOnly{true};
     std::size_t _pos{0};
+    std::size_t* _flushCount;
+    bool* _failFlush;
 };
 
 class MemoryFileSystem final : public fujinet::fs::IFileSystem {
@@ -156,7 +164,8 @@ public:
             it->second.clear();
         }
 
-        return std::make_unique<MemoryFile>(it->second, readOnly);
+        return std::make_unique<MemoryFile>(it->second, readOnly,
+                                            &_flushCount, &_failFlush);
     }
 
     bool stat(const std::string& path, fujinet::fs::FileInfo& outInfo) override
@@ -213,6 +222,8 @@ public:
     }
 
     std::vector<std::uint8_t>& file_bytes(const std::string& path) { return _files[norm(path)]; }
+    std::size_t flush_count() const { return _flushCount; }
+    void set_fail_flush(bool value) { _failFlush = value; }
 
 private:
     static std::string norm(const std::string& in)
@@ -249,7 +260,8 @@ private:
     std::string _name;
     std::unordered_map<std::string, std::vector<std::uint8_t>> _files;
     std::vector<std::string> _dirs;
+    std::size_t _flushCount{0};
+    bool _failFlush{false};
 };
 
 } // namespace fujinet::tests
-

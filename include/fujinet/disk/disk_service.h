@@ -73,6 +73,7 @@ public:
     );
 
     DiskResult unmount(std::size_t slotIndex);
+    DiskResult flush(std::size_t slotIndex);
 
     DiskResult read_sector(std::size_t slotIndex, std::uint32_t lba, std::uint8_t* dst, std::size_t dstBytes);
     DiskResult write_sector(std::size_t slotIndex, std::uint32_t lba, const std::uint8_t* src, std::size_t srcBytes);

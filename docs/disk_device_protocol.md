@@ -80,7 +80,8 @@ The `StorageManager::resolveUri()` function handles scheme parsing and authority
 - Slots contain:
   - “inserted” state (image mounted or not)
   - readonly state (requested vs effective)
-  - “dirty” flag (writes occurred since mount)
+  - “dirty” flag (one or more sectors were written successfully after the
+    last successful flush)
   - “changed” flag (mount/unmount toggles; host can clear it)
   - image geometry (sector size, sector count)
   - last error (`disk::DiskError`)
@@ -654,6 +655,39 @@ General mapping:
 - Missing/empty slot → `StatusCode::NotReady`
 - Unsupported image type → `StatusCode::Unsupported`
 - Underlying file I/O failure → `StatusCode::IOError`
+
+---
+
+## Command: Flush (0x0E)
+
+Flush is additive to protocol v1; the protocol version remains 1. A peer that
+predates this command returns `Unsupported`.
+
+Request:
+
+```
+u8 version
+u8 slot
+```
+
+Successful response:
+
+```
+u8  version
+u8  flags=0
+u16 reserved=0
+u8  slot
+```
+
+Dirty means at least one sector write succeeded since the last successful
+flush. A successful flush clears dirty and `lastError`. A failed flush keeps
+dirty set and records `IoError`. Flushing a clean mounted image succeeds
+without calling the underlying file. A partial multi-sector write becomes
+dirty as soon as its first sector succeeds.
+
+Unmount and replacement mount flush old media before removal. Flush failure
+leaves that media mounted and dirty. After old media has been successfully
+removed, a replacement-mount failure leaves the slot empty.
 
 ---
 

@@ -75,10 +75,13 @@ DiskResult DiskService::mount(
             static_cast<unsigned>(opts.typeOverride),
             static_cast<unsigned>(opts.sectorSizeHint));
 
-    // Unmount any existing image first.
+    // A replacement is transactional through removal: retain old media when
+    // its buffered writes cannot be made durable.
     if (s->image) {
-        s->image->flush();
-        s->image->unmount();
+        DiskResult fr = flush(slotIndex);
+        if (!fr.ok()) return fr;
+        DiskResult ur = s->image->unmount();
+        if (!ur.ok()) return DiskResult{set_error(slotIndex, ur.error)};
         s->image.reset();
     }
 
@@ -258,8 +261,10 @@ DiskResult DiskService::unmount(std::size_t slotIndex)
     if (!s) return DiskResult{DiskError::InvalidSlot};
 
     if (s->image) {
-        s->image->flush();
-        s->image->unmount();
+        DiskResult fr = flush(slotIndex);
+        if (!fr.ok()) return fr;
+        DiskResult ur = s->image->unmount();
+        if (!ur.ok()) return DiskResult{set_error(slotIndex, ur.error)};
         s->image.reset();
     }
 
@@ -278,6 +283,26 @@ DiskResult DiskService::unmount(std::size_t slotIndex)
     s->statsNextWriteLba = 0;
     s->pendingMount.reset();
 
+    return DiskResult{DiskError::None};
+}
+
+DiskResult DiskService::flush(std::size_t slotIndex)
+{
+    auto* s = slot_ptr(slotIndex);
+    if (!s) return DiskResult{DiskError::InvalidSlot};
+    if (!s->image || !s->inserted)
+        return DiskResult{set_error(slotIndex, DiskError::NotMounted)};
+    if (!s->dirty) {
+        s->lastError = DiskError::None;
+        return DiskResult{DiskError::None};
+    }
+    DiskResult r = s->image->flush();
+    if (!r.ok()) {
+        s->lastError = DiskError::IoError;
+        return DiskResult{DiskError::IoError};
+    }
+    s->dirty = false;
+    s->lastError = DiskError::None;
     return DiskResult{DiskError::None};
 }
 
@@ -528,14 +553,14 @@ DiskResult DiskService::write_sectors(std::size_t slotIndex, std::uint32_t lba, 
             s->statsWriteCursorValid = false;
             set_error(slotIndex, r.error);
             log_slot_stats(slotIndex, this->stats(slotIndex));
-            return r;
+            return DiskResult{r.error, static_cast<std::uint16_t>(bytes)};
         }
         bytes += r.bytes ? r.bytes : sectorSize;
+        s->dirty = true;
     }
     stats.writeBytes += bytes;
     s->statsWriteCursorValid = true;
     s->statsNextWriteLba = lba + count;
-    s->dirty = true;
     log_slot_stats(slotIndex, this->stats(slotIndex));
     return DiskResult{DiskError::None, static_cast<std::uint16_t>(bytes)};
 }

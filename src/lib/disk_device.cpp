@@ -661,6 +661,20 @@ IOResponse DiskDevice::handle(const IORequest& request)
             return resp;
         }
 
+        case DiskCommand::Flush: {
+            std::uint8_t slot1 = 0;
+            if (!r.read_u8(slot1) || r.remaining() != 0)
+                return make_base_response(request, StatusCode::InvalidRequest);
+            std::size_t idx = 0;
+            if (!parse_slot_1based(slot1, idx) || idx >= _svc.slot_count())
+                return make_base_response(request, StatusCode::InvalidRequest);
+            DiskResult dr = _svc.flush(idx);
+            IOResponse resp = make_base_response(request, map_disk_error(dr.error));
+            if (resp.status != StatusCode::Ok) return resp;
+            resp.payload = {DISKPROTO_VERSION, 0, 0, 0, slot1};
+            return resp;
+        }
+
         case DiskCommand::RestoreBoot: {
             std::uint8_t slot1 = 0;
             if (!r.read_u8(slot1)) return make_base_response(request, StatusCode::InvalidRequest);
