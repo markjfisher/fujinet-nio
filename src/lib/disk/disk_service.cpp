@@ -75,31 +75,15 @@ DiskResult DiskService::mount(
             static_cast<unsigned>(opts.typeOverride),
             static_cast<unsigned>(opts.sectorSizeHint));
 
-    // A replacement is transactional through removal: retain old media when
-    // its buffered writes cannot be made durable.
-    if (s->image) {
+    // Build and validate a replacement before committing it. The old image
+    // remains mounted until the new image is ready and the old image can be
+    // cleanly unmounted, so an open/probe/mount failure cannot leave the slot
+    // empty while callers still believe the old media is present.
+    const bool replacing = s->image != nullptr;
+    if (replacing) {
         DiskResult fr = flush(slotIndex);
         if (!fr.ok()) return fr;
-        DiskResult ur = s->image->unmount();
-        if (!ur.ok()) return DiskResult{set_error(slotIndex, ur.error)};
-        s->image.reset();
     }
-
-    s->inserted = false;
-    s->readOnly = false;
-    s->dirty = false;
-    s->changed = true;
-    s->type = ImageType::Auto;
-    s->geometry = {};
-    s->lastError = DiskError::None;
-    s->fsName = fsName;
-    s->path = path;
-    s->statsReadCursorValid = false;
-    s->statsWriteCursorValid = false;
-    s->statsNextReadLba = 0;
-    s->statsNextWriteLba = 0;
-    s->pendingMount.reset();
-    _stats[slotIndex] = {};
 
     auto* pfs = _storage.get(fsName);
     if (!pfs) {
@@ -174,10 +158,26 @@ DiskResult DiskService::mount(
         return DiskResult{set_error(slotIndex, r.error)};
     }
 
+    if (replacing) {
+        DiskResult ur = s->image->unmount();
+        if (!ur.ok()) return DiskResult{set_error(slotIndex, ur.error)};
+    }
+
     s->inserted = true;
     s->readOnly = img->read_only();
+    s->dirty = false;
+    s->changed = true;
     s->type = img->type();
     s->geometry = img->geometry();
+    s->lastError = DiskError::None;
+    s->fsName = fsName;
+    s->path = path;
+    s->statsReadCursorValid = false;
+    s->statsWriteCursorValid = false;
+    s->statsNextReadLba = 0;
+    s->statsNextWriteLba = 0;
+    s->pendingMount.reset();
+    _stats[slotIndex] = {};
     s->image = std::move(img);
 
     FN_LOGI(TAG,

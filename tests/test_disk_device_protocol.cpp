@@ -177,7 +177,9 @@ TEST_CASE("DiskService: replacement is transactional around old-media flush")
     memfs->set_fail_flush(false);
     CHECK(svc.mount(0, "mem", "/missing.adf", {}).error ==
           fujinet::disk::DiskError::FileNotFound);
-    CHECK_FALSE(svc.info(0).inserted);
+    CHECK(svc.info(0).inserted);
+    CHECK_FALSE(svc.info(0).dirty);
+    CHECK(svc.info(0).path == "/old.adf");
 }
 
 TEST_CASE("DiskDevice v1: ADF uses the generic 512-byte wire contract")
@@ -432,6 +434,30 @@ TEST_CASE("DiskService: pending mount replaces an active image on next access")
     CHECK_FALSE(svc.get_pending_mount(0).has_value());
     CHECK(svc.info(0).inserted);
     CHECK(svc.info(0).path == "/replacement.ssd");
+}
+
+TEST_CASE("DiskService: failed replacement preserves the active image")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto& oldBytes = memfs->file_bytes("/old.ssd");
+    oldBytes = make_ssd_bytes();
+    oldBytes[0] = 'O';
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    fujinet::disk::MountOptions opts{};
+    REQUIRE(svc.mount(0, "mem", "/old.ssd", opts).ok());
+
+    auto failed = svc.mount(0, "mem", "/missing.ssd", opts);
+    CHECK(failed.error == fujinet::disk::DiskError::FileNotFound);
+    auto info = svc.info(0);
+    CHECK(info.inserted);
+    CHECK(info.path == "/old.ssd");
+
+    std::vector<std::uint8_t> sector(256);
+    REQUIRE(svc.read_sector(0, 0, sector.data(), sector.size()).ok());
+    CHECK(sector[0] == 'O');
 }
 
 TEST_CASE("DiskService: unmount cancels a pending lazy mount")
