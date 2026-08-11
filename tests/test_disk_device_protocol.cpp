@@ -154,6 +154,32 @@ TEST_CASE("DiskService: dirty and flush failure preserve mounted media")
     CHECK(memfs->flush_count() == count);
 }
 
+TEST_CASE("DiskService: replacement is transactional around old-media flush")
+{
+    fujinet::fs::StorageManager sm;
+    auto owned = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* memfs = owned.get();
+    memfs->file_bytes("/old.adf") = make_adf_bytes();
+    memfs->file_bytes("/new.adf") = make_adf_bytes();
+    REQUIRE(sm.registerFileSystem(std::move(owned)));
+    fujinet::disk::DiskService svc(
+        sm, fujinet::disk::make_default_image_registry());
+    REQUIRE(svc.mount(0, "mem", "/old.adf", {}).ok());
+
+    std::vector<std::uint8_t> sector(512, 0x37);
+    REQUIRE(svc.write_sector(0, 0, sector.data(), sector.size()).ok());
+    memfs->set_fail_flush(true);
+    CHECK(svc.mount(0, "mem", "/new.adf", {}).error ==
+          fujinet::disk::DiskError::IoError);
+    CHECK(svc.info(0).inserted);
+    CHECK(svc.info(0).dirty);
+
+    memfs->set_fail_flush(false);
+    CHECK(svc.mount(0, "mem", "/missing.adf", {}).error ==
+          fujinet::disk::DiskError::FileNotFound);
+    CHECK_FALSE(svc.info(0).inserted);
+}
+
 TEST_CASE("DiskDevice v1: ADF uses the generic 512-byte wire contract")
 {
     fujinet::fs::StorageManager sm;
