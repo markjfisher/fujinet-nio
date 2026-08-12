@@ -38,7 +38,7 @@ reverse link FujinetCore to SystemEvents--><path d="M448.74,304.9231 C421.36,344
 link IOService to RoutingManager--><path d="M981.81,507.0331 C931.76,530.4131 883.59,553.0031 878,555.9531 C831,580.7631 780.65,609.7231 735.95,636.3231 " fill="none" id="IOService-&gt;RoutingManager" style="stroke: #A80036; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#A80036" points="731.64,638.8931,741.42,637.7309,735.9375,636.3375,737.331,630.8549,731.64,638.8931" style="stroke: #A80036; stroke-width: 1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="103" x="886.5" y="569.02">«in FujinetCore»</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="118" x="879" y="584.1528">handler is _routing</text><!--MD5=[93115a7144c7fc9e6487c768ef6852f1]
 link IORequest to IOResponse--><!--MD5=[de16b29d3918365c93d760c4f616adb9]
 link IORequest to RequestType--><!--MD5=[93a9c347a0a8edfc4131282ab18327e7]
-link RequestType to StatusCode--><rect fill="#DDDDDD" height="91.4844" rx="5" ry="5" style="stroke: #000000; stroke-width: 1.0;" width="315" x="1702" y="1534.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="303" x="1708" y="1552.9482">Hand-maintained (not clang-uml). Sync with:</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="200" x="1708" y="1569.2451">`include/fujinet/core/core.h`,</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="193" x="1708" y="1585.542">`include/fujinet/io/core/*.h`,</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="225" x="1708" y="1601.8389">`include/fujinet/io/transport/*.h`,</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="296" x="1708" y="1618.1357">`include/fujinet/io/devices/virtual_device.h`</text><!--MD5=[acc5ab6f908035ae9312ec79c5744d0d]
+link RequestType to StatusCode--><rect fill="#DDDDDD" height="91.4844" rx="5" ry="5" style="stroke: #000000; stroke-width: 1.0;" width="315" x="1702" y="1534.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="303" x="1708" y="1552.9482">Hand-maintained (not clang-uml). Sync with:</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="200" x="1708" y="1569.2451">`include/fujinet/core/core.h`,</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="193" x="1708" y="1585.542">`include/fujinet/io/core/*.h`,</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="225" x="1708" y="1601.8389">`include/fujinet/io/transport/*.h`,</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacingAndGlyphs" textLength="296" x="1708" y="1618.1357">`include/fujinet/io/devices/virtual_device.h`</text><!--MD5=[d61ca50dfc76fed30fdbfe255f0783f9]
 @startuml CoreIOArchitecture
 title fujinet-nio Core / IO / Device Architecture
 
@@ -258,7 +258,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.19+10
+Java Version: 17.0.20+8
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en

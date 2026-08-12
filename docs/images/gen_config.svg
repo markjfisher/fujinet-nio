@@ -32,7 +32,7 @@ reverse link C_0013064010099190715901 to C_0014123104778393566609--><path d="M95
 reverse link C_0013064010099190715901 to C_0014601375190208620155--><path d="M958.31,499.8131 C1089.6,521.4231 1332.1,567.9531 1528,642.9531 C1533.59,645.0931 1539.26,647.4931 1544.92,650.0531 " fill="none" id="C_0013064010099190715901&lt;-C_0014601375190208620155" style="stroke: #A80036; stroke-width: 1.0;"/><polygon fill="#FFFFFF" points="945.18,497.6731,950.4603,502.5841,957.0245,499.5988,951.7441,494.6878,945.18,497.6731" style="stroke: #A80036; stroke-width: 1.0;"/><ellipse cx="1446" cy="605.0195" fill="none" rx="3" ry="3" style="stroke: #038048; stroke-width: 1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacingAndGlyphs" textLength="50" x="1453" y="609.02">channel</text><!--MD5=[9e8edfb870574f1852dac6d999b247c4]
 link C_0010708806357379257038 to C_0013064010099190715901--><path d="M863,123.1831 C863,189.7331 863,313.7031 863,397.4031 " fill="none" id="C_0010708806357379257038-&gt;C_0013064010099190715901" style="stroke: #A80036; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#A80036" points="863,402.6031,867,393.6031,863,397.6031,859,393.6031,863,402.6031" style="stroke: #A80036; stroke-width: 1.0;"/><!--MD5=[63b6da8648f081b7e056c5d20bbdf0b5]
 link C_0004992050062997423308 to C_0013064010099190715901--><path d="M1084.75,341.9631 C1040.03,370.4931 990.4,402.1631 949.46,428.2831 " fill="none" id="C_0004992050062997423308-&gt;C_0013064010099190715901" style="stroke: #A80036; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><polygon fill="#A80036" points="945.01,431.1231,954.7495,429.6595,949.2265,428.436,950.4501,422.913,945.01,431.1231" style="stroke: #A80036; stroke-width: 1.0;"/><!--MD5=[1de75543aaa043a97d9d9228638437f7]
-reverse link C_0010708806357379257038 to C_0004992050062997423308--><path d="M966.59,132.6631 C996.51,148.7531 1029.72,166.6131 1061.67,183.7931 " fill="none" id="C_0010708806357379257038&lt;-C_0004992050062997423308" style="stroke: #A80036; stroke-width: 1.0;"/><polygon fill="none" points="963.22,138.7931,948.92,123.1631,969.85,126.4631,963.22,138.7931" style="stroke: #A80036; stroke-width: 1.0;"/><!--MD5=[2a84dce7879896018f39db695efb79f5]
+reverse link C_0010708806357379257038 to C_0004992050062997423308--><path d="M966.59,132.6631 C996.51,148.7531 1029.72,166.6131 1061.67,183.7931 " fill="none" id="C_0010708806357379257038&lt;-C_0004992050062997423308" style="stroke: #A80036; stroke-width: 1.0;"/><polygon fill="none" points="963.22,138.7931,948.92,123.1631,969.85,126.4631,963.22,138.7931" style="stroke: #A80036; stroke-width: 1.0;"/><!--MD5=[108587d2c10d7816f211dbb2ea314230]
 @startuml
 title Config (auto-gen from clang-uml)
 enum "config::BootMode" as C_0012427176626669726738
@@ -185,7 +185,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.19+10
+Java Version: 17.0.20+8
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en
