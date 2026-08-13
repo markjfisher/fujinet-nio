@@ -27,7 +27,7 @@ and design discussions.
 The following are required:
 
 - Python (with `virtualenv` & `uv`)
-- [PlatformIO](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide) (abbreviated as "PIO" - VSCode extension recommended)
+- [PlatformIO](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide) (abbreviated as "PIO" - VSCode extension not required, I don't personally use it, but build from the scripts instead, so YMMV if you use the plugin)
 - [ESP32-S3 toolchain](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html) (auto-installed by PIO)
 
 Install prerquisites from packages:
@@ -141,7 +141,7 @@ For the posix builds, the build files are located in the `build` directory at th
 
 ## What This Is (and Isn’t)
 
-- This **is not** a drop-in replacement for existing FujiNet firmware (yet!)
+- This **is not** a drop-in replacement for existing FujiNet firmware
 - This **is** a new foundation that can:
   - reuse ideas from existing projects,
   - host compatible protocols and virtual devices,
