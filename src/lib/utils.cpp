@@ -2,6 +2,7 @@
 #include "fujinet/core/logging.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <cstdio>
 
 namespace fujinet::core {
@@ -10,7 +11,8 @@ void log_hexdump(const char* tag, const std::uint8_t* data, std::size_t size, st
 {
 #if defined(FN_DEBUG)
     if (tag == nullptr || data == nullptr || size == 0) return;
-    const std::size_t limit = (size > max_bytes) ? max_bytes : size;
+    const bool full_packet_log = std::getenv("FUJINET_FULL_PACKET_LOG") != nullptr;
+    const std::size_t limit = full_packet_log ? size : ((size > max_bytes) ? max_bytes : size);
     for (std::size_t off = 0; off < limit; off += 16) {
         char hex[16 * 3 + 1];
         char ascii[17];
@@ -28,7 +30,7 @@ void log_hexdump(const char* tag, const std::uint8_t* data, std::size_t size, st
         ascii[n] = '\0';
         FN_LOGI(tag, "  %04zx: %-48s |%s|", off, hex, ascii);
     }
-    if (size > max_bytes) {
+    if (!full_packet_log && size > max_bytes) {
         FN_LOGI(tag, "  ... (%zu bytes total, truncated)", size);
     }
 #else
