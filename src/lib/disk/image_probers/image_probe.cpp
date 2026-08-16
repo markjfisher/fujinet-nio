@@ -126,14 +126,16 @@ public:
             // ADF is a flat Amiga block image.  Keep it generic/raw, but do
             // not let the raw handler's 256-byte fallback hide malformed
             // ADF sizes.
-            if (sizeBytes == 0 || (sizeBytes % 512) != 0) {
+            const auto sectorCount = sizeBytes / 512;
+            if (sizeBytes == 0 || (sizeBytes % 512) != 0 ||
+                (sectorCount != 1760 && sectorCount != 3520)) {
                 DiskGeometry malformed{};
                 malformed.sectorSize = 512;
                 return {true, ImageType::Raw, malformed, ImageProbeConfidence::Extension};
             }
             DiskGeometry geometry{};
             geometry.sectorSize = 512;
-            geometry.sectorCount = static_cast<std::uint32_t>(sizeBytes / 512);
+            geometry.sectorCount = static_cast<std::uint32_t>(sectorCount);
             return {true, ImageType::Raw, geometry, ImageProbeConfidence::Extension};
         }
         if (is_raw_extension(ext)) {

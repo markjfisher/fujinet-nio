@@ -228,6 +228,32 @@ TEST_CASE("DiskService: ADF probes as raw 512-byte media")
     CHECK(svc.mount(1, "mem", "/disks/bad.ADF", fujinet::disk::MountOptions{}).error == fujinet::disk::DiskError::BadImage);
 }
 
+TEST_CASE("DiskService: raw ADF geometry overrides conflicting hints")
+{
+    fujinet::fs::StorageManager sm;
+    auto memfs = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    memfs->file_bytes("/dd.adf") = make_adf_bytes_with_boot(1760, 'D');
+    memfs->file_bytes("/hd.adf") = make_adf_bytes_with_boot(3520, 'H');
+    memfs->file_bytes("/short.adf").resize(1760 * 512 - 1);
+    memfs->file_bytes("/ambiguous.adf").resize(1680 * 512);
+    REQUIRE(sm.registerFileSystem(std::move(memfs)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    fujinet::disk::MountOptions conflictingHint{};
+    conflictingHint.sectorSizeHint = 256;
+
+    REQUIRE(svc.mount(0, "mem", "/dd.adf", conflictingHint).ok());
+    CHECK(svc.info(0).geometry.sectorSize == 512);
+    CHECK(svc.info(0).geometry.sectorCount == 1760);
+
+    REQUIRE(svc.mount(1, "mem", "/hd.adf", conflictingHint).ok());
+    CHECK(svc.info(1).geometry.sectorSize == 512);
+    CHECK(svc.info(1).geometry.sectorCount == 3520);
+
+    CHECK(svc.mount(2, "mem", "/short.adf", {}).error == fujinet::disk::DiskError::BadImage);
+    CHECK(svc.mount(3, "mem", "/ambiguous.adf", {}).error == fujinet::disk::DiskError::BadImage);
+}
+
 TEST_CASE("DiskService: dirty and flush failure preserve mounted media")
 {
     fujinet::fs::StorageManager sm;

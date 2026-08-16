@@ -1,5 +1,7 @@
 #include "fujinet/disk/disk_service.h"
 
+#include "fujinet/disk/image_probers/image_probe.h"
+
 #include "fujinet/core/logging.h"
 #include "fujinet/disk/image_probers/image_probe.h"
 #include "fujinet/disk/raw_image.h"
@@ -95,13 +97,27 @@ static DiskResult prepare_image(
     if (type == ImageType::Auto) {
         const auto probe = probe_image(*file, finfo.sizeBytes, path, opts);
         if (probe.matched) {
+            if (probe.type == ImageType::Raw &&
+                probe.confidence == ImageProbeConfidence::Extension &&
+                !has_geometry(probe.geometry)) {
+                return DiskResult{DiskError::BadImage};
+            }
             type = probe.type;
             effective.geometryHint = probe.geometry;
+            if (probe.confidence == ImageProbeConfidence::Extension)
+                effective.sectorSizeHint = 0;
         }
     } else if (type == ImageType::Raw && opts.sectorSizeHint == 0) {
         const auto probe = probe_image(*file, finfo.sizeBytes, path, opts);
-        if (probe.matched && probe.type == ImageType::Raw)
+        if (probe.matched && probe.type == ImageType::Raw) {
+            if (probe.confidence == ImageProbeConfidence::Extension &&
+                !has_geometry(probe.geometry)) {
+                return DiskResult{DiskError::BadImage};
+            }
             effective.geometryHint = probe.geometry;
+            if (probe.confidence == ImageProbeConfidence::Extension)
+                effective.sectorSizeHint = 0;
+        }
     }
     if (type == ImageType::Auto) return DiskResult{DiskError::UnsupportedImageType};
 
