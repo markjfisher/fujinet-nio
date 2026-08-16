@@ -182,6 +182,13 @@ __
 +writeRequests : std::uint64_t
 +writeSectors : std::uint64_t
 }
+class "disk::DiskMediaInspection" as C_0001245617781219357807
+class C_0001245617781219357807 {
+__
++bootBytes : std::vector<std::uint8_t>
++geometry : DiskGeometry
++type : ImageType
+}
 class "disk::DiskService" as C_0014804734580910690913
 class C_0014804734580910690913 {
 +DiskService(fs::StorageManager & storage, ImageRegistry registry) : void
@@ -194,6 +201,7 @@ class C_0014804734580910690913 {
 +flush(std::size_t slotIndex) : DiskResult
 +get_pending_mount(std::size_t slotIndex) const : std::optional<PendingMountInfo>
 +info(std::size_t slotIndex) const : DiskSlotInfo
++inspect(const std::string & fsName, const std::string & path, const MountOptions & opts, std::size_t bootByteCount, DiskMediaInspection & out) : DiskResult
 +mount(std::size_t slotIndex, const std::string & fsName, const std::string & path, const MountOptions & opts) : DiskResult
 +read_sector(std::size_t slotIndex, std::uint32_t lba, std::uint8_t * dst, std::size_t dstBytes) : DiskResult
 +read_sectors(std::size_t slotIndex, std::uint32_t lba, std::uint16_t count, std::uint8_t * dst, std::size_t dstBytes) : DiskResult
@@ -1661,8 +1669,11 @@ C_0008422084792172174393 ..> C_0011001454402567554105 : -_creators
 C_0008422084792172174393 --> C_0014904826619290153445 : -_creators
 C_0008422084792172174393 ..> C_0011001454402567554105 : -_createValidators
 C_0006516264477754875126 o-- C_0000905559446768315059 : +image
+C_0001245617781219357807 o-- C_0018082651107742917098 : +type
+C_0001245617781219357807 o-- C_0008566044437912091269 : +geometry
 C_0014804734580910690913 ..> C_0017121056686289896594
 C_0014804734580910690913 ..> C_0011001454402567554105
+C_0014804734580910690913 ..> C_0001245617781219357807
 C_0014804734580910690913 ..> C_0018082651107742917098
 C_0014804734580910690913 ..> C_0000494354313681174192
 C_0014804734580910690913 ..> C_0007310215371924962169

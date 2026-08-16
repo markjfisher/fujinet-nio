@@ -133,6 +133,7 @@ BeginHostSession
 Reinitialize
 ListMounts
 Flush
+Inspect
 }
 enum "io::protocol::WifiCommand" as C_0015484389551772629797
 enum C_0015484389551772629797 {
