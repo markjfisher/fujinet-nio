@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "fujinet/disk/disk_types.h"
 #include "fujinet/disk/image_registry.h"
@@ -38,6 +39,12 @@ struct DiskServiceSlotStats {
     DiskImageStats image{};
 };
 
+struct DiskMediaInspection {
+    ImageType type{ImageType::Auto};
+    DiskGeometry geometry{};
+    std::vector<std::uint8_t> bootBytes;
+};
+
 class DiskService {
 public:
     static constexpr std::size_t MAX_SLOTS = 8;
@@ -51,6 +58,17 @@ public:
         const std::string& fsName,
         const std::string& path,
         const MountOptions& opts
+    );
+
+    // Opens and probes a candidate image without changing runtime slot state.
+    // bootBytes are read from logical sector zero; the temporary image is
+    // unmounted before this method returns.
+    DiskResult inspect(
+        const std::string& fsName,
+        const std::string& path,
+        const MountOptions& opts,
+        std::size_t bootByteCount,
+        DiskMediaInspection& out
     );
 
     // Create a new image file of a given type/geometry.

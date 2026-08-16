@@ -81,6 +81,113 @@ static std::vector<std::uint8_t> make_adf_bytes()
     return bytes;
 }
 
+static std::vector<std::uint8_t> make_adf_bytes_with_boot(std::uint32_t sectors, std::uint8_t marker)
+{
+    auto bytes = make_adf_bytes();
+    bytes.resize(static_cast<std::size_t>(sectors) * 512);
+    bytes[0] = 'D'; bytes[1] = 'O'; bytes[2] = 'S'; bytes[3] = 0;
+    bytes[4] = marker;
+    return bytes;
+}
+
+TEST_CASE("DiskService: inspect ADF candidates without changing live slot")
+{
+    fujinet::fs::StorageManager sm;
+    auto owned = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    owned->file_bytes("/live.adf") = make_adf_bytes_with_boot(1760, 'A');
+    owned->file_bytes("/dd.adf") = make_adf_bytes_with_boot(1760, 'D');
+    owned->file_bytes("/hd.adf") = make_adf_bytes_with_boot(3520, 'H');
+    REQUIRE(sm.registerFileSystem(std::move(owned)));
+
+    fujinet::disk::DiskService svc(sm, fujinet::disk::make_default_image_registry());
+    REQUIRE(svc.mount(0, "mem", "/live.adf", {}).ok());
+    const auto before = svc.info(0);
+    std::uint8_t liveBefore[512]{};
+    REQUIRE(svc.read_sector(0, 0, liveBefore, sizeof(liveBefore)).ok());
+
+    fujinet::disk::DiskMediaInspection dd{};
+    REQUIRE(svc.inspect("mem", "/dd.adf", {}, 512, dd).ok());
+    CHECK(dd.type == fujinet::disk::ImageType::Raw);
+    CHECK(dd.geometry.sectorSize == 512);
+    CHECK(dd.geometry.sectorCount == 1760);
+    CHECK(dd.bootBytes.size() == 512);
+    CHECK(std::memcmp(dd.bootBytes.data(), "DOS\0", 4) == 0);
+    CHECK(dd.bootBytes[4] == 'D');
+
+    fujinet::disk::DiskMediaInspection hd{};
+    REQUIRE(svc.inspect("mem", "/hd.adf", {}, 512, hd).ok());
+    CHECK(hd.geometry.sectorSize == 512);
+    CHECK(hd.geometry.sectorCount == 3520);
+    CHECK(hd.bootBytes[4] == 'H');
+    CHECK(svc.inspect("mem", "/missing.adf", {}, 512, hd).error == fujinet::disk::DiskError::FileNotFound);
+
+    const auto after = svc.info(0);
+    CHECK(after.inserted == before.inserted);
+    CHECK(after.readOnly == before.readOnly);
+    CHECK(after.type == before.type);
+    CHECK(after.geometry.sectorSize == before.geometry.sectorSize);
+    CHECK(after.geometry.sectorCount == before.geometry.sectorCount);
+    CHECK(after.changed == before.changed);
+    std::uint8_t liveAfter[512]{};
+    REQUIRE(svc.read_sector(0, 0, liveAfter, sizeof(liveAfter)).ok());
+    CHECK(std::memcmp(liveBefore, liveAfter, sizeof(liveBefore)) == 0);
+    CHECK(liveAfter[4] == 'A');
+}
+
+TEST_CASE("DiskDevice: Inspect returns candidate facts without changing live slot")
+{
+    fujinet::fs::StorageManager sm;
+    auto owned = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    owned->file_bytes("/live.adf") = make_adf_bytes_with_boot(1760, 'A');
+    owned->file_bytes("/dd.adf") = make_adf_bytes_with_boot(1760, 'D');
+    owned->file_bytes("/hd.adf") = make_adf_bytes_with_boot(3520, 'H');
+    REQUIRE(sm.registerFileSystem(std::move(owned)));
+    DiskDevice dev(sm);
+    REQUIRE(dev.disk_service().mount(0, "mem", "/live.adf", {}).ok());
+    const auto before = dev.disk_service().info(0);
+
+    auto inspect = [&](const char* uri) {
+        std::vector<std::uint8_t> payload;
+        diskproto::write_u8(payload, V);
+        diskproto::write_u8(payload, 0);
+        diskproto::write_u8(payload, 0);
+        diskproto::write_u16le(payload, 0);
+        diskproto::write_u16le(payload, 512);
+        diskproto::write_lp_u16_string(payload, uri);
+        IORequest request{};
+        request.id = 1;
+        request.deviceId = to_device_id(WireDeviceId::DiskService);
+        request.command = 0x0F;
+        request.payload = std::move(payload);
+        return dev.handle(request);
+    };
+
+    const auto dd = inspect("mem:/dd.adf");
+    REQUIRE(dd.status == StatusCode::Ok);
+    REQUIRE(dd.payload.size() == 522);
+    CHECK(dd.payload[0] == V);
+    CHECK(dd.payload[1] == static_cast<std::uint8_t>(fujinet::disk::ImageType::Raw));
+    CHECK(dd.payload[2] == 0x00); CHECK(dd.payload[3] == 0x02);
+    CHECK(dd.payload[4] == 0xE0); CHECK(dd.payload[5] == 0x06);
+    CHECK(std::memcmp(dd.payload.data() + 10, "DOS\0", 4) == 0);
+    CHECK(dd.payload[14] == 'D');
+
+    const auto hd = inspect("mem:/hd.adf");
+    REQUIRE(hd.status == StatusCode::Ok);
+    CHECK(hd.payload[4] == 0xC0); CHECK(hd.payload[5] == 0x0D);
+    CHECK(hd.payload[14] == 'H');
+    CHECK(inspect("mem:/missing.adf").status == StatusCode::InvalidRequest);
+
+    const auto after = dev.disk_service().info(0);
+    CHECK(after.inserted == before.inserted);
+    CHECK(after.geometry.sectorSize == before.geometry.sectorSize);
+    CHECK(after.geometry.sectorCount == before.geometry.sectorCount);
+    CHECK(after.changed == before.changed);
+    std::uint8_t live[512]{};
+    REQUIRE(dev.disk_service().read_sector(0, 0, live, sizeof(live)).ok());
+    CHECK(live[4] == 'A');
+}
+
 TEST_CASE("DiskService: ADF probes as raw 512-byte media")
 {
     fujinet::fs::StorageManager sm;

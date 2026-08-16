@@ -282,6 +282,44 @@ IOResponse DiskDevice::handle(const IORequest& request)
     }
 
     switch (cmd) {
+        case DiskCommand::Inspect: {
+            std::uint8_t flags = 0, typeRaw = 0;
+            std::uint16_t sectorHint = 0, bootBytes = 0;
+            std::string_view uri;
+            if (!r.read_u8(flags) || !r.read_u8(typeRaw) ||
+                !r.read_u16le(sectorHint) || !r.read_u16le(bootBytes) ||
+                !r.read_lp_u16_string(uri))
+                return make_base_response(request, StatusCode::InvalidRequest);
+            if (bootBytes > 512) return make_base_response(request, StatusCode::InvalidRequest);
+            (void)flags;
+
+            std::string uriStr(uri);
+            HostState hostState(_storage);
+            if (!hostState.resolve_target(uriStr, uriStr, nullptr))
+                return make_base_response(request, StatusCode::InvalidRequest);
+            auto [fs, resolvedPath] = _storage.resolveUri(uriStr);
+            if (!fs || resolvedPath.empty())
+                return make_base_response(request, StatusCode::InvalidRequest);
+
+            MountOptions opts{};
+            opts.readOnlyRequested = true;
+            opts.typeOverride = static_cast<ImageType>(typeRaw);
+            opts.sectorSizeHint = sectorHint;
+            disk::DiskMediaInspection inspected{};
+            DiskResult result = _svc.inspect(fs->name(), resolvedPath, opts, bootBytes, inspected);
+            IOResponse resp = make_base_response(request, map_disk_error(result.error));
+            if (resp.status != StatusCode::Ok) return resp;
+
+            std::vector<std::uint8_t> out;
+            diskproto::write_u8(out, DISKPROTO_VERSION);
+            diskproto::write_u8(out, static_cast<std::uint8_t>(inspected.type));
+            diskproto::write_u16le(out, inspected.geometry.sectorSize);
+            diskproto::write_u32le(out, inspected.geometry.sectorCount);
+            diskproto::write_u16le(out, static_cast<std::uint16_t>(inspected.bootBytes.size()));
+            out.insert(out.end(), inspected.bootBytes.begin(), inspected.bootBytes.end());
+            resp.payload = std::move(out);
+            return resp;
+        }
         case DiskCommand::Mount: {
             std::uint8_t slot1 = 0, flags = 0, typeRaw = 0;
             std::uint16_t sectorHint = 0;

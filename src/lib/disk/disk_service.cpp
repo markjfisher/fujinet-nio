@@ -9,6 +9,10 @@ namespace fujinet::disk {
 static constexpr const char* TAG = "disk_svc";
 static constexpr const char* STATS_TAG = "diskstats";
 
+struct PreparedImage {
+    std::unique_ptr<IDiskImage> image;
+};
+
 static const char* disk_error_name(DiskError e) noexcept
 {
     switch (e) {
@@ -57,6 +61,58 @@ DiskError DiskService::set_error(std::size_t slotIndex, DiskError e)
     return e;
 }
 
+static DiskResult prepare_image(
+    fs::StorageManager& storage,
+    ImageRegistry& registry,
+    const std::string& fsName,
+    const std::string& path,
+    const MountOptions& opts,
+    PreparedImage& out
+) {
+    auto* pfs = storage.get(fsName);
+    if (!pfs) return DiskResult{DiskError::NoSuchFileSystem};
+    if (!pfs->exists(path)) return DiskResult{DiskError::FileNotFound};
+
+    fs::FileInfo finfo{};
+    if (!pfs->stat(path, finfo)) return DiskResult{DiskError::OpenFailed};
+
+    bool readOnlyEffective = opts.readOnlyRequested;
+    std::unique_ptr<fs::IFile> file;
+    if (opts.readOnlyRequested) {
+        file = pfs->open(path, "rb");
+    } else {
+        file = pfs->open(path, "r+b");
+        if (!file) {
+            file = pfs->open(path, "rb");
+            readOnlyEffective = true;
+        }
+    }
+    if (!file) return DiskResult{DiskError::OpenFailed};
+
+    MountOptions effective = opts;
+    effective.readOnlyRequested = readOnlyEffective;
+    ImageType type = opts.typeOverride;
+    if (type == ImageType::Auto) {
+        const auto probe = probe_image(*file, finfo.sizeBytes, path, opts);
+        if (probe.matched) {
+            type = probe.type;
+            effective.geometryHint = probe.geometry;
+        }
+    } else if (type == ImageType::Raw && opts.sectorSizeHint == 0) {
+        const auto probe = probe_image(*file, finfo.sizeBytes, path, opts);
+        if (probe.matched && probe.type == ImageType::Raw)
+            effective.geometryHint = probe.geometry;
+    }
+    if (type == ImageType::Auto) return DiskResult{DiskError::UnsupportedImageType};
+
+    auto image = registry.create(type);
+    if (!image) return DiskResult{DiskError::UnsupportedImageType};
+    DiskResult result = image->mount(std::move(file), finfo.sizeBytes, effective);
+    if (!result.ok()) return result;
+    out.image = std::move(image);
+    return DiskResult{DiskError::None};
+}
+
 DiskResult DiskService::mount(
     std::size_t slotIndex,
     const std::string& fsName,
@@ -85,78 +141,10 @@ DiskResult DiskService::mount(
         if (!fr.ok()) return fr;
     }
 
-    auto* pfs = _storage.get(fsName);
-    if (!pfs) {
-        FN_LOGW(TAG, "Mount failed: filesystem '%s' not registered", fsName.c_str());
-        return DiskResult{set_error(slotIndex, DiskError::NoSuchFileSystem)};
-    }
-
-    if (!pfs->exists(path)) {
-        FN_LOGW(TAG, "Mount failed: path does not exist '%s'", path.c_str());
-        return DiskResult{set_error(slotIndex, DiskError::FileNotFound)};
-    }
-
-    fs::FileInfo finfo{};
-    if (!pfs->stat(path, finfo)) {
-        FN_LOGW(TAG, "Mount failed: stat failed for '%s'", path.c_str());
-        return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
-    }
-
-    // Try open writeable if requested; if it fails, fall back to read-only.
-    bool readOnlyEffective = opts.readOnlyRequested;
-    std::unique_ptr<fs::IFile> f;
-    if (opts.readOnlyRequested) {
-        f = pfs->open(path, "rb");
-    } else {
-        f = pfs->open(path, "r+b");
-        if (!f) {
-            FN_LOGI(TAG, "Writable open failed for '%s'; retrying read-only", path.c_str());
-            f = pfs->open(path, "rb");
-            readOnlyEffective = true;
-        }
-    }
-    if (!f) {
-        FN_LOGW(TAG, "Mount failed: file open failed for '%s'", path.c_str());
-        return DiskResult{set_error(slotIndex, DiskError::OpenFailed)};
-    }
-
-    MountOptions eff = opts;
-    eff.readOnlyRequested = readOnlyEffective;
-
-    ImageType type = opts.typeOverride;
-    if (type == ImageType::Auto) {
-        const auto probe = probe_image(*f, finfo.sizeBytes, path, opts);
-        if (probe.matched) {
-            type = probe.type;
-            eff.geometryHint = probe.geometry;
-        }
-    } else if (type == ImageType::Raw && opts.sectorSizeHint == 0) {
-        const auto probe = probe_image(*f, finfo.sizeBytes, path, opts);
-        if (probe.matched && probe.type == ImageType::Raw) {
-            eff.geometryHint = probe.geometry;
-        }
-    }
-
-    if (type == ImageType::Auto) {
-        FN_LOGW(TAG, "Mount failed: could not detect image type for '%s'", path.c_str());
-        return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
-    }
-
-    auto img = _registry.create(type);
-    if (!img) {
-        FN_LOGW(TAG, "Mount failed: no image handler for type=%u", static_cast<unsigned>(type));
-        return DiskResult{set_error(slotIndex, DiskError::UnsupportedImageType)};
-    }
-
-    DiskResult r = img->mount(std::move(f), finfo.sizeBytes, eff);
-    if (!r.ok()) {
-        FN_LOGW(TAG,
-                "Mount failed: image mount error=%s(%u) size=%llu",
-                disk_error_name(r.error),
-                static_cast<unsigned>(r.error),
-                static_cast<unsigned long long>(finfo.sizeBytes));
-        return DiskResult{set_error(slotIndex, r.error)};
-    }
+    PreparedImage prepared{};
+    DiskResult r = prepare_image(_storage, _registry, fsName, path, opts, prepared);
+    if (!r.ok()) return DiskResult{set_error(slotIndex, r.error)};
+    auto img = std::move(prepared.image);
 
     if (replacing) {
         DiskResult ur = s->image->unmount();
@@ -189,6 +177,36 @@ DiskResult DiskService::mount(
             static_cast<unsigned long>(s->geometry.sectorCount));
 
     return DiskResult{DiskError::None};
+}
+
+DiskResult DiskService::inspect(
+    const std::string& fsName,
+    const std::string& path,
+    const MountOptions& opts,
+    std::size_t bootByteCount,
+    DiskMediaInspection& out
+) {
+    PreparedImage prepared{};
+    MountOptions readOnly = opts;
+    readOnly.readOnlyRequested = true;
+    DiskResult result = prepare_image(_storage, _registry, fsName, path, readOnly, prepared);
+    if (!result.ok()) return result;
+
+    const DiskGeometry geometry = prepared.image->geometry();
+    if (bootByteCount > geometry.sectorSize) bootByteCount = geometry.sectorSize;
+    out = DiskMediaInspection{};
+    out.type = prepared.image->type();
+    out.geometry = geometry;
+    out.bootBytes.resize(bootByteCount);
+    if (bootByteCount != 0) {
+        std::vector<std::uint8_t> sector(geometry.sectorSize);
+        result = prepared.image->read_sector(0, sector.data(), sector.size());
+        if (result.ok())
+            std::copy_n(sector.begin(), bootByteCount, out.bootBytes.begin());
+    }
+    DiskResult unmountResult = prepared.image->unmount();
+    if (!result.ok()) return result;
+    return unmountResult;
 }
 
 DiskResult DiskService::create_image(

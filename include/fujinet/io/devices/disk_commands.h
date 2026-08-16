@@ -19,6 +19,7 @@ enum class DiskCommand : std::uint8_t {
     Reinitialize = 0x0C,
     ListMounts    = 0x0D,
     Flush         = 0x0E,
+    Inspect       = 0x0F,
 };
 
 inline DiskCommand to_disk_command(std::uint16_t raw)
