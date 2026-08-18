@@ -2,6 +2,8 @@
 #include "fujinet/core/logging.h"
 #include "fujinet/core/utils.h"
 
+#include <sys/select.h>
+
 #include <chrono>
 #include <cstring>
 #include <thread>

@@ -4,7 +4,7 @@
 #include <cstring>
 #include <utility>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <netinet/in.h>
@@ -22,7 +22,7 @@ std::string env_or(const char* name, const char* fallback)
 
 std::string ipv4_text(const sockaddr* address)
 {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
     if (!address || address->sa_family != AF_INET) return {};
     char text[INET_ADDRSTRLEN]{};
     const auto* in = reinterpret_cast<const sockaddr_in*>(address);
@@ -162,7 +162,7 @@ net::WifiScanResult PosixWifiLink::scan_wifi()
 
 void PosixWifiLink::refresh_host_state()
 {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
     struct ifaddrs* addresses = nullptr;
     if (getifaddrs(&addresses) != 0) {
         _state = net::LinkState::Failed;
