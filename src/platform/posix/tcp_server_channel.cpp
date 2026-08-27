@@ -90,6 +90,37 @@ public:
         }
     }
 
+    bool supports_readable_wait() const override
+    {
+        return _listenFd >= 0;
+    }
+
+    bool wait_for_readable(std::chrono::milliseconds timeout) override
+    {
+        const int fd = _clientFd >= 0 ? _clientFd : _listenFd;
+        if (fd < 0) {
+            return false;
+        }
+
+        pollfd pfd{};
+        pfd.fd = fd;
+        pfd.events = POLLIN | POLLHUP | POLLERR;
+
+        int ret;
+        do {
+            ret = ::poll(&pfd, 1, static_cast<int>(timeout.count()));
+        } while (ret < 0 && errno == EINTR);
+
+        if (ret <= 0) {
+            return false;
+        }
+        if (fd == _clientFd && (pfd.revents & (POLLHUP | POLLERR))) {
+            close_client();
+            return false;
+        }
+        return (pfd.revents & POLLIN) != 0;
+    }
+
 private:
     static bool set_nonblocking(int fd)
     {

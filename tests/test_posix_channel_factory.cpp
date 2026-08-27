@@ -7,7 +7,9 @@
 #if defined(FN_PLATFORM_POSIX) && !defined(_WIN32)
 
 #include <cstdlib>
+#include <chrono>
 #include <filesystem>
+#include <fcntl.h>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -54,6 +56,14 @@ TEST_CASE("POSIX channel factory creates PTY channel and owns configured symlink
     auto channel = platform::create_channel_for_profile(profile_for(build::ChannelKind::Pty), cfg);
     REQUIRE(channel != nullptr);
     CHECK(path_is_symlink(ptyLink));
+    CHECK(channel->supports_readable_wait());
+
+    const int slaveFd = ::open(ptyLink.c_str(), O_WRONLY | O_NOCTTY | O_NONBLOCK);
+    REQUIRE(slaveFd >= 0);
+    const char byte = 'x';
+    REQUIRE(::write(slaveFd, &byte, 1) == 1);
+    ::close(slaveFd);
+    CHECK(channel->wait_for_readable(std::chrono::milliseconds(100)));
 
     channel.reset();
     CHECK(!std::filesystem::exists(ptyLink));

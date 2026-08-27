@@ -1,5 +1,6 @@
 #include "fujinet/platform/posix/pty_channel.h"
 
+#include <cerrno>
 #include <fcntl.h>
 #include <iostream>
 #include <poll.h>
@@ -80,6 +81,29 @@ public:
             remaining -= static_cast<std::size_t>(n);
             ptr += n;
         }
+    }
+
+    bool supports_readable_wait() const override
+    {
+        return _masterFd >= 0;
+    }
+
+    bool wait_for_readable(std::chrono::milliseconds timeout) override
+    {
+        if (_masterFd < 0) {
+            return false;
+        }
+
+        pollfd pfd{};
+        pfd.fd = _masterFd;
+        pfd.events = POLLIN;
+
+        int ret;
+        do {
+            ret = ::poll(&pfd, 1, static_cast<int>(timeout.count()));
+        } while (ret < 0 && errno == EINTR);
+
+        return ret > 0 && (pfd.revents & POLLIN) != 0;
     }
 
 private:

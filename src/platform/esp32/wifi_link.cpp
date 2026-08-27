@@ -439,9 +439,9 @@ esp_err_t Esp32WifiLink::start_scan_with_retries(bool allow_disconnect_for_scan,
     return ESP_FAIL;
 }
 
-WifiScanResult Esp32WifiLink::scan()
+Esp32WifiScanResult Esp32WifiLink::scan()
 {
-    WifiScanResult result;
+    Esp32WifiScanResult result;
 
     if (!_inited) {
         init();

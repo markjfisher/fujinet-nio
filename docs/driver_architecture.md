@@ -170,6 +170,13 @@ flush, reset, reopen, and retry only idempotent operations. The exact
 packet-envelope fields for packet-native links remain channel-specific, but
 they must deliver the same FujiBus packet contract above.
 
+A byte-stream channel may optimize transmission by accepting one complete
+already-SLIP-encoded frame rather than receiving the frame one byte at a time.
+That is still a stream-channel optimization: SLIP framing remains in the
+shared session and the channel sees only ordered raw bytes. It must not be
+confused with packet-native transport, which has its own envelope and omits
+SLIP entirely.
+
 The actual implementation may use byte-oriented operations for a legacy SLIP
 stream, or packet-oriented operations for a new high-speed link. The important
 rule is that the driver above this interface sees FujiBus packets, not physical

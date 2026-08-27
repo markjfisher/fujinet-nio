@@ -272,50 +272,54 @@ void UartChannel::updateFIFO()
 
     uart_event_t event;
 
-    while (xQueueReceive(_uart_queue, &event, 1))
-    {
-        switch (event.type) {
-        case UART_DATA:
-            {
-                size_t old_len = _fifo.size();
-                _fifo.resize(old_len + event.size);
-                int result = uart_read_bytes(_uart_port, &_fifo[old_len], event.size, 0);
-                if (result < 0) {
-                    result = 0;
-                }
-                _fifo.resize(old_len + result);
+    while (xQueueReceive(_uart_queue, &event, 0) == pdTRUE) {
+        process_event(event);
+    }
+}
+
+void UartChannel::process_event(const uart_event_t& event)
+{
+    switch (event.type) {
+    case UART_DATA:
+        {
+            size_t old_len = _fifo.size();
+            _fifo.resize(old_len + event.size);
+            int result = uart_read_bytes(_uart_port, &_fifo[old_len], event.size, 0);
+            if (result < 0) {
+                result = 0;
             }
-            break;
-
-        case UART_FIFO_OVF:
-            FN_LOGW(TAG, "UART FIFO overflow");
-            uart_flush_input(_uart_port);
-            break;
-
-        case UART_BUFFER_FULL:
-            FN_LOGW(TAG, "UART buffer full");
-            uart_flush_input(_uart_port);
-            break;
-
-        case UART_BREAK:
-            FN_LOGI(TAG, "UART break detected");
-            break;
-
-        case UART_PARITY_ERR:
-            FN_LOGW(TAG, "UART parity error");
-            break;
-
-        case UART_FRAME_ERR:
-            FN_LOGW(TAG, "UART frame error");
-            break;
-
-        case UART_PATTERN_DET:
-            break;
-
-        default:
-            FN_LOGW(TAG, "Unknown UART event: %d", event.type);
-            break;
+            _fifo.resize(old_len + result);
         }
+        break;
+
+    case UART_FIFO_OVF:
+        FN_LOGW(TAG, "UART FIFO overflow");
+        uart_flush_input(_uart_port);
+        break;
+
+    case UART_BUFFER_FULL:
+        FN_LOGW(TAG, "UART buffer full");
+        uart_flush_input(_uart_port);
+        break;
+
+    case UART_BREAK:
+        FN_LOGI(TAG, "UART break detected");
+        break;
+
+    case UART_PARITY_ERR:
+        FN_LOGW(TAG, "UART parity error");
+        break;
+
+    case UART_FRAME_ERR:
+        FN_LOGW(TAG, "UART frame error");
+        break;
+
+    case UART_PATTERN_DET:
+        break;
+
+    default:
+        FN_LOGW(TAG, "Unknown UART event: %d", event.type);
+        break;
     }
 }
 
@@ -327,6 +331,38 @@ bool UartChannel::available()
 
     updateFIFO();
 
+    return !_fifo.empty();
+}
+
+bool UartChannel::supports_readable_wait() const
+{
+    return _initialized && _uart_queue != nullptr;
+}
+
+bool UartChannel::wait_for_readable(std::chrono::milliseconds timeout)
+{
+    uart_event_t event;
+    TickType_t ticks;
+
+    if (!supports_readable_wait()) {
+        return false;
+    }
+
+    updateFIFO();
+    if (!_fifo.empty()) {
+        return true;
+    }
+
+    ticks = pdMS_TO_TICKS(static_cast<uint32_t>(timeout.count()));
+    if (timeout.count() > 0 && ticks == 0) {
+        ticks = 1;
+    }
+    if (xQueueReceive(_uart_queue, &event, ticks) != pdTRUE) {
+        return false;
+    }
+
+    process_event(event);
+    updateFIFO();
     return !_fifo.empty();
 }
 

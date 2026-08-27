@@ -15,13 +15,13 @@ namespace fujinet::platform::esp32 {
 
 struct WifiScanAp {
     std::string ssid;
-    WifiBssid bssid;
+    fujinet::net::WifiBssid bssid;
     std::int8_t rssi{0};
     std::uint8_t channel{0};
     std::string auth; // human-readable, e.g. "wpa2_psk"
 };
 
-struct WifiScanResult {
+struct Esp32WifiScanResult {
     std::vector<WifiScanAp> aps;
     bool success{false};
     std::string error;
@@ -45,25 +45,25 @@ public:
     void poll() override;
 
     std::string ip_address() const override;
-    WifiBssid current_bssid() const override;
+    fujinet::net::WifiBssid current_bssid() const override;
     std::int8_t rssi() const override;
     std::string subnet_mask() const override;
     std::string gateway() const override;
     std::string dns_server() const override;
-    WifiLinkCapabilities capabilities() const override {
-        return {static_cast<std::uint16_t>(WifiCapabilityConfig |
-                                            WifiCapabilityStatus |
-                                            WifiCapabilityConnect |
-                                            WifiCapabilityDisconnect |
-                                            WifiCapabilityScan |
-                                            WifiCapabilityBssidSelect),
-                WifiBackendKind::Esp32};
+    fujinet::net::WifiLinkCapabilities capabilities() const override {
+        return {static_cast<std::uint16_t>(fujinet::net::WifiCapabilityConfig |
+                                            fujinet::net::WifiCapabilityStatus |
+                                            fujinet::net::WifiCapabilityConnect |
+                                            fujinet::net::WifiCapabilityDisconnect |
+                                            fujinet::net::WifiCapabilityScan |
+                                            fujinet::net::WifiCapabilityBssidSelect),
+                fujinet::net::WifiBackendKind::Esp32};
     }
     bool supports_scan() const override { return true; }
-    WifiScanResult scan_wifi() override;
+    fujinet::net::WifiScanResult scan_wifi() override;
 
     // Blocking scan. Requires init(); starts the radio if needed.
-    WifiScanResult scan();
+    Esp32WifiScanResult scan();
 
 private:
     void prepare_for_new_connection();
@@ -84,7 +84,7 @@ private:
     std::string _pass;
     std::string _configured_bssid;
     std::string _ip;
-    WifiBssid _bssid;
+    fujinet::net::WifiBssid _bssid;
     std::int8_t _rssi{0};
     std::string _subnet;
     std::string _gateway;

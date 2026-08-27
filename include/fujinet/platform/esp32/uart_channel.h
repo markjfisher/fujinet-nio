@@ -32,6 +32,8 @@ public:
     bool available() override;
     std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override;
     void write(const std::uint8_t* buffer, std::size_t len) override;
+    bool supports_readable_wait() const override;
+    bool wait_for_readable(std::chrono::milliseconds timeout) override;
 
     /// Process pending UART events and update internal FIFO.
     /// Should be called regularly (e.g., from poll() or serviceOnce()).
@@ -59,6 +61,7 @@ private:
     UartPins selected_pins() const;
     /// Apply `uart_param_config` + `uart_set_pin` for current `_uart_cfg`.
     bool apply_hw_parameters(const UartPins& uart_pins);
+    void process_event(const uart_event_t& event);
     bool _initialized{false};
     config::UartConfig _uart_cfg{};
     UartPins _uart_pins{};
