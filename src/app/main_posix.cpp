@@ -44,7 +44,7 @@ static constexpr const char* TAG = "nio";
 
 namespace {
 
-std::chrono::milliseconds posix_idle_delay()
+std::chrono::milliseconds posix_idle_delay(const build::BuildProfile& profile)
 {
     if (const char* raw = std::getenv("FN_POSIX_LOOP_DELAY_MS")) {
         char* end = nullptr;
@@ -53,6 +53,18 @@ std::chrono::milliseconds posix_idle_delay()
             return std::chrono::milliseconds(value);
         }
         FN_LOGW(TAG, "Ignoring invalid FN_POSIX_LOOP_DELAY_MS=%s", raw);
+    }
+
+    /*
+     * The TCP FujiBus profile is a serial-stream emulator endpoint.  Unlike
+     * PTY and UART channels it has no safe blocking readiness implementation
+     * yet, but 50 ms polling adds a full round-trip of avoidable latency.
+     * A 1 ms yield keeps the cooperative device/background polling contract
+     * intact without changing physical-channel profiles.  The environment
+     * override above remains available for diagnostics and tuning.
+     */
+    if (profile.primaryChannel == build::ChannelKind::TcpSocket) {
+        return std::chrono::milliseconds(1);
     }
 
     return std::chrono::milliseconds(50);
@@ -274,7 +286,7 @@ int main()
     }
     core::setup_transports(core, *channel, profile, &config);
 
-    const auto idleDelay = posix_idle_delay();
+    const auto idleDelay = posix_idle_delay(profile);
     FN_LOGI(TAG,
             "POSIX idle delay: %lld ms (%s transport wait)",
             static_cast<long long>(idleDelay.count()),
