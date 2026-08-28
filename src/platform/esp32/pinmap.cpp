@@ -69,8 +69,8 @@ static constexpr PinMap BOARD_PINMAP{
         .uart = UartPins{ .rx = 41, .tx = 42 },  // UART1 for RS232 data
         .ri = 16,       // GPIO_NUM_16 (PIN_RS232_RI)
         .dcd = 4,       // GPIO_NUM_4 (PIN_RS232_DCD)
-        .rts = 15,      // GPIO_NUM_15 (PIN_RS232_RTS)
-        .cts = 7,       // GPIO_NUM_7 (PIN_RS232_CTS)
+        .rts = 7,       // GPIO_NUM_7 (PIN_RS232_RTS) — IO7→DIN4: driver output toward DB9
+        .cts = 15,      // GPIO_NUM_15 (PIN_RS232_CTS) — ROUT3→IO15: receiver input from DB9
         .dtr = 6,       // GPIO_NUM_6 (PIN_RS232_DTR)
         .dsr = 5,       // GPIO_NUM_5 (PIN_RS232_DSR)
         .invalid = 18,  // GPIO_NUM_18 (PIN_RS232_INVALID)
