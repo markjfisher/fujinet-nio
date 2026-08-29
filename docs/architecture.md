@@ -280,7 +280,7 @@ accepts a TCP client and presents that socket through the common `Channel` API.
 
 The `fujibus-tcp-*` presets select:
 
-- `TransportKind::FujiBus`
+- `TransportKind::FujiBusSlip`
 - `ChannelKind::TcpSocket`
 - profile name `POSIX + FujiBus over TCP serial`
 
@@ -304,7 +304,7 @@ only how raw bytes reach the transport:
   NetSIO/SIO command flow back into a raw FujiBus byte stream for
   `FujiBusTransport`.
 - **ESP32 + Atari SIO GPIO** uses `FN_BUILD_ATARI_FUJIBUS_SIO`, selecting
-  `TransportKind::FujiBus` with `ChannelKind::SioGpio`. The ESP32 channel
+  `TransportKind::FujiBusSlip` with `ChannelKind::SioGpio`. The ESP32 channel
   factory maps this to `AtariSioFujiBusChannel`. That channel owns the
   `UartChannel` using `pinmap().sio.uart`, configures the Atari SIO control
   pins, and uses `AtariSioFujiBusFramer` to translate Atari SIO `W`/`R`
@@ -326,7 +326,7 @@ The POSIX `SerialChannel` is a raw byte channel for FujiBus over a local serial
 device, initially used by the Amiga RS-232 prototype profile. It is selected by
 the `fujibus-rs232-debug` preset:
 
-- `TransportKind::FujiBus`
+- `TransportKind::FujiBusSlip`
 - `ChannelKind::SerialPort`
 - profile name `POSIX + FujiBus over RS-232 (Amiga prototype)`
 
@@ -813,7 +813,7 @@ BuildProfile current_build_profile();
 
 There are two distinct Atari tracks:
 
-- **Atari NIO mode** uses `TransportKind::FujiBus` over
+- **Atari NIO mode** uses `TransportKind::FujiBusSlip` over
   `ChannelKind::SioGpio`. SIO is only the Atari physical connector/UART byte
   path. The protocol remains the same FujiBus protocol used by BBC, Amiga,
   MSDOS, Python, POSIX PTY/TCP, and USB CDC clients.
@@ -827,84 +827,30 @@ compatibility.
 
 ## Mapping build flags to BuildProfile
 
-File: `src/lib/build_profile.cpp`
+Each build variant has its own source file that implements `current_build_profile()` with no preprocessor conditionals. The build system selects exactly one file at compile time:
+
+- **POSIX variants** — `src/lib/build_profile/<variant>.cpp`, one per preset. CMake selects the right file via an `if/elseif/else` block in `CMakeLists_posix.cmake`. None of these files contain `#ifdef`.
+- **ESP32 variants** — `src/platform/esp32/build_profile.cpp`. ESP-IDF compiles all sources in a component together so this file retains `#ifdef` to select among its variants.
+
+Example POSIX file (`src/lib/build_profile/fujibus_pty.cpp`):
 
 ```cpp
 BuildProfile current_build_profile()
 {
-#if defined(FN_BUILD_ATARI_SIO)
-    BuildProfile p{
-        .machine          = Machine::Atari8Bit,
-        .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::UartGpio,
-        .name             = "Atari + SIO via GPIO",
-    };
-#elif defined(FN_BUILD_ATARI_PTY)
-    BuildProfile p{
-        .machine          = Machine::Atari8Bit,
-        .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::Pty,
-        .name             = "Atari + SIO over PTY (POSIX)",
-    };
-
-#elif defined(FN_BUILD_ATARI_NETSIO)
-    BuildProfile p{
-        .machine          = Machine::Atari8Bit,
-        .primaryTransport = TransportKind::SIO,
-        .primaryChannel   = ChannelKind::UdpSocket,
-        .name             = "Atari + SIO over NetSIO (UDP)",
-    };
-
-#elif defined(FN_BUILD_ATARI_FUJIBUS_SIO)
-    BuildProfile p{
-        .machine          = Machine::Atari8Bit,
-        .primaryTransport = TransportKind::FujiBus,
-        .primaryChannel   = ChannelKind::SioGpio,
-        .name             = "Atari + FujiBus over SIO GPIO",
-    };
-
-#elif defined(FN_BUILD_ESP32_USB_CDC)
-    BuildProfile p{
-        .machine          = Machine::FujiNetESP32,
-        .primaryTransport = TransportKind::FujiBus,
-        .primaryChannel   = ChannelKind::UsbCdcDevice,
-        .name             = "ESP32-S3 + FujiBus over USB CDC",
-    };
-
-#elif defined(FN_BUILD_FUJIBUS_TCP)
     BuildProfile p{
         .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::FujiBus,
-        .primaryChannel   = ChannelKind::TcpSocket,
-        .name             = "POSIX + FujiBus over TCP serial",
-    };
-
-#elif defined(FN_BUILD_AMIGA_RS232)
-    BuildProfile p{
-        .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::FujiBus,
-        .primaryChannel   = ChannelKind::SerialPort,
-        .name             = "POSIX + FujiBus over RS-232 (Amiga prototype)",
-    };
-
-#else
-    BuildProfile p{
-        .machine          = Machine::Generic,
-        .primaryTransport = TransportKind::FujiBus,
+        .primaryTransport = TransportKind::FujiBusSlip,
         .primaryChannel   = ChannelKind::Pty,
         .name             = "POSIX + FujiBus over PTY",
     };
-#endif
-
     p.hw = detect_hardware_capabilities();
     return p;
 }
 ```
 
-`src/lib/build_profile.cpp` is the central place that maps `FN_BUILD_*` profile
-macros into `BuildProfile`. Platform build files still use profile macros to
-select sources and compile definitions, but shared runtime code consumes the
-resulting `BuildProfile` rather than scattering profile conditionals.
+The build-profile layer is the central place that maps `FN_BUILD_*` macros into `BuildProfile`. Platform build files still use profile macros to select sources and compile definitions, but shared runtime code consumes the resulting `BuildProfile` rather than scattering profile conditionals.
+
+See `docs/build_profiles.md` for the full profile table and flag reference.
 
 ---
 
@@ -1549,7 +1495,7 @@ network availability, time synchronization, or other cross-cutting conditions.
 
 2. **Atari NIO FujiBus over SIO**
    - Complete the `FN_BUILD_ATARI_FUJIBUS_SIO` ESP32 profile
-   - Use `TransportKind::FujiBus` over `ChannelKind::SioGpio`
+   - Use `TransportKind::FujiBusSlip` over `ChannelKind::SioGpio`
    - Keep this separate from Atari legacy SIO compatibility mode
 
 3. **Expanded device set and protocol depth**

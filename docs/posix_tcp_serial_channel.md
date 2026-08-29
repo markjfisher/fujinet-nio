@@ -57,7 +57,7 @@ The TCP serial workflow uses:
 ```text
 FN_BUILD_FUJIBUS_TCP
 machine          = Machine::Generic
-primaryTransport = TransportKind::FujiBus
+primaryTransport = TransportKind::FujiBusSlip
 primaryChannel   = ChannelKind::TcpSocket
 name             = "POSIX + FujiBus over TCP serial"
 ```

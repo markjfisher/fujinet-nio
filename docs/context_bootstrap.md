@@ -37,7 +37,8 @@ This repo is **fujinet-nio**, a clean rewrite of FujiNet firmware. It targets mu
   - `include/fujinet/fs/filesystem.h`
 - **Build profiles / channels**:
   - `include/fujinet/build/profile.h`
-  - `src/lib/build_profile.cpp`
+  - `src/lib/build_profile/` (POSIX variants, one file per preset)
+  - `src/platform/esp32/build_profile.cpp` (ESP32 variants)
   - `src/platform/posix/channel_factory.cpp`
 - **Core loop / transport waiting**:
   - `include/fujinet/core/core.h`
