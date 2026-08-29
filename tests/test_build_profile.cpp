@@ -17,6 +17,18 @@ TEST_CASE("current build profile maps RS-232 preset to FujiBus over SerialPort")
 #endif
 }
 
+TEST_CASE("current build profile maps Atari FujiBus-over-NetSIO preset to FujiBusSlip (not SIO)")
+{
+#if defined(FN_BUILD_ATARI_FUJIBUS_NETSIO)
+    const auto profile = build::current_build_profile();
+    CHECK(profile.machine == build::Machine::Atari8Bit);
+    CHECK(profile.primaryTransport == build::TransportKind::FujiBusSlip);
+    CHECK(profile.primaryChannel == build::ChannelKind::UdpSocket);
+#else
+    CHECK(true);
+#endif
+}
+
 TEST_CASE("current build profile maps Zorro preset to FujiBusNative")
 {
 #if defined(FN_BUILD_ZORRO)

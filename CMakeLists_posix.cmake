@@ -120,7 +120,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/application_state_service_init.cpp
         src/lib/boot_mount.cpp
         src/lib/bootstrap.cpp
-        src/lib/build_profile.cpp
+        # build_profile/*.cpp selected below via if/elseif/else
         src/lib/clock_device.cpp
         src/lib/clock_device_init.cpp
         src/lib/diagnostic_app_store_provider.cpp
@@ -235,6 +235,27 @@ set(FUJINET_NIO_SOURCES
         src/platform/posix/wifi_link.cpp
 # __TARGET_SOURCES_END__
 )
+
+# Select exactly one per-variant build_profile source for POSIX builds.
+# lib-only (FN_BUILD_EMBEDDED_LIB) and fujibus-pty both use fujibus_pty.cpp;
+# default.cpp is the fallback when no build macro is set.
+if(FN_BUILD_FUJIBUS_PTY OR FN_BUILD_EMBEDDED_LIB)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/fujibus_pty.cpp)
+elseif(FN_BUILD_FUJIBUS_TCP)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/fujibus_tcp.cpp)
+elseif(FN_BUILD_AMIGA_RS232)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/amiga_rs232.cpp)
+elseif(FN_BUILD_ATARI_PTY)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/atari_pty.cpp)
+elseif(FN_BUILD_ATARI_NETSIO)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/atari_netsio.cpp)
+elseif(FN_BUILD_ATARI_FUJIBUS_NETSIO)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/atari_fujibus_netsio.cpp)
+elseif(FN_BUILD_ZORRO)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/zorro.cpp)
+else()
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/default.cpp)
+endif()
 
 if(FN_BUILD_EMBEDDED_LIB)
   list(REMOVE_ITEM FUJINET_NIO_SOURCES
