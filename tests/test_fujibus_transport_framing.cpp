@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include "fujinet/io/transport/fujibus_transport.h"
+#include "fujinet/io/transport/slip_framer.h"
 #include "fujinet/io/protocol/fuji_bus_packet.h"
 #include "fujinet/io/core/channel.h"
 
@@ -34,9 +35,27 @@ public:
             _tx.push_back(buf[i]);
     }
 
+    const std::deque<std::uint8_t>& tx() const { return _tx; }
+
 private:
     std::deque<std::uint8_t> _rx;
     std::deque<std::uint8_t> _tx;
+};
+
+// SpyFramer wraps SlipFramer and records whether sendPacket was called.
+class SpyFramer : public IFramer {
+public:
+    void poll(Channel& ch) override                          { _inner.poll(ch); }
+    bool nextPacket(ByteBuffer& out) override                { return _inner.nextPacket(out); }
+    void sendPacket(Channel& ch, const ByteBuffer& pkt) override {
+        sendCalled = true;
+        lastPacket = pkt;
+        _inner.sendPacket(ch, pkt);
+    }
+    bool      sendCalled{false};
+    ByteBuffer lastPacket;
+private:
+    SlipFramer _inner;
 };
 
 // Build a minimal valid SLIP-framed FujiBus packet and return the raw bytes.
@@ -63,7 +82,8 @@ TEST_SUITE("FujiBusTransport SLIP framing") {
 
 TEST_CASE("normal frame is received correctly") {
     LoopbackChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
     feed(ch, t, make_valid_frame(0xFB, 0x01));
 
     IORequest req;
@@ -77,7 +97,8 @@ TEST_CASE("single stale END before valid frame does not corrupt extraction") {
     // _rxBuffer contains [C0][C0][data][C0] — a lone stale trailing END
     // followed by the next frame's leading END then payload then END.
     LoopbackChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     auto frame = make_valid_frame(0xFB, 0x02);
     // Prepend a lone stale C0 (the trailing END left from a broken session).
@@ -94,7 +115,8 @@ TEST_CASE("single stale END before valid frame does not corrupt extraction") {
 
 TEST_CASE("multiple consecutive ENDs before frame are skipped") {
     LoopbackChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     auto frame = make_valid_frame(0xFB, 0x03);
     std::vector<uint8_t> buf = { END, END, END };   // three stale delimiters
@@ -108,7 +130,8 @@ TEST_CASE("multiple consecutive ENDs before frame are skipped") {
 
 TEST_CASE("buffer of only END markers returns false, not a crash or empty frame") {
     LoopbackChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     feed(ch, t, { END, END, END });
 
@@ -118,7 +141,8 @@ TEST_CASE("buffer of only END markers returns false, not a crash or empty frame"
 
 TEST_CASE("two valid frames back to back are each received once") {
     LoopbackChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     auto f1 = make_valid_frame(0xFB, 0x10);
     auto f2 = make_valid_frame(0xFC, 0x20);
@@ -136,7 +160,8 @@ TEST_CASE("two valid frames back to back are each received once") {
 
 TEST_CASE("stale END then two valid frames both survive") {
     LoopbackChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     auto f1 = make_valid_frame(0xFB, 0x11);
     auto f2 = make_valid_frame(0xFC, 0x22);
@@ -154,7 +179,8 @@ TEST_CASE("stale END then two valid frames both survive") {
 
 TEST_CASE("incomplete frame returns false without corrupting buffer") {
     LoopbackChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     // Push only the first half of a frame (no terminating END yet).
     auto frame = make_valid_frame(0xFB, 0x05);
@@ -169,6 +195,30 @@ TEST_CASE("incomplete frame returns false without corrupting buffer") {
     feed(ch, t, rest);
     REQUIRE(t.receive(req));
     CHECK((req.command & 0xFF) == 0x05);
+}
+
+TEST_CASE("send() routes bytes through IFramer::sendPacket, not directly to channel") {
+    // AC: "Given FujiBusTransport sending an IOResponse, when send is called,
+    // then bytes are written via the injected framer's sendPacket."
+    LoopbackChannel ch;
+    SpyFramer spy;
+    FujiBusTransport t(ch, spy);
+
+    IOResponse resp;
+    resp.id       = 1;
+    resp.deviceId = static_cast<DeviceID>(0xFB);
+    resp.command  = 0x01;
+    resp.status   = StatusCode::Ok;
+
+    t.send(resp);
+
+    // sendPacket on the spy framer must have been called.
+    REQUIRE(spy.sendCalled);
+    // The packet must be non-empty and have reached the channel.
+    CHECK(!spy.lastPacket.empty());
+    CHECK(!ch.tx().empty());
+    // Channel bytes must equal what the spy received (framer wrote them verbatim).
+    CHECK(ch.tx().size() == spy.lastPacket.size());
 }
 
 } // TEST_SUITE

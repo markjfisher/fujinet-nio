@@ -1,9 +1,8 @@
 #pragma once
 
-#include <vector>
-
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/core/io_message.h"
+#include "fujinet/io/transport/iframer.h"
 #include "fujinet/io/transport/transport.h"
 
 namespace fujinet::io {
@@ -12,8 +11,9 @@ namespace fujinet::io {
 //
 class FujiBusTransport : public ITransport {
 public:
-    explicit FujiBusTransport(Channel& channel)
+    FujiBusTransport(Channel& channel, IFramer& framer)
         : _channel(channel)
+        , _framer(framer)
         , _nextRequestId(1)
     {}
 
@@ -29,9 +29,9 @@ public:
     bool receiveResponse(IOResponse& outResp);
 
 private:
-    Channel&                _channel;
-    std::vector<std::uint8_t> _rxBuffer;
-    RequestID               _nextRequestId;
+    Channel&   _channel;
+    IFramer&   _framer;
+    RequestID  _nextRequestId;
 };
 
 } // namespace fujinet::io

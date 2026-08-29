@@ -2,6 +2,7 @@
 #include "doctest.h"
 
 #include "fujinet/io/transport/fujibus_transport.h"
+#include "fujinet/io/transport/slip_framer.h"
 #include "fujinet/io/protocol/fuji_bus_packet.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/io/core/channel.h"
@@ -16,6 +17,7 @@ namespace {
 
 using fujinet::io::Channel;
 using fujinet::io::FujiBusTransport;
+using fujinet::io::SlipFramer;
 using fujinet::io::IORequest;
 using fujinet::io::IOResponse;
 using fujinet::io::StatusCode;
@@ -55,7 +57,8 @@ private:
 TEST_CASE("FujiBusTransport: request params are NOT status (receive maps params verbatim)")
 {
     FakeChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     // Build a request packet with *two params* that are meaningful to the request
     // (e.g. startIndex, maxPayloadBytes). These must not be treated as status.
@@ -92,7 +95,8 @@ TEST_CASE("FujiBusTransport: request params are NOT status (receive maps params 
 TEST_CASE("FujiBusTransport: responses use param[0] as status (receiveResponse maps status)")
 {
     FakeChannel ch;
-    FujiBusTransport t(ch);
+    SlipFramer slipFramer;
+    FujiBusTransport t(ch, slipFramer);
 
     // Build a response packet:
     // param[0] = StatusCode (our convention)

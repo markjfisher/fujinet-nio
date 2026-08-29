@@ -1,6 +1,7 @@
 #include "fujinet/core/bootstrap.h"
 
 #include "fujinet/io/transport/fujibus_transport.h"
+#include "fujinet/io/transport/slip_framer.h"
 #include "fujinet/config/fuji_config.h"
 // #include "fujinet/io/transport/iec_transport.h"
 // etc.
@@ -32,7 +33,8 @@ io::ITransport* setup_transports(FujinetCore& core,
 
     switch (profile.primaryTransport) {
     case TransportKind::FujiBus: {
-        auto* t = new io::FujiBusTransport(channel);
+        auto* framer = new io::SlipFramer();
+        auto* t = new io::FujiBusTransport(channel, *framer);
         core.addTransport(t);
         primary = t;
         break;

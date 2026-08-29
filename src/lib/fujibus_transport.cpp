@@ -5,8 +5,6 @@
 #include "fujinet/core/logging.h"
 #include "fujinet/core/utils.h"
 
-#include <algorithm>  // for std::find
-
 namespace fujinet::io {
 
 static constexpr const char* TAG = "fujibus";
@@ -14,22 +12,11 @@ static constexpr const char* TAG = "fujibus";
 using fujinet::core::log_hexdump;
 using fujinet::io::protocol::FujiBusPacket;
 using fujinet::io::protocol::ByteBuffer;
-using fujinet::io::protocol::SlipByte;
 using fujinet::io::protocol::WireDeviceId;
 
 void FujiBusTransport::poll()
 {
-    std::uint8_t temp[256];
-
-    while (_channel.available()) {
-        std::size_t n = _channel.read(temp, sizeof(temp));
-        if (n == 0) {
-            break;
-        }
-        _rxBuffer.insert(_rxBuffer.end(), temp, temp + n);
-    }
-
-    // All framing is handled in receive() via SLIP + FujiBusPacket.
+    _framer.poll(_channel);
 }
 
 bool FujiBusTransport::supports_work_wait() const
@@ -39,75 +26,20 @@ bool FujiBusTransport::supports_work_wait() const
 
 bool FujiBusTransport::wait_for_work(std::chrono::milliseconds timeout)
 {
-    if (!_rxBuffer.empty()) {
-        return true;
-    }
     return _channel.wait_for_readable(timeout);
 }
 
-// Helper: try to extract a single SLIP-framed message from _rxBuffer.
+// FujiBus framing:
 //
-// SLIP uses 0xC0 (END) as a frame delimiter; consecutive END bytes are valid
-// inter-packet separators (RFC 1055).  Finding only the first END and then the
-// immediately following END would extract a spurious empty frame from any run
-// of consecutive delimiters (e.g. a stale trailing END left by an aborted
-// session combined with the next frame's leading END).  Instead we skip the
-// run of consecutive ENDs after the first one to land on the last delimiter
-// before real content, then find the terminating END after the content.
-static bool extractSlipFrame(std::vector<std::uint8_t>& buffer, ByteBuffer& outFrame)
-{
-    const auto end_marker = to_byte(SlipByte::End);
-
-    // Find the first END marker (discard any leading noise before it).
-    auto startIt = std::find(buffer.begin(), buffer.end(), end_marker);
-    if (startIt == buffer.end()) {
-        buffer.clear();  // no END in sight — all noise, discard
-        return false;
-    }
-
-    // Skip any run of consecutive END markers.  RFC 1055 treats them as
-    // empty inter-packet separators.  After the loop, startIt points to the
-    // last END in the leading run — the actual frame-start delimiter — and
-    // contentIt points to the first non-END byte (the payload).
-    auto contentIt = std::next(startIt);
-    while (contentIt != buffer.end() && *contentIt == end_marker) {
-        startIt = contentIt;
-        ++contentIt;
-    }
-
-    if (contentIt == buffer.end()) {
-        // Buffer is all END markers — keep just the last one; it may be the
-        // start of a frame whose payload has not arrived yet.
-        buffer.erase(buffer.begin(), startIt);
-        return false;
-    }
-
-    // Find the terminating END after the payload.
-    auto endIt = std::find(contentIt, buffer.end(), end_marker);
-    if (endIt == buffer.end()) {
-        // Incomplete frame — discard noise before startIt and wait.
-        buffer.erase(buffer.begin(), startIt);
-        return false;
-    }
-
-    // Complete frame: [startIt (END) ... endIt (END)] inclusive.
-    outFrame.clear();
-    outFrame.insert(outFrame.end(), startIt, std::next(endIt));
-    buffer.erase(buffer.begin(), std::next(endIt));
-    return true;
-}
-
-// SLIP + FujiBus framing:
-//
-//  - poll() accumulates raw bytes from the Channel into _rxBuffer.
-//  - receive() looks for one full SLIP frame (END ... END).
+//  - poll() delegates to _framer which accumulates raw bytes from the Channel.
+//  - receive() asks _framer for the next complete packet.
 //  - FujiBusPacket::fromSerialized() parses that into a FujiBusPacket.
 //  - We then map FujiBusPacket → IORequest.
 bool FujiBusTransport::receive(IORequest& outReq)
 {
     ByteBuffer frame;
-    if (!extractSlipFrame(_rxBuffer, frame)) {
-        // No complete SLIP frame yet.
+    if (!_framer.nextPacket(frame)) {
+        // No complete frame yet.
         return false;
     }
 
@@ -197,14 +129,14 @@ void FujiBusTransport::send(const IOResponse& resp)
 
     ByteBuffer serialized = packet.serialize();
     if (!serialized.empty()) {
-        _channel.write(serialized.data(), serialized.size());
+        _framer.sendPacket(_channel, serialized);
     }
 }
 
 bool FujiBusTransport::receiveResponse(IOResponse& outResp)
 {
     ByteBuffer frame;
-    if (!extractSlipFrame(_rxBuffer, frame)) {
+    if (!_framer.nextPacket(frame)) {
         return false;
     }
 
