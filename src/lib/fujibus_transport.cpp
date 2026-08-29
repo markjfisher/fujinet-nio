@@ -93,9 +93,18 @@ static bool extractSlipFrame(std::vector<std::uint8_t>& buffer, ByteBuffer& outF
 bool FujiBusTransport::receive(IORequest& outReq)
 {
     ByteBuffer frame;
-    if (!extractSlipFrame(_rxBuffer, frame)) {
-        // No complete SLIP frame yet.
-        return false;
+    /* Consecutive SLIP_END (0xC0) bytes are normal inter-packet separators per
+     * RFC 1055.  Discard empty frames (C0 C0 with no payload) silently so that
+     * a stale trailing END in _rxBuffer does not permanently misframe every
+     * subsequent request from the host. */
+    while (true) {
+        if (!extractSlipFrame(_rxBuffer, frame)) {
+            // No complete SLIP frame yet.
+            return false;
+        }
+        if (frame.size() > 2) break;  // non-empty: has at least one payload byte
+        // frame is exactly C0 C0 — an empty SLIP delimiter, not a packet
+        FN_LOGD(TAG, "empty SLIP delimiter discarded");
     }
 
     auto packetPtr = FujiBusPacket::fromSerialized(frame);
@@ -191,8 +200,12 @@ void FujiBusTransport::send(const IOResponse& resp)
 bool FujiBusTransport::receiveResponse(IOResponse& outResp)
 {
     ByteBuffer frame;
-    if (!extractSlipFrame(_rxBuffer, frame)) {
-        return false;
+    while (true) {
+        if (!extractSlipFrame(_rxBuffer, frame)) {
+            return false;
+        }
+        if (frame.size() > 2) break;
+        FN_LOGD(TAG, "empty SLIP delimiter discarded");
     }
 
     auto packetPtr = FujiBusPacket::fromSerialized(frame);
