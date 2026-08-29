@@ -16,7 +16,7 @@ idf_component_register(
         lib/application_state_service_init.cpp
         lib/boot_mount.cpp
         lib/bootstrap.cpp
-        lib/build_profile/esp32.cpp
+        platform/esp32/build_profile.cpp
         lib/clock_device.cpp
         lib/clock_device_init.cpp
         lib/diagnostic_app_store_provider.cpp
