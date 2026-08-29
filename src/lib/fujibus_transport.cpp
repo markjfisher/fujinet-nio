@@ -46,40 +46,53 @@ bool FujiBusTransport::wait_for_work(std::chrono::milliseconds timeout)
 }
 
 // Helper: try to extract a single SLIP-framed message from _rxBuffer.
-// We look for: SlipByte::End ... SlipByte::End, and return that span (inclusive).
+//
+// SLIP uses 0xC0 (END) as a frame delimiter; consecutive END bytes are valid
+// inter-packet separators (RFC 1055).  Finding only the first END and then the
+// immediately following END would extract a spurious empty frame from any run
+// of consecutive delimiters (e.g. a stale trailing END left by an aborted
+// session combined with the next frame's leading END).  Instead we skip the
+// run of consecutive ENDs after the first one to land on the last delimiter
+// before real content, then find the terminating END after the content.
 static bool extractSlipFrame(std::vector<std::uint8_t>& buffer, ByteBuffer& outFrame)
 {
-    // Find the first END marker.
-    auto startIt = std::find(
-        buffer.begin(),
-        buffer.end(),
-        to_byte(SlipByte::End)
-    );
+    const auto end_marker = to_byte(SlipByte::End);
+
+    // Find the first END marker (discard any leading noise before it).
+    auto startIt = std::find(buffer.begin(), buffer.end(), end_marker);
     if (startIt == buffer.end()) {
-        // No START/END marker yet.
+        buffer.clear();  // no END in sight — all noise, discard
         return false;
     }
 
-    // Find the next END marker after start.
-    auto endIt = std::find(
-        std::next(startIt),
-        buffer.end(),
-        to_byte(SlipByte::End)
-    );
+    // Skip any run of consecutive END markers.  RFC 1055 treats them as
+    // empty inter-packet separators.  After the loop, startIt points to the
+    // last END in the leading run — the actual frame-start delimiter — and
+    // contentIt points to the first non-END byte (the payload).
+    auto contentIt = std::next(startIt);
+    while (contentIt != buffer.end() && *contentIt == end_marker) {
+        startIt = contentIt;
+        ++contentIt;
+    }
+
+    if (contentIt == buffer.end()) {
+        // Buffer is all END markers — keep just the last one; it may be the
+        // start of a frame whose payload has not arrived yet.
+        buffer.erase(buffer.begin(), startIt);
+        return false;
+    }
+
+    // Find the terminating END after the payload.
+    auto endIt = std::find(contentIt, buffer.end(), end_marker);
     if (endIt == buffer.end()) {
-        // We have a start but no complete frame yet.
-        // Optionally: discard noise before startIt.
-        if (startIt != buffer.begin()) {
-            buffer.erase(buffer.begin(), startIt);
-        }
+        // Incomplete frame — discard noise before startIt and wait.
+        buffer.erase(buffer.begin(), startIt);
         return false;
     }
 
-    // We have a complete frame: [startIt, endIt].
+    // Complete frame: [startIt (END) ... endIt (END)] inclusive.
     outFrame.clear();
     outFrame.insert(outFrame.end(), startIt, std::next(endIt));
-
-    // Erase everything up to and including endIt from the buffer.
     buffer.erase(buffer.begin(), std::next(endIt));
     return true;
 }
@@ -93,18 +106,9 @@ static bool extractSlipFrame(std::vector<std::uint8_t>& buffer, ByteBuffer& outF
 bool FujiBusTransport::receive(IORequest& outReq)
 {
     ByteBuffer frame;
-    /* Consecutive SLIP_END (0xC0) bytes are normal inter-packet separators per
-     * RFC 1055.  Discard empty frames (C0 C0 with no payload) silently so that
-     * a stale trailing END in _rxBuffer does not permanently misframe every
-     * subsequent request from the host. */
-    while (true) {
-        if (!extractSlipFrame(_rxBuffer, frame)) {
-            // No complete SLIP frame yet.
-            return false;
-        }
-        if (frame.size() > 2) break;  // non-empty: has at least one payload byte
-        // frame is exactly C0 C0 — an empty SLIP delimiter, not a packet
-        FN_LOGD(TAG, "empty SLIP delimiter discarded");
+    if (!extractSlipFrame(_rxBuffer, frame)) {
+        // No complete SLIP frame yet.
+        return false;
     }
 
     auto packetPtr = FujiBusPacket::fromSerialized(frame);
@@ -200,12 +204,8 @@ void FujiBusTransport::send(const IOResponse& resp)
 bool FujiBusTransport::receiveResponse(IOResponse& outResp)
 {
     ByteBuffer frame;
-    while (true) {
-        if (!extractSlipFrame(_rxBuffer, frame)) {
-            return false;
-        }
-        if (frame.size() > 2) break;
-        FN_LOGD(TAG, "empty SLIP delimiter discarded");
+    if (!extractSlipFrame(_rxBuffer, frame)) {
+        return false;
     }
 
     auto packetPtr = FujiBusPacket::fromSerialized(frame);
