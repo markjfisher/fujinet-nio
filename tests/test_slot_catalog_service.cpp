@@ -126,6 +126,31 @@ TEST_CASE("SlotCatalogService owns canonical put get and delete operations")
     CHECK(device.handle(get).status == StatusCode::DeviceNotFound);
 }
 
+TEST_CASE("SlotCatalogService rejects unresolved relative put without replacing a slot")
+{
+    StorageManager storage;
+    CHECK(storage.registerFileSystem(
+        std::make_unique<fujinet::tests::MemoryFileSystem>("host")));
+    auto store = std::make_shared<AppStore>(storage);
+    SlotCatalogService device(storage, store);
+
+    IORequest put{};
+    put.command = static_cast<std::uint16_t>(SlotCatalogCommand::Put);
+    put.payload = make_slot_catalog_put_request(7, 0, "host:/known.adf");
+    REQUIRE(device.handle(put).status == StatusCode::Ok);
+
+    put.payload = make_slot_catalog_put_request(7, 0, "relative.adf");
+    CHECK(device.handle(put).status == StatusCode::DeviceNotFound);
+
+    IORequest get{};
+    get.command = static_cast<std::uint16_t>(SlotCatalogCommand::Get);
+    get.payload = make_slot_catalog_get_request(7);
+    const auto response = device.handle(get);
+    REQUIRE(response.status == StatusCode::Ok);
+    CHECK(std::string(response.payload.begin() + 5, response.payload.end()) ==
+          "host:/known.adf");
+}
+
 TEST_CASE("SlotCatalogService returns sparse ranges and URI tails")
 {
     StorageManager storage;
