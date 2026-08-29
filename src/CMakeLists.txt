@@ -73,6 +73,7 @@ idf_component_register(
         lib/path_resolvers/tnfs_relative_resolver.cpp
         lib/path_resolvers/tnfs_uri_resolver.cpp
         lib/routing_manager.cpp
+        lib/slip_framer.cpp
         lib/slot_catalog.cpp
         lib/slot_catalog_service.cpp
         lib/storage_manager.cpp
