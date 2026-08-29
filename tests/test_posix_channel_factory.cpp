@@ -21,7 +21,7 @@ using namespace fujinet;
 namespace {
 
 build::BuildProfile profile_for(build::ChannelKind channel,
-                                build::TransportKind transport = build::TransportKind::FujiBus,
+                                build::TransportKind transport = build::TransportKind::FujiBusSlip,
                                 build::Machine machine = build::Machine::Generic)
 {
     build::BuildProfile profile{};
@@ -147,7 +147,7 @@ TEST_CASE("POSIX channel factory wraps Atari FujiBus UDP channel with NetSIO ada
 
     auto channel = platform::create_channel_for_profile(
         profile_for(build::ChannelKind::UdpSocket,
-                    build::TransportKind::FujiBus,
+                    build::TransportKind::FujiBusSlip,
                     build::Machine::Atari8Bit),
         cfg);
     REQUIRE(channel != nullptr);

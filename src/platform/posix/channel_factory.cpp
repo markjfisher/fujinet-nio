@@ -43,8 +43,9 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
         std::cout << "[ChannelFactory] Using UDP channel (NetSIO) to " << host << ":" << port << std::endl;
 
         auto udp = create_udp_channel(host, port);
+        // FujiBusNative (Zorro) will use its own ChannelKind when available; not handled here.
         if (profile.machine == build::Machine::Atari8Bit &&
-            profile.primaryTransport == build::TransportKind::FujiBus) {
+            profile.primaryTransport == build::TransportKind::FujiBusSlip) {
             std::cout << "[ChannelFactory] Wrapping UDP channel as FujiBus over NetSIO.\n";
             return posix::create_atari_netsio_fujibus_channel(std::move(udp));
         }

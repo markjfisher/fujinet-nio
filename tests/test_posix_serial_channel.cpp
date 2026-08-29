@@ -176,7 +176,7 @@ TEST_CASE("POSIX channel factory creates SerialPort channel from config path")
 
     build::BuildProfile profile{};
     profile.primaryChannel = build::ChannelKind::SerialPort;
-    profile.primaryTransport = build::TransportKind::FujiBus;
+    profile.primaryTransport = build::TransportKind::FujiBusSlip;
 
     auto channel = platform::create_channel_for_profile(profile, cfg);
     CHECK(channel != nullptr);

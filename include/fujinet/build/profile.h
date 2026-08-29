@@ -16,9 +16,9 @@ enum class Machine {
 };
 
 // Logical protocol / framing on the link.
-// (FujiBus is SLIP + FujiBus header framing)
 enum class TransportKind {
-    FujiBus,
+    FujiBusSlip,   // FujiBus over SLIP framing (byte-stream channels)
+    FujiBusNative, // FujiBus over packet-native channels (Zorro, SPI, floppy/Pico)
     SIO,
     IWM,
     IEC,
