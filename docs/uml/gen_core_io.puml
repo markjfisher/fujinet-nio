@@ -655,6 +655,23 @@ __
 -_configStore : std::unique_ptr<config::FujiConfigStore>
 -_resetHandler : ResetHandler
 }
+abstract "io::IFramer" as C_0014582132463805045490
+abstract C_0014582132463805045490 {
++~IFramer() constexpr = default : void
+..
+{abstract} +nextPacket(ByteBuffer & outPacket) = 0 : bool
+{abstract} +poll(Channel & ch) = 0 : void
+{abstract} +sendPacket(Channel & ch, const ByteBuffer & packet) = 0 : void
+__
+}
+class "io::SlipFramer" as C_0000024426887380157859
+class C_0000024426887380157859 {
++nextPacket(ByteBuffer & outPacket) : bool
++poll(Channel & ch) : void
++sendPacket(Channel & ch, const ByteBuffer & packet) : void
+__
+-_rxBuffer : ByteBuffer
+}
 class "io::AppStore" as C_0017938940343811357840
 class C_0017938940343811357840 {
 +AppStore(fs::StorageManager & storage) : void
@@ -946,7 +963,7 @@ __
 }
 class "io::FujiBusTransport" as C_0003433839086217597071
 class C_0003433839086217597071 {
-+FujiBusTransport(Channel & channel) : void
++FujiBusTransport(Channel & channel, IFramer & framer) : void
 ..
 +poll() : void
 +receive(IORequest & outReq) : bool
@@ -956,8 +973,8 @@ class C_0003433839086217597071 {
 +wait_for_work(std::chrono::milliseconds timeout) : bool
 __
 -_channel : Channel &
+-_framer : IFramer &
 -_nextRequestId : RequestID
--_rxBuffer : std::vector<std::uint8_t>
 }
 class "io::NetworkDeviceDiagnosticsAccessor::SessionRow" as C_0007753937317853453679
 class C_0007753937317853453679 {
@@ -973,6 +990,14 @@ __
 +method : std::uint8_t
 +receivedBodyLen : std::uint32_t
 +url : std::string
+}
+class "io::NativeFramer" as C_0000216212220700142134
+class C_0000216212220700142134 {
++nextPacket(ByteBuffer & outPacket) : bool
++poll(Channel & ch) : void
++sendPacket(Channel & ch, const ByteBuffer & packet) : void
+__
+-_rxBuffer : ByteBuffer
 }
 class "io::ModemDeviceDiagnosticsAccessor::StateRow" as C_0015390871890377655918
 class C_0015390871890377655918 {
@@ -1165,6 +1190,9 @@ C_0015834173540824165561 o-- C_0014462224694841349318 : +contentProfile
 C_0016024516082849980408 ..> C_0002386736627821114488
 C_0016024516082849980408 ..> C_0002942984525013396621
 C_0010069830097413987109 <|-- C_0016024516082849980408
+C_0014582132463805045490 ..> C_0008542343802949846318
+C_0000024426887380157859 ..> C_0008542343802949846318
+C_0014582132463805045490 <|-- C_0000024426887380157859
 C_0017938940343811357840 ..> C_0002332226688905710359
 C_0017938940343811357840 ..> C_0010095979242356174466
 C_0017938940343811357840 ..> C_0006855611607891588110
@@ -1218,8 +1246,11 @@ C_0010069830097413987109 <|-- C_0008366653720214799347
 C_0003433839086217597071 ..> C_0002386736627821114488
 C_0003433839086217597071 ..> C_0002942984525013396621
 C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
+C_0003433839086217597071 --> C_0014582132463805045490 : -_framer
 C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0007753937317853453679 --+ C_0010580021346264420268
+C_0000216212220700142134 ..> C_0008542343802949846318
+C_0014582132463805045490 <|-- C_0000216212220700142134
 C_0015390871890377655918 --+ C_0017366619222000823646
 C_0005138967228563115798 ..> C_0001165583155332036678
 C_0001165583155332036678 --+ C_0005138967228563115798

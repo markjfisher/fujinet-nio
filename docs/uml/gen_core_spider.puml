@@ -852,6 +852,15 @@ __
 -_configStore : std::unique_ptr<config::FujiConfigStore>
 -_resetHandler : ResetHandler
 }
+abstract "io::IFramer" as C_0014582132463805045490
+abstract C_0014582132463805045490 {
++~IFramer() constexpr = default : void
+..
+{abstract} +nextPacket(ByteBuffer & outPacket) = 0 : bool
+{abstract} +poll(Channel & ch) = 0 : void
+{abstract} +sendPacket(Channel & ch, const ByteBuffer & packet) = 0 : void
+__
+}
 class "io::AppStore" as C_0017938940343811357840
 class C_0017938940343811357840 {
 +AppStore(fs::StorageManager & storage) : void
@@ -1132,7 +1141,7 @@ __
 }
 class "io::FujiBusTransport" as C_0003433839086217597071
 class C_0003433839086217597071 {
-+FujiBusTransport(Channel & channel) : void
++FujiBusTransport(Channel & channel, IFramer & framer) : void
 ..
 +poll() : void
 +receive(IORequest & outReq) : bool
@@ -1142,8 +1151,8 @@ class C_0003433839086217597071 {
 +wait_for_work(std::chrono::milliseconds timeout) : bool
 __
 -_channel : Channel &
+-_framer : IFramer &
 -_nextRequestId : RequestID
--_rxBuffer : std::vector<std::uint8_t>
 }
 class "io::ListDirectoryCache" as C_0015963199091497182148
 class C_0015963199091497182148 {
@@ -1831,6 +1840,7 @@ C_0016024516082849980408 ..> C_0002942984525013396621
 C_0016024516082849980408 o-- C_0010708806357379257038 : -_configStore
 C_0016024516082849980408 o-- C_0013064010099190715901 : -_config
 C_0010069830097413987109 <|-- C_0016024516082849980408
+C_0014582132463805045490 ..> C_0008542343802949846318
 C_0017938940343811357840 ..> C_0002332226688905710359
 C_0017938940343811357840 ..> C_0010095979242356174466
 C_0017938940343811357840 ..> C_0006855611607891588110
@@ -1883,6 +1893,7 @@ C_0010069830097413987109 <|-- C_0008366653720214799347
 C_0003433839086217597071 ..> C_0002386736627821114488
 C_0003433839086217597071 ..> C_0002942984525013396621
 C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
+C_0003433839086217597071 --> C_0014582132463805045490 : -_framer
 C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0015963199091497182148 o-- C_0007646493544420080876 : +entries
 C_0013064010099190715901 o-- C_0016837659718836839167 : +general

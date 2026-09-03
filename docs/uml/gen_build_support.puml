@@ -11,7 +11,8 @@ FujiNetPi
 }
 enum "build::TransportKind" as C_0002950475094340712788
 enum C_0002950475094340712788 {
-FujiBus
+FujiBusSlip
+FujiBusNative
 SIO
 IWM
 IEC
