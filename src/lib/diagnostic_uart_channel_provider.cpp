@@ -130,7 +130,7 @@ public:
         });
         out.push_back(DiagCommandSpec{
             .name = "uart.set",
-            .summary = "set one field: baud_rate|data_bits|parity|stop_bits|flow_control|tx_gap_us",
+            .summary = "set one field: baud_rate|data_bits|parity|stop_bits|flow_control|tx_gap_us|tx_byte_gap_us|tx_chunk_size|tx_chunk_gap_us",
             .usage = "uart.set <field> <value>",
             .safe = false,
         });
@@ -198,6 +198,15 @@ private:
         text += "tx_gap_us: ";
         text += std::to_string(c.txGapUs);
         text += "\r\n";
+        text += "tx_byte_gap_us: ";
+        text += std::to_string(c.txByteGapUs);
+        text += "\r\n";
+        text += "tx_chunk_size: ";
+        text += std::to_string(c.txChunkSize);
+        text += "\r\n";
+        text += "tx_chunk_gap_us: ";
+        text += std::to_string(c.txChunkGapUs);
+        text += "\r\n";
         return DiagResult::ok(std::move(text));
     }
 
@@ -229,7 +238,8 @@ private:
         }
         if (args.argv.size() < 3) {
             return DiagResult::invalid_args(
-                "usage: uart.set <baud_rate|data_bits|parity|stop_bits|flow_control|tx_gap_us> <value>");
+                "usage: uart.set <baud_rate|data_bits|parity|stop_bits|flow_control|"
+                "tx_gap_us|tx_byte_gap_us|tx_chunk_size|tx_chunk_gap_us> <value>");
         }
 
         config::UartConfig next = uart->uart_config();
@@ -260,6 +270,24 @@ private:
                 return DiagResult::invalid_args("tx_gap_us must be 0..1000000");
             }
             next.txGapUs = gap;
+        } else if (ascii_iequals(field, "tx_byte_gap_us")) {
+            std::uint32_t gap = 0;
+            if (!parse_decimal_u32(val, gap) || gap > 1000000) {
+                return DiagResult::invalid_args("tx_byte_gap_us must be 0..1000000");
+            }
+            next.txByteGapUs = gap;
+        } else if (ascii_iequals(field, "tx_chunk_size")) {
+            std::uint32_t n = 0;
+            if (!parse_decimal_u32(val, n) || n > 65535) {
+                return DiagResult::invalid_args("tx_chunk_size must be 0..65535");
+            }
+            next.txChunkSize = n;
+        } else if (ascii_iequals(field, "tx_chunk_gap_us")) {
+            std::uint32_t gap = 0;
+            if (!parse_decimal_u32(val, gap) || gap > 1000000) {
+                return DiagResult::invalid_args("tx_chunk_gap_us must be 0..1000000");
+            }
+            next.txChunkGapUs = gap;
         } else {
             return DiagResult::invalid_args("unknown field (see uart.set usage)");
         }

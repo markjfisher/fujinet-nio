@@ -85,6 +85,9 @@ config::UartConfig sio_uart_config(config::UartConfig cfg)
     cfg.parity = config::UartParity::None;
     cfg.stopBits = config::UartStopBits::One;
     cfg.flowControl = config::UartFlowControl::None;
+    cfg.txByteGapUs = 0;
+    cfg.txChunkSize = 0;
+    cfg.txChunkGapUs = 0;
     return cfg;
 }
 

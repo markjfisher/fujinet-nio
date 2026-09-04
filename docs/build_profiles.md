@@ -270,8 +270,11 @@ create_channel_for_profile(const BuildProfile& profile, const FujiConfig& config
 
 The POSIX serial profile reads `channel.serial_port` and the `channel.uart`
 settings from `fujinet.yaml` (`baud_rate`, `data_bits`, `parity`, `stop_bits`,
-and `flow_control`). `FN_SERIAL_PORT` and `FN_SERIAL_BAUD` remain available as
-environment overrides for quick hardware bring-up.
+`flow_control`, `tx_gap_us`, `tx_byte_gap_us`, `tx_chunk_size`, and
+`tx_chunk_gap_us`). `FN_SERIAL_PORT` and `FN_SERIAL_BAUD` remain available as
+environment overrides for quick hardware bring-up. ESP32 `UartGpio` applies
+`tx_byte_gap_us` / `tx_chunk_*` on host-facing UART TX (byte gap wins if both
+are set); POSIX serial currently stores the keys but does not pace writes.
 
 ## ESP32
 

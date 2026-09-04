@@ -1,5 +1,6 @@
 #include "fujinet/platform/esp32/uart_channel.h"
 #include "fujinet/core/logging.h"
+#include "fujinet/io/uart_tx_pacing.h"
 #include "fujinet/platform/esp32/pinmap.h"
 
 #include <cstddef>
@@ -199,13 +200,18 @@ bool UartChannel::apply_hw_parameters(const UartPins& uart_pins)
     }
 
     FN_LOGI(TAG,
-            "UartChannel UART%d baud=%d data=%d parity=%s stop=%s flow=%s",
+            "UartChannel UART%d baud=%d data=%d parity=%s stop=%s flow=%s "
+            "tx_gap_us=%u tx_byte_gap_us=%u tx_chunk_size=%u tx_chunk_gap_us=%u",
             static_cast<int>(_uart_port),
             baud,
             data_bits,
             parity_label(_uart_cfg.parity),
             stop_bits_label(_uart_cfg.stopBits),
-            flow_control_label(_uart_cfg.flowControl));
+            flow_control_label(_uart_cfg.flowControl),
+            static_cast<unsigned>(_uart_cfg.txGapUs),
+            static_cast<unsigned>(_uart_cfg.txByteGapUs),
+            static_cast<unsigned>(_uart_cfg.txChunkSize),
+            static_cast<unsigned>(_uart_cfg.txChunkGapUs));
     return true;
 }
 
@@ -250,6 +256,24 @@ bool UartChannel::reconfigure(const config::UartConfig& cfg)
 {
     if (!_initialized) {
         return false;
+    }
+
+    const bool hw_unchanged =
+        cfg.baudRate == _uart_cfg.baudRate &&
+        cfg.dataBits == _uart_cfg.dataBits &&
+        cfg.parity == _uart_cfg.parity &&
+        cfg.stopBits == _uart_cfg.stopBits &&
+        cfg.flowControl == _uart_cfg.flowControl;
+
+    if (hw_unchanged) {
+        _uart_cfg = cfg;
+        FN_LOGI(TAG,
+                "UART TX pacing tx_gap_us=%u tx_byte_gap_us=%u tx_chunk_size=%u tx_chunk_gap_us=%u",
+                static_cast<unsigned>(_uart_cfg.txGapUs),
+                static_cast<unsigned>(_uart_cfg.txByteGapUs),
+                static_cast<unsigned>(_uart_cfg.txChunkSize),
+                static_cast<unsigned>(_uart_cfg.txChunkGapUs));
+        return true;
     }
 
     const UartPins uart_pins = selected_pins();
@@ -392,20 +416,52 @@ void UartChannel::write(const std::uint8_t* buffer, std::size_t len)
         return;
     }
 
+    // tx_gap_us delays the start of this write only. Byte/chunk pacing waits
+    // until each slice has left the UART, then idles gap_after_us so the host
+    // RBF handler has more than one character time between received bytes.
     if (_uart_cfg.txGapUs != 0) {
         esp_rom_delay_us(_uart_cfg.txGapUs);
     }
 
-    int bytes_written = uart_write_bytes(_uart_port, buffer, len);
-    if (bytes_written < 0) {
-        FN_LOGE(TAG, "uart_write_bytes failed: %d", bytes_written);
+    auto write_bytes = [this](const std::uint8_t* data, std::size_t n) -> bool {
+        int bytes_written = uart_write_bytes(_uart_port, data, n);
+        if (bytes_written < 0) {
+            FN_LOGE(TAG, "uart_write_bytes failed: %d", bytes_written);
+            return false;
+        }
+        if (static_cast<std::size_t>(bytes_written) != n) {
+            FN_LOGW(TAG, "Partial write: %d of %zu bytes", bytes_written, n);
+            return false;
+        }
+        return true;
+    };
+
+    if (!io::uart_tx_pacing_active(
+            _uart_cfg.txByteGapUs, _uart_cfg.txChunkSize, _uart_cfg.txChunkGapUs)) {
+        (void)write_bytes(buffer, len);
         return;
     }
 
-    if (static_cast<std::size_t>(bytes_written) != len) {
-        FN_LOGW(TAG, "Partial write: %d of %zu bytes", bytes_written, len);
+    std::size_t offset = 0;
+    io::UartTxSlice slice;
+    while (io::next_uart_tx_slice(len,
+                                  _uart_cfg.txByteGapUs,
+                                  _uart_cfg.txChunkSize,
+                                  _uart_cfg.txChunkGapUs,
+                                  offset,
+                                  slice)) {
+        if (!write_bytes(buffer + slice.offset, slice.length)) {
+            return;
+        }
+        if (slice.gap_after_us == 0) {
+            continue;
+        }
+        const esp_err_t err = uart_wait_tx_done(_uart_port, MAX_FLUSH_WAIT_TICKS);
+        if (err != ESP_OK) {
+            FN_LOGW(TAG, "uart_wait_tx_done failed: %d", err);
+        }
+        esp_rom_delay_us(slice.gap_after_us);
     }
-
 }
 
 void UartChannel::flushOutput()

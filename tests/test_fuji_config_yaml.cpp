@@ -78,6 +78,10 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.channel.uart.parity != b.channel.uart.parity) return false;
     if (a.channel.uart.stopBits != b.channel.uart.stopBits) return false;
     if (a.channel.uart.flowControl != b.channel.uart.flowControl) return false;
+    if (a.channel.uart.txGapUs != b.channel.uart.txGapUs) return false;
+    if (a.channel.uart.txByteGapUs != b.channel.uart.txByteGapUs) return false;
+    if (a.channel.uart.txChunkSize != b.channel.uart.txChunkSize) return false;
+    if (a.channel.uart.txChunkGapUs != b.channel.uart.txChunkGapUs) return false;
 
     return true;
 }
@@ -706,6 +710,52 @@ channel:
     CHECK(cfg.channel.uart.parity == UartParity::Even);
     CHECK(cfg.channel.uart.stopBits == UartStopBits::Two);
     CHECK(cfg.channel.uart.flowControl == UartFlowControl::RtsCts);
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: UART TX pacing fields load and round-trip")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+
+    const std::string yaml = R"(
+fujinet:
+  device_name: "test-device"
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+devices:
+  modem:
+    enabled: false
+    sniffer_enabled: false
+  cpm:
+    enabled: false
+    ccp_image: ""
+  printer:
+    enabled: false
+channel:
+  uart:
+    baud_rate: 38400
+    tx_gap_us: 0
+    tx_byte_gap_us: 750
+    tx_chunk_size: 16
+    tx_chunk_gap_us: 1000
+)";
+
+    create_file(*primary, "/fujinet.yaml", yaml);
+
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml");
+    FujiConfig cfg = store.load();
+
+    CHECK(cfg.channel.uart.baudRate == 38400u);
+    CHECK(cfg.channel.uart.txGapUs == 0u);
+    CHECK(cfg.channel.uart.txByteGapUs == 750u);
+    CHECK(cfg.channel.uart.txChunkSize == 16u);
+    CHECK(cfg.channel.uart.txChunkGapUs == 1000u);
+
+    FujiConfig original = cfg;
+    store.save(original);
+    FujiConfig loaded = store.load();
+    CHECK(configs_equal(original, loaded));
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: Channel serial port config")

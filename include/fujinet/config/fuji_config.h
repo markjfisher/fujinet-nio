@@ -78,7 +78,10 @@ struct UartConfig {
     UartParity        parity{UartParity::None};
     UartStopBits      stopBits{UartStopBits::One};
     UartFlowControl   flowControl{UartFlowControl::None};
-    std::uint32_t     txGapUs{0};    // Optional pre-write turnaround gap.
+    std::uint32_t     txGapUs{0};      // Delay once before the write; does not pace bytes.
+    std::uint32_t     txByteGapUs{0};  // After each TX byte has left the UART, idle this many µs (0=off).
+    std::uint32_t     txChunkSize{0};  // Chunk size in bytes (0=off). Ignored when txByteGapUs != 0.
+    std::uint32_t     txChunkGapUs{0}; // Idle after each full chunk except the last (0=off).
 };
 
 /// Settings for the logical FujiBus channel (profile-dependent: PTY path on POSIX,
