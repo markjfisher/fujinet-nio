@@ -710,6 +710,9 @@ channel:
     CHECK(cfg.channel.uart.parity == UartParity::Even);
     CHECK(cfg.channel.uart.stopBits == UartStopBits::Two);
     CHECK(cfg.channel.uart.flowControl == UartFlowControl::RtsCts);
+    CHECK(cfg.channel.uart.txByteGapUs == 0u);
+    CHECK(cfg.channel.uart.txChunkSize == 16u);
+    CHECK(cfg.channel.uart.txChunkGapUs == 2000u);
 }
 
 TEST_CASE("YamlFujiConfigStoreFs: UART TX pacing fields load and round-trip")

@@ -6,6 +6,8 @@
 #include <vector>
 
 using fujinet::io::kUartTxByteGapUsAmiga38400Start;
+using fujinet::io::kUartTxChunkGapUsAmiga38400;
+using fujinet::io::kUartTxChunkSizeAmiga38400;
 using fujinet::io::next_uart_tx_slice;
 using fujinet::io::uart_tx_pacing_active;
 using fujinet::io::UartTxSlice;
@@ -96,6 +98,24 @@ TEST_CASE("uart TX pacing: byte gap takes precedence over chunk pacing")
     CHECK(slices[0].length == 1);
     CHECK(slices[0].gap_after_us == 750);
     CHECK(slices[2].gap_after_us == 0);
+}
+
+TEST_CASE("uart TX pacing: product 16/2000 chunks a 512-byte write")
+{
+    CHECK(kUartTxChunkSizeAmiga38400 == 16u);
+    CHECK(kUartTxChunkGapUsAmiga38400 == 2000u);
+    CHECK(uart_tx_pacing_active(0, kUartTxChunkSizeAmiga38400,
+                                kUartTxChunkGapUsAmiga38400));
+
+    const auto slices = plan(512, 0, kUartTxChunkSizeAmiga38400,
+                             kUartTxChunkGapUsAmiga38400);
+    REQUIRE(slices.size() == 32);
+    CHECK(slices[0].length == 16);
+    CHECK(slices[0].gap_after_us == 2000);
+    CHECK(slices[30].gap_after_us == 2000);
+    CHECK(slices[31].offset == 496);
+    CHECK(slices[31].length == 16);
+    CHECK(slices[31].gap_after_us == 0);
 }
 
 TEST_CASE("uart TX pacing: empty write yields no slices")

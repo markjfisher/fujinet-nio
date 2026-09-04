@@ -178,8 +178,8 @@ static void from_yaml(const YAML::Node& node, UartConfig& out)
     out.flowControl = parse_uart_flow_control(get_or<std::string>(node, "flow_control", "none"));
     out.txGapUs      = static_cast<std::uint32_t>(get_or<int>(node, "tx_gap_us", 0));
     out.txByteGapUs  = static_cast<std::uint32_t>(get_or<int>(node, "tx_byte_gap_us", 0));
-    out.txChunkSize  = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_size", 0));
-    out.txChunkGapUs = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_gap_us", 0));
+    out.txChunkSize  = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_size", 16));
+    out.txChunkGapUs = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_gap_us", 2000));
 }
 
 static void from_yaml(const YAML::Node& node, ChannelConfig& out)

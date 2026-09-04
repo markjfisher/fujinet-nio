@@ -5,9 +5,11 @@
 
 namespace fujinet::io {
 
-/// First Amiga RS-232 38,400 experiment: after each character time (~262 µs),
-/// idle this many microseconds so start-to-start spacing matches ~9,600 baud.
+/// First Amiga RS-232 38,400 inter-byte experiment (character time + gap ≈ 9600).
 inline constexpr std::uint32_t kUartTxByteGapUsAmiga38400Start = 750;
+/// Product ESP→host pacing at 38,400: 16-byte bursts, 2000 µs between chunks.
+inline constexpr std::uint32_t kUartTxChunkSizeAmiga38400 = 16;
+inline constexpr std::uint32_t kUartTxChunkGapUsAmiga38400 = 2000;
 
 struct UartTxSlice {
     std::size_t offset{0};
