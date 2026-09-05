@@ -21,6 +21,17 @@ class C_0001279065520068563954 {
 __
 -_fileSystems : std::unordered_map<std::string,std::unique_ptr<IFileSystem>>
 }
+abstract "io::Channel" as C_0008542343802949846318
+abstract C_0008542343802949846318 {
++~Channel() constexpr = default : void
+..
+{abstract} +available() = 0 : bool
+{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
++supports_readable_wait() const : bool
++wait_for_readable(std::chrono::milliseconds timeout) : bool
+{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
+__
+}
 class "io::bytecodec::Reader" as C_0001552565821524910243
 class C_0001552565821524910243 {
 +Reader(const std::uint8_t * data, std::size_t size) : void
@@ -40,6 +51,80 @@ __
 -_begin : const std::uint8_t *
 -_end : const std::uint8_t *
 -_p : const std::uint8_t *
+}
+enum "io::RequestType" as C_0015173710654558847960
+enum C_0015173710654558847960 {
+Command
+Read
+Write
+Open
+Close
+Control
+}
+class "io::IORequest" as C_0002386736627821114488
+class C_0002386736627821114488 {
+__
++command : std::uint16_t
++deviceId : DeviceID
++id : RequestID
++params : std::vector<std::uint32_t>
++payload : std::vector<std::uint8_t>
++type : RequestType
+}
+enum "io::StatusCode" as C_0012496700434923238249
+enum C_0012496700434923238249 {
+Ok
+DeviceNotFound
+InvalidRequest
+DeviceBusy
+NotReady
+IOError
+Timeout
+InternalError
+Unsupported
+}
+class "io::IOResponse" as C_0002942984525013396621
+class C_0002942984525013396621 {
+__
++command : std::uint16_t
++deviceId : DeviceID
++id : RequestID
++payload : std::vector<std::uint8_t>
++status : StatusCode
+}
+class "io::NetworkOpenRequest" as C_0001159279330674149840
+class C_0001159279330674149840 {
+__
++bodyLenHint : std::uint32_t
++flags : std::uint8_t
++headers : std::vector<std::pair<std::string,std::string>>
++method : std::uint8_t
++responseHeaderNamesLower : std::vector<std::string>
++url : std::string
+}
+class "io::NetworkInfo" as C_0007100525671922339382
+class C_0007100525671922339382 {
+__
++contentLength : std::uint64_t
++hasContentLength : bool
++hasHttpStatus : bool
++headersBlock : std::string
++httpStatus : std::uint16_t
+}
+abstract "io::INetworkProtocol" as C_0010613333864250568344
+abstract C_0010613333864250568344 {
++~INetworkProtocol() constexpr = default : void
+..
+{abstract} +close() = 0 : void
+{abstract} +info(NetworkInfo & out) = 0 : StatusCode
++is_streaming() const : bool
+{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
+{abstract} +poll() = 0 : void
+{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof, bool & more_available) = 0 : StatusCode
++requires_sequential_read() const : bool
++requires_sequential_write() const : bool
+{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
+__
 }
 class "io::transport::AtariSioFujiBusFramer" as C_0006392424685935755622
 class C_0006392424685935755622 {
@@ -133,18 +218,6 @@ WaitingForCommand
 WaitingForData
 SendingResponse
 }
-abstract "io::transport::legacy::PacketBasedLegacyTransport" as C_0007145399192091431715
-abstract C_0007145399192091431715 {
-+PacketBasedLegacyTransport(Channel & channel, const BusTraits & traits) : void
-+~PacketBasedLegacyTransport() = default : void
-..
-{abstract} #readDataPacket(std::uint8_t * buf, std::size_t len) = 0 : std::size_t
-+receive(IORequest & outReq) : bool
-+send(const IOResponse & resp) : void
-{abstract} #sendDataPacket(const std::uint8_t * buf, std::size_t len) = 0 : void
-{abstract} #sendStatusPacket(std::uint8_t status) = 0 : void
-__
-}
 abstract "io::transport::legacy::ByteBasedLegacyTransport" as C_0014645015375049587372
 abstract C_0014645015375049587372 {
 +ByteBasedLegacyTransport(Channel & channel, const BusTraits & traits) : void
@@ -160,44 +233,6 @@ abstract C_0014645015375049587372 {
 {abstract} #sendNak() = 0 : void
 {abstract} #writeDataFrame(const std::uint8_t * buf, std::size_t len) = 0 : void
 __
-}
-abstract "io::transport::legacy::BusHardware" as C_0018172480942667473236
-abstract C_0018172480942667473236 {
-+~BusHardware() constexpr = default : void
-..
-{abstract} +available() const = 0 : std::size_t
-{abstract} +commandAsserted() const = 0 : bool
-{abstract} +delayMicroseconds(std::uint32_t us) = 0 : void
-{abstract} +discardInput() = 0 : void
-{abstract} +flush() = 0 : void
-{abstract} +motorAsserted() const = 0 : bool
-{abstract} +poll() = 0 : void
-{abstract} +read(std::uint8_t * buf, std::size_t len) = 0 : std::size_t
-+sendSyncResponseIfNeeded(std::uint8_t ackByte, std::uint16_t writeSize = 0) : bool
-{abstract} +setInterrupt(bool level) = 0 : void
-{abstract} +write(const std::uint8_t * buf, std::size_t len) = 0 : void
-{abstract} +write(std::uint8_t byte) = 0 : void
-__
-}
-class "io::transport::legacy::SioTransport" as C_0007384888606456233527
-class C_0007384888606456233527 {
-+SioTransport(Channel & channel, const build::BuildProfile & profile, const config::NetSioConfig * netsioConfig = nullptr) : void
-+~SioTransport() = default : void
-..
-#commandNeedsData(std::uint8_t command) const : bool
-#expectedDataFrameLength(const cmdFrame_t & frame) const : std::size_t
-+poll() : void
-#readCommandFrame(cmdFrame_t & frame) : bool
-#readDataFrame(std::uint8_t * buf, std::size_t len) : std::size_t
--readDataFrameWithChecksum(std::uint8_t * buf, std::size_t len) : std::size_t
-#sendAck() : void
-#sendComplete() : void
-#sendError() : void
-#sendNak() : void
-#writeDataFrame(const std::uint8_t * buf, std::size_t len) : void
--writeDataFrameWithChecksum(const std::uint8_t * buf, std::size_t len) : void
-__
--_hardware : std::unique_ptr<BusHardware>
 }
 class "io::transport::legacy::NetSIOProtocol" as C_0000916483910605533938
 class C_0000916483910605533938 {
@@ -241,6 +276,36 @@ __
 -_syncRequestNum : std::uint8_t
 -_txBuffer : std::vector<std::uint8_t>
 }
+abstract "io::transport::legacy::PacketBasedLegacyTransport" as C_0007145399192091431715
+abstract C_0007145399192091431715 {
++PacketBasedLegacyTransport(Channel & channel, const BusTraits & traits) : void
++~PacketBasedLegacyTransport() = default : void
+..
+{abstract} #readDataPacket(std::uint8_t * buf, std::size_t len) = 0 : std::size_t
++receive(IORequest & outReq) : bool
++send(const IOResponse & resp) : void
+{abstract} #sendDataPacket(const std::uint8_t * buf, std::size_t len) = 0 : void
+{abstract} #sendStatusPacket(std::uint8_t status) = 0 : void
+__
+}
+abstract "io::transport::legacy::BusHardware" as C_0018172480942667473236
+abstract C_0018172480942667473236 {
++~BusHardware() constexpr = default : void
+..
+{abstract} +available() const = 0 : std::size_t
+{abstract} +commandAsserted() const = 0 : bool
+{abstract} +delayMicroseconds(std::uint32_t us) = 0 : void
+{abstract} +discardInput() = 0 : void
+{abstract} +flush() = 0 : void
+{abstract} +motorAsserted() const = 0 : bool
+{abstract} +poll() = 0 : void
+{abstract} +read(std::uint8_t * buf, std::size_t len) = 0 : std::size_t
++sendSyncResponseIfNeeded(std::uint8_t ackByte, std::uint16_t writeSize = 0) : bool
+{abstract} +setInterrupt(bool level) = 0 : void
+{abstract} +write(const std::uint8_t * buf, std::size_t len) = 0 : void
+{abstract} +write(std::uint8_t byte) = 0 : void
+__
+}
 class "io::transport::legacy::IwmTransport" as C_0009446685585853408367
 class C_0009446685585853408367 {
 +IwmTransport(Channel & channel) : void
@@ -263,56 +328,25 @@ Idle
 Reset
 Enable
 }
-abstract "io::Channel" as C_0008542343802949846318
-abstract C_0008542343802949846318 {
-+~Channel() constexpr = default : void
+class "io::transport::legacy::SioTransport" as C_0007384888606456233527
+class C_0007384888606456233527 {
++SioTransport(Channel & channel, const build::BuildProfile & profile, const config::NetSioConfig * netsioConfig = nullptr) : void
++~SioTransport() = default : void
 ..
-{abstract} +available() = 0 : bool
-{abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
-+supports_readable_wait() const : bool
-+wait_for_readable(std::chrono::milliseconds timeout) : bool
-{abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
+#commandNeedsData(std::uint8_t command) const : bool
+#expectedDataFrameLength(const cmdFrame_t & frame) const : std::size_t
++poll() : void
+#readCommandFrame(cmdFrame_t & frame) : bool
+#readDataFrame(std::uint8_t * buf, std::size_t len) : std::size_t
+-readDataFrameWithChecksum(std::uint8_t * buf, std::size_t len) : std::size_t
+#sendAck() : void
+#sendComplete() : void
+#sendError() : void
+#sendNak() : void
+#writeDataFrame(const std::uint8_t * buf, std::size_t len) : void
+-writeDataFrameWithChecksum(const std::uint8_t * buf, std::size_t len) : void
 __
-}
-enum "io::RequestType" as C_0015173710654558847960
-enum C_0015173710654558847960 {
-Command
-Read
-Write
-Open
-Close
-Control
-}
-class "io::IORequest" as C_0002386736627821114488
-class C_0002386736627821114488 {
-__
-+command : std::uint16_t
-+deviceId : DeviceID
-+id : RequestID
-+params : std::vector<std::uint32_t>
-+payload : std::vector<std::uint8_t>
-+type : RequestType
-}
-enum "io::StatusCode" as C_0012496700434923238249
-enum C_0012496700434923238249 {
-Ok
-DeviceNotFound
-InvalidRequest
-DeviceBusy
-NotReady
-IOError
-Timeout
-InternalError
-Unsupported
-}
-class "io::IOResponse" as C_0002942984525013396621
-class C_0002942984525013396621 {
-__
-+command : std::uint16_t
-+deviceId : DeviceID
-+id : RequestID
-+payload : std::vector<std::uint8_t>
-+status : StatusCode
+-_hardware : std::unique_ptr<BusHardware>
 }
 abstract "io::ITransport" as C_0015529497257294770104
 abstract C_0015529497257294770104 {
@@ -324,353 +358,6 @@ abstract C_0015529497257294770104 {
 +supports_work_wait() const : bool
 +wait_for_work(std::chrono::milliseconds timeout) : bool
 __
-}
-class "io::NetworkOpenRequest" as C_0001159279330674149840
-class C_0001159279330674149840 {
-__
-+bodyLenHint : std::uint32_t
-+flags : std::uint8_t
-+headers : std::vector<std::pair<std::string,std::string>>
-+method : std::uint8_t
-+responseHeaderNamesLower : std::vector<std::string>
-+url : std::string
-}
-class "io::NetworkInfo" as C_0007100525671922339382
-class C_0007100525671922339382 {
-__
-+contentLength : std::uint64_t
-+hasContentLength : bool
-+hasHttpStatus : bool
-+headersBlock : std::string
-+httpStatus : std::uint16_t
-}
-abstract "io::INetworkProtocol" as C_0010613333864250568344
-abstract C_0010613333864250568344 {
-+~INetworkProtocol() constexpr = default : void
-..
-{abstract} +close() = 0 : void
-{abstract} +info(NetworkInfo & out) = 0 : StatusCode
-+is_streaming() const : bool
-{abstract} +open(const NetworkOpenRequest & req) = 0 : StatusCode
-{abstract} +poll() = 0 : void
-{abstract} +read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof, bool & more_available) = 0 : StatusCode
-+requires_sequential_read() const : bool
-+requires_sequential_write() const : bool
-{abstract} +write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) = 0 : StatusCode
-__
-}
-abstract "io::IRequestHandler" as C_0007350464861923755413
-abstract C_0007350464861923755413 {
-+~IRequestHandler() constexpr = default : void
-..
-{abstract} +handleRequest(const IORequest & request) = 0 : IOResponse
-__
-}
-abstract "io::VirtualDevice" as C_0010069830097413987109
-abstract C_0010069830097413987109 {
-+~VirtualDevice() constexpr = default : void
-..
-{abstract} +handle(const IORequest & request) = 0 : IOResponse
-+poll() : void
-__
-}
-class "io::IODeviceManager" as C_0010794218937492142358
-class C_0010794218937492142358 {
-+IODeviceManager() = default : void
-+IODeviceManager(const IODeviceManager &) = deleted : void
-..
-+operator=(const IODeviceManager &) = deleted : IODeviceManager &
-..
-+device_count() const noexcept : std::size_t
-+getDevice(DeviceID id) : VirtualDevice *
-+getDevice(DeviceID id) const : const VirtualDevice *
-+handleRequest(const IORequest & request) : IOResponse
-+pollDevices() : void
-+registerDevice(DeviceID id, std::unique_ptr<VirtualDevice> device) : bool
-+unregisterDevice(DeviceID id) : bool
-__
--_devices : std::unordered_map<DeviceID,std::unique_ptr<VirtualDevice>>
-}
-class "io::RoutingManager" as C_0005273847708888915350
-class C_0005273847708888915350 {
-+RoutingManager(IODeviceManager & deviceManager) : void
-..
-+clearOverrideHandler() : void
-+deviceManager() : IODeviceManager &
-+deviceManager() const : const IODeviceManager &
-+handleRequest(const IORequest & request) : IOResponse
-+hasOverrideHandler() const : bool
-+setOverrideHandler(IRequestHandler * handler) : void
-+setOverrideHandler(std::unique_ptr<IRequestHandler> handler) : void
-__
--_deviceManager : IODeviceManager &
--_overrideHandler : IRequestHandler *
--_overrideOwned : std::unique_ptr<IRequestHandler>
-}
-class "io::IOService" as C_0007645722238685656096
-class C_0007645722238685656096 {
-+IOService(IRequestHandler & handler) : void
-..
-+addTransport(ITransport * transport) : void
-+hasWaitableWorkSource() const : bool
-+serviceOnce() : void
-+waitForWork(std::chrono::milliseconds timeout) : bool
-__
--_handler : IRequestHandler &
--_transports : std::vector<ITransport *>
-}
-class "io::WifiController" as C_0001833966047295824140
-class C_0001833966047295824140 {
-+WifiController(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
-..
-+config() const : const config::WifiConfig &
-+config_mut() : config::WifiConfig &
-+disconnect() : StatusCode
-+link() const : net::INetworkLink *
-+reconnect() : StatusCode
-+save() const : StatusCode
-+scan() const : net::WifiScanResult
-+update(const config::WifiConfig & next, bool persist, bool reconnect) : StatusCode
-__
--_config : config::FujiConfig &
--_linkProvider : LinkProvider
--_store : config::FujiConfigStore *
-}
-class "io::WifiService" as C_0008827731424709454558
-class C_0008827731424709454558 {
-+WifiService(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
-..
-+handle(const IORequest & request) : IOResponse
-__
--_controller : WifiController
--_scanCache : std::vector<net::WifiScanRecord>
--_scanCacheValid : bool
-}
-class "io::ClockDevice" as C_0006193474076654383504
-class C_0006193474076654383504 {
-+ClockDevice() = default : void
-+ClockDevice(config::FujiConfigStore * configStore) : void
-..
-+handle(const IORequest & request) : IOResponse
-+poll() : void
-__
--_configStore : config::FujiConfigStore *
-}
-enum "io::ClockCommand" as C_0006646916694369797139
-enum C_0006646916694369797139 {
-GetTime
-SetTime
-GetTimeFormat
-GetTimezone
-SetTimezone
-SetTimezoneSave
-SyncNetworkTime
-}
-enum "io::TimeFormat" as C_0000686565705824050672
-enum C_0000686565705824050672 {
-SimpleBinary
-ProDOSBinary
-ApeTimeBinary
-TzIsoString
-UtcIsoString
-Apple3SosBinary
-}
-class "io::UriDisplayParts" as C_0017616616105646512159
-class C_0017616616105646512159 {
-__
-+detail : std::string
-+summary : std::string
-}
-class "io::ProtocolRegistry" as C_0011868125949252482179
-class C_0011868125949252482179 {
-+create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
-+register_scheme(std::string schemeLower, Factory factory) : bool
-__
--_factories : std::unordered_map<std::string,Factory>
-}
-enum "io::ContentTranslationType" as C_0018307773322721098785
-enum C_0018307773322721098785 {
-None
-Json
-Xml
-Rss
-}
-class "io::TranslationConfig" as C_0011628969558439618672
-class C_0011628969558439618672 {
-+enabled() const noexcept : bool
-__
-+flags : std::uint8_t
-+selector : std::string
-+type : ContentTranslationType
-}
-abstract "io::IContentTranslator" as C_0017172268465975245210
-abstract C_0017172268465975245210 {
-+~IContentTranslator() constexpr = default : void
-..
-{abstract} +append_body(const std::uint8_t * data, std::size_t len) = 0 : StatusCode
-{abstract} +configure(const TranslationConfig & config) = 0 : StatusCode
-{abstract} +finalize() = 0 : StatusCode
-+needs_full_body() const : bool
-{abstract} +read(std::uint32_t offset, std::uint8_t * out, std::size_t maxBytes, std::uint16_t & actual, bool & eof) const = 0 : StatusCode
-{abstract} +reset() = 0 : void
-{abstract} +translated_size() const = 0 : std::uint64_t
-__
-}
-class "io::NetworkDevice" as C_0006245826437162508923
-class C_0006245826437162508923 {
-+NetworkDevice(ProtocolRegistry registry) : void
-..
--buffer_translation_body(Session & s) : StatusCode
--close_and_free(Session & s) noexcept : void
--configure_translation(Session & s, const TranslationConfig & config) : StatusCode
--ensure_translation_ready(Session & s) : StatusCode
--finalize_translation(Session & s) : StatusCode
-+handle(const IORequest & request) : IOResponse
-{static} -handle_generation(std::uint16_t h) noexcept : std::uint8_t
-{static} -handle_index(std::uint16_t h) noexcept : std::uint8_t
-{static} -make_handle(std::uint8_t idx, std::uint8_t gen) noexcept : std::uint16_t
-{static} -make_translator(ContentTranslationType type) : std::unique_ptr<IContentTranslator>
--pick_lru_victim() noexcept : Session *
-+poll() : void
-{static} -reset_translation(Session & s) noexcept : void
--touch(Session & s) noexcept : void
-{static} -translation_enabled(const Session & s) noexcept : bool
-__
-{static} -IDLE_TIMEOUT_TICKS : const std::uint64_t
-{static} -MAX_SESSIONS : const std::size_t
-{static} -NETPROTO_VERSION : const std::uint8_t
--_registry : ProtocolRegistry
--_sessions : std::array<Session,MAX_SESSIONS>
--_tickNow : std::uint64_t
-}
-class "io::NetworkDevice::Session" as C_0011301425670680674257
-class C_0011301425670680674257 {
-__
-+active : bool
-+awaitingBody : bool
-+bodyLenUnknown : bool
-+completed : bool
-+createdTick : std::uint64_t
-+expectedBodyLen : std::uint32_t
-+flags : std::uint8_t
-+generation : std::uint8_t
-+lastActivityTick : std::uint64_t
-+method : std::uint8_t
-+nextBodyOffset : std::uint32_t
-+proto : std::unique_ptr<INetworkProtocol>
-+receivedBodyLen : std::uint32_t
-+responseBodyBuffering : bool
-+responseBodyCache : std::string
-+responseBodyCached : bool
-+translatedResultSize : std::uint64_t
-+translation : TranslationConfig
-+translationReady : bool
-+translator : std::unique_ptr<IContentTranslator>
-+url : std::string
-}
-class "io::NetworkDeviceDiagnosticsAccessor" as C_0010580021346264420268
-class C_0010580021346264420268 {
-{static} +close(NetworkDevice & dev, std::uint16_t handle) noexcept : bool
-{static} +close_all(NetworkDevice & dev) noexcept : std::size_t
-{static} +sessions(const NetworkDevice & dev) : std::vector<SessionRow>
-__
-}
-class "io::DiskDevice" as C_0005932353517374970487
-class C_0005932353517374970487 {
-+DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
-+DiskDevice(fs::StorageManager & storage) : void
-..
--clear_runtime_mount(std::size_t slotIndex) : void
--clear_runtime_mounts() : bool
-+configure_boot_mount(std::string configUri, bool readOnly) : void
-+disk_service() : disk::DiskService &
-+disk_service() const : const disk::DiskService &
-+handle(const IORequest & request) : IOResponse
--load_runtime_mounts() : bool
-+poll() : void
-+restore_runtime_mounts() : std::vector<std::size_t>
--save_runtime_mounts() : bool
--set_runtime_mount(std::size_t slotIndex, RuntimeMountState state) : void
-__
-{static} -DISKPROTO_VERSION : const std::uint8_t
--_bootConfigUri : std::string
--_bootReadOnly : bool
--_runtimeMounts : std::vector<std::optional<RuntimeMountState>>
--_storage : fs::StorageManager &
--_svc : disk::DiskService
-}
-class "io::DiskDevice::RuntimeMountState" as C_0016408095638929073935
-class C_0016408095638929073935 {
-__
-+mode : std::string
-+sectorSizeHint : std::uint16_t
-+uri : std::string
-}
-class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
-class C_0016910926688454257733 {
-{static} +slots(const DiskDevice & dev) : std::vector<disk::DiskSlotInfo>
-__
-}
-class "io::JsonContentTranslator" as C_0006788839814876680044
-class C_0006788839814876680044 {
-+append_body(const std::uint8_t * data, std::size_t len) : StatusCode
-+configure(const TranslationConfig & config) : StatusCode
-+finalize() : StatusCode
-+read(std::uint32_t offset, std::uint8_t * out, std::size_t maxBytes, std::uint16_t & actual, bool & eof) const : StatusCode
-+reset() : void
-+translated_size() const : std::uint64_t
-__
--_body : std::string
--_config : TranslationConfig
--_translated : std::string
-}
-enum "io::RequestContentProfile" as C_0014462224694841349318
-enum C_0014462224694841349318 {
-None
-JsonBody
-FormBody
-TextBody
-}
-class "io::OpenExtensions" as C_0015834173540824165561
-class C_0015834173540824165561 {
-__
-+contentProfile : RequestContentProfile
-+translation : TranslationConfig
-}
-class "io::FujiDevice" as C_0016024516082849980408
-class C_0016024516082849980408 {
-+FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore) : void
-..
-+config() const : const config::FujiConfig &
-+config_mut() : config::FujiConfig &
-+config_store() : config::FujiConfigStore *
-+handle(const IORequest & request) : IOResponse
--handle_reset(const IORequest & request) : IOResponse
--handle_unknown(const IORequest & request) : IOResponse
--load_config() : void
-+poll() : void
-+start() : void
-__
--_config : config::FujiConfig
--_configStore : std::unique_ptr<config::FujiConfigStore>
--_resetHandler : ResetHandler
-}
-abstract "io::IFramer" as C_0014582132463805045490
-abstract C_0014582132463805045490 {
-+~IFramer() constexpr = default : void
-..
-{abstract} +nextPacket(ByteBuffer & outPacket) = 0 : bool
-{abstract} +poll(Channel & ch) = 0 : void
-{abstract} +sendPacket(Channel & ch, const ByteBuffer & packet) = 0 : void
-__
-}
-class "io::SlipFramer" as C_0000024426887380157859
-class C_0000024426887380157859 {
-+nextPacket(ByteBuffer & outPacket) : bool
-+poll(Channel & ch) : void
-+sendPacket(Channel & ch, const ByteBuffer & packet) : void
-__
--_rxBuffer : ByteBuffer
 }
 class "io::AppStore" as C_0017938940343811357840
 class C_0017938940343811357840 {
@@ -726,109 +413,13 @@ __
 +more : bool
 +startIndex : std::uint16_t
 }
-class "io::FileDevice" as C_0018348317585229177251
-class C_0018348317585229177251 {
-+FileDevice(fs::StorageManager & storage) : void
+abstract "io::VirtualDevice" as C_0010069830097413987109
+abstract C_0010069830097413987109 {
++~VirtualDevice() constexpr = default : void
 ..
-+handle(const IORequest & request) : IOResponse
--handle_list_directory(const IORequest & request) : IOResponse
--handle_make_directory(const IORequest & request) : IOResponse
--handle_read_file(const IORequest & request) : IOResponse
--handle_resolve_path(const IORequest & request) : IOResponse
--handle_stat(const IORequest & request) : IOResponse
--handle_write_file(const IORequest & request) : IOResponse
+{abstract} +handle(const IORequest & request) = 0 : IOResponse
 +poll() : void
 __
--_storage : fs::StorageManager &
-}
-class "io::HostService" as C_0014542562225987093978
-class C_0014542562225987093978 {
-+HostService(fs::StorageManager & storage) : void
-..
-+handle(const IORequest & request) : IOResponse
-__
--_storage : fs::StorageManager &
-}
-class "io::HostState" as C_0000340960947726784289
-class C_0000340960947726784289 {
-+HostState(fs::StorageManager & storage) : void
-..
-+delete_history_index(std::string_view indexText) : bool
-+delete_history_index(std::size_t index) : bool
-+format_history(std::string * text) : bool
-+get_current_host(std::string * uri, std::string * displayPath = nullptr) : bool
--parse_index(std::string_view text, std::size_t * index) const : bool
--read_history(std::vector<std::string> & entries) : bool
-+resolve_target(std::string_view spec, std::string & uri, std::string * displayPath = nullptr) : bool
-+set_current_host(std::string_view spec) : bool
-+set_current_host_index(std::string_view indexText) : bool
-+set_current_host_index(std::size_t index) : bool
--update_history(std::string_view uri) : bool
--write_history(const std::vector<std::string> & entries) : bool
--write_value(std::string_view key, std::string_view value) : bool
-__
--_storage : fs::StorageManager &
-{static} +kCurrentDisplayPathKey : const char *const
-{static} +kCurrentHostKey : const char *const
-{static} +kHostHistoryKey : const char *const
-{static} +kHostHistoryMax : const std::size_t
-{static} +kNamespace : const char *const
-}
-class "io::SlotCatalog" as C_0008803738469954244850
-class C_0008803738469954244850 {
-+SlotCatalog(AppStore & store) : void
-..
--ensure_index() : bool
-+get(std::uint8_t index, Entry & out) : bool
-+invalidate() : void
-+note_delete(std::string_view ns, std::string_view key) : void
-+note_write(std::string_view ns, std::string_view key) : void
--occupied(std::uint8_t index) const : bool
-{static} -parse_slot_key(std::string_view ns, std::string_view key, std::uint8_t & index) : bool
-+put(std::uint8_t index, std::uint8_t flags, std::string_view uri, Entry & out) : bool
-+range(std::uint8_t lower, std::uint8_t upper, std::uint8_t cursor, std::uint8_t requestFlags, std::uint8_t maxUriBytes, std::uint16_t maxPayloadBytes, RangeResult & out) : bool
-+remove(std::uint8_t index, bool & deleted) : bool
--set_occupied(std::uint8_t index, bool value) : void
-{static} -slot_key(std::uint8_t index) : std::string
-__
--_indexValid : bool
--_occupancy : std::array<std::uint8_t,32>
--_store : AppStore &
-{static} +kEntryReadOnly : const std::uint8_t
-{static} +kEntryUriTruncated : const std::uint8_t
-{static} +kEntryValid : const std::uint8_t
-{static} +kRequestFormatted : const std::uint8_t
-{static} +kRequestTailUri : const std::uint8_t
-{static} +kResponseMore : const std::uint8_t
-}
-class "io::SlotCatalog::Entry" as C_0006689317867316634981
-class C_0006689317867316634981 {
-__
-+flags : std::uint8_t
-+index : std::uint8_t
-+uri : std::string
-}
-class "io::SlotCatalog::RangeResult" as C_0000899107286476895968
-class C_0000899107286476895968 {
-__
-+entries : std::vector<Entry>
-+more : bool
-+nextIndex : std::uint8_t
-+presence : std::vector<std::uint8_t>
-}
-class "io::SlotCatalogService" as C_0012659306769564974612
-class C_0012659306769564974612 {
-+SlotCatalogService(fs::StorageManager & storage, std::shared_ptr<AppStore> store) : void
-..
-+handle(const IORequest & request) : IOResponse
--handle_delete(const IORequest & request) : IOResponse
--handle_get(const IORequest & request) : IOResponse
--handle_put(const IORequest & request) : IOResponse
--handle_range(const IORequest & request) : IOResponse
-__
--_catalog : SlotCatalog
--_storage : fs::StorageManager &
--_store : std::shared_ptr<AppStore>
 }
 class "io::ModemDevice" as C_0012713930330229444348
 class C_0012713930330229444348 {
@@ -925,79 +516,118 @@ class C_0017366619222000823646 {
 {static} +state(const ModemDevice & d) noexcept : StateRow
 __
 }
-class "io::StubNetworkProtocol" as C_0011683483391837494806
-class C_0011683483391837494806 {
-+close() : void
-+info(NetworkInfo & out) : StatusCode
-+open(const NetworkOpenRequest & req) : StatusCode
-+openRequest() const noexcept : const NetworkOpenRequest &
-+poll() : void
-+read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof, bool & more_available) : StatusCode
-+write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) : StatusCode
-__
--_body : std::vector<std::uint8_t>
--_contentLength : std::uint64_t
--_headersBlock : std::string
--_httpStatus : std::uint16_t
--_openReq : NetworkOpenRequest
--_requestBody : std::vector<std::uint8_t>
+enum "io::ClockCommand" as C_0006646916694369797139
+enum C_0006646916694369797139 {
+GetTime
+SetTime
+GetTimeFormat
+GetTimezone
+SetTimezone
+SetTimezoneSave
+SyncNetworkTime
 }
-class "io::AppStoreService" as C_0008366653720214799347
-class C_0008366653720214799347 {
-+AppStoreService(std::shared_ptr<AppStore> store) : void
+enum "io::TimeFormat" as C_0000686565705824050672
+enum C_0000686565705824050672 {
+SimpleBinary
+ProDOSBinary
+ApeTimeBinary
+TzIsoString
+UtcIsoString
+Apple3SosBinary
+}
+class "io::SlotCatalog" as C_0008803738469954244850
+class C_0008803738469954244850 {
++SlotCatalog(AppStore & store) : void
 ..
-+handle(const IORequest & request) : IOResponse
--handle_delete(const IORequest & request) : IOResponse
--handle_list(const IORequest & request) : IOResponse
--handle_read(const IORequest & request) : IOResponse
--handle_stat(const IORequest & request) : IOResponse
--handle_write(const IORequest & request) : IOResponse
+-ensure_index() : bool
++get(std::uint8_t index, Entry & out) : bool
++invalidate() : void
++note_delete(std::string_view ns, std::string_view key) : void
++note_write(std::string_view ns, std::string_view key) : void
+-occupied(std::uint8_t index) const : bool
+{static} -parse_slot_key(std::string_view ns, std::string_view key, std::uint8_t & index) : bool
++put(std::uint8_t index, std::uint8_t flags, std::string_view uri, Entry & out) : bool
++range(std::uint8_t lower, std::uint8_t upper, std::uint8_t cursor, std::uint8_t requestFlags, std::uint8_t maxUriBytes, std::uint16_t maxPayloadBytes, RangeResult & out) : bool
++remove(std::uint8_t index, bool & deleted) : bool
+-set_occupied(std::uint8_t index, bool value) : void
+{static} -slot_key(std::uint8_t index) : std::string
 __
--_store : std::shared_ptr<AppStore>
+-_indexValid : bool
+-_occupancy : std::array<std::uint8_t,32>
+-_store : AppStore &
+{static} +kEntryReadOnly : const std::uint8_t
+{static} +kEntryUriTruncated : const std::uint8_t
+{static} +kEntryValid : const std::uint8_t
+{static} +kRequestFormatted : const std::uint8_t
+{static} +kRequestTailUri : const std::uint8_t
+{static} +kResponseMore : const std::uint8_t
 }
-class "io::Prefix" as C_0003612394856745364043
-class C_0003612394856745364043 {
+class "io::SlotCatalog::Entry" as C_0006689317867316634981
+class C_0006689317867316634981 {
 __
-+key : std::string
-+ns : std::string
-}
-class "io::FujiBusTransport" as C_0003433839086217597071
-class C_0003433839086217597071 {
-+FujiBusTransport(Channel & channel, IFramer & framer) : void
-..
-+poll() : void
-+receive(IORequest & outReq) : bool
-+receiveResponse(IOResponse & outResp) : bool
-+send(const IOResponse & resp) : void
-+supports_work_wait() const : bool
-+wait_for_work(std::chrono::milliseconds timeout) : bool
-__
--_channel : Channel &
--_framer : IFramer &
--_nextRequestId : RequestID
-}
-class "io::NetworkDeviceDiagnosticsAccessor::SessionRow" as C_0007753937317853453679
-class C_0007753937317853453679 {
-__
-+active : bool
-+awaitingBody : bool
-+completed : bool
-+createdTick : std::uint64_t
-+expectedBodyLen : std::uint32_t
 +flags : std::uint8_t
-+handle : std::uint16_t
-+lastActivityTick : std::uint64_t
-+method : std::uint8_t
-+receivedBodyLen : std::uint32_t
-+url : std::string
++index : std::uint8_t
++uri : std::string
 }
-class "io::NativeFramer" as C_0000216212220700142134
-class C_0000216212220700142134 {
-+nextPacket(ByteBuffer & outPacket) : bool
-+poll(Channel & ch) : void
-+sendPacket(Channel & ch, const ByteBuffer & packet) : void
+class "io::SlotCatalog::RangeResult" as C_0000899107286476895968
+class C_0000899107286476895968 {
 __
--_rxBuffer : ByteBuffer
++entries : std::vector<Entry>
++more : bool
++nextIndex : std::uint8_t
++presence : std::vector<std::uint8_t>
+}
+abstract "io::IRequestHandler" as C_0007350464861923755413
+abstract C_0007350464861923755413 {
++~IRequestHandler() constexpr = default : void
+..
+{abstract} +handleRequest(const IORequest & request) = 0 : IOResponse
+__
+}
+class "io::IODeviceManager" as C_0010794218937492142358
+class C_0010794218937492142358 {
++IODeviceManager() = default : void
++IODeviceManager(const IODeviceManager &) = deleted : void
+..
++operator=(const IODeviceManager &) = deleted : IODeviceManager &
+..
++device_count() const noexcept : std::size_t
++getDevice(DeviceID id) : VirtualDevice *
++getDevice(DeviceID id) const : const VirtualDevice *
++handleRequest(const IORequest & request) : IOResponse
++pollDevices() : void
++registerDevice(DeviceID id, std::unique_ptr<VirtualDevice> device) : bool
++unregisterDevice(DeviceID id) : bool
+__
+-_devices : std::unordered_map<DeviceID,std::unique_ptr<VirtualDevice>>
+}
+class "io::RoutingManager" as C_0005273847708888915350
+class C_0005273847708888915350 {
++RoutingManager(IODeviceManager & deviceManager) : void
+..
++clearOverrideHandler() : void
++deviceManager() : IODeviceManager &
++deviceManager() const : const IODeviceManager &
++handleRequest(const IORequest & request) : IOResponse
++hasOverrideHandler() const : bool
++setOverrideHandler(IRequestHandler * handler) : void
++setOverrideHandler(std::unique_ptr<IRequestHandler> handler) : void
+__
+-_deviceManager : IODeviceManager &
+-_overrideHandler : IRequestHandler *
+-_overrideOwned : std::unique_ptr<IRequestHandler>
+}
+class "io::IOService" as C_0007645722238685656096
+class C_0007645722238685656096 {
++IOService(IRequestHandler & handler) : void
+..
++addTransport(ITransport * transport) : void
++hasWaitableWorkSource() const : bool
++serviceOnce() : void
++waitForWork(std::chrono::milliseconds timeout) : bool
+__
+-_handler : IRequestHandler &
+-_transports : std::vector<ITransport *>
 }
 class "io::ModemDeviceDiagnosticsAccessor::StateRow" as C_0015390871890377655918
 class C_0015390871890377655918 {
@@ -1017,6 +647,285 @@ __
 +pending : bool
 +telnet : bool
 }
+class "io::FujiDevice" as C_0016024516082849980408
+class C_0016024516082849980408 {
++FujiDevice(ResetHandler resetHandler, std::unique_ptr<config::FujiConfigStore> configStore) : void
+..
++config() const : const config::FujiConfig &
++config_mut() : config::FujiConfig &
++config_store() : config::FujiConfigStore *
++handle(const IORequest & request) : IOResponse
+-handle_reset(const IORequest & request) : IOResponse
+-handle_unknown(const IORequest & request) : IOResponse
+-load_config() : void
++poll() : void
++start() : void
+__
+-_config : config::FujiConfig
+-_configStore : std::unique_ptr<config::FujiConfigStore>
+-_resetHandler : ResetHandler
+}
+class "io::WifiController" as C_0001833966047295824140
+class C_0001833966047295824140 {
++WifiController(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
+..
++config() const : const config::WifiConfig &
++config_mut() : config::WifiConfig &
++disconnect() : StatusCode
++link() const : net::INetworkLink *
++reconnect() : StatusCode
++save() const : StatusCode
++scan() const : net::WifiScanResult
++update(const config::WifiConfig & next, bool persist, bool reconnect) : StatusCode
+__
+-_config : config::FujiConfig &
+-_linkProvider : LinkProvider
+-_store : config::FujiConfigStore *
+}
+class "io::ProtocolRegistry" as C_0011868125949252482179
+class C_0011868125949252482179 {
++create(std::string_view schemeLower) const : std::unique_ptr<INetworkProtocol>
++register_scheme(std::string schemeLower, Factory factory) : bool
+__
+-_factories : std::unordered_map<std::string,Factory>
+}
+enum "io::ContentTranslationType" as C_0018307773322721098785
+enum C_0018307773322721098785 {
+None
+Json
+Xml
+Rss
+}
+class "io::TranslationConfig" as C_0011628969558439618672
+class C_0011628969558439618672 {
++enabled() const noexcept : bool
+__
++flags : std::uint8_t
++selector : std::string
++type : ContentTranslationType
+}
+abstract "io::IContentTranslator" as C_0017172268465975245210
+abstract C_0017172268465975245210 {
++~IContentTranslator() constexpr = default : void
+..
+{abstract} +append_body(const std::uint8_t * data, std::size_t len) = 0 : StatusCode
+{abstract} +configure(const TranslationConfig & config) = 0 : StatusCode
+{abstract} +finalize() = 0 : StatusCode
++needs_full_body() const : bool
+{abstract} +read(std::uint32_t offset, std::uint8_t * out, std::size_t maxBytes, std::uint16_t & actual, bool & eof) const = 0 : StatusCode
+{abstract} +reset() = 0 : void
+{abstract} +translated_size() const = 0 : std::uint64_t
+__
+}
+class "io::NetworkDevice" as C_0006245826437162508923
+class C_0006245826437162508923 {
++NetworkDevice(ProtocolRegistry registry) : void
+..
+-buffer_translation_body(Session & s) : StatusCode
+-close_and_free(Session & s) noexcept : void
+-configure_translation(Session & s, const TranslationConfig & config) : StatusCode
+-ensure_translation_ready(Session & s) : StatusCode
+-finalize_translation(Session & s) : StatusCode
++handle(const IORequest & request) : IOResponse
+{static} -handle_generation(std::uint16_t h) noexcept : std::uint8_t
+{static} -handle_index(std::uint16_t h) noexcept : std::uint8_t
+{static} -make_handle(std::uint8_t idx, std::uint8_t gen) noexcept : std::uint16_t
+{static} -make_translator(ContentTranslationType type) : std::unique_ptr<IContentTranslator>
+-pick_lru_victim() noexcept : Session *
++poll() : void
+{static} -reset_translation(Session & s) noexcept : void
+-touch(Session & s) noexcept : void
+{static} -translation_enabled(const Session & s) noexcept : bool
+__
+{static} -IDLE_TIMEOUT_TICKS : const std::uint64_t
+{static} -MAX_SESSIONS : const std::size_t
+{static} -NETPROTO_VERSION : const std::uint8_t
+-_registry : ProtocolRegistry
+-_sessions : std::array<Session,MAX_SESSIONS>
+-_tickNow : std::uint64_t
+}
+class "io::NetworkDevice::Session" as C_0011301425670680674257
+class C_0011301425670680674257 {
+__
++active : bool
++awaitingBody : bool
++bodyLenUnknown : bool
++completed : bool
++createdTick : std::uint64_t
++expectedBodyLen : std::uint32_t
++flags : std::uint8_t
++generation : std::uint8_t
++lastActivityTick : std::uint64_t
++method : std::uint8_t
++nextBodyOffset : std::uint32_t
++proto : std::unique_ptr<INetworkProtocol>
++receivedBodyLen : std::uint32_t
++responseBodyBuffering : bool
++responseBodyCache : std::string
++responseBodyCached : bool
++translatedResultSize : std::uint64_t
++translation : TranslationConfig
++translationReady : bool
++translator : std::unique_ptr<IContentTranslator>
++url : std::string
+}
+class "io::NetworkDeviceDiagnosticsAccessor" as C_0010580021346264420268
+class C_0010580021346264420268 {
+{static} +close(NetworkDevice & dev, std::uint16_t handle) noexcept : bool
+{static} +close_all(NetworkDevice & dev) noexcept : std::size_t
+{static} +sessions(const NetworkDevice & dev) : std::vector<SessionRow>
+__
+}
+class "io::NetworkDeviceDiagnosticsAccessor::SessionRow" as C_0007753937317853453679
+class C_0007753937317853453679 {
+__
++active : bool
++awaitingBody : bool
++completed : bool
++createdTick : std::uint64_t
++expectedBodyLen : std::uint32_t
++flags : std::uint8_t
++handle : std::uint16_t
++lastActivityTick : std::uint64_t
++method : std::uint8_t
++receivedBodyLen : std::uint32_t
++url : std::string
+}
+class "io::HostService" as C_0014542562225987093978
+class C_0014542562225987093978 {
++HostService(fs::StorageManager & storage) : void
+..
++handle(const IORequest & request) : IOResponse
+__
+-_storage : fs::StorageManager &
+}
+abstract "io::IFramer" as C_0014582132463805045490
+abstract C_0014582132463805045490 {
++~IFramer() constexpr = default : void
+..
+{abstract} +nextPacket(ByteBuffer & outPacket) = 0 : bool
+{abstract} +poll(Channel & ch) = 0 : void
+{abstract} +sendPacket(Channel & ch, const ByteBuffer & packet) = 0 : void
+__
+}
+class "io::FujiBusTransport" as C_0003433839086217597071
+class C_0003433839086217597071 {
++FujiBusTransport(Channel & channel, IFramer & framer) : void
+..
++poll() : void
++receive(IORequest & outReq) : bool
++receiveResponse(IOResponse & outResp) : bool
++send(const IOResponse & resp) : void
++supports_work_wait() const : bool
++wait_for_work(std::chrono::milliseconds timeout) : bool
+__
+-_channel : Channel &
+-_framer : IFramer &
+-_nextRequestId : RequestID
+}
+class "io::SlipFramer" as C_0000024426887380157859
+class C_0000024426887380157859 {
++nextPacket(ByteBuffer & outPacket) : bool
++poll(Channel & ch) : void
++sendPacket(Channel & ch, const ByteBuffer & packet) : void
+__
+-_rxBuffer : ByteBuffer
+}
+class "io::NativeFramer" as C_0000216212220700142134
+class C_0000216212220700142134 {
++nextPacket(ByteBuffer & outPacket) : bool
++poll(Channel & ch) : void
++sendPacket(Channel & ch, const ByteBuffer & packet) : void
+__
+-_rxBuffer : ByteBuffer
+}
+class "io::ClockDevice" as C_0006193474076654383504
+class C_0006193474076654383504 {
++ClockDevice() = default : void
++ClockDevice(config::FujiConfigStore * configStore) : void
+..
++handle(const IORequest & request) : IOResponse
++poll() : void
+__
+-_configStore : config::FujiConfigStore *
+}
+class "io::AppStoreService" as C_0008366653720214799347
+class C_0008366653720214799347 {
++AppStoreService(std::shared_ptr<AppStore> store) : void
+..
++handle(const IORequest & request) : IOResponse
+-handle_delete(const IORequest & request) : IOResponse
+-handle_list(const IORequest & request) : IOResponse
+-handle_read(const IORequest & request) : IOResponse
+-handle_stat(const IORequest & request) : IOResponse
+-handle_write(const IORequest & request) : IOResponse
+__
+-_store : std::shared_ptr<AppStore>
+}
+class "io::SlotCatalogService" as C_0012659306769564974612
+class C_0012659306769564974612 {
++SlotCatalogService(fs::StorageManager & storage, std::shared_ptr<AppStore> store) : void
+..
++handle(const IORequest & request) : IOResponse
+-handle_delete(const IORequest & request) : IOResponse
+-handle_get(const IORequest & request) : IOResponse
+-handle_put(const IORequest & request) : IOResponse
+-handle_range(const IORequest & request) : IOResponse
+__
+-_catalog : SlotCatalog
+-_storage : fs::StorageManager &
+-_store : std::shared_ptr<AppStore>
+}
+class "io::WifiService" as C_0008827731424709454558
+class C_0008827731424709454558 {
++WifiService(config::FujiConfig & config, config::FujiConfigStore * store, LinkProvider linkProvider) : void
+..
++handle(const IORequest & request) : IOResponse
+__
+-_controller : WifiController
+-_scanCache : std::vector<net::WifiScanRecord>
+-_scanCacheValid : bool
+}
+class "io::FileDevice" as C_0018348317585229177251
+class C_0018348317585229177251 {
++FileDevice(fs::StorageManager & storage) : void
+..
++handle(const IORequest & request) : IOResponse
+-handle_list_directory(const IORequest & request) : IOResponse
+-handle_make_directory(const IORequest & request) : IOResponse
+-handle_read_file(const IORequest & request) : IOResponse
+-handle_resolve_path(const IORequest & request) : IOResponse
+-handle_stat(const IORequest & request) : IOResponse
+-handle_write_file(const IORequest & request) : IOResponse
++poll() : void
+__
+-_storage : fs::StorageManager &
+}
+class "io::HostState" as C_0000340960947726784289
+class C_0000340960947726784289 {
++HostState(fs::StorageManager & storage) : void
+..
++delete_history_index(std::string_view indexText) : bool
++delete_history_index(std::size_t index) : bool
++format_history(std::string * text) : bool
++get_current_host(std::string * uri, std::string * displayPath = nullptr) : bool
+-parse_index(std::string_view text, std::size_t * index) const : bool
+-read_history(std::vector<std::string> & entries) : bool
++resolve_target(std::string_view spec, std::string & uri, std::string * displayPath = nullptr) : bool
++set_current_host(std::string_view spec) : bool
++set_current_host_index(std::string_view indexText) : bool
++set_current_host_index(std::size_t index) : bool
+-update_history(std::string_view uri) : bool
+-write_history(const std::vector<std::string> & entries) : bool
+-write_value(std::string_view key, std::string_view value) : bool
+__
+-_storage : fs::StorageManager &
+{static} +kCurrentDisplayPathKey : const char *const
+{static} +kCurrentHostKey : const char *const
+{static} +kHostHistoryKey : const char *const
+{static} +kHostHistoryMax : const std::size_t
+{static} +kNamespace : const char *const
+}
 class "io::ListDirectoryCache" as C_0015963199091497182148
 class C_0015963199091497182148 {
 __
@@ -1029,6 +938,97 @@ class "io::CommonPrefix" as C_0010415374062290681357
 class C_0010415374062290681357 {
 __
 +uri : std::string
+}
+class "io::JsonContentTranslator" as C_0006788839814876680044
+class C_0006788839814876680044 {
++append_body(const std::uint8_t * data, std::size_t len) : StatusCode
++configure(const TranslationConfig & config) : StatusCode
++finalize() : StatusCode
++read(std::uint32_t offset, std::uint8_t * out, std::size_t maxBytes, std::uint16_t & actual, bool & eof) const : StatusCode
++reset() : void
++translated_size() const : std::uint64_t
+__
+-_body : std::string
+-_config : TranslationConfig
+-_translated : std::string
+}
+enum "io::RequestContentProfile" as C_0014462224694841349318
+enum C_0014462224694841349318 {
+None
+JsonBody
+FormBody
+TextBody
+}
+class "io::OpenExtensions" as C_0015834173540824165561
+class C_0015834173540824165561 {
+__
++contentProfile : RequestContentProfile
++translation : TranslationConfig
+}
+class "io::StubNetworkProtocol" as C_0011683483391837494806
+class C_0011683483391837494806 {
++close() : void
++info(NetworkInfo & out) : StatusCode
++open(const NetworkOpenRequest & req) : StatusCode
++openRequest() const noexcept : const NetworkOpenRequest &
++poll() : void
++read_body(std::uint32_t offset, std::uint8_t * out, std::size_t outLen, std::uint16_t & read, bool & eof, bool & more_available) : StatusCode
++write_body(std::uint32_t offset, const std::uint8_t * data, std::size_t dataLen, std::uint16_t & written) : StatusCode
+__
+-_body : std::vector<std::uint8_t>
+-_contentLength : std::uint64_t
+-_headersBlock : std::string
+-_httpStatus : std::uint16_t
+-_openReq : NetworkOpenRequest
+-_requestBody : std::vector<std::uint8_t>
+}
+class "io::DiskDevice" as C_0005932353517374970487
+class C_0005932353517374970487 {
++DiskDevice(fs::StorageManager & storage, disk::ImageRegistry registry) : void
++DiskDevice(fs::StorageManager & storage) : void
+..
+-clear_runtime_mount(std::size_t slotIndex) : void
+-clear_runtime_mounts() : bool
++configure_boot_mount(std::string configUri, bool readOnly) : void
++disk_service() : disk::DiskService &
++disk_service() const : const disk::DiskService &
++handle(const IORequest & request) : IOResponse
+-load_runtime_mounts() : bool
++poll() : void
++restore_runtime_mounts() : std::vector<std::size_t>
+-save_runtime_mounts() : bool
+-set_runtime_mount(std::size_t slotIndex, RuntimeMountState state) : void
+__
+{static} -DISKPROTO_VERSION : const std::uint8_t
+-_bootConfigUri : std::string
+-_bootReadOnly : bool
+-_runtimeMounts : std::vector<std::optional<RuntimeMountState>>
+-_storage : fs::StorageManager &
+-_svc : disk::DiskService
+}
+class "io::DiskDevice::RuntimeMountState" as C_0016408095638929073935
+class C_0016408095638929073935 {
+__
++mode : std::string
++sectorSizeHint : std::uint16_t
++uri : std::string
+}
+class "io::DiskDeviceDiagnosticsAccessor" as C_0016910926688454257733
+class C_0016910926688454257733 {
+{static} +slots(const DiskDevice & dev) : std::vector<disk::DiskSlotInfo>
+__
+}
+class "io::Prefix" as C_0003612394856745364043
+class C_0003612394856745364043 {
+__
++key : std::string
++ns : std::string
+}
+class "io::UriDisplayParts" as C_0017616616105646512159
+class C_0017616616105646512159 {
+__
++detail : std::string
++summary : std::string
 }
 class "core::EventStream<EventT>" as C_0005138967228563115798
 class C_0005138967228563115798 {
@@ -1096,6 +1096,11 @@ __
 -_storageManager : fs::StorageManager
 -_tickCount : std::uint64_t
 }
+C_0002386736627821114488 o-- C_0015173710654558847960 : +type
+C_0002942984525013396621 o-- C_0012496700434923238249 : +status
+C_0010613333864250568344 ..> C_0001159279330674149840
+C_0010613333864250568344 ..> C_0012496700434923238249
+C_0010613333864250568344 ..> C_0007100525671922339382
 C_0006392424685935755622 o-- C_0005635211274124367418 : -_state
 C_0005635211274124367418 --+ C_0006392424685935755622
 C_0008686573398797909484 o-- C_0013970161679530750266 : +response_style
@@ -1107,36 +1112,58 @@ C_0015838915725578446589 o-- C_0010985663379607742420 : #_state
 C_0015838915725578446589 o-- C_0015438333988660315289 : #_pendingFrame
 C_0015529497257294770104 <|-- C_0015838915725578446589
 C_0010985663379607742420 --+ C_0015838915725578446589
-C_0007145399192091431715 ..> C_0008542343802949846318
-C_0007145399192091431715 ..> C_0008686573398797909484
-C_0007145399192091431715 ..> C_0002386736627821114488
-C_0007145399192091431715 ..> C_0002942984525013396621
-C_0015838915725578446589 <|-- C_0007145399192091431715
 C_0014645015375049587372 ..> C_0008542343802949846318
 C_0014645015375049587372 ..> C_0008686573398797909484
 C_0014645015375049587372 ..> C_0002386736627821114488
 C_0014645015375049587372 ..> C_0002942984525013396621
 C_0014645015375049587372 ..> C_0015438333988660315289
 C_0015838915725578446589 <|-- C_0014645015375049587372
-C_0007384888606456233527 ..> C_0008542343802949846318
-C_0007384888606456233527 ..> C_0015438333988660315289
-C_0014645015375049587372 <|-- C_0007384888606456233527
+C_0007145399192091431715 ..> C_0008542343802949846318
+C_0007145399192091431715 ..> C_0008686573398797909484
+C_0007145399192091431715 ..> C_0002386736627821114488
+C_0007145399192091431715 ..> C_0002942984525013396621
+C_0015838915725578446589 <|-- C_0007145399192091431715
 C_0009446685585853408367 ..> C_0008542343802949846318
 C_0009446685585853408367 ..> C_0015438333988660315289
 C_0009446685585853408367 o-- C_0008469988080401523664 : -_currentPhase
 C_0007145399192091431715 <|-- C_0009446685585853408367
 C_0008469988080401523664 --+ C_0009446685585853408367
-C_0002386736627821114488 o-- C_0015173710654558847960 : +type
-C_0002942984525013396621 o-- C_0012496700434923238249 : +status
+C_0007384888606456233527 ..> C_0008542343802949846318
+C_0007384888606456233527 ..> C_0015438333988660315289
+C_0014645015375049587372 <|-- C_0007384888606456233527
 C_0015529497257294770104 ..> C_0002386736627821114488
 C_0015529497257294770104 ..> C_0002942984525013396621
-C_0010613333864250568344 ..> C_0001159279330674149840
-C_0010613333864250568344 ..> C_0012496700434923238249
-C_0010613333864250568344 ..> C_0007100525671922339382
-C_0007350464861923755413 ..> C_0002386736627821114488
-C_0007350464861923755413 ..> C_0002942984525013396621
+C_0017938940343811357840 ..> C_0002332226688905710359
+C_0017938940343811357840 ..> C_0010095979242356174466
+C_0017938940343811357840 ..> C_0006855611607891588110
+C_0017938940343811357840 ..> C_0000914061821889831829
+C_0017938940343811357840 ..> C_0016068550494544013900
+C_0017938940343811357840 --> C_0001279065520068563954 : -_storage
+C_0002332226688905710359 --+ C_0017938940343811357840
+C_0010095979242356174466 --+ C_0017938940343811357840
+C_0006855611607891588110 --+ C_0017938940343811357840
+C_0000914061821889831829 --+ C_0017938940343811357840
+C_0016068550494544013900 --+ C_0017938940343811357840
 C_0010069830097413987109 ..> C_0002386736627821114488
 C_0010069830097413987109 ..> C_0002942984525013396621
+C_0012713930330229444348 ..> C_0002386736627821114488
+C_0012713930330229444348 ..> C_0002942984525013396621
+C_0012713930330229444348 ..> C_0012496700434923238249
+C_0012713930330229444348 o-- C_0010884110720104182508 : -_toHost
+C_0012713930330229444348 o-- C_0010884110720104182508 : -_toNet
+C_0012713930330229444348 <.. C_0017366619222000823646 : +<<friend>>
+C_0010069830097413987109 <|-- C_0012713930330229444348
+C_0010884110720104182508 --+ C_0012713930330229444348
+C_0006448478138904809358 --+ C_0012713930330229444348
+C_0017366619222000823646 ..> C_0012713930330229444348
+C_0017366619222000823646 ..> C_0015390871890377655918
+C_0008803738469954244850 ..> C_0006689317867316634981
+C_0008803738469954244850 ..> C_0000899107286476895968
+C_0008803738469954244850 --> C_0017938940343811357840 : -_store
+C_0006689317867316634981 --+ C_0008803738469954244850
+C_0000899107286476895968 --+ C_0008803738469954244850
+C_0007350464861923755413 ..> C_0002386736627821114488
+C_0007350464861923755413 ..> C_0002942984525013396621
 C_0010794218937492142358 ..> C_0010069830097413987109
 C_0010794218937492142358 ..> C_0002386736627821114488
 C_0010794218937492142358 ..> C_0002942984525013396621
@@ -1148,14 +1175,11 @@ C_0005273847708888915350 --> C_0007350464861923755413 : -_overrideHandler
 C_0007350464861923755413 <|-- C_0005273847708888915350
 C_0007645722238685656096 ..> C_0015529497257294770104
 C_0007645722238685656096 --> C_0007350464861923755413 : -_handler
+C_0015390871890377655918 --+ C_0017366619222000823646
+C_0016024516082849980408 ..> C_0002386736627821114488
+C_0016024516082849980408 ..> C_0002942984525013396621
+C_0010069830097413987109 <|-- C_0016024516082849980408
 C_0001833966047295824140 ..> C_0012496700434923238249
-C_0008827731424709454558 ..> C_0002386736627821114488
-C_0008827731424709454558 ..> C_0002942984525013396621
-C_0008827731424709454558 o-- C_0001833966047295824140 : -_controller
-C_0010069830097413987109 <|-- C_0008827731424709454558
-C_0006193474076654383504 ..> C_0002386736627821114488
-C_0006193474076654383504 ..> C_0002942984525013396621
-C_0010069830097413987109 <|-- C_0006193474076654383504
 C_0011868125949252482179 ..> C_0010613333864250568344
 C_0011628969558439618672 o-- C_0018307773322721098785 : +type
 C_0017172268465975245210 ..> C_0011628969558439618672
@@ -1174,6 +1198,52 @@ C_0011301425670680674257 --+ C_0006245826437162508923
 C_0011301425670680674257 o-- C_0011628969558439618672 : +translation
 C_0010580021346264420268 ..> C_0006245826437162508923
 C_0010580021346264420268 ..> C_0007753937317853453679
+C_0007753937317853453679 --+ C_0010580021346264420268
+C_0014542562225987093978 ..> C_0002386736627821114488
+C_0014542562225987093978 ..> C_0002942984525013396621
+C_0014542562225987093978 --> C_0001279065520068563954 : -_storage
+C_0010069830097413987109 <|-- C_0014542562225987093978
+C_0014582132463805045490 ..> C_0008542343802949846318
+C_0003433839086217597071 ..> C_0002386736627821114488
+C_0003433839086217597071 ..> C_0002942984525013396621
+C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
+C_0003433839086217597071 --> C_0014582132463805045490 : -_framer
+C_0015529497257294770104 <|-- C_0003433839086217597071
+C_0000024426887380157859 ..> C_0008542343802949846318
+C_0014582132463805045490 <|-- C_0000024426887380157859
+C_0000216212220700142134 ..> C_0008542343802949846318
+C_0014582132463805045490 <|-- C_0000216212220700142134
+C_0006193474076654383504 ..> C_0002386736627821114488
+C_0006193474076654383504 ..> C_0002942984525013396621
+C_0010069830097413987109 <|-- C_0006193474076654383504
+C_0008366653720214799347 ..> C_0002386736627821114488
+C_0008366653720214799347 ..> C_0002942984525013396621
+C_0008366653720214799347 --> C_0017938940343811357840 : -_store
+C_0010069830097413987109 <|-- C_0008366653720214799347
+C_0012659306769564974612 ..> C_0002386736627821114488
+C_0012659306769564974612 ..> C_0002942984525013396621
+C_0012659306769564974612 --> C_0001279065520068563954 : -_storage
+C_0012659306769564974612 --> C_0017938940343811357840 : -_store
+C_0012659306769564974612 o-- C_0008803738469954244850 : -_catalog
+C_0010069830097413987109 <|-- C_0012659306769564974612
+C_0008827731424709454558 ..> C_0002386736627821114488
+C_0008827731424709454558 ..> C_0002942984525013396621
+C_0008827731424709454558 o-- C_0001833966047295824140 : -_controller
+C_0010069830097413987109 <|-- C_0008827731424709454558
+C_0018348317585229177251 ..> C_0002386736627821114488
+C_0018348317585229177251 ..> C_0002942984525013396621
+C_0018348317585229177251 --> C_0001279065520068563954 : -_storage
+C_0010069830097413987109 <|-- C_0018348317585229177251
+C_0000340960947726784289 --> C_0001279065520068563954 : -_storage
+C_0006788839814876680044 ..> C_0012496700434923238249
+C_0006788839814876680044 o-- C_0011628969558439618672 : -_config
+C_0017172268465975245210 <|-- C_0006788839814876680044
+C_0015834173540824165561 o-- C_0011628969558439618672 : +translation
+C_0015834173540824165561 o-- C_0014462224694841349318 : +contentProfile
+C_0011683483391837494806 ..> C_0012496700434923238249
+C_0011683483391837494806 ..> C_0007100525671922339382
+C_0011683483391837494806 o-- C_0001159279330674149840 : -_openReq
+C_0010613333864250568344 <|-- C_0011683483391837494806
 C_0005932353517374970487 ..> C_0002386736627821114488
 C_0005932353517374970487 ..> C_0002942984525013396621
 C_0005932353517374970487 ..> C_0016408095638929073935
@@ -1182,76 +1252,6 @@ C_0005932353517374970487 <.. C_0016910926688454257733 : +<<friend>>
 C_0010069830097413987109 <|-- C_0005932353517374970487
 C_0016408095638929073935 --+ C_0005932353517374970487
 C_0016910926688454257733 ..> C_0005932353517374970487
-C_0006788839814876680044 ..> C_0012496700434923238249
-C_0006788839814876680044 o-- C_0011628969558439618672 : -_config
-C_0017172268465975245210 <|-- C_0006788839814876680044
-C_0015834173540824165561 o-- C_0011628969558439618672 : +translation
-C_0015834173540824165561 o-- C_0014462224694841349318 : +contentProfile
-C_0016024516082849980408 ..> C_0002386736627821114488
-C_0016024516082849980408 ..> C_0002942984525013396621
-C_0010069830097413987109 <|-- C_0016024516082849980408
-C_0014582132463805045490 ..> C_0008542343802949846318
-C_0000024426887380157859 ..> C_0008542343802949846318
-C_0014582132463805045490 <|-- C_0000024426887380157859
-C_0017938940343811357840 ..> C_0002332226688905710359
-C_0017938940343811357840 ..> C_0010095979242356174466
-C_0017938940343811357840 ..> C_0006855611607891588110
-C_0017938940343811357840 ..> C_0000914061821889831829
-C_0017938940343811357840 ..> C_0016068550494544013900
-C_0017938940343811357840 --> C_0001279065520068563954 : -_storage
-C_0002332226688905710359 --+ C_0017938940343811357840
-C_0010095979242356174466 --+ C_0017938940343811357840
-C_0006855611607891588110 --+ C_0017938940343811357840
-C_0000914061821889831829 --+ C_0017938940343811357840
-C_0016068550494544013900 --+ C_0017938940343811357840
-C_0018348317585229177251 ..> C_0002386736627821114488
-C_0018348317585229177251 ..> C_0002942984525013396621
-C_0018348317585229177251 --> C_0001279065520068563954 : -_storage
-C_0010069830097413987109 <|-- C_0018348317585229177251
-C_0014542562225987093978 ..> C_0002386736627821114488
-C_0014542562225987093978 ..> C_0002942984525013396621
-C_0014542562225987093978 --> C_0001279065520068563954 : -_storage
-C_0010069830097413987109 <|-- C_0014542562225987093978
-C_0000340960947726784289 --> C_0001279065520068563954 : -_storage
-C_0008803738469954244850 ..> C_0006689317867316634981
-C_0008803738469954244850 ..> C_0000899107286476895968
-C_0008803738469954244850 --> C_0017938940343811357840 : -_store
-C_0006689317867316634981 --+ C_0008803738469954244850
-C_0000899107286476895968 --+ C_0008803738469954244850
-C_0012659306769564974612 ..> C_0002386736627821114488
-C_0012659306769564974612 ..> C_0002942984525013396621
-C_0012659306769564974612 --> C_0001279065520068563954 : -_storage
-C_0012659306769564974612 --> C_0017938940343811357840 : -_store
-C_0012659306769564974612 o-- C_0008803738469954244850 : -_catalog
-C_0010069830097413987109 <|-- C_0012659306769564974612
-C_0012713930330229444348 ..> C_0002386736627821114488
-C_0012713930330229444348 ..> C_0002942984525013396621
-C_0012713930330229444348 ..> C_0012496700434923238249
-C_0012713930330229444348 o-- C_0010884110720104182508 : -_toHost
-C_0012713930330229444348 o-- C_0010884110720104182508 : -_toNet
-C_0012713930330229444348 <.. C_0017366619222000823646 : +<<friend>>
-C_0010069830097413987109 <|-- C_0012713930330229444348
-C_0010884110720104182508 --+ C_0012713930330229444348
-C_0006448478138904809358 --+ C_0012713930330229444348
-C_0017366619222000823646 ..> C_0012713930330229444348
-C_0017366619222000823646 ..> C_0015390871890377655918
-C_0011683483391837494806 ..> C_0012496700434923238249
-C_0011683483391837494806 ..> C_0007100525671922339382
-C_0011683483391837494806 o-- C_0001159279330674149840 : -_openReq
-C_0010613333864250568344 <|-- C_0011683483391837494806
-C_0008366653720214799347 ..> C_0002386736627821114488
-C_0008366653720214799347 ..> C_0002942984525013396621
-C_0008366653720214799347 --> C_0017938940343811357840 : -_store
-C_0010069830097413987109 <|-- C_0008366653720214799347
-C_0003433839086217597071 ..> C_0002386736627821114488
-C_0003433839086217597071 ..> C_0002942984525013396621
-C_0003433839086217597071 --> C_0008542343802949846318 : -_channel
-C_0003433839086217597071 --> C_0014582132463805045490 : -_framer
-C_0015529497257294770104 <|-- C_0003433839086217597071
-C_0007753937317853453679 --+ C_0010580021346264420268
-C_0000216212220700142134 ..> C_0008542343802949846318
-C_0014582132463805045490 <|-- C_0000216212220700142134
-C_0015390871890377655918 --+ C_0017366619222000823646
 C_0005138967228563115798 ..> C_0001165583155332036678
 C_0001165583155332036678 --+ C_0005138967228563115798
 C_0006794901728867494679 --+ C_0005138967228563115798

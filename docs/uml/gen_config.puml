@@ -1,5 +1,12 @@
 @startuml
 title Config (auto-gen from clang-uml)
+class "config::NetSioConfig" as C_0009654526727956470660
+class C_0009654526727956470660 {
+__
++enabled : bool
++host : std::string
++port : std::uint16_t
+}
 enum "config::BootMode" as C_0012427176626669726738
 enum C_0012427176626669726738 {
 Normal
@@ -43,13 +50,6 @@ class C_0011654528465957303447 {
 __
 +enabled : bool
 }
-class "config::NetSioConfig" as C_0009654526727956470660
-class C_0009654526727956470660 {
-__
-+enabled : bool
-+host : std::string
-+port : std::uint16_t
-}
 class "config::ClockConfig" as C_0014123104778393566609
 class C_0014123104778393566609 {
 __
@@ -81,6 +81,9 @@ __
 +flowControl : UartFlowControl
 +parity : UartParity
 +stopBits : UartStopBits
++txByteGapUs : std::uint32_t
++txChunkGapUs : std::uint32_t
++txChunkSize : std::uint32_t
 +txGapUs : std::uint32_t
 }
 class "config::ChannelConfig" as C_0014601375190208620155
