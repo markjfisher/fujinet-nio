@@ -15,11 +15,11 @@ public:
     // Drain available bytes from ch into _rxBuffer.
     void poll(Channel& ch) override;
 
-    // Extract one complete SLIP frame (including delimiters) from _rxBuffer.
+    // Extract and decode one complete SLIP frame into raw opaque packet bytes.
     // Returns true and populates outPacket when a complete frame is ready.
     bool nextPacket(ByteBuffer& outPacket) override;
 
-    // Write the already-framed bytes in packet directly to ch.
+    // SLIP-escape and delimit one raw opaque packet before writing to ch.
     void sendPacket(Channel& ch, const ByteBuffer& packet) override;
 
 private:

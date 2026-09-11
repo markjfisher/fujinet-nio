@@ -1,5 +1,5 @@
 #include "fujinet/io/transport/slip_framer.h"
-#include "fujinet/io/protocol/fuji_bus_packet.h"
+#include "fujinet/io/protocol/slip_codec.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -60,18 +60,19 @@ bool SlipFramer::nextPacket(ByteBuffer& outPacket)
     }
 
     // Complete frame: [startIt (END) ... endIt (END)] inclusive.
-    outPacket.clear();
-    outPacket.insert(outPacket.end(), startIt, std::next(endIt));
+    outPacket = protocol::decodeSLIP(ByteBuffer(startIt, std::next(endIt)));
     _rxBuffer.erase(_rxBuffer.begin(), std::next(endIt));
-    return true;
+    // Malformed escape-only frames can decode to nothing. Consume but do not
+    // deliver them; a later call can extract any following frame.
+    return !outPacket.empty();
 }
 
 void SlipFramer::sendPacket(Channel& ch, const ByteBuffer& packet)
 {
-    // Packet is already SLIP-encoded (from FujiBusPacket::serialize); write verbatim.
-    // An empty packet has no delimiters to send and is silently dropped.
+    // Encode the opaque raw packet once. Empty packets are silently dropped.
     if (!packet.empty()) {
-        ch.write(packet.data(), packet.size());
+        const auto frame = protocol::encodeSLIP(packet);
+        ch.write(frame.data(), frame.size());
     }
 }
 

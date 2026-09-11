@@ -217,8 +217,10 @@ TEST_CASE("send() routes bytes through IFramer::sendPacket, not directly to chan
     // The packet must be non-empty and have reached the channel.
     CHECK(!spy.lastPacket.empty());
     CHECK(!ch.tx().empty());
-    // Channel bytes must equal what the spy received (framer wrote them verbatim).
-    CHECK(ch.tx().size() == spy.lastPacket.size());
+    // The framer receives raw bytes; only the channel sees SLIP.
+    CHECK(spy.lastPacket == ByteBuffer{0xFB, 0x01, 0x07, 0x00, 0x05, 0x01, 0x00});
+    CHECK(ByteBuffer(ch.tx().begin(), ch.tx().end()) ==
+          ByteBuffer{0xC0, 0xFB, 0x01, 0x07, 0x00, 0x05, 0x01, 0x00, 0xC0});
 }
 
 } // TEST_SUITE
@@ -264,7 +266,7 @@ TEST_CASE("literal FujiBus response send and receive preserve status and payload
         outgoing.payload = {0x00, 0xC0, 0xDB, 0xFF};
         transport.send(outgoing);
         REQUIRE(framer.sendCalled);
-        CHECK(framer.lastPacket == fixture.slip);
+        CHECK(framer.lastPacket == fixture.raw);
         CHECK(ByteBuffer(ch.tx().begin(), ch.tx().end()) == fixture.slip);
 
         // Receive an independent literal, never bytes captured from send().
@@ -276,5 +278,62 @@ TEST_CASE("literal FujiBus response send and receive preserve status and payload
         CHECK(incoming.status == status);
         CHECK(incoming.payload == ByteBuffer{0x00, 0xC0, 0xDB, 0xFF});
         CHECK_FALSE(transport.receiveResponse(incoming));
+    }
+}
+
+// Test-only packet source preserves explicit boundaries; it does not model the native stub.
+class RawFixtureFramer : public IFramer {
+public:
+    std::deque<ByteBuffer> packets;
+    ByteBuffer sent;
+    void poll(Channel&) override {}
+    bool nextPacket(ByteBuffer& out) override {
+        if (packets.empty()) return false;
+        out = std::move(packets.front());
+        packets.pop_front();
+        return true;
+    }
+    void sendPacket(Channel&, const ByteBuffer& packet) override { sent = packet; }
+};
+
+TEST_CASE("raw and serial framers map independent request fixtures identically") {
+    for (const auto* fixture : {&fujibus_wire_fixtures::typed, &fujibus_wire_fixtures::binary}) {
+        LoopbackChannel rawChannel, serialChannel;
+        RawFixtureFramer raw;
+        SlipFramer slip;
+        FujiBusTransport rawTransport(rawChannel, raw), serialTransport(serialChannel, slip);
+        raw.packets.push_back(fixture->raw);
+        feed(serialChannel, serialTransport, fixture->slip);
+        IORequest rawRequest, serialRequest;
+        REQUIRE(rawTransport.receive(rawRequest));
+        REQUIRE(serialTransport.receive(serialRequest));
+        CHECK(rawRequest.id == serialRequest.id);
+        CHECK(rawRequest.deviceId == serialRequest.deviceId);
+        CHECK(rawRequest.command == serialRequest.command);
+        CHECK(rawRequest.type == serialRequest.type);
+        CHECK(rawRequest.params == serialRequest.params);
+        CHECK(rawRequest.payload == serialRequest.payload);
+        CHECK_FALSE(rawTransport.receive(rawRequest));
+        CHECK_FALSE(serialTransport.receive(serialRequest));
+    }
+}
+
+TEST_CASE("raw and serial framers preserve literal response status and bytes") {
+    for (bool failed : {false, true}) {
+        const auto& fixture = failed ? fujibus_wire_fixtures::error : fujibus_wire_fixtures::success;
+        LoopbackChannel ch;
+        RawFixtureFramer raw;
+        FujiBusTransport transport(ch, raw);
+        raw.packets.push_back(fixture.raw);
+        IOResponse response;
+        REQUIRE(transport.receiveResponse(response));
+        CHECK(response.deviceId == 0xFB);
+        CHECK(response.command == 0x01);
+        CHECK(response.status == (failed ? StatusCode::IOError : StatusCode::Ok));
+        CHECK(response.payload == ByteBuffer{0x00, 0xC0, 0xDB, 0xFF});
+        transport.send(response);
+        CHECK(raw.sent == fixture.raw);
+        CHECK(ch.tx().empty());
+        CHECK_FALSE(transport.receiveResponse(response));
     }
 }

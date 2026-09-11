@@ -9,22 +9,9 @@
 #include <type_traits>
 
 #include "fujinet/io/protocol/wire_device_ids.h"
+#include "fujinet/io/protocol/slip_codec.h"
 
 namespace fujinet::io::protocol {
-    enum class SlipByte : std::uint8_t {
-        End     = 0xC0,
-        Escape  = 0xDB,
-        EscEnd  = 0xDC,
-        EscEsc  = 0xDD,
-    };
-
-    // helper to remove noise of the cast
-    constexpr std::uint8_t to_byte(SlipByte b) noexcept {
-        return static_cast<std::uint8_t>(b);
-    }
-
-    using ByteBuffer = std::vector<std::uint8_t>;
-
     struct PacketParam {
         std::uint32_t value;
         std::uint8_t  size;   // 1, 2, or 4 bytes
@@ -59,8 +46,6 @@ namespace fujinet::io::protocol {
         std::optional<ByteBuffer> _data;   // raw payload bytes
     
         // Internal helpers now operate on byte buffers
-        ByteBuffer decodeSLIP(const ByteBuffer& input) const;
-        ByteBuffer encodeSLIP(const ByteBuffer& input) const;
         bool parse(const ByteBuffer& input);
         bool parseRaw(const ByteBuffer& input);
         ByteBuffer encodeRaw(bool enforceLengthLimit) const;

@@ -1,6 +1,9 @@
 #include "doctest.h"
 
 #include "fujinet/io/transport/atari_sio_fujibus_framer.h"
+#include "fujinet/io/transport/fujibus_transport.h"
+#include "fujinet/io/transport/slip_framer.h"
+#include "fujibus_wire_fixtures.h"
 
 #include <cstdint>
 #include <vector>
@@ -44,6 +47,74 @@ std::vector<std::uint8_t> command_frame(std::uint8_t command, std::uint16_t aux)
 }
 
 } // namespace
+
+namespace {
+
+// Mirrors the SIO channel's stream seam, using the production SIO envelope.
+class SioCompositionChannel : public fujinet::io::Channel {
+public:
+    explicit SioCompositionChannel(AtariSioFujiBusFramer& sio) : _sio(sio) {}
+    bool available() override { return _sio.has_request(); }
+    std::size_t read(std::uint8_t* buffer, std::size_t capacity) override {
+        return _sio.read_request(buffer, capacity);
+    }
+    void write(const std::uint8_t* buffer, std::size_t length) override {
+        _sio.queue_response(buffer, length);
+    }
+private:
+    AtariSioFujiBusFramer& _sio;
+};
+
+} // namespace
+
+TEST_CASE("AtariSioFujiBusFramer preserves literal SLIP through raw transport composition")
+{
+    using namespace fujinet::io;
+    namespace fixtures = fujibus_wire_fixtures;
+    AtariSioFujiBusFramer sio;
+    SioCompositionChannel channel(sio);
+    SlipFramer slip;
+    FujiBusTransport transport(channel, slip);
+
+    // W, 14 serial bytes; literal command checksum 7F+57+0E = E4.
+    const std::vector<std::uint8_t> writeCommand{0x7F, 0x57, 0x0E, 0, 0xE4};
+    sio.ingest(writeCommand.data(), writeCommand.size());
+    CHECK(drain_output(sio) == std::vector<std::uint8_t>{0x41});
+    sio.ingest(fixtures::binary.slip.data(), fixtures::binary.slip.size());
+    transport.poll();
+    IORequest request;
+    CHECK_FALSE(transport.receive(request)); // SIO checksum has not arrived.
+    const std::uint8_t requestChecksum = 0xB2; // literal serial sum 6AC -> B2
+    sio.ingest(&requestChecksum, 1);
+    CHECK(drain_output(sio) == std::vector<std::uint8_t>{0x41, 0x43});
+    transport.poll();
+    REQUIRE(transport.receive(request));
+    CHECK(request.deviceId == 3);
+    CHECK(request.command == 4);
+    CHECK(request.params.empty());
+    CHECK(request.payload == std::vector<std::uint8_t>{0, 0xC0, 0xDB, 0xFF});
+    CHECK_FALSE(transport.receive(request));
+
+    for (const bool failed : {false, true}) {
+        CAPTURE(failed);
+        IOResponse response{};
+        response.deviceId = 0xFB;
+        response.command = 1;
+        response.status = failed ? StatusCode::IOError : StatusCode::Ok;
+        response.payload = {0, 0xC0, 0xDB, 0xFF};
+        transport.send(response);
+        // R, 18 requested bytes; literal command checksum 7F+52+12 = E3.
+        const std::vector<std::uint8_t> readCommand{0x7F, 0x52, 0x12, 0, 0xE3};
+        sio.ingest(readCommand.data(), readCommand.size());
+        std::vector<std::uint8_t> expected{0x41, 0x43};
+        const auto& wire = failed ? fixtures::error.slip : fixtures::success.slip;
+        expected.insert(expected.end(), wire.begin(), wire.end());
+        expected.insert(expected.end(), 3, 0); // SIO padding, outside SLIP frame.
+        // Independent serial sums 79B -> A2 and 7A5 -> AC; zero padding adds nothing.
+        expected.push_back(failed ? 0xAC : 0xA2);
+        CHECK(drain_output(sio) == expected);
+    }
+}
 
 TEST_CASE("AtariSioFujiBusFramer accepts SIO write payload as raw FujiBus bytes")
 {

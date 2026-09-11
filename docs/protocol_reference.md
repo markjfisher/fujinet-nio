@@ -456,10 +456,25 @@ src/lib/fujibus_transport.cpp
 ### Caller and cross-language audit
 
 The production C++ caller is `src/lib/fujibus_transport.cpp`: `receive()` and
-`receiveResponse()` use `fromSerialized()`, and `send()` uses `serialize()`.
-Those calls remain serial. Packet, transport mapping/framing and SlipFramer tests
-also retain serial coverage; raw API tests use independent literal expectations
-in `tests/fujibus_wire_fixtures.h` and `tests/test_fujipacket.cpp`.
+`receiveResponse()` use `fromRaw()`, and `send()` uses `serializeRaw()`.
+Every `IFramer` exchanges raw opaque packets with that transport. `SlipFramer`
+extracts serial frames, decodes their escaping, and encodes outgoing raw packets.
+The pure helpers in `include/fujinet/io/protocol/slip_codec.h` are shared with
+legacy `serialize()` / `fromSerialized()` wrappers, whose framing validation
+remains separate. Transport status and parameter mapping is unchanged.
+
+`src/lib/bootstrap.cpp` still selects SlipFramer or NativeFramer at construction.
+NativeFramer remains a placeholder that merges channel reads; this framing
+separation does not establish native packet boundary safety. The Zorro profile
+still uses its placeholder channel. `AtariSioFujiBusFramer` operates beneath
+Channel, not at the IFramer boundary, and continues carrying SLIP bytes in its
+SIO envelopes. Its composition regression uses the real transport and SlipFramer.
+
+Packet and transport mapping/framing tests retain serial coverage. Independent
+literal raw/SLIP expectations in `tests/fujibus_wire_fixtures.h` verify raw
+framer parity, serial wire bytes, every binary-frame split (including escape
+pairs), separators, and shared malformed-escape compatibility. The mapping test
+uses SlipFramer directly; it has no StubFramer requiring conversion.
 
 The unchanged sibling `fujinet-nio-lib` C encoder's
 `src/common/fn_packet_header.c::fn_build_header()` and
@@ -486,7 +501,8 @@ Supports:
 
 ### Q: Can I send a FujiBus packet without SLIP?  
 Yes, with `serializeRaw()` / `fromRaw()` and explicit packet boundaries. Serial
-callers continue to use `serialize()` / `fromSerialized()` with SLIP.
+compatibility callers can use `serialize()` / `fromSerialized()` with SLIP;
+FujiBusTransport uses raw packets and delegates serial framing to SlipFramer.
 
 ### Q: Do devices interpret parameters or payload first?  
 Devices may treat parameters as *commands* and payload as *data*.

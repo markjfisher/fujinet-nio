@@ -33,7 +33,7 @@ bool FujiBusTransport::wait_for_work(std::chrono::milliseconds timeout)
 //
 //  - poll() delegates to _framer which accumulates raw bytes from the Channel.
 //  - receive() asks _framer for the next complete packet.
-//  - FujiBusPacket::fromSerialized() parses that into a FujiBusPacket.
+//  - FujiBusPacket::fromRaw() parses that into a FujiBusPacket.
 //  - We then map FujiBusPacket → IORequest.
 bool FujiBusTransport::receive(IORequest& outReq)
 {
@@ -43,7 +43,7 @@ bool FujiBusTransport::receive(IORequest& outReq)
         return false;
     }
 
-    auto packetPtr = FujiBusPacket::fromSerialized(frame);
+    auto packetPtr = FujiBusPacket::fromRaw(frame);
     if (!packetPtr) {
         FN_LOGW(TAG, "invalid FujiBus frame (response), dropped");
         if (!frame.empty()) {
@@ -127,7 +127,7 @@ void FujiBusTransport::send(const IOResponse& resp)
     packet.addParamU8(static_cast<std::uint8_t>(resp.status))
           .setData(std::move(data));
 
-    ByteBuffer serialized = packet.serialize();
+    ByteBuffer serialized = packet.serializeRaw();
     if (!serialized.empty()) {
         _framer.sendPacket(_channel, serialized);
     }
@@ -140,7 +140,7 @@ bool FujiBusTransport::receiveResponse(IOResponse& outResp)
         return false;
     }
 
-    auto packetPtr = FujiBusPacket::fromSerialized(frame);
+    auto packetPtr = FujiBusPacket::fromRaw(frame);
     if (!packetPtr) {
         FN_LOGW(TAG, "invalid FujiBus frame (response), dropped");
         return false;
