@@ -1,0 +1,74 @@
+#pragma once
+
+#include "fujinet/io/protocol/fuji_bus_packet.h"
+
+// Independent literals from docs/protocol_reference.md sections 2, 4–8.
+// Raw offsets: device=0, command=1, LE length=2..3, checksum=4,
+// first descriptor=5. Sums below exclude checksum (treated as zero);
+// fold the high byte back into the low byte, repeating if necessary.
+// Neither literals nor checksums are obtained from the production codec.
+namespace fujibus_wire_fixtures {
+using fujinet::io::protocol::ByteBuffer;
+
+struct Pair {
+    const char* name;
+    ByteBuffer raw;
+    ByteBuffer slip;
+};
+
+// Six-byte header: 01 + 02 + 06 = 09; descriptor 0, no data.
+inline const Pair minimum{"minimum",
+    {0x01, 0x02, 0x06, 0x00, 0x09, 0x00},
+    {0xC0, 0x01, 0x02, 0x06, 0x00, 0x09, 0x00, 0xC0}};
+
+// Descriptors at offsets 5..11: 81 85 82 86 83 87 04.
+// Indices 1,5,2,6,3,7,4 mean 1 U8, 1 U16, 2 U8, 2 U16,
+// 3 U8, 1 U32, 4 U8. All descriptors precede params at offsets 12..31.
+// Length = 6 + 6 extra descriptors + 20 parameter bytes = 32 (20 hex).
+// Sum(header excluding checksum)=12E, extra descriptors=29B,
+// params=3C9: total 792 -> 92 + 07 = 99 (not low-byte 92).
+inline const Pair typed{"all descriptor indices",
+    {0x2A, 0x63, 0x20, 0x00, 0x99, 0x81, 0x85, 0x82,
+     0x86, 0x83, 0x87, 0x04, 0x11, 0x33, 0x22, 0x21,
+     0x22, 0x55, 0x44, 0x77, 0x66, 0x31, 0x32, 0x33,
+     0x04, 0x03, 0x02, 0x01, 0x41, 0x42, 0x43, 0x44},
+    {0xC0, 0x2A, 0x63, 0x20, 0x00, 0x99, 0x81, 0x85, 0x82,
+     0x86, 0x83, 0x87, 0x04, 0x11, 0x33, 0x22, 0x21,
+     0x22, 0x55, 0x44, 0x77, 0x66, 0x31, 0x32, 0x33,
+     0x04, 0x03, 0x02, 0x01, 0x41, 0x42, 0x43, 0x44, 0xC0}};
+
+// Payload at 6..9. 03+04+0A+00+00+C0+DB+FF = 2AB -> AD.
+inline const Pair binary{"binary payload",
+    {0x03, 0x04, 0x0A, 0x00, 0xAD, 0x00, 0x00, 0xC0, 0xDB, 0xFF},
+    {0xC0, 0x03, 0x04, 0x0A, 0x00, 0xAD, 0x00, 0x00,
+     0xDB, 0xDC, 0xDB, 0xDD, 0xFF, 0xC0}};
+
+// Transport status is U8 param0 at 6, payload at 7..10.
+// FB+01+0B+01+00+00+C0+DB+FF = 3A2 -> A5.
+inline const Pair success{"success response",
+    {0xFB, 0x01, 0x0B, 0x00, 0xA5, 0x01, 0x00, 0x00, 0xC0, 0xDB, 0xFF},
+    {0xC0, 0xFB, 0x01, 0x0B, 0x00, 0xA5, 0x01, 0x00, 0x00,
+     0xDB, 0xDC, 0xDB, 0xDD, 0xFF, 0xC0}};
+
+// Same layout, status 05 (IOError): 3A2+05 = 3A7 -> AA.
+inline const Pair error{"error response",
+    {0xFB, 0x01, 0x0B, 0x00, 0xAA, 0x01, 0x05, 0x00, 0xC0, 0xDB, 0xFF},
+    {0xC0, 0xFB, 0x01, 0x0B, 0x00, 0xAA, 0x01, 0x05, 0x00,
+     0xDB, 0xDC, 0xDB, 0xDD, 0xFF, 0xC0}};
+
+// Every structural failure has a correct checksum and complete SLIP frame.
+inline const Pair malformed[] = {
+    // Six actual bytes; declared five: 01+02+05 = 08.
+    {"length too small", {1, 2, 5, 0, 8, 0}, {0xC0, 1, 2, 5, 0, 8, 0, 0xC0}},
+    // Six actual bytes; declared seven: 01+02+07 = 0A.
+    {"length too large", {1, 2, 7, 0, 10, 0}, {0xC0, 1, 2, 7, 0, 10, 0, 0xC0}},
+    // Swapped 06 00 -> 00 06 declares 1536, sum remains 09.
+    {"swapped length", {1, 2, 0, 6, 9, 0}, {0xC0, 1, 2, 0, 6, 9, 0, 0xC0}},
+    // Continuation without next descriptor: 01+02+06+80 = 89.
+    {"truncated descriptor", {1, 2, 6, 0, 0x89, 0x80},
+     {0xC0, 1, 2, 6, 0, 0x89, 0x80, 0xC0}},
+    // Descriptor 5 requires two param bytes, only 34 present: 01+02+07+05+34 = 43.
+    {"truncated parameter", {1, 2, 7, 0, 0x43, 5, 0x34},
+     {0xC0, 1, 2, 7, 0, 0x43, 5, 0x34, 0xC0}},
+};
+} // namespace fujibus_wire_fixtures

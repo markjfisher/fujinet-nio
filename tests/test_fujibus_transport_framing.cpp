@@ -222,3 +222,59 @@ TEST_CASE("send() routes bytes through IFramer::sendPacket, not directly to chan
 }
 
 } // TEST_SUITE
+
+#include "fujibus_wire_fixtures.h"
+
+TEST_CASE("literal FujiBus request maps parameters and binary payload") {
+    LoopbackChannel ch;
+    SlipFramer framer;
+    FujiBusTransport transport(ch, framer);
+    feed(ch, transport, fujibus_wire_fixtures::typed.slip);
+    IORequest request;
+    REQUIRE(transport.receive(request));
+    CHECK(request.deviceId == 0x2A);
+    CHECK(request.command == 0x63);
+    CHECK(request.type == RequestType::Command);
+    CHECK(request.params == std::vector<std::uint32_t>{
+        0x11, 0x2233, 0x21, 0x22, 0x4455, 0x6677, 0x31,
+        0x32, 0x33, 0x01020304, 0x41, 0x42, 0x43, 0x44});
+    CHECK(request.payload.empty());
+
+    feed(ch, transport, fujibus_wire_fixtures::binary.slip);
+    REQUIRE(transport.receive(request));
+    CHECK(request.deviceId == 0x03);
+    CHECK(request.command == 0x04);
+    CHECK(request.params.empty());
+    CHECK(request.payload == ByteBuffer{0x00, 0xC0, 0xDB, 0xFF});
+}
+
+TEST_CASE("literal FujiBus response send and receive preserve status and payload") {
+    namespace fixtures = fujibus_wire_fixtures;
+    for (bool failed : {false, true}) {
+        CAPTURE(failed);
+        const auto& fixture = failed ? fixtures::error : fixtures::success;
+        const auto status = failed ? StatusCode::IOError : StatusCode::Ok;
+        LoopbackChannel ch;
+        SpyFramer framer;
+        FujiBusTransport transport(ch, framer);
+        IOResponse outgoing;
+        outgoing.deviceId = 0xFB;
+        outgoing.command = 0x01;
+        outgoing.status = status;
+        outgoing.payload = {0x00, 0xC0, 0xDB, 0xFF};
+        transport.send(outgoing);
+        REQUIRE(framer.sendCalled);
+        CHECK(framer.lastPacket == fixture.slip);
+        CHECK(ByteBuffer(ch.tx().begin(), ch.tx().end()) == fixture.slip);
+
+        // Receive an independent literal, never bytes captured from send().
+        feed(ch, transport, fixture.slip);
+        IOResponse incoming;
+        REQUIRE(transport.receiveResponse(incoming));
+        CHECK(incoming.deviceId == 0xFB);
+        CHECK(incoming.command == 0x01);
+        CHECK(incoming.status == status);
+        CHECK(incoming.payload == ByteBuffer{0x00, 0xC0, 0xDB, 0xFF});
+        CHECK_FALSE(transport.receiveResponse(incoming));
+    }
+}

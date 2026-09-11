@@ -276,3 +276,113 @@ TEST_CASE("invalid: missing leading SLIP_END and no other SLIP_END")
     auto parsed = FujiBusPacket::fromSerialized(serialized);
     CHECK(parsed == nullptr);
 }
+
+#include "fujibus_wire_fixtures.h"
+
+// Only map SLIP escapes: no packet fields or checksums are synthesized here.
+static ByteBuffer literal_slip_partner(const ByteBuffer& raw)
+{
+    ByteBuffer slip{0xC0};
+    for (auto byte : raw) {
+        if (byte == 0xC0) {
+            slip.insert(slip.end(), {0xDB, 0xDC});
+        } else if (byte == 0xDB) {
+            slip.insert(slip.end(), {0xDB, 0xDD});
+        } else {
+            slip.push_back(byte);
+        }
+    }
+    slip.push_back(0xC0);
+    return slip;
+}
+
+TEST_CASE("literal FujiBus raw and SLIP fixture partners agree")
+{
+    namespace fixtures = fujibus_wire_fixtures;
+    for (const auto* fixture : {&fixtures::minimum, &fixtures::typed,
+                               &fixtures::binary, &fixtures::success, &fixtures::error}) {
+        CAPTURE(fixture->name);
+        CHECK(literal_slip_partner(fixture->raw) == fixture->slip);
+    }
+    for (const auto& fixture : fixtures::malformed) {
+        CAPTURE(fixture.name);
+        CHECK(literal_slip_partner(fixture.raw) == fixture.slip);
+    }
+}
+
+TEST_CASE("literal FujiBus minimum header serialization and parsing")
+{
+    const auto& fixture = fujibus_wire_fixtures::minimum;
+    FujiBusPacket packet(static_cast<WireDeviceId>(0x01), 0x02);
+    CHECK(packet.serialize() == fixture.slip);
+    auto parsed = FujiBusPacket::fromSerialized(fixture.slip);
+    REQUIRE(parsed);
+    CHECK(static_cast<std::uint8_t>(parsed->device()) == 0x01);
+    CHECK(parsed->command() == 0x02);
+    CHECK(parsed->paramCount() == 0);
+    CHECK_FALSE(parsed->data().has_value());
+    CHECK(parsed->serialize() == fixture.slip);
+}
+
+TEST_CASE("literal FujiBus descriptors cover every count and width index")
+{
+    const auto& fixture = fujibus_wire_fixtures::typed;
+    FujiBusPacket packet(static_cast<WireDeviceId>(0x2A), 0x63);
+    packet.addParamU8(0x11).addParamU16(0x2233)
+          .addParamU8(0x21).addParamU8(0x22)
+          .addParamU16(0x4455).addParamU16(0x6677)
+          .addParamU8(0x31).addParamU8(0x32).addParamU8(0x33)
+          .addParamU32(0x01020304)
+          .addParamU8(0x41).addParamU8(0x42).addParamU8(0x43).addParamU8(0x44);
+    CHECK(packet.serialize() == fixture.slip);
+    auto parsed = FujiBusPacket::fromSerialized(fixture.slip);
+    REQUIRE(parsed);
+    CHECK(static_cast<std::uint8_t>(parsed->device()) == 0x2A);
+    CHECK(parsed->command() == 0x63);
+    const std::uint32_t values[] = {0x11, 0x2233, 0x21, 0x22, 0x4455, 0x6677,
+                                   0x31, 0x32, 0x33, 0x01020304, 0x41, 0x42, 0x43, 0x44};
+    const bool is_u8[] = {true, false, true, true, false, false,
+                          true, true, true, false, true, true, true, true};
+    REQUIRE(parsed->paramCount() == 14);
+    for (unsigned i = 0; i < 14; ++i) {
+        CAPTURE(i);
+        CHECK(parsed->param(i) == values[i]);
+        std::uint8_t value = 0;
+        CHECK(parsed->tryParamU8(i, value) == is_u8[i]);
+        if (is_u8[i]) CHECK(value == values[i]);
+    }
+    CHECK_FALSE(parsed->data().has_value());
+    // Exact re-serialization also locks the U16/U32 widths and descriptor grouping.
+    CHECK(parsed->serialize() == fixture.slip);
+}
+
+TEST_CASE("literal FujiBus binary payload escaping and carry checksum")
+{
+    const auto& fixture = fujibus_wire_fixtures::binary;
+    FujiBusPacket packet(static_cast<WireDeviceId>(0x03), 0x04);
+    packet.setData({0x00, 0xC0, 0xDB, 0xFF});
+    CHECK(packet.serialize() == fixture.slip);
+    auto parsed = FujiBusPacket::fromSerialized(fixture.slip);
+    REQUIRE(parsed);
+    CHECK(static_cast<std::uint8_t>(parsed->device()) == 0x03);
+    CHECK(parsed->command() == 0x04);
+    CHECK(parsed->paramCount() == 0);
+    REQUIRE(parsed->data().has_value());
+    CHECK(*parsed->data() == ByteBuffer{0x00, 0xC0, 0xDB, 0xFF});
+    CHECK(parsed->serialize() == fixture.slip);
+}
+
+TEST_CASE("literal FujiBus checksum-only corruption is rejected")
+{
+    auto corrupt = fujibus_wire_fixtures::minimum.slip;
+    corrupt[5] = 0x08; // Only checksum changes: correct literal is 09.
+    CHECK(FujiBusPacket::fromSerialized(corrupt) == nullptr);
+}
+
+TEST_CASE("literal FujiBus checksum-valid structural errors are rejected")
+{
+    for (const auto& fixture : fujibus_wire_fixtures::malformed) {
+        CAPTURE(fixture.name);
+        CHECK(FujiBusPacket::fromSerialized(fixture.slip) == nullptr);
+    }
+}
