@@ -62,6 +62,8 @@ namespace fujinet::io::protocol {
         ByteBuffer decodeSLIP(const ByteBuffer& input) const;
         ByteBuffer encodeSLIP(const ByteBuffer& input) const;
         bool parse(const ByteBuffer& input);
+        bool parseRaw(const ByteBuffer& input);
+        ByteBuffer encodeRaw(bool enforceLengthLimit) const;
         std::uint8_t calcChecksum(const ByteBuffer& buf) const;
     
         // Variadic constructor helpers for parameters
@@ -98,7 +100,14 @@ namespace fujinet::io::protocol {
             (processArg(std::forward<Args>(args)), ...);  // fold expression
         }
     
-        // Parsing/serialization now explicitly use ByteBuffer
+        // Explicit framing: raw packets contain no SLIP boundaries or escapes.
+        // fromRaw rejects invalid structure/checksum/length (including trailing bytes).
+        static std::unique_ptr<FujiBusPacket> fromRaw(const ByteBuffer& input);
+
+        // Returns empty when the complete raw packet would exceed 65535 bytes.
+        ByteBuffer serializeRaw() const;
+
+        // Legacy serial entry points retain their SLIP compatibility behavior.
         static std::unique_ptr<FujiBusPacket> fromSerialized(const ByteBuffer& input);
     
         ByteBuffer serialize() const;

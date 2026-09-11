@@ -1,25 +1,18 @@
 #include "fujinet/io/protocol/fuji_bus_packet.h"
 
 #include <algorithm> // std::find
-#include <cstddef>   // std::size_t, offsetof
+#include <cstddef>   // std::size_t
 #include <cstdint>
-#include <cstring>   // std::memcpy
+#include <limits>
 
 using fujinet::io::protocol::SlipByte;
 
 namespace fujinet::io::protocol {
 
-// On-wire header layout (must stay exactly this size/layout)
-struct FujiBusHeader {
-    std::uint8_t  device;   // Destination Device
-    std::uint8_t  command;  // Command
-    std::uint16_t length;   // Total length of packet including header
-    std::uint8_t  checksum; // Checksum of entire packet
-    std::uint8_t  descr;    // Describes the fields that follow (first descriptor)
-};
-
-static_assert(sizeof(FujiBusHeader) == 6, "FujiBusHeader must be 6 bytes");
-static_assert(offsetof(FujiBusHeader, checksum) == 4, "checksum offset mismatch");
+// Wire offsets are explicit; no native struct layout or byte order is used.
+constexpr std::size_t HEADER_SIZE = 6;
+constexpr std::size_t CHECKSUM_OFFSET = 4;
+constexpr std::size_t MAX_RAW_SIZE = std::numeric_limits<std::uint16_t>::max();
 
 // Descriptor bit masks
 constexpr std::uint8_t FUJI_DESCR_COUNT_MASK  = 0x07;
@@ -150,50 +143,49 @@ bool FujiBusPacket::parse(const ByteBuffer& input)
         slipEncoded = input;
     }
 
-    if (slipEncoded.size() < sizeof(FujiBusHeader) + 2U) {
+    if (slipEncoded.size() < HEADER_SIZE + 2U) {
         return false;
     }
     if (slipEncoded.front() != to_byte(SlipByte::End) || slipEncoded.back() != to_byte(SlipByte::End)) {
         return false;
     }
 
-    ByteBuffer decoded = decodeSLIP(slipEncoded);
+    return parseRaw(decodeSLIP(slipEncoded));
+}
 
-    if (decoded.size() < sizeof(FujiBusHeader)) {
+bool FujiBusPacket::parseRaw(const ByteBuffer& decoded)
+{
+    if (decoded.size() < HEADER_SIZE) {
         return false;
     }
 
-    // Extract header from the front of decoded safely (no pointer aliasing).
-    FujiBusHeader hdr{};
-    std::memcpy(&hdr, decoded.data(), sizeof(FujiBusHeader));
-
-    if (hdr.length != decoded.size()) {
+    if (read_le(decoded, 2, 2) != decoded.size()) {
         return false;
     }
 
     // Verify checksum:
     // - ck1 is the transmitted checksum
     // - ck2 is computed with the checksum byte zeroed
-    const std::uint8_t ck1 = hdr.checksum;
+    const std::uint8_t ck1 = decoded[CHECKSUM_OFFSET];
 
     ByteBuffer tmp = decoded;
-    tmp[offsetof(FujiBusHeader, checksum)] = 0;
+    tmp[CHECKSUM_OFFSET] = 0;
     const std::uint8_t ck2 = calcChecksum(tmp);
 
     if (ck1 != ck2) {
         return false;
     }
 
-    _device  = static_cast<WireDeviceId>(hdr.device);
-    _command = hdr.command;
+    _device  = static_cast<WireDeviceId>(decoded[0]);
+    _command = decoded[1];
 
     // ---- Descriptors & params ----
 
-    std::size_t offset = sizeof(FujiBusHeader);
+    std::size_t offset = HEADER_SIZE;
     ByteBuffer descrBytes;
 
     // First descriptor is in the header
-    std::uint8_t dsc = hdr.descr;
+    std::uint8_t dsc = decoded[5];
     descrBytes.push_back(dsc);
 
     // Additional descriptors follow the header whenever bit 7 is set
@@ -236,18 +228,42 @@ bool FujiBusPacket::parse(const ByteBuffer& input)
     return true;
 }
 
+ByteBuffer FujiBusPacket::serializeRaw() const
+{
+    return encodeRaw(true);
+}
+
 ByteBuffer FujiBusPacket::serialize() const
 {
-    // Start with an empty header.
-    FujiBusHeader hdr{};
-    hdr.device   = static_cast<std::uint8_t>(_device);
-    hdr.command  = static_cast<std::uint8_t>(_command);
-    hdr.length   = sizeof(FujiBusHeader);
-    hdr.checksum = 0;
-    hdr.descr    = 0;
+    // Historically serial serialization wraps the 16-bit length on oversize.
+    return encodeSLIP(encodeRaw(false));
+}
 
-    // Reserve space for header; we'll fill it in later.
-    ByteBuffer output(sizeof(FujiBusHeader), 0);
+ByteBuffer FujiBusPacket::encodeRaw(bool enforceLengthLimit) const
+{
+    if (enforceLengthLimit) {
+        // Count before allocating output, bounding every addition. A descriptor
+        // groups consecutive equal-width params into at most four bytes.
+        std::size_t size = HEADER_SIZE;
+        unsigned groupSize = 0;
+        unsigned groupBytes = 0;
+        for (const auto& param : _params) {
+            std::size_t extra = param.size;
+            if (groupSize != param.size || groupBytes == MAX_BYTES_PER_DESCR) {
+                if (groupSize != 0) ++extra; // first descriptor is in header
+                groupSize = param.size;
+                groupBytes = 0;
+            }
+            if (extra > MAX_RAW_SIZE - size) return {};
+            size += extra;
+            groupBytes += param.size;
+        }
+        if (_data && _data->size() > MAX_RAW_SIZE - size) return {};
+    }
+
+    ByteBuffer output(HEADER_SIZE, 0);
+    output[0] = static_cast<std::uint8_t>(_device);
+    output[1] = _command;
 
     // ---- Parameters & descriptors ----
     if (!_params.empty()) {
@@ -289,10 +305,10 @@ ByteBuffer FujiBusPacket::serialize() const
         // Clear the "additional descriptors" bit on the last descriptor.
         if (!descr.empty()) {
             descr.back() &= static_cast<std::uint8_t>(~FUJI_DESCR_ADDTL_MASK);
-            hdr.descr = descr[0];
+            output[5] = descr[0];
             // Insert additional descriptors (if any) immediately after header.
             if (descr.size() > 1) {
-                output.insert(output.begin() + static_cast<std::ptrdiff_t>(sizeof(FujiBusHeader)),
+                output.insert(output.begin() + static_cast<std::ptrdiff_t>(HEADER_SIZE),
                               descr.begin() + 1, descr.end());
             }
         }
@@ -303,21 +319,22 @@ ByteBuffer FujiBusPacket::serialize() const
         output.insert(output.end(), _data->begin(), _data->end());
     }
 
-    // Finalise header.
-    hdr.length = static_cast<std::uint16_t>(output.size());
-
-    // Write header into the beginning of the buffer.
-    std::memcpy(output.data(), &hdr, sizeof(FujiBusHeader));
-
-    // Compute checksum over full packet with checksum field currently 0.
-    std::uint8_t checksum = calcChecksum(output);
-    output[offsetof(FujiBusHeader, checksum)] = checksum;
-
-    // SLIP-encode the whole packet.
-    return encodeSLIP(output);
+    // Write the length explicitly in little-endian order (legacy serial wraps).
+    const auto length = static_cast<std::uint16_t>(output.size());
+    output[2] = static_cast<std::uint8_t>(length & 0xFFU);
+    output[3] = static_cast<std::uint8_t>(length >> 8U);
+    output[CHECKSUM_OFFSET] = calcChecksum(output);
+    return output;
 }
 
-// ------------------ Factory ------------------
+// ------------------ Factories ------------------
+std::unique_ptr<FujiBusPacket> FujiBusPacket::fromRaw(const ByteBuffer& input)
+{
+    auto packet = std::make_unique<FujiBusPacket>();
+    if (!packet->parseRaw(input)) return nullptr;
+    return packet;
+}
+
 std::unique_ptr<FujiBusPacket> FujiBusPacket::fromSerialized(const ByteBuffer& input)
 {
     auto packet = std::make_unique<FujiBusPacket>();

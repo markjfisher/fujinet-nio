@@ -386,3 +386,192 @@ TEST_CASE("literal FujiBus checksum-valid structural errors are rejected")
         CHECK(FujiBusPacket::fromSerialized(fixture.slip) == nullptr);
     }
 }
+
+TEST_CASE("raw APIs consume and produce independent literal vectors")
+{
+    namespace fixtures = fujibus_wire_fixtures;
+    for (const auto* fixture : {&fixtures::minimum, &fixtures::typed,
+                               &fixtures::binary, &fixtures::success, &fixtures::error}) {
+        CAPTURE(fixture->name);
+        auto raw = FujiBusPacket::fromRaw(fixture->raw);
+        auto serial = FujiBusPacket::fromSerialized(fixture->slip);
+        REQUIRE(raw);
+        REQUIRE(serial);
+        check_packets_equal(*raw, *serial);
+        CHECK(raw->serializeRaw() == fixture->raw);
+        CHECK(serial->serializeRaw() == fixture->raw);
+        CHECK(raw->serialize() == fixture->slip);
+        CHECK(FujiBusPacket::fromRaw(fixture->slip) == nullptr);
+    }
+    for (const auto* fixture : {&fixtures::success, &fixtures::error}) {
+        auto packet = FujiBusPacket::fromRaw(fixture->raw);
+        REQUIRE(packet);
+        REQUIRE(packet->paramCount() == 1);
+        std::uint8_t status = 0xFF;
+        CHECK(packet->tryParamU8(0, status));
+        CHECK(status == (fixture == &fixtures::success ? 0 : 5));
+        REQUIRE(packet->data());
+        CHECK(*packet->data() == ByteBuffer{0, 0xC0, 0xDB, 0xFF});
+    }
+}
+
+TEST_CASE("raw framing is explicit even when header bytes are SLIP specials")
+{
+    // C0+DB+06 = 1A1 -> A2, no parameters or payload.
+    const ByteBuffer raw{0xC0, 0xDB, 6, 0, 0xA2, 0};
+    auto packet = FujiBusPacket::fromRaw(raw);
+    REQUIRE(packet);
+    CHECK(static_cast<std::uint8_t>(packet->device()) == 0xC0);
+    CHECK(packet->command() == 0xDB);
+    CHECK(packet->serializeRaw() == raw);
+    CHECK(packet->serialize() == ByteBuffer{0xC0, 0xDB, 0xDC, 0xDB, 0xDD, 6, 0, 0xA2, 0, 0xC0});
+    CHECK(FujiBusPacket::fromSerialized(raw) == nullptr);
+}
+
+TEST_CASE("raw rejects short checksum and structural failures without a packet")
+{
+    const auto& minimum = fujibus_wire_fixtures::minimum.raw;
+    for (std::size_t length = 0; length < 6; ++length) {
+        CHECK(FujiBusPacket::fromRaw(ByteBuffer(minimum.begin(), minimum.begin() + length)) == nullptr);
+    }
+    auto corrupt = minimum;
+    corrupt[4] = 8;
+    CHECK(FujiBusPacket::fromRaw(corrupt) == nullptr);
+    for (const auto& fixture : fujibus_wire_fixtures::malformed) {
+        CAPTURE(fixture.name);
+        CHECK(FujiBusPacket::fromRaw(fixture.raw) == nullptr);
+    }
+    // A valid first parameter followed by a missing U32 must still return null.
+    // 1+2+8+81+7+11 = A4.
+    CHECK(FujiBusPacket::fromRaw({1, 2, 8, 0, 0xA4, 0x81, 7, 0x11}) == nullptr);
+}
+
+TEST_CASE("raw distinguishes trailing bytes outside length from payload inside it")
+{
+    auto trailing = fujibus_wire_fixtures::minimum.raw;
+    trailing.push_back(0); // checksum stays valid but declared length excludes byte
+    CHECK(FujiBusPacket::fromRaw(trailing) == nullptr);
+    // Included payload: 1+2+7+AA = B4.
+    auto packet = FujiBusPacket::fromRaw({1, 2, 7, 0, 0xB4, 0, 0xAA});
+    REQUIRE(packet);
+    REQUIRE(packet->data());
+    CHECK(*packet->data() == ByteBuffer{0xAA});
+}
+
+TEST_CASE("raw and serial preserve reserved and zero-count descriptor semantics")
+{
+    const ByteBuffer inputs[] = {
+        {1, 2, 6, 0, 0x81, 0x78}, // reserved bits ignored, zero fields
+        {1, 2, 7, 0, 0x8A, 0x80, 0}, // continued zero-count descriptors
+        {1, 2, 8, 0, 0xAE, 0xF8, 0x79, 0x31}, // zero count then reserved U8
+    };
+    for (unsigned i = 0; i < 3; ++i) {
+        CAPTURE(i);
+        auto raw = FujiBusPacket::fromRaw(inputs[i]);
+        auto serial = FujiBusPacket::fromSerialized(literal_slip_partner(inputs[i]));
+        REQUIRE(raw);
+        REQUIRE(serial);
+        check_packets_equal(*raw, *serial);
+        CHECK(raw->paramCount() == (i == 2 ? 1 : 0));
+        if (i == 2) CHECK(raw->param(0) == 0x31);
+        CHECK_FALSE(raw->data());
+    }
+    // Two continued zero-count descriptors but no final descriptor: 1+2+7+80+80=10A -> 0B.
+    const ByteBuffer truncated{1, 2, 7, 0, 0x0B, 0x80, 0x80};
+    CHECK(FujiBusPacket::fromRaw(truncated) == nullptr);
+    CHECK(FujiBusPacket::fromSerialized(literal_slip_partner(truncated)) == nullptr);
+}
+
+TEST_CASE("serial parser retains first-frame and malformed-escape compatibility")
+{
+    const auto& minimum = fujibus_wire_fixtures::minimum;
+    auto check_minimum = [&](const ByteBuffer& bytes) {
+        auto packet = FujiBusPacket::fromSerialized(bytes);
+        REQUIRE(packet);
+        CHECK(packet->serializeRaw() == minimum.raw);
+    };
+    auto noisy = minimum.slip;
+    noisy.insert(noisy.begin(), {0, 0xDB, 0xAA});
+    check_minimum(noisy);
+    auto consecutive = minimum.slip;
+    consecutive.insert(consecutive.begin(), 0xC0);
+    CHECK(FujiBusPacket::fromSerialized(consecutive) == nullptr);
+    auto trailing = minimum.slip;
+    trailing.push_back(0xC0);
+    check_minimum(trailing);
+    trailing.insert(trailing.end(), fujibus_wire_fixtures::binary.slip.begin(),
+                    fujibus_wire_fixtures::binary.slip.end());
+    check_minimum(trailing); // first frame wins
+    trailing.push_back(0x55);
+    CHECK(FujiBusPacket::fromSerialized(trailing) == nullptr); // final END required
+    trailing.push_back(0xC0);
+    check_minimum(trailing); // even trailing junk is ignored with final END
+    auto malformed = minimum.slip;
+    malformed.insert(malformed.begin() + 1, {0xDB, 0x42});
+    check_minimum(malformed); // both bytes of unknown escape ignored
+    auto escaped_end = minimum.slip;
+    escaped_end.insert(escaped_end.end() - 1, 0xDB);
+    check_minimum(escaped_end); // DB C0 is ignored, consuming the final END
+    escaped_end.pop_back();
+    CHECK(FujiBusPacket::fromSerialized(escaped_end) == nullptr); // dangling DB
+}
+
+TEST_CASE("raw size boundary includes the header parameters and extra descriptors")
+{
+    for (bool params : {false, true}) {
+        CAPTURE(params);
+        FujiBusPacket packet(static_cast<WireDeviceId>(1), 2);
+        // U8 then U16: extra descriptor + three param bytes, total overhead 10.
+        if (params) packet.addParamU8(0).addParamU16(0);
+        packet.setData(ByteBuffer(65535 - (params ? 10 : 6), 0));
+        ByteBuffer expected{1, 2, 0xFF, 0xFF, static_cast<std::uint8_t>(params ? 0x89 : 3),
+                            static_cast<std::uint8_t>(params ? 0x81 : 0)};
+        if (params) expected.insert(expected.end(), {5, 0, 0, 0});
+        expected.resize(65535, 0);
+        CHECK(packet.serializeRaw() == expected);
+        auto parsed = FujiBusPacket::fromRaw(expected);
+        REQUIRE(parsed);
+        CHECK(parsed->serializeRaw() == expected);
+        CHECK(packet.serialize() == literal_slip_partner(expected));
+        packet.setData(ByteBuffer(65536 - (params ? 10 : 6), 0));
+        CHECK(packet.serializeRaw().empty());
+        expected.push_back(0);
+        expected[2] = expected[3] = 0; // legacy wraps the length; folded FF+FF had no effect
+        CHECK(FujiBusPacket::fromRaw(expected) == nullptr);
+        CHECK(packet.serialize() == literal_slip_partner(expected));
+        CHECK(FujiBusPacket::fromSerialized(packet.serialize()) == nullptr);
+    }
+}
+
+TEST_CASE("raw rejects parameter-only overflow before building output")
+{
+    FujiBusPacket packet(static_cast<WireDeviceId>(1), 2);
+    // 52424 U8 fields, 13106 descriptors: 6 + 13105 + 52424 = 65535.
+    for (unsigned i = 0; i < 52424; ++i) packet.addParamU8(0);
+    auto raw = packet.serializeRaw();
+    REQUIRE(raw.size() == 65535);
+    auto parsed = FujiBusPacket::fromRaw(raw);
+    REQUIRE(parsed);
+    CHECK(parsed->paramCount() == 52424);
+    packet.addParamU8(0); // new descriptor and U8 make 65537 bytes
+    CHECK(packet.serializeRaw().empty());
+}
+
+TEST_CASE("raw header encodes and parses an asymmetric little-endian length")
+{
+    // Total 0x0107 = 6 header + 257 zero payload bytes.
+    // Independent checksum: device 01 + command 02 + length 07 01 = 0B.
+    ByteBuffer expected{0x01, 0x02, 0x07, 0x01, 0x0B, 0x00};
+    expected.resize(0x0107, 0);
+    FujiBusPacket packet(static_cast<WireDeviceId>(0x01), 0x02);
+    packet.setData(ByteBuffer(257, 0));
+    CHECK(packet.serializeRaw() == expected);
+    auto parsed = FujiBusPacket::fromRaw(expected);
+    REQUIRE(parsed);
+    CHECK(static_cast<std::uint8_t>(parsed->device()) == 0x01);
+    CHECK(parsed->command() == 0x02);
+    CHECK(parsed->paramCount() == 0);
+    REQUIRE(parsed->data());
+    CHECK(*parsed->data() == ByteBuffer(257, 0));
+    CHECK(parsed->serializeRaw() == expected);
+}

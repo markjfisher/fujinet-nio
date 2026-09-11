@@ -32,8 +32,9 @@ FujiNet uses a **two-layer protocol stack**:
 [ Device-specific semantics ]
 ```
 
-SLIP defines message boundaries.  
-FujiBus defines the binary packet format inside the SLIP frame.
+SLIP defines serial message boundaries. FujiBus defines the binary packet format.
+The C++ codec also exposes raw packets for callers with explicit packet boundaries;
+framing is selected by API, never detected from packet bytes.
 
 Both layers are used identically across:
 - ESP32 USB CDC
@@ -85,7 +86,7 @@ Multiple frames may occur in the same stream.
 
 # 3. FujiBus Packet Format
 
-After SLIP decoding, the internal FujiBus packet has this structure:
+A raw FujiBus packet (also the result of SLIP decoding) has this structure:
 
 ```
 +-------------------------+
@@ -103,7 +104,9 @@ After SLIP decoding, the internal FujiBus packet has this structure:
 
 # 4. FujiBus Header
 
-The header is **exactly 6 bytes**, little-endian where applicable:
+The header is **exactly 6 bytes**, little-endian where applicable. This schematic
+describes wire fields, not a native struct to copy. The C++ codec reads/writes
+byte offsets: device 0, command 1, length 2–3, checksum 4, descriptor 5:
 
 ```
 struct FujiBusHeader {
@@ -118,12 +121,12 @@ struct FujiBusHeader {
 ### 4.1. Header Example
 
 ```
-01 10 0F 00 C7 03
+01 02 06 00 09 00
 │  │  │   │  │
 │  │  │   │  └─ First descriptor byte
 │  │  │   └──── Checksum
-│  │  └──────── Length = 0x000F
-│  └─────────── Command = 0x10
+│  │  └──────── Length = 0x0006
+│  └─────────── Command = 0x02
 └────────────── Device = 0x01
 ```
 
@@ -136,14 +139,15 @@ Descriptors describe **how many parameter fields follow**, and their **byte widt
 Descriptor byte layout:
 
 ```
-bit7   bit6..3   bit2..0
- └──┐     │        └──────── field descriptor index (0-7)
-    └─────┴────────────────── Additional descriptor flag
+bit7       bit6..3             bit2..0
+continued  reserved (ignored)  field descriptor index (0-7)
 ```
 
 ### 5.1. Descriptor Flags
 - **bit 7 = 1** → Additional descriptor follows after this one.
 - **bit 7 = 0** → This is the final descriptor.
+- Bits 6–3 are ignored when decoding. Index zero contributes no fields,
+  including in a continued descriptor. A missing continuation byte is invalid.
 
 ### 5.2. Descriptor Tables
 
@@ -302,9 +306,10 @@ Transport→FujiBus mapping:
 ```
 device     = response.deviceId
 command    = response.command (or request.command)
-length     = header + params + payload
+length     = header + additional descriptors + params + payload
 checksum   = computed
 descriptor = emitted based on param sizes
+param[0]   = response.status (one U8 parameter)
 ```
 
 ---
@@ -315,7 +320,7 @@ descriptor = emitted based on param sizes
 
 ```
 C0
-01 10 0B 00 73 01
+01 10 0B 00 03 01
 AA          // one 1-byte parameter
 DE AD BE EF // payload
 C0
@@ -336,15 +341,18 @@ Breakdown:
 
 ```
 C0
-01 00 0C 00 71 01
-AA          // echo parameter
+01 10 0B 00 58 01
+00          // success status as U8 param[0]
 DE AD BE EF // updated payload
 C0
 ```
 
 Where:
-- Command may change to reflect status
-- Payload may change based on device behavior
+- Command is the response command; status is carried separately in U8 param[0].
+- Payload may change based on device behavior.
+- Both examples contain 11 raw bytes. The request sum is `0x3FF`, folded to
+  `0xFF + 0x03 = 0x102`, then `0x02 + 0x01 = 0x03`.
+  The success response sum is `0x355`, folded to `0x58`.
 
 ---
 
@@ -392,7 +400,15 @@ status = StatusCode::Unsupported
 Transport must buffer until complete.
 
 ### 13.5. Oversized packets  
-Configurable, but default behavior is **drop**.
+The raw codec accepts total packet lengths from 6 through 65535 bytes inclusive.
+`serializeRaw()` returns an empty buffer if header + all descriptors + parameters
++ payload exceeds 65535, checked with bounded arithmetic before building output.
+`fromRaw()` returns null for lengths outside this range or any mismatch between
+the encoded length and supplied buffer. Channel/transport limits may be smaller.
+
+For compatibility, legacy `serialize()` still serializes oversized packets with
+a wrapped uint16 length; `fromSerialized()` rejects the resulting length mismatch.
+This historical output is not a valid raw packet contract.
 
 ---
 
@@ -413,10 +429,46 @@ Configurable, but default behavior is **drop**.
 Located in:
 
 ```
-src/lib/protocol/
-src/lib/fujibus_transport.cpp
+include/fujinet/io/protocol/fuji_bus_packet.h
 src/lib/fuji_bus_packet.cpp
+src/lib/fujibus_transport.cpp
 ```
+
+### Explicit C++ codec contract
+
+- `serializeRaw()` emits exactly FujiBus bytes, without SLIP boundaries/escaping.
+- `fromRaw(bytes)` consumes exactly one raw packet. C0/DB are literal bytes even
+  in the header; SLIP-wrapped input is never automatically unwrapped. Invalid
+  checksum, short header, length mismatch, or truncated descriptors/parameters
+  returns null, with no partial public packet. Bytes outside the declared length
+  are rejected; remaining bytes inside the length are opaque payload. No remaining
+  bytes means no payload value, including after serializing an empty payload.
+- `serialize()` / `fromSerialized(bytes)` remain the serial compatibility APIs.
+  The parser skips noise before the first END, requires a final END, and decodes
+  only the first frame. Consecutive leading ENDs produce an empty first frame and
+  fail. Later frames/trailing bytes are ignored only if the full input ends in END.
+  Unknown escape pairs are discarded, including DB END consuming that END; a
+  dangling escape without a final END fails framing validation. These are retained
+  C++ compatibility quirks, not new requirements for other SLIP implementations.
+- Descriptor reserved bits and zero-count continuations are accepted, but
+  re-serialization uses canonical descriptor grouping, without reserved bits.
+
+### Caller and cross-language audit
+
+The production C++ caller is `src/lib/fujibus_transport.cpp`: `receive()` and
+`receiveResponse()` use `fromSerialized()`, and `send()` uses `serialize()`.
+Those calls remain serial. Packet, transport mapping/framing and SlipFramer tests
+also retain serial coverage; raw API tests use independent literal expectations
+in `tests/fujibus_wire_fixtures.h` and `tests/test_fujipacket.cpp`.
+
+The unchanged sibling `fujinet-nio-lib` C encoder's
+`src/common/fn_packet_header.c::fn_build_header()` and
+`src/common/fn_packet_checksum_packet.c::fn_calc_packet_checksum()` and Python
+`py/fujinet_tools/fujibus.py::build_fuji_packet_decoded()` corroborate the six-byte
+header, explicit LE length and folded checksum. Python `build_fuji_packet()` adds
+SLIP explicitly, and `build_fuji_response_wire()` encodes status as U8 param[0].
+This audit concerns common wire encoding; malformed SLIP behavior is not identical
+across languages (C++ discards unknown escape pairs).
 
 ### Python (testing)
 ```
@@ -433,7 +485,8 @@ Supports:
 # 16. FAQ
 
 ### Q: Can I send a FujiBus packet without SLIP?  
-No — SLIP boundaries are required.
+Yes, with `serializeRaw()` / `fromRaw()` and explicit packet boundaries. Serial
+callers continue to use `serialize()` / `fromSerialized()` with SLIP.
 
 ### Q: Do devices interpret parameters or payload first?  
 Devices may treat parameters as *commands* and payload as *data*.
