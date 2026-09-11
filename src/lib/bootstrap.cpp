@@ -41,7 +41,12 @@ io::ITransport* setup_transports(FujinetCore& core,
         break;
     }
     case TransportKind::FujiBusNative: {
-        auto* framer = new io::NativeFramer();
+        auto* packets = channel.packet_io();
+        if (!packets || packets->capacity() == 0) {
+            // Byte-only placeholders cannot establish native packet boundaries.
+            break;
+        }
+        auto* framer = new io::NativeFramer(*packets);
         auto* t = new io::FujiBusTransport(channel, *framer);
         core.addTransport(t);
         primary = t;

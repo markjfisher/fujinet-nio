@@ -464,9 +464,12 @@ legacy `serialize()` / `fromSerialized()` wrappers, whose framing validation
 remains separate. Transport status and parameter mapping is unchanged.
 
 `src/lib/bootstrap.cpp` still selects SlipFramer or NativeFramer at construction.
-NativeFramer remains a placeholder that merges channel reads; this framing
-separation does not establish native packet boundary safety. The Zorro profile
-still uses its placeholder channel. `AtariSioFujiBusFramer` operates beneath
+NativeFramer requires an explicit `IPacketIO` capability and preserves complete
+opaque packet boundaries in one bounded receive slot. Receive, send and local
+reset outcomes are observable separately; ambiguous completion remains blocked
+across local reset. See the [native packet contract](native-packet-contract.md)
+for ownership, bounds and deferred recovery/hardware gates. The Zorro profile
+still uses a byte-only placeholder channel, so native bootstrap fails closed. `AtariSioFujiBusFramer` operates beneath
 Channel, not at the IFramer boundary, and continues carrying SLIP bytes in its
 SIO envelopes. Its composition regression uses the real transport and SlipFramer.
 

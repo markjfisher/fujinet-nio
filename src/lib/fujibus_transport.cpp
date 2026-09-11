@@ -128,9 +128,9 @@ void FujiBusTransport::send(const IOResponse& resp)
           .setData(std::move(data));
 
     ByteBuffer serialized = packet.serializeRaw();
-    if (!serialized.empty()) {
-        _framer.sendPacket(_channel, serialized);
-    }
+    // Native framers must observe serialization failure too (empty raw output).
+    // Byte-stream framers retain their existing empty-packet no-op behavior.
+    _framer.sendPacket(_channel, serialized);
 }
 
 bool FujiBusTransport::receiveResponse(IOResponse& outResp)

@@ -9,10 +9,16 @@
 
 namespace fujinet::io {
 
+class IPacketIO;
+
 // Abstract byte-level I/O channel (ACM, TTY, UART, etc.).
 class Channel {
 public:
     virtual ~Channel() = default;
+
+    // Optional complete-packet capability. No byte-stream boundary inference.
+    // The returned adapter must outlive its users and retain its identity.
+    virtual IPacketIO* packet_io() { return nullptr; }
 
     // Are there bytes available to read without blocking?
     virtual bool available() = 0;

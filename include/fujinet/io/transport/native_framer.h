@@ -1,31 +1,44 @@
 #pragma once
 
 #include "fujinet/io/transport/iframer.h"
-#include "fujinet/io/core/channel.h"
-#include "fujinet/io/protocol/fuji_bus_packet.h"
+#include "fujinet/io/core/packet_io.h"
 
 namespace fujinet::io {
 
-using protocol::ByteBuffer;
-
-// Pass-through framer for packet-native channels (Zorro, SPI, floppy/Pico).
-// On such channels the physical layer delivers complete datagrams — there is
-// no byte-level framing to extract.  poll() accumulates all available bytes
-// into a single buffer; nextPacket() returns that buffer as one packet.
+// One owned opaque receive slot; no byte-channel fallback or protocol parsing.
 class NativeFramer : public IFramer {
 public:
-    // Drain available bytes from ch into _rxBuffer.
+    NativeFramer() = default;
+    explicit NativeFramer(IPacketIO& adapter);
+    NativeFramer(const NativeFramer&) = delete;
+    NativeFramer& operator=(const NativeFramer&) = delete;
+    NativeFramer(NativeFramer&&) = delete;
+    NativeFramer& operator=(NativeFramer&&) = delete;
+
     void poll(Channel& ch) override;
-
-    // Return the entire accumulated buffer as one packet and clear it.
-    // Returns false if no bytes were received since the last call.
     bool nextPacket(ByteBuffer& outPacket) override;
-
-    // Write packet bytes verbatim to ch (no framing added).
     void sendPacket(Channel& ch, const ByteBuffer& packet) override;
+    PacketIOStatus reset(Channel& ch);
+
+    std::size_t capacity() const { return _storage.size(); }
+    PacketIOStatus receiveStatus() const { return _receiveStatus; }
+    PacketIOStatus sendStatus() const { return _sendStatus; }
+    PacketIOStatus resetStatus() const { return _resetStatus; }
+    bool unknownCompletion() const { return _unknownCompletion; }
 
 private:
-    ByteBuffer _rxBuffer;
+    void bind(IPacketIO& adapter);
+    PacketIOStatus checkAdapter(Channel& ch);
+
+    IPacketIO* _adapter{nullptr}; // Borrowed, stable for this framer's lifetime.
+    Channel* _slotChannel{nullptr}; // Must outlive an occupied receive slot.
+    ByteBuffer _storage;
+    std::size_t _readySize{0};
+    bool _resetRequired{false};
+    bool _unknownCompletion{false};
+    PacketIOStatus _receiveStatus{PacketIOStatus::NoData};
+    PacketIOStatus _sendStatus{PacketIOStatus::NoData};
+    PacketIOStatus _resetStatus{PacketIOStatus::NoData};
 };
 
 } // namespace fujinet::io
