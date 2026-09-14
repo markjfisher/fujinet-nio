@@ -148,6 +148,7 @@ abstract C_0008542343802949846318 {
 +~Channel() constexpr = default : void
 ..
 {abstract} +available() = 0 : bool
++packet_io() : IPacketIO *
 {abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
 +supports_readable_wait() const : bool
 +wait_for_readable(std::chrono::milliseconds timeout) : bool

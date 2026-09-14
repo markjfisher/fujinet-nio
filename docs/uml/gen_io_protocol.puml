@@ -48,20 +48,22 @@ class C_0017232777488057089840 {
 +command() const : std::uint8_t
 +data() const : const std::optional<ByteBuffer> &
 +dataAsString() const : std::optional<std::string>
--decodeSLIP(const ByteBuffer & input) const : ByteBuffer
 +device() const : WireDeviceId
--encodeSLIP(const ByteBuffer & input) const : ByteBuffer
+-encodeRaw(bool enforceLengthLimit) const : ByteBuffer
+{static} +fromRaw(const ByteBuffer & input) : std::unique_ptr<FujiBusPacket>
 {static} +fromSerialized(const ByteBuffer & input) : std::unique_ptr<FujiBusPacket>
 +param(unsigned int index) const : std::uint32_t
 +paramCount() const : unsigned int
 -parse(const ByteBuffer & input) : bool
+-parseRaw(const ByteBuffer & input) : bool
 -processArg(const std::string & s) : void
--processArg(ByteBuffer && buf) : void
 -processArg(const ByteBuffer & buf) : void
 -processArg(std::uint32_t v) : void
 -processArg(std::uint16_t v) : void
 -processArg(std::uint8_t v) : void
+-processArg(ByteBuffer && buf) : void
 +serialize() const : ByteBuffer
++serializeRaw() const : ByteBuffer
 +setData(ByteBuffer data) : FujiBusPacket &
 +tryParamU8(unsigned int index, std::uint8_t & out) const : bool
 __
@@ -96,15 +98,6 @@ Close
 Info
 InfoRead
 TranslateConfigure
-}
-class "io::protocol::FujiBusHeader" as C_0009954510640382192371
-class C_0009954510640382192371 {
-__
-+checksum : std::uint8_t
-+command : std::uint8_t
-+descr : std::uint8_t
-+device : std::uint8_t
-+length : std::uint16_t
 }
 enum "io::protocol::SlotCatalogCommand" as C_0000459409847653698260
 enum C_0000459409847653698260 {

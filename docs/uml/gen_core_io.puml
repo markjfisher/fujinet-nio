@@ -26,11 +26,24 @@ abstract C_0008542343802949846318 {
 +~Channel() constexpr = default : void
 ..
 {abstract} +available() = 0 : bool
++packet_io() : IPacketIO *
 {abstract} +read(std::uint8_t * buffer, std::size_t maxLen) = 0 : std::size_t
 +supports_readable_wait() const : bool
 +wait_for_readable(std::chrono::milliseconds timeout) : bool
 {abstract} +write(const std::uint8_t * buffer, std::size_t len) = 0 : void
 __
+}
+abstract "io::IPacketIO" as C_0007926727942175438825
+abstract C_0007926727942175438825 {
++IPacketIO(std::size_t capacity) : void
++~IPacketIO() constexpr = default : void
+..
++capacity() const : std::size_t
+{abstract} +receive(std::uint8_t * buffer, std::size_t capacity) = 0 : PacketReceiveResult
+{abstract} +reset() = 0 : PacketIOStatus
+{abstract} +send(const std::uint8_t * packet, std::size_t size) = 0 : PacketIOStatus
+__
+-_capacity : const std::size_t
 }
 class "io::bytecodec::Reader" as C_0001552565821524910243
 class C_0001552565821524910243 {
@@ -831,13 +844,61 @@ class C_0000024426887380157859 {
 __
 -_rxBuffer : ByteBuffer
 }
+enum "io::PacketIOStatus" as C_0016227092951652919912
+enum C_0016227092951652919912 {
+Ok
+NoData
+Incomplete
+Truncated
+EmptyPacket
+Oversized
+Backpressure
+Unavailable
+SendFailed
+UnknownCompletion
+ResetFailed
+ResetRequired
+Unsupported
+InvalidCapacity
+AdapterChanged
+}
+class "io::PacketReceiveResult" as C_0003979666872226595970
+class C_0003979666872226595970 {
+__
++size : std::size_t
++status : PacketIOStatus
+}
 class "io::NativeFramer" as C_0000216212220700142134
 class C_0000216212220700142134 {
++NativeFramer() = default : void
++NativeFramer(IPacketIO & adapter) : void
++NativeFramer(const NativeFramer &) = deleted : void
++NativeFramer(NativeFramer &&) = deleted : void
+..
++operator=(const NativeFramer &) = deleted : NativeFramer &
++operator=(NativeFramer &&) = deleted : NativeFramer &
+..
+-bind(IPacketIO & adapter) : void
++capacity() const : std::size_t
+-checkAdapter(Channel & ch) : PacketIOStatus
 +nextPacket(ByteBuffer & outPacket) : bool
 +poll(Channel & ch) : void
++receiveStatus() const : PacketIOStatus
++reset(Channel & ch) : PacketIOStatus
++resetStatus() const : PacketIOStatus
 +sendPacket(Channel & ch, const ByteBuffer & packet) : void
++sendStatus() const : PacketIOStatus
++unknownCompletion() const : bool
 __
--_rxBuffer : ByteBuffer
+-_adapter : IPacketIO *
+-_readySize : std::size_t
+-_receiveStatus : PacketIOStatus
+-_resetRequired : bool
+-_resetStatus : PacketIOStatus
+-_sendStatus : PacketIOStatus
+-_slotChannel : Channel *
+-_storage : ByteBuffer
+-_unknownCompletion : bool
 }
 class "io::ClockDevice" as C_0006193474076654383504
 class C_0006193474076654383504 {
@@ -1096,6 +1157,9 @@ __
 -_storageManager : fs::StorageManager
 -_tickCount : std::uint64_t
 }
+C_0008542343802949846318 ..> C_0007926727942175438825
+C_0007926727942175438825 ..> C_0003979666872226595970
+C_0007926727942175438825 ..> C_0016227092951652919912
 C_0002386736627821114488 o-- C_0015173710654558847960 : +type
 C_0002942984525013396621 o-- C_0012496700434923238249 : +status
 C_0010613333864250568344 ..> C_0001159279330674149840
@@ -1211,7 +1275,12 @@ C_0003433839086217597071 --> C_0014582132463805045490 : -_framer
 C_0015529497257294770104 <|-- C_0003433839086217597071
 C_0000024426887380157859 ..> C_0008542343802949846318
 C_0014582132463805045490 <|-- C_0000024426887380157859
-C_0000216212220700142134 ..> C_0008542343802949846318
+C_0003979666872226595970 o-- C_0016227092951652919912 : +status
+C_0000216212220700142134 --> C_0007926727942175438825 : -_adapter
+C_0000216212220700142134 --> C_0008542343802949846318 : -_slotChannel
+C_0000216212220700142134 o-- C_0016227092951652919912 : -_receiveStatus
+C_0000216212220700142134 o-- C_0016227092951652919912 : -_sendStatus
+C_0000216212220700142134 o-- C_0016227092951652919912 : -_resetStatus
 C_0014582132463805045490 <|-- C_0000216212220700142134
 C_0006193474076654383504 ..> C_0002386736627821114488
 C_0006193474076654383504 ..> C_0002942984525013396621
