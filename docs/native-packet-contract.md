@@ -2,12 +2,11 @@
 
 This is the software packet adapter contract established by Stories 1.2–1.4.
 It supports deterministic host testing before a physical backend exists.
-Story 1.5 is recorded complete, but the independently reviewed Story 1.6 verdict
-on 2026-09-14 **holds acceptance**: its scripted broker/disk-retry tests do not establish
-remote ambiguity containment through both actual retry paths. See the
-[workspace evidence record](../../../_bmad-output/specs/spec-amiga-zorro-ii-packet-native-backend/stories/1-6-accept-the-canonical-software-packet-contract-for-bridge-design.md#technical-decision-record--2026-09-14)
-(available in the parent workspace layout) for exact revisions, passing checks
-and blocking scenarios. This document does not
+The Story 1.5 follow-up adds software backend containment through both actual
+retry callers. See the
+[workspace evidence record](../../../_bmad-output/specs/spec-amiga-zorro-ii-packet-native-backend/stories/1-6-accept-the-canonical-software-packet-contract-for-bridge-design.md#technical-acceptance-record--2026-09-15)
+(available in the parent workspace layout) for Story 1.6's decision, exact
+revisions, checks and limits. This document does not
 approve a Zorro register layout, bridge link, physical timing or hardware readiness.
 
 ## Raw representation
@@ -150,9 +149,9 @@ as its apparent outcome. A nonempty raw packet exceeding the adapter's smaller
 capacity reports `Oversized`. Serial framing still drops empty input.
 
 Unknown completion is retained as an uncertainty condition and blocks further
-use even across a successful local reset. There is no automatic recovery API
-that invents remote quiescence. Actual callers and any future recovery mechanism
-remain unproven by Story 1.5's recorded evidence and block Story 1.6 acceptance.
+use even across a successful local reset. NativeFramer has no recovery API
+that invents remote quiescence. The separate Amiga backend guard described
+below permits explicit recovery only with independently established quiescence.
 Framer result inspection is the observable software
 seam; the service-facing `ITransport` interface remains unchanged.
 
@@ -189,33 +188,76 @@ From the workspace, source `scripts/env.sh`, then in this repository run:
 ctest --test-dir build/fujibus-pty-debug -R '^fujinet-nio-tests$' --output-on-failure
 ```
 
-Queue tests establish packet boundaries, not permission for multiple remotely
-in-flight exchanges. FujiBus still has no safe on-wire correlation identifier.
-The audited firmware revision is `fd965f5ec8609bacead86b94a23f73093da98de2`;
-the audited driver revision is `342c5700d843901c6120a17b2620602995e6fd00`.
-Story 1.6 reran the firmware gate (344 cases, 6,856 assertions), broker tests
-and disk-retry tests successfully. Broker tests prove local FIFO, abort and
-caller-buffer behavior; retry tests prove bounded scripted attempts. They do
-not count remote transmissions/effects, model late peer responses after local
-close/open, or execute `fn_raw_call` through the broker. C++ local uncertainty
-latches cannot substitute for that missing Amiga evidence.
+## Amiga backend containment and caller evidence
 
-The required follow-up must put containment in backend-side code under test,
-outside an independently controlled peer double. The peer must not provide the
-enforcement being asserted. At the software boundary, peer state or an observable
-completion barrier must establish that the prior request can no longer execute
-or deliver an old response; local reset alone is insufficient. This remains
-missing software evidence and specifies no physical recovery protocol.
+The driver provides `amiga/nio.device/fujinet_nio_packet_backend.[ch]`, a
+portable whole-raw-packet guard behind the broker backend seam. It is linked
+with the actual Amiga transport, broker, disk read/write client and `fn_raw_call`
+in `amiga/tests/test_fujinet_nio_packet_backend.c`. The deployed serial backend
+is unchanged; this component does not select or implement a physical adapter.
 
-Story 2.4 remains blocked on accepted 1.6 plus positive relevant 2.2/2.3 evidence
-and explicit ABI approval. Setup/feasibility may proceed independently. Physical
-implementation still requires accepted 1.14 and approved 2.4. There is no accepted
-contract revision to consume: independent review confirmed a held verdict,
-with retry coverage still missing. On eventual acceptance, consumers must pin
-both the firmware contract commit and the workspace commit containing the
-reviewed decision, never silently substitute a newer version. Contract changes
-require renewed acceptance and downstream ABI impact review.
+The guard starts quarantined and borrows exclusive scratch storage of
+6–65,535 bytes for its lifetime, disjoint from exchange request/response buffers.
+Its serialized callback interface distinguishes definite
+rejection (nothing sent), completed exchange (no further effect or reply from
+that exchange), and unknown completion. Local send acceptance is insufficient.
+It validates raw structure, length, checksum and matching device/command before
+copying a completed reply. Device/command matching is not correlation. Invalid
+or missing replies leave quarantine set and report zero failed response length.
+No exchange request/response pointer is retained; the adapter must obey the
+supplied capacity. The guard retains only its dedicated scratch pointer.
 
-Real-service parity, guest integration and physical transfer/recovery remain
-downstream work. Serial is a separate
-compatibility deployment, with no native fallback or automatic physical failover.
+Unknown completion survives close/open. Every local reset attempt quarantines,
+even from a healthy state. Only explicit recovery whose callback proves that
+prior work can neither execute nor deliver an old reply clears quarantine.
+The callback may fail; local reset, reopening, delay or clearing a buffer is
+never such proof. Definite rejection or valid known completion can clear the
+temporary quarantine set before a transfer; neither recovers a previously
+quarantined endpoint. Calls are serialized by the owning worker; the reentry flag
+is not a concurrency lock. See the driver
+[adapter obligations](../../fujinet-nio-driver/amiga/README.md#undeployed-whole-packet-containment-component)
+for implementation and lifecycle requirements.
+
+The independent peer deliberately accepts unsafe sends and retains pending
+work/late responses across local lifecycle operations. Tests count attempts,
+backend entries, transmissions, effects, pending work and replies separately.
+Both callers execute pre-send rejection/open failure, post-delivery ambiguity,
+post-effect lost/corrupt/oversized/truncated replies, lifecycle/reset failures,
+late same-command replies, and failed/successful quiescence. Queue/active abort
+and buffer ownership tests supplement the six core fault rows. Max remote
+in-flight count is one; quarantine blocks additional transmissions until proof.
+The corrected existing retry test also verifies the second call's actual
+script indices, diagnostics and independent buffers.
+
+This is ambiguity containment, not universal exactly-once execution. Existing
+`fn_raw_call` policy can replay after known completion if a valid reply exceeds
+the application's reply capacity, or after a completed active abort. Tests
+characterize those cases explicitly. The backend cannot see that application
+capacity; retry/service semantics remain unchanged. The guard preserves
+canonical U8 status bytes; `fn_raw_call` exposes them unchanged, while existing
+service-specific mappings remain intact. Pre-existing permissive
+parser differences remain informational, with no universal parser-equivalence
+gate added by this work.
+
+Driver verification (source the workspace environment first):
+
+```sh
+cd repos/fujinet-nio-driver/amiga/tests
+make test
+```
+
+This includes the integration target, broker and corrected retry tests. The
+component also cross-compiles for 68000. Story 1.6 records exact commands,
+results, independent review and full owner revisions. The reviewed driver
+implementation is `e6f9686797f6bae256342d362795c4b3fc5b3da1`, linking unchanged
+library revision `dac8bf66c4ec44841790e08021c1654379c21255`. The firmware gate above
+passes 344 cases / 6,856 assertions and the registered Python suite.
+
+Story 2.4 consumes the accepted 1.6 decision plus positive relevant 2.2/2.3
+physical feasibility and explicit human ABI approval. Pin both the firmware
+contract commit and the workspace commit containing the reviewed acceptance;
+never silently substitute a newer version. Changes require renewed acceptance
+and downstream ABI impact review. Physical implementation also requires 1.14.
+The concrete physical quiescence mechanism, real-service parity and guest
+integration remain downstream work. Serial remains a separate compatibility
+deployment, with no native fallback or automatic physical failover.
