@@ -2,8 +2,12 @@
 
 This is the software packet adapter contract established by Stories 1.2–1.4.
 It supports deterministic host testing before a physical backend exists.
-Story 1.5 must still prove actual broker/retry ownership and recovery; Story 1.6
-must explicitly accept the complete software contract. This document does not
+Story 1.5 is recorded complete, but the independently reviewed Story 1.6 verdict
+on 2026-09-14 **holds acceptance**: its scripted broker/disk-retry tests do not establish
+remote ambiguity containment through both actual retry paths. See the
+[workspace evidence record](../../../_bmad-output/specs/spec-amiga-zorro-ii-packet-native-backend/stories/1-6-accept-the-canonical-software-packet-contract-for-bridge-design.md#technical-decision-record--2026-09-14)
+(available in the parent workspace layout) for exact revisions, passing checks
+and blocking scenarios. This document does not
 approve a Zorro register layout, bridge link, physical timing or hardware readiness.
 
 ## Raw representation
@@ -21,7 +25,13 @@ Raw packets carry no SLIP delimiters or escaping. `0xC0` and `0xDB` are ordinary
 bytes, including in headers. `IFramer` exchanges raw packets with
 `FujiBusTransport`; `SlipFramer` and the legacy serial codec wrappers share SLIP
 helpers. Response status remains U8 parameter 0. No command, service payload,
-correlation field or response mapping is added.
+correlation field or response mapping is added. This describes canonical encoder
+output and C++ transport mapping; it does not assert identical permissive parser
+behavior in every language. Canonical responses with one U8 status parameter
+are supported. The C response parser's pre-existing permissive malformed-input
+differences are informational, not a universal parser-equivalence requirement
+or extra acceptance gate. Fixtures belong in the retry follow-up only where
+they affect actual `fn_raw_call` fault behavior; no parser change is implied.
 
 The canonical raw length is 6–65,535 bytes. A packet adapter can impose a smaller
 capacity. SLIP expansion (up to twice the raw size plus two delimiters), raw
@@ -142,7 +152,8 @@ capacity reports `Oversized`. Serial framing still drops empty input.
 Unknown completion is retained as an uncertainty condition and blocks further
 use even across a successful local reset. There is no automatic recovery API
 that invents remote quiescence. Actual callers and any future recovery mechanism
-must be assessed in Story 1.5. Framer result inspection is the observable software
+remain unproven by Story 1.5's recorded evidence and block Story 1.6 acceptance.
+Framer result inspection is the observable software
 seam; the service-facing `ITransport` interface remains unchanged.
 
 ## Reset and stale state
@@ -180,6 +191,31 @@ ctest --test-dir build/fujibus-pty-debug -R '^fujinet-nio-tests$' --output-on-fa
 
 Queue tests establish packet boundaries, not permission for multiple remotely
 in-flight exchanges. FujiBus still has no safe on-wire correlation identifier.
-Real-service parity, actual Amiga broker/retry behavior, guest integration and
-physical transfer/recovery remain downstream work. Serial is a separate
+The audited firmware revision is `fd965f5ec8609bacead86b94a23f73093da98de2`;
+the audited driver revision is `342c5700d843901c6120a17b2620602995e6fd00`.
+Story 1.6 reran the firmware gate (344 cases, 6,856 assertions), broker tests
+and disk-retry tests successfully. Broker tests prove local FIFO, abort and
+caller-buffer behavior; retry tests prove bounded scripted attempts. They do
+not count remote transmissions/effects, model late peer responses after local
+close/open, or execute `fn_raw_call` through the broker. C++ local uncertainty
+latches cannot substitute for that missing Amiga evidence.
+
+The required follow-up must put containment in backend-side code under test,
+outside an independently controlled peer double. The peer must not provide the
+enforcement being asserted. At the software boundary, peer state or an observable
+completion barrier must establish that the prior request can no longer execute
+or deliver an old response; local reset alone is insufficient. This remains
+missing software evidence and specifies no physical recovery protocol.
+
+Story 2.4 remains blocked on accepted 1.6 plus positive relevant 2.2/2.3 evidence
+and explicit ABI approval. Setup/feasibility may proceed independently. Physical
+implementation still requires accepted 1.14 and approved 2.4. There is no accepted
+contract revision to consume: independent review confirmed a held verdict,
+with retry coverage still missing. On eventual acceptance, consumers must pin
+both the firmware contract commit and the workspace commit containing the
+reviewed decision, never silently substitute a newer version. Contract changes
+require renewed acceptance and downstream ABI impact review.
+
+Real-service parity, guest integration and physical transfer/recovery remain
+downstream work. Serial is a separate
 compatibility deployment, with no native fallback or automatic physical failover.
