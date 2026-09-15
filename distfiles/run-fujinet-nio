@@ -1,8 +1,72 @@
 #!/bin/sh
 
+# Parse console PTY from fujinet-nio output and link it via socat
+# Priority: FN_INJECT_PTY env var > fujinet.yaml inject_pty setting
+INJECT_PTY="${FN_INJECT_PTY:-}"
+
+# If not set via env var, try reading from fujinet.yaml
+if [ -z "$INJECT_PTY" ] && [ -f "./fujinet-data/fujinet.yaml" ]; then
+    # Simple grep-based YAML parsing (works for simple key: value format)
+    INJECT_PTY=$(grep "^  inject_pty:" "./fujinet-data/fujinet.yaml" | sed 's/^  inject_pty: *"\?\([^"]*\)"\?/\1/' | tr -d ' ')
+fi
+
+SOCAT_PIDFILE="/tmp/fujinet-socat-$$.pid"
+
+cleanup_socat() {
+    if [ -f "$SOCAT_PIDFILE" ]; then
+        SOCAT_PID=$(cat "$SOCAT_PIDFILE")
+        if [ -n "$SOCAT_PID" ]; then
+            echo "Stopping socat (PID $SOCAT_PID)"
+            kill "$SOCAT_PID" 2>/dev/null || true
+            wait "$SOCAT_PID" 2>/dev/null || true
+        fi
+        rm -f "$SOCAT_PIDFILE"
+    fi
+}
+
+trap cleanup_socat EXIT INT TERM
+
 echo "Starting fujinet-nio"
-./fujinet-nio "$@"
-rc=$?
+
+# Start a background monitor that watches for console PTY and starts socat
+if [ -n "$INJECT_PTY" ]; then
+    {
+        # Use tail -f on a temp fifo to capture output
+        FIFO="/tmp/fujinet-output-$$"
+        mkfifo "$FIFO"
+        
+        # Monitor the fifo for console PTY
+        while IFS= read -r line; do
+            if echo "$line" | grep -q "Connect diagnostic console to:"; then
+                CONSOLE_PTY=$(echo "$line" | sed -n 's/.*Connect diagnostic console to: \(\/dev\/pts\/[0-9]\+\).*/\1/p')
+                
+                if [ -n "$CONSOLE_PTY" ]; then
+                    echo "[run-fujinet-nio] Linking $CONSOLE_PTY <-> $INJECT_PTY via socat"
+                    socat -d -d "$CONSOLE_PTY,rawer,echo=0,icanon=0" "$INJECT_PTY,rawer,echo=0,icanon=0" 2>&1 | sed 's/^/[socat] /' &
+                    echo $! > "$SOCAT_PIDFILE"
+                    echo "[run-fujinet-nio] socat started with PID $(cat "$SOCAT_PIDFILE")"
+                    break
+                fi
+            fi
+        done < "$FIFO" &
+        
+        MONITOR_PID=$!
+        
+        # Run fujinet-nio and tee to both stdout and fifo
+        ./fujinet-nio "$@" 2>&1 | tee "$FIFO"
+        rc=$?
+        
+        # Cleanup
+        kill "$MONITOR_PID" 2>/dev/null || true
+        rm -f "$FIFO"
+        
+        exit $rc
+    }
+    rc=$?
+else
+    ./fujinet-nio "$@"
+    rc=$?
+fi
 
 # from sysexits.h:
 # #define EX_TEMPFAIL     75      /* temp failure; user is invited to retry */
