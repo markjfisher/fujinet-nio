@@ -213,8 +213,37 @@ Amiberry already bridges SLIP over TCP and can mount a host directory
 (`filesystem2` / workbench `shares:`); the resident broker has DOS I/O and no
 `bsdsocket` client. TCP would force the guest half (Story 1.10) to add a network
 stack. SLIP TCP and the fail-closed PTY Zorro placeholder have the wrong
-semantics. Story 1.10 may mount the same record directory writable; that is not
-required to accept 1.9.
+semantics. Story 1.10 mounts the same record directory writable as `NATIVE:`.
+
+## Amiga native-test broker artifact
+
+Story 1.10 adds a **test-only** guest broker, `fujinet-nio-native-test.device`.
+It is a second Exec device binary with the public `fujinet-nio.device` ABI
+(`FUJINET_NIO_DEVICE_NAME`, `CMD_EXCHANGE`, request layout). Guest callers
+install it as `DEVS:fujinet-nio.device`. `$VER` and the filename contain
+`native-test`. It is not deployable Zorro firmware.
+
+The device is Client-role on the 1.9 directory contract: it sends `to-host.pkt`
+and receives `to-guest.pkt` after `*.tmp` + rename. `backend_open` succeeds only
+when `IDENTITY` already contains `native-test\n`. The default volume is
+`NATIVE:`; `GetVar("FN_NATIVE_TEST_DIR")` overrides it. Serial controls return
+`FN_ERR_UNSUPPORTED`. The link set omits `fujinet_nio_serial_backend.o`,
+`fn_session.o`, and `fn_slip.o`, and never opens `serial.device` or
+`timer.device` for packet I/O.
+
+Guest EXCHANGE is wrapped with the existing packet guard. Quiesce for this file
+mailbox discards leftover `.pkt`/`.tmp` records and proves both directions
+empty. At most one exchange is in flight. Directory I/O uses `dos.library`, so
+the native-test device runs its worker as a `CreateNewProc` Process. A raw
+`AddTask` worker Gurus on the first DOS call.
+
+The Amiberry case starts `fujinet-nio-native-test --dir <record>`, mounts that
+directory `filesystem2=rw` as `NATIVE:`, injects the native-test device, and
+does not start `fujibus-tcp`. The tiny probe
+`fujinet-nio-native-test-probe` submits one clock EXCHANGE and must not
+`WaitIO` an OpenDevice-only IORequest. A timed-out or failed transfer discards
+`to-host.pkt` so the next EXCHANGE is not stuck on backpressure. Guest success
+writes `NATIVE:complete` containing `PASS\n`.
 
 ## Amiga backend containment and caller evidence
 
