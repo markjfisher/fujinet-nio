@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+// Framing-through-core serial vs native parity lives in test_file_clock_core_parity.cpp.
 #include "fujinet/io/devices/clock_commands.h"
 #include "fujinet/io/devices/clock_device.h"
 

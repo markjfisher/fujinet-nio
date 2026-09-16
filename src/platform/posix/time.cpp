@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <time.h>
@@ -12,8 +13,20 @@
 
 namespace fujinet::platform {
 
+namespace {
+std::optional<std::uint64_t> g_test_unix_time;
+}
+
+void set_test_unix_time_seconds(std::optional<std::uint64_t> frozen)
+{
+    g_test_unix_time = frozen;
+}
+
 std::uint64_t unix_time_seconds()
 {
+    if (g_test_unix_time.has_value()) {
+        return *g_test_unix_time;
+    }
     std::time_t t = std::time(nullptr);
     if (t <= 0) return 0;
     return static_cast<std::uint64_t>(t);
