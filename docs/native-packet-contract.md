@@ -188,6 +188,34 @@ From the workspace, source `scripts/env.sh`, then in this repository run:
 ctest --test-dir build/fujibus-pty-debug -R '^fujinet-nio-tests$' --output-on-failure
 ```
 
+## Host native-test directory harness
+
+Story 1.9 adds a **test-only** host endpoint, `fujinet-nio-native-test`, that exchanges
+complete raw `serializeRaw()` records through the production core. Sources live under
+`tests/` (`directory_packet_io.*`, `native_test_runner.cpp`) and are linked only into
+the test runner and `fujinet-nio-tests`, not the production POSIX library. It is a
+software harness, not a Zorro register map, mailbox, bridge protocol, or production
+service.
+
+The selected facility is a **shared-directory record adapter**:
+
+- One directory. File `IDENTITY` contains `native-test\n`.
+- At most one `to-host.pkt` and one `to-guest.pkt`. A complete record is the whole
+  file after an atomic `*.tmp` publish. File size is the record boundary.
+- Capacity is the adapter constructor argument (at most 65,535). Polling is
+  nonblocking. Startup and `reset()` discard leftover packet files.
+- The binary identifies as `native-test`. It constructs `FujiBusNative` plus the
+  directory channel locally and never selects `FN_BUILD_ZORRO`, `fujibus-tcp`,
+  `SlipFramer`, or a byte serial/PTY/TCP channel.
+
+Sockets, SLIP-over-TCP, and the PTY Zorro stub were rejected for this harness:
+Amiberry already bridges SLIP over TCP and can mount a host directory
+(`filesystem2` / workbench `shares:`); the resident broker has DOS I/O and no
+`bsdsocket` client. TCP would force the guest half (Story 1.10) to add a network
+stack. SLIP TCP and the fail-closed PTY Zorro placeholder have the wrong
+semantics. Story 1.10 may mount the same record directory writable; that is not
+required to accept 1.9.
+
 ## Amiga backend containment and caller evidence
 
 The driver provides `amiga/nio.device/fujinet_nio_packet_backend.[ch]`, a

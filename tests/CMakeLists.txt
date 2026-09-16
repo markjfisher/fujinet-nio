@@ -5,9 +5,24 @@ file(GLOB TEST_SOURCES CONFIGURE_DEPENDS
     "test_*.cpp"
 )
 
+# Story 1.9 host harness: not part of the production fujinet-nio library.
+add_executable(fujinet-nio-native-test
+    native_test_runner.cpp
+    directory_packet_io.cpp
+)
+target_include_directories(fujinet-nio-native-test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_link_libraries(fujinet-nio-native-test
+    PRIVATE
+        fujinet-nio
+)
+
 add_executable(fujinet-nio-tests
     run_main.cpp       # contains doctest main
     ${TEST_SOURCES}    # test_smoke.cpp, test_fujipacket.cpp, etc.
+    directory_packet_io.cpp
     # Console implementation files live in src/app/ (POSIX app), but are useful to unit test.
     # Pull them into the test binary so we can exercise help/dispatch/fs-shell behavior.
     ${CMAKE_SOURCE_DIR}/src/app/console_parse.cpp
@@ -19,6 +34,17 @@ add_executable(fujinet-nio-tests
 target_link_libraries(fujinet-nio-tests
     PRIVATE
         fujinet-nio
+)
+
+target_include_directories(fujinet-nio-tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_dependencies(fujinet-nio-tests fujinet-nio-native-test)
+target_compile_definitions(fujinet-nio-tests
+    PRIVATE
+        FUJINET_NIO_NATIVE_TEST_RUNNER="$<TARGET_FILE:fujinet-nio-native-test>"
 )
 
 add_test(NAME fujinet-nio-tests COMMAND fujinet-nio-tests)
