@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <string>
 #include <sys/wait.h>
+#include <sys/file.h>
 #include <unistd.h>
 #include <vector>
 
@@ -232,11 +233,16 @@ public:
     {
         terminate();
         _output.clear();
-        // Exclusive directory ownership: remove stale readiness before the child
-        // can publish this launch's identity, even if exec subsequently fails.
-        std::error_code ec;
-        std::filesystem::remove(directory / kDirectoryPacketIdentityName, ec);
-        if (ec) return false;
+        // Clear stale readiness only while owning the peer lock. A duplicate
+        // launch must not erase the running peer's identity, even on exec failure.
+        const int lock = ::open((directory / "PEER.lock").c_str(), O_CREAT | O_RDWR, 0644);
+        if (lock >= 0) {
+            std::error_code ec;
+            if (::flock(lock, LOCK_EX | LOCK_NB) == 0)
+                std::filesystem::remove(directory / kDirectoryPacketIdentityName, ec);
+            ::close(lock);
+            if (ec) return false;
+        }
         _directory = directory;
         int fds[2];
         if (::pipe(fds) != 0) {

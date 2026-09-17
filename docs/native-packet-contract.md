@@ -246,9 +246,10 @@ when `IDENTITY` already contains `native-test\n`. The default volume is
 `fn_session.o`, and `fn_slip.o`, and never opens `serial.device` or
 `timer.device` for packet I/O.
 
-Guest EXCHANGE is wrapped with the existing packet guard. Quiesce for this file
-mailbox discards leftover `.pkt`/`.tmp` records and proves both directions
-empty. At most one exchange is in flight. Directory I/O uses `dos.library`, so
+Guest EXCHANGE is wrapped with the existing packet guard. Empty mailbox files
+are not a quiescence proof: the host may retain work or a reply. Recovery now
+uses a fresh peer-acknowledged barrier, [documented by the driver](../../fujinet-nio-driver/amiga/README.md#native-test-directory-recovery). At most one exchange
+is in flight. Directory I/O uses `dos.library`, so
 the native-test device runs its worker as a `CreateNewProc` Process. A raw
 `AddTask` worker Gurus on the first DOS call.
 
@@ -257,7 +258,8 @@ directory `filesystem2=rw` as `NATIVE:`, injects the native-test device, and
 does not start `fujibus-tcp`. The tiny probe
 `fujinet-nio-native-test-probe` submits one clock EXCHANGE and must not
 `WaitIO` an OpenDevice-only IORequest. A timed-out or failed transfer discards
-`to-host.pkt` so the next EXCHANGE is not stuck on backpressure. Guest success
+`to-host.pkt`, but retains durable quarantine; deleting the record does not
+permit another EXCHANGE. Guest success
 writes `NATIVE:complete` containing `PASS\n`.
 
 ## Amiga backend containment and caller evidence

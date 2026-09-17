@@ -133,14 +133,12 @@ int main(int argc, char** argv)
 
     const auto identity = std::filesystem::path(directory) /
                           fujinet::native_test::kDirectoryPacketIdentityName;
-    std::filesystem::remove(identity, ec);
-    if (ec) return 1;
     std::signal(SIGINT, handle_stop);
     std::signal(SIGTERM, handle_stop);
 
     auto packets = std::make_unique<DirectoryPacketIO>(
-        directory, kAdapterCapacity, DirectoryPacketRole::Host);
-    if (packets->requires_reset()) {
+        directory, kAdapterCapacity, DirectoryPacketRole::Host, true);
+    if (!packets->start_peer()) {
         FN_LOGE(TAG, "Native-test startup record cleanup failed");
         return 1;
     }
@@ -166,6 +164,8 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    fujinet::core::register_host_service(core);
+    fujinet::core::register_application_state_services(core);
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
     fujinet::core::register_disk_device(core);
@@ -183,6 +183,11 @@ int main(int argc, char** argv)
     }
 
     while (!g_stop.load()) {
+        if (!packets->service_barrier()) {
+            FN_LOGE(TAG, "Peer barrier failed; stopping closed");
+            std::filesystem::remove(identity, ec);
+            return 1;
+        }
         core.tick();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }

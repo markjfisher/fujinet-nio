@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <vector>
 
 #ifndef FUJINET_NIO_NATIVE_TEST_RUNNER
@@ -628,6 +629,144 @@ TEST_CASE("runner does not publish readiness when startup cleanup fails")
     CHECK_FALSE(runner.wait_for_identity_file(dir, kExchangeTimeout));
     CHECK_FALSE(std::filesystem::exists(dir / native_test_records::kDirectoryPacketIdentityName));
     runner.terminate();
+    std::filesystem::remove_all(dir);
+}
+
+
+TEST_CASE("runner barrier freshness drains actual held replies and restart preserves quarantine")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    NativeTestRunnerProcess runner;
+    REQUIRE(runner.spawn(runner_path(), dir));
+    REQUIRE(runner.wait_for_identity_file(dir, kExchangeTimeout));
+    auto read = [&](const char* name) {
+        std::ifstream in(dir / name, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    };
+    auto put = [&](const char* name, const std::string& value) {
+        REQUIRE(write_bytes(dir / name, std::vector<std::uint8_t>(value.begin(), value.end())));
+    };
+    auto wait = [&](auto predicate) {
+        const auto end = std::chrono::steady_clock::now() + kExchangeTimeout;
+        while (!predicate() && std::chrono::steady_clock::now() < end) {
+            runner.drain_stdout();
+            ::usleep(2000);
+        }
+        REQUIRE(predicate());
+    };
+    auto barrier = [&]() {
+        const auto token = read("CHALLENGE");
+        REQUIRE(token.size() == 33);
+        put(("BARRIER." + token.substr(0, 32)).c_str(), token);
+        wait([&] { return read("ACK") == token; });
+        CHECK(read("CHALLENGE") != token);
+        return token;
+    };
+    const auto first = barrier();
+    put(("BARRIER." + first.substr(0, 32)).c_str(), first); // retired name is inert
+    ::usleep(20000);
+    CHECK(read("ACK") == first);
+    const auto fresh = read("CHALLENGE");
+    CHECK(fresh != first);
+
+    // Another process must fail before changing controls or removing packets.
+    NativeTestRunnerProcess duplicate;
+    REQUIRE(duplicate.spawn(runner_path(), dir));
+    wait([&] { return !duplicate.running(); });
+    CHECK(read("CHALLENGE") == fresh);
+    CHECK(read_identity_file(dir) == "native-test\n");
+
+    DirectoryPacketIO client(dir.string(), 2048, DirectoryPacketRole::Client);
+    const auto request = make_raw_request(WireDeviceId::Clock, 1, {});
+    put("FAULT", "hold\n");
+    REQUIRE(client.send(request.data(), request.size()) == PacketIOStatus::Ok);
+    wait([&] { return !std::filesystem::exists(dir / "FAULT"); });
+    CHECK_FALSE(std::filesystem::exists(dir / "to-guest.pkt"));
+    barrier(); // proves synchronous handler finished and held delivery was drained
+    put("RELEASE", "release\n");
+    wait([&] { return !std::filesystem::exists(dir / "RELEASE"); });
+    REQUIRE(client.send(request.data(), request.size()) == PacketIOStatus::Ok);
+    wait([&] { return std::filesystem::exists(dir / "to-guest.pkt"); });
+    std::uint8_t response[128];
+    CHECK(client.receive(response, sizeof(response)).status == PacketIOStatus::Ok);
+    CHECK(client.receive(response, sizeof(response)).status == PacketIOStatus::NoData);
+
+    const auto old = read("CHALLENGE");
+    put("AMBIGUOUS", old);
+    put("RECOVER", old);
+    runner.terminate();
+    put("ACK", old);
+    put("BARRIER", old);
+    put("FAULT", "hold\n");
+    put("RELEASE", "release\n");
+    NativeTestRunnerProcess restarted;
+    REQUIRE(restarted.spawn(runner_path(), dir));
+    REQUIRE(restarted.wait_for_identity_file(dir, kExchangeTimeout));
+    CHECK(read("CHALLENGE") != old);
+    CHECK(read("AMBIGUOUS") == old);
+    CHECK_FALSE(std::filesystem::exists(dir / "ACK"));
+    CHECK_FALSE(std::filesystem::exists(dir / "RECOVER"));
+    CHECK_FALSE(std::filesystem::exists(dir / "BARRIER"));
+    CHECK_FALSE(std::filesystem::exists(dir / "FAULT"));
+    CHECK_FALSE(std::filesystem::exists(dir / "RELEASE"));
+    restarted.terminate();
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("peer barrier rejects malformed and nonregular controls without blocking")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    DirectoryPacketIO host(dir.string(), 2048, DirectoryPacketRole::Host, true);
+    REQUIRE(host.start_peer());
+    std::ifstream input(dir / "CHALLENGE");
+    const std::string token(std::istreambuf_iterator<char>(input), {});
+    REQUIRE(token.size() == 33);
+    const auto name = dir / ("BARRIER." + token.substr(0, 32));
+    REQUIRE(::mkfifo(name.c_str(), 0600) == 0);
+    CHECK(host.service_barrier());
+    CHECK_FALSE(std::filesystem::exists(dir / "ACK"));
+    REQUIRE(std::filesystem::remove(name));
+    REQUIRE(write_bytes(name, std::vector<std::uint8_t>(1024, 'a')));
+    CHECK(host.service_barrier());
+    CHECK_FALSE(std::filesystem::exists(dir / "ACK"));
+    REQUIRE(write_bytes(name, std::vector<std::uint8_t>(token.begin(), token.end())));
+    CHECK(host.service_barrier());
+    CHECK(std::filesystem::exists(dir / "ACK"));
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("peer control publication rejects FIFOs and symlinks")
+{
+    for (bool fifo : {true, false}) {
+        const auto dir = make_temp_dir();
+        REQUIRE_FALSE(dir.empty());
+        REQUIRE(write_bytes(dir / "untouched", {'x'}));
+        const auto temporary = dir / "CHALLENGE.tmp";
+        if (fifo) REQUIRE(::mkfifo(temporary.c_str(), 0600) == 0);
+        else REQUIRE(::symlink("untouched", temporary.c_str()) == 0);
+        DirectoryPacketIO host(dir.string(), 2048, DirectoryPacketRole::Host, true);
+        CHECK_FALSE(host.start_peer());
+        CHECK(std::filesystem::file_size(dir / "untouched") == 1);
+        CHECK_FALSE(std::filesystem::exists(dir / "CHALLENGE"));
+        std::filesystem::remove_all(dir);
+    }
+}
+
+TEST_CASE("barrier retires unused fault controls")
+{
+    const auto dir = make_temp_dir();
+    DirectoryPacketIO host(dir.string(), 2048, DirectoryPacketRole::Host, true);
+    REQUIRE(host.start_peer());
+    std::ifstream input(dir / "CHALLENGE");
+    const std::string token(std::istreambuf_iterator<char>(input), {});
+    REQUIRE(write_bytes(dir / ("BARRIER." + token.substr(0, 32)), {token.begin(), token.end()}));
+    REQUIRE(write_bytes(dir / "FAULT", {'h','o','l','d','\n'}));
+    REQUIRE(write_bytes(dir / "RELEASE", {'r','e','l','e','a','s','e','\n'}));
+    CHECK(host.service_barrier());
+    CHECK_FALSE(std::filesystem::exists(dir / "FAULT"));
+    CHECK_FALSE(std::filesystem::exists(dir / "RELEASE"));
     std::filesystem::remove_all(dir);
 }
 
