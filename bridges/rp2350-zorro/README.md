@@ -120,3 +120,11 @@ in both checked-in lists. Story 2.1 verified byte-identical generated outputs
 with and without the bridge tree, then preserved the existing checked-in lists.
 Until that separate generator drift is repaired, run it in a disposable copy
 or save and restore these two files; its nonzero diff is not bridge inclusion.
+
+## Next: Story 2.2 physical feasibility
+
+The [experiment plan](docs/story-2-2-experiment-plan.md) extends this skeleton with
+an independent RP2040 stimulus generator and USB-observable Core2350B DUT, then
+measured timing and later buffered real-bus validation. It defines staged wiring,
+test cases, implementation packages and evidence requirements. Its new firmware
+targets and run commands are planned, not available in the Story 2.1 skeleton.
