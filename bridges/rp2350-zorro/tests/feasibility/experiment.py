@@ -23,6 +23,11 @@ import tempfile
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT / "scripts"))
+import bridge_setup
+import bootstrap
+
 PICOTOOL = ROOT / "build/picotool-usb/picotool"
 COMMAND_LOG = []
 
@@ -243,6 +248,10 @@ def source_identity(m):
         for path in sorted((ROOT / folder).rglob("*")):
             if path.is_file():
                 inputs[str(path.relative_to(ROOT))] = digest(path)
+    for path in sorted((ROOT / "scripts").iterdir()):
+        if path.is_file() and path.suffix in (".py", ".sh"):
+            inputs[str(path.relative_to(ROOT))] = digest(path)
+    inputs["tests/feasibility/experiment.py"] = digest(Path(__file__))
     for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.json"):
         inputs[name] = digest(ROOT / name)
     return dict(
@@ -288,12 +297,23 @@ def static_prerequisites(analyzer=False):
 
 
 def build(m):
+    sdk_path = str(bootstrap.selected_sdk())
+    if os.environ.get("PICO_SDK_PATH"):
+        os.environ["PICO_SDK_PATH"] = sdk_path
     static_prerequisites()
+    bridge_setup.validate_compiler_cache(ROOT / "build" / m["preset"])
     before = source_identity(m)
-    for mode in ("host", "stimulus"):
-        command([sys.executable, "scripts/bootstrap.py", "--mode", mode])
+    command([str(ROOT / "scripts/create-deps.sh"), "--mode", "all"])
     for preset in ("host", "host-release", m["preset"]):
-        command(["cmake", "--preset", preset])
+        sdk_args = (
+            []
+            if preset.startswith("host")
+            else [
+                "-DPICO_SDK_PATH=" + sdk_path,
+                "-DPICO_TOOLCHAIN_PATH=" + os.environ["PICO_TOOLCHAIN_PATH"],
+            ]
+        )
+        command(["cmake", "--preset", preset, *sdk_args])
         command(["cmake", "--build", "--preset", preset])
         if preset.startswith("host"):
             command(["ctest", "--preset", preset])
@@ -305,8 +325,7 @@ def build(m):
             "-B",
             PICOTOOL.parent,
             "-DPICOTOOL_NO_LIBUSB=OFF",
-            "-DPICO_SDK_PATH="
-            + os.environ.get("PICO_SDK_PATH", str(ROOT / ".deps/pico-sdk")),
+            "-DPICO_SDK_PATH=" + sdk_path,
         ]
     )
     command(["cmake", "--build", PICOTOOL.parent, "-j2"])
@@ -811,31 +830,10 @@ def physical_run(m, args, artifact):
 
 
 def configure_toolchain():
-    explicit = os.environ.get("PICO_TOOLCHAIN_PATH")
-    if explicit:
-        candidates = [Path(explicit), Path(explicit) / "bin"]
-        selected = next(
-            (p for p in candidates if os.access(p / "arm-none-eabi-gcc", os.X_OK)), None
-        )
-        require(
-            selected is not None,
-            "Invalid explicit PICO_TOOLCHAIN_PATH: " + explicit,
-            "environment",
-        )
-    elif shutil.which("arm-none-eabi-gcc"):
-        selected = Path(shutil.which("arm-none-eabi-gcc")).parent
-    else:
-        cached = (
-            ROOT.parents[3]
-            / "build/toolchains/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin"
-        )
-        candidates = [cached, Path.home() / ".local/toolchains/arm-none-eabi/bin"]
-        selected = next(
-            (p for p in candidates if os.access(p / "arm-none-eabi-gcc", os.X_OK)), None
-        )
-    if selected is not None:
-        os.environ["PATH"] = str(selected) + os.pathsep + os.environ.get("PATH", "")
-        os.environ["PICO_TOOLCHAIN_PATH"] = str(selected)
+    try:
+        bridge_setup.configure_toolchain(required=False)
+    except ValueError as error:
+        raise Failure("environment", str(error)) from error
 
 
 def doctor(m, args):

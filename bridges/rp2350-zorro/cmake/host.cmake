@@ -23,3 +23,5 @@ target_compile_options(test_stimulus PRIVATE -Wall -Wextra -Werror)
 add_test(NAME stimulus COMMAND test_stimulus)
 add_test(NAME experiment_runner COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/test_experiment.py")
 add_test(NAME experiment_runner_optimized COMMAND "${Python3_EXECUTABLE}" -O "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/test_experiment.py")
+
+add_test(NAME setup COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_setup.py")

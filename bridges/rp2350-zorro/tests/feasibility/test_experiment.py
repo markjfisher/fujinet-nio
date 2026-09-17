@@ -553,12 +553,101 @@ class Experiments(unittest.TestCase):
             with self.assertRaises(e.Failure):
                 e.load(M, args, artifact)
 
+    def test_build_shared_setup_and_selected_sdk_overrides_cached_sdk(self):
+        calls = []
+        selected = self.directory / "external-sdk"
+        with (
+            patch.object(e, "static_prerequisites"),
+            patch.object(e, "source_identity", return_value={}),
+            patch.object(e.bridge_setup, "validate_compiler_cache"),
+            patch.object(
+                e,
+                "command",
+                side_effect=lambda args: calls.append(list(map(str, args))),
+            ),
+            patch.object(e, "digest", return_value="hash"),
+            patch.object(e, "save"),
+            patch.dict(
+                e.os.environ,
+                PICO_SDK_PATH=str(selected),
+                PICO_TOOLCHAIN_PATH="/compiler/bin",
+            ),
+        ):
+            e.build(M)
+        setups = [call for call in calls if "create-deps.sh" in call[0]]
+        self.assertEqual(
+            setups, [[str(e.ROOT / "scripts/create-deps.sh"), "--mode", "all"]]
+        )
+        configure = next(
+            call
+            for call in calls
+            if call[:3] == ["cmake", "--preset", "stimulus-rp2040"]
+        )
+        self.assertIn("-DPICO_SDK_PATH=" + str(selected), configure)
+        loader = next(call for call in calls if call[:2] == ["cmake", "-S"])
+        self.assertIn("-DPICO_SDK_PATH=" + str(selected), loader)
+        for preset in ["host", "host-release"]:
+            self.assertIn(["ctest", "--preset", preset], calls)
+
+    def test_build_relative_sdk_from_tmp_is_normalized_before_setup_and_identity(self):
+        selected = self.directory / "external-sdk"
+        observed = []
+        old_cwd = e.os.getcwd()
+        try:
+            e.os.chdir("/tmp")
+            relative = e.os.path.relpath(selected, "/tmp")
+            with (
+                patch.object(e, "static_prerequisites"),
+                patch.object(e.bridge_setup, "validate_compiler_cache"),
+                patch.object(
+                    e,
+                    "source_identity",
+                    side_effect=lambda m: observed.append(e.os.environ["PICO_SDK_PATH"])
+                    or {},
+                ),
+                patch.object(
+                    e,
+                    "command",
+                    side_effect=lambda args: observed.append(
+                        e.os.environ["PICO_SDK_PATH"]
+                    ),
+                ),
+                patch.object(e, "digest", return_value="hash"),
+                patch.object(e, "save"),
+                patch.dict(
+                    e.os.environ,
+                    PICO_SDK_PATH=relative,
+                    PICO_TOOLCHAIN_PATH="/compiler/bin",
+                ),
+            ):
+                e.build(M)
+        finally:
+            e.os.chdir(old_cwd)
+        self.assertTrue(observed)
+        self.assertEqual(set(observed), {str(selected.resolve())})
+
+    def test_command_failure_keeps_actionable_repair_diagnostic(self):
+        message = "Repair managed caches with: /bridge/scripts/create-deps.sh --repair"
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(e.Failure, "create-deps.sh --repair"):
+                e.command(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import sys; print(" + repr(message) + "); sys.exit(1)",
+                    ]
+                )
+        self.assertIn(message, e.COMMAND_LOG[-1]["output"])
+        e.COMMAND_LOG.clear()
+
     def test_explicit_toolchain_bin_selected_without_path(self):
         toolchain = self.directory / "toolchain"
         (toolchain / "bin").mkdir(parents=True)
         compiler = toolchain / "bin/arm-none-eabi-gcc"
-        compiler.write_text("#!/bin/sh\n")
-        compiler.chmod(0o700)
+        for name in ("gcc", "g++", "ar", "objcopy"):
+            tool = toolchain / "bin" / ("arm-none-eabi-" + name)
+            tool.write_text("#!/bin/sh\n")
+            tool.chmod(0o700)
         with patch.dict(
             e.os.environ, {"PICO_TOOLCHAIN_PATH": str(toolchain), "PATH": ""}
         ):

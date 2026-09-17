@@ -1,6 +1,6 @@
 # RP2040 W0 stimulus generator
 
-**Repeatable entry point:** use the [generator-check starter and source map](../tests/feasibility/generator-check/README.md). Its staged runner replaces the ad hoc load/capture procedure from initial bring-up. The lower-level commands below remain reference material for manual diagnosis.
+**Repeatable entry point:** use the [generator-check starter and source map](../tests/feasibility/generator-check/README.md). Its staged runner replaces the ad hoc load/capture procedure from initial bring-up.
 
 This isolated lab target emits one finite ascending four-bit burst after an
 explicit USB `run`. It implements only the generator portion of E0–E3 in the
@@ -9,26 +9,14 @@ the RP2350 observer, automated two-board runner, Zorro protocol, or mailbox ABI.
 
 ## Build and software checks
 
-From the workspace, `scripts/build.sh rp2040-stimulus` builds only; it never
-loads or starts a device. `scripts/build.sh --explain rp2040-stimulus` lists the
-steps. For the isolated project:
+From the bridge directory, use `./scripts/setup.sh` once, or
+`./scripts/setup.sh --repair` if vendored dependencies were accidentally edited.
+See the [setup command table](../README.md#reproducible-setup) for toolchain options.
 
-```sh
-source "$NIO_WORKSPACE/scripts/env.sh"
-cd "$NIO_WORKSPACE/repos/fujinet-nio/bridges/rp2350-zorro"
-export PICO_TOOLCHAIN_PATH="$NIO_WORKSPACE/build/toolchains/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin"
-python3 scripts/bootstrap.py --mode host
-cmake --preset host
-cmake --build --preset host
-ctest --preset host
-cmake --preset host-release
-cmake --build --preset host-release
-ctest --preset host-release
-python3 scripts/bootstrap.py --mode stimulus
-cmake --preset stimulus-rp2040
-cmake --build --preset stimulus-rp2040
-python3 scripts/check_pio_policy.py
-```
+`./tests/feasibility/generator-check/run.sh build` performs the native Debug and
+Release tests, RAM firmware build and USB-enabled loader build. It never loads or
+starts a device. The workspace command `scripts/build.sh rp2040-stimulus` remains
+available for the firmware-only build.
 
 Outputs: `build/stimulus-rp2040/feasibility_stimulus.elf` and
 `build/stimulus-rp2040/feasibility_stimulus.uf2`. The preset selects the SDK
@@ -48,32 +36,16 @@ bench has flash identity `754765170F445253` and previously ran CMSIS-DAP Debug
 Probe firmware. BOOTSEL inspection identified RP2040 B2 and reported 16 MB
 of external flash; the generator deliberately does not depend on that flash.
 The RP2350 DUT identity is `DCD9EB3F6D168102`; do not load this
-image there. USB addresses change when entering BOOTSEL. Read fresh `lsusb`
-output and correlate physical unplug/replug and `picotool info -a`.
+image there. The starter discovers USB addresses afresh during BOOTSEL; it
+does not reuse a bus address from an earlier run.
 
-The picotool packaged by the bridge build deliberately has no USB support.
-For loading, use a USB-enabled picotool built from the same pinned source
-(`.deps/picotool`) with libusb development files installed:
-
-```sh
-cmake -S .deps/picotool -B "$NIO_WORKSPACE/build/toolchains/picotool-usb" \
-  -DPICO_SDK_PATH="$PWD/.deps/pico-sdk" -DPICOTOOL_NO_LIBUSB=OFF
-cmake --build "$NIO_WORKSPACE/build/toolchains/picotool-usb" -j2
-export PICOTOOL="$NIO_WORKSPACE/build/toolchains/picotool-usb/picotool"
-lsusb
-# Set these from the freshly identified RP2040 BOOTSEL entry, not an old address.
-export GEN_BUS=REPLACE_WITH_BUS GEN_ADDRESS=REPLACE_WITH_ADDRESS
-"$PICOTOOL" info -a --bus "$GEN_BUS" --address "$GEN_ADDRESS"
-"$PICOTOOL" load -v -x build/stimulus-rp2040/feasibility_stimulus.elf \
-  --bus "$GEN_BUS" --address "$GEN_ADDRESS"
-```
-
-Enter BOOTSEL by holding the board's BOOT button while plugging in USB (or
-holding BOOT while pressing/releasing reset), then release BOOT. Loading needs
-access to the selected `/dev/bus/usb/BBB/DDD` node. USB serial access after the
-load separately needs access to its `/dev/ttyACM*` node. A permission error is a
-host access issue; do not substitute a different board. The load command starts
-the idle executable; it does not start the waveform.
+The generator starter builds its USB-enabled picotool from the pinned dependency.
+Use its `load` stage: it gives BOOTSEL instructions, verifies the flash identity,
+loads RAM and follows re-enumeration to the correct serial port. The separate
+`run` stage asks before generating output and saves analyzer/console evidence.
+Normal-user USB access must be configured as described in the
+[one-time access setup](../tests/feasibility/README.md#one-time-linux-access-setup).
+No changing bus addresses or per-device sudo commands belong in the normal flow.
 
 ## Wiring and USB control
 
@@ -93,17 +65,14 @@ have no internal pulls. Released data levels are not part of the waveform oracle
 The RAM-only SDK USB identity currently uses placeholder serial
 `EEEEEEEEEEEEEEEE` (USB VID:PID `2e8a:000a`), not the original flash identity.
 Correlate the USB physical port and BOOTSEL-to-CDC transition; the placeholder
-is not unique if another RAM image is connected. Find the newly enumerated
-generator port, then open it with DTR asserted:
+is not unique if another RAM image is connected.
 
-```sh
-ls -l /dev/serial/by-id/
-export GEN_PORT=/dev/serial/by-id/REPLACE_WITH_IDENTIFIED_GENERATOR
-uv run --with pyserial==3.5 python -m serial.tools.miniterm "$GEN_PORT" 115200 --raw
-```
+The starter owns the console and DTR session during a run. Its retained
+`console.log` shows the commands and responses described below; do not open a
+second serial application concurrently.
 
 The baud setting is conventional USB CDC configuration; PIO sets signal timing.
-Enter `help`, `status`, `run`, or `stop`, followed by Enter. `run` has no parameters
+The USB protocol accepts `help`, `status`, `run`, or `stop`. `run` has no parameters
 and emits exactly 16 samples. A second `run` while active returns `error busy`.
 Unknown commands, binary control bytes and lines exceeding 31 characters are
 rejected; an overflowing line is discarded through its newline. CR, LF and CRLF
@@ -129,21 +98,12 @@ by this deadline.
 ## Independent analyzer oracle
 
 Close or disconnect the live analyzer in PulseView before using sigrok-cli;
-only one application can claim its USB interface. In another terminal, arm the
-analyzer **before** entering `run` in the console:
+only one application can claim its USB interface. The starter's `run` stage arms
+a five-second acquisition before sending `run`
+to the generator, and saves `capture.sr` for PulseView. Use `analyse --capture`
+to check a saved file again. Ctrl-C cancels acquisition and attempts a generator
+stop; failed runs retain their logs and verdict.
 
-```sh
-sigrok-cli --scan
-sigrok-cli --driver fx2lafw --config samplerate=1m \
-  --channels D0,D1,D2,D3,D7 --triggers D7=f --wait-trigger \
-  --samples 10000 --output-file /tmp/rp2040-w0.sr
-sigrok-cli --input-file /tmp/rp2040-w0.sr --output-format csv \
-  --output-file /tmp/rp2040-w0.csv
-pulseview /tmp/rp2040-w0.sr
-```
-
-The trigger waits for the first /AS falling edge. It will wait indefinitely if
-no run occurs; Ctrl-C cancels the host capture without starting any output.
 At each /AS falling edge, interpret CH4..CH1 as a four-bit binary number.
 The independent expected sequence is exactly `0,1,2,...,15`, with 16 falling
 edges. Relative to the first falling edge, subsequent falling edges occur at
@@ -173,17 +133,8 @@ contains raw PulseView sessions, console logs and a reproducible independent
 trace checker. It separates the tested firmware hashes and the later USB
 hardening changes; consult its final-image status before assuming equivalence.
 
-For a capture that includes the first setup interval, start this in a second
-terminal, then promptly issue `run` in the already-connected generator console:
-
-```sh
-sigrok-cli --driver fx2lafw --config samplerate=1m \
-  --channels D0,D1,D2,D3,D7 --samples 5000000 \
-  --output-file /tmp/rp2040-w0-full.sr
-```
-
-This has a five-second capture window. If the run falls outside it, repeat;
-missing pulses are not a passing measurement. Data zero may match the idle
+The starter uses an untriggered window to include the setup interval. Missing
+pulses are not a passing measurement. Data zero may match the idle
 level, so the first data-update instant is not always observable externally.
 Later value transitions provide the measurable setup/hold oracle.
 

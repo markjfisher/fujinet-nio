@@ -7,7 +7,7 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-ROOT_EXCLUDED = {".deps", "build", ".git"}
+ROOT_EXCLUDED = {".deps", ".deps-backups", "build", ".git"}
 
 
 def violations(root):

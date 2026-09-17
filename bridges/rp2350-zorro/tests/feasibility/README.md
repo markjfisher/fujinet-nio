@@ -51,6 +51,10 @@ First run `generator-check/run.sh doctor`. Build prerequisites are the bridge's
 `sigrok-cli`, the installed fx2lafw firmware and a USB-enabled pinned picotool.
 Close PulseView's live device while sigrok-cli owns the analyzer.
 
+Use `../../scripts/setup.sh` for software setup, or add `--repair` to preserve and
+restore accidentally changed dependency sources. These scripts never alter USB
+permissions; the optional access setup below is separate.
+
 If normal-user access to RP2040 BOOTSEL or its serial console is missing, review
 [69-nio-feasibility.rules](69-nio-feasibility.rules). For a systemd desktop session,
 you may install it **once**, explicitly, from this directory:

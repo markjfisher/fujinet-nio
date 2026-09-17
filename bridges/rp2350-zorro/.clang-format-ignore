@@ -1,0 +1,4 @@
+# Vendored sources must remain byte-for-byte at their dependency pins.
+.deps/**
+.deps-backups/**
+build/**

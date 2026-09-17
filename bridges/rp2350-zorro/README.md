@@ -12,56 +12,56 @@ Only native tests define `APIO_EMULATION`; epio is compiled from source with
 
 ## Reproducible setup
 
-Prerequisites: Git, Python 3, CMake >=3.21, Ninja, and a native C compiler.
-Firmware additionally needs a native C++ compiler and an Arm embedded toolchain.
-Verified: native GCC 16.2.1 and Arm GNU 14.2.Rel1 (GCC 14.2.1 20241119).
-An installed `arm-none-eabi-gcc` can be used, or install the verified Linux x86_64
-compiler locally, without root:
+Run these scripts from this directory, or invoke them by path from anywhere.
+They locate the project and source the workspace environment automatically when
+available. You do not need to export `NIO_WORKSPACE` or assemble a CMake recipe.
 
-```sh
-export NIO_WORKSPACE=/path/to/fujinet-nio-workspace
-source "$NIO_WORKSPACE/scripts/env.sh"
-curl -fL -o /tmp/arm-gnu-toolchain-14.2.rel1.tar.xz \
-  https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz
-printf '%s  %s\n' 62a63b981fe391a9cbad7ef51b17e49aeaa3e7b0d029b36ca1e9c3b2a9b78823 \
-  /tmp/arm-gnu-toolchain-14.2.rel1.tar.xz | sha256sum -c -
-mkdir -p "$NIO_WORKSPACE/build/toolchains"
-tar -xJf /tmp/arm-gnu-toolchain-14.2.rel1.tar.xz -C "$NIO_WORKSPACE/build/toolchains"
-export PICO_TOOLCHAIN_PATH="$NIO_WORKSPACE/build/toolchains/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin"
-```
+| Command | Purpose |
+| --- | --- |
+| `./scripts/setup.sh` | Prepare all pinned sources and check build prerequisites. |
+| `./scripts/setup.sh --install-toolchain` | Also install the verified local Arm compiler if needed. |
+| `./scripts/setup.sh --repair` | Preserve and replace altered local dependency checkouts. |
+| `./scripts/setup.sh --host-only` | Prepare native tests only; no SDK or Arm compiler. |
+| `./scripts/create-deps.sh` | Fetch/validate source dependencies only, without compiler setup. |
+| `./scripts/create-deps.sh --check` | Check dependencies without downloading or modifying them. |
+| `./scripts/test.sh` | Configure, build and test native Debug and Release. |
+| `./scripts/build.sh firmware` | Build the Core2350B capture fixture. |
+| `./tests/feasibility/generator-check/run.sh build` | Build/test the RP2040 generator and USB loader. |
 
-From this directory, native setup never needs an SDK, ARM compiler, ESP-IDF,
-reference checkout or prebuilt emulator archive:
+Each script has `--help`. Setup is idempotent: clean pinned dependencies are
+reused. Build scripts perform their required source setup too. No command here
+loads a board or generates signals.
 
-```sh
-source "$NIO_WORKSPACE/scripts/env.sh"
-python3 scripts/bootstrap.py --mode host
-python3 scripts/bootstrap.py --mode host
-cmake --preset host
-cmake --build --preset host
-ctest --preset host
-cmake --preset host-release
-cmake --build --preset host-release
-ctest --preset host-release
-python3 scripts/check_pio_policy.py
-```
+Prerequisites: Git, Python 3, CMake >=3.21, Ninja and a native C/C++ compiler.
+Firmware needs an Arm embedded toolchain; generator USB loading also needs
+`pkg-config` and libusb development files, and capture uses `sigrok-cli` with
+fx2lafw firmware. Setup reports missing system tools; it does not install system
+packages or run sudo. The optional compiler installer verifies the pinned
+Linux x86_64 Arm GNU 14.2.Rel1 archive before extracting it locally.
+That optional installer needs Python 3.12+ or a security update providing
+`tarfile.data_filter` for safe extraction.
 
-Firmware setup does not require epio or the host build. By default it clones the
-SDK independently into `.deps/pico-sdk`. If `PICO_SDK_PATH` is set, bootstrap and
-CMake validate that checkout instead: it must be at the exact pin, clean, and have
-the required submodules initialized. A wrong/missing override is rejected.
-Use `unset PICO_SDK_PATH` to return bootstrap to the local default. CMake caches
-its SDK selection: also remove the firmware build directory or explicitly reset
-it with `cmake --preset firmware -DPICO_SDK_PATH="$PWD/.deps/pico-sdk"`. Unsetting
-the environment alone does not replace a cached `-DPICO_SDK_PATH` override.
+### Recovering accidentally formatted dependencies
 
-```sh
-source "$NIO_WORKSPACE/scripts/env.sh"
-export PICO_TOOLCHAIN_PATH="$NIO_WORKSPACE/build/toolchains/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin"
-python3 scripts/bootstrap.py --mode firmware
-cmake --preset firmware
-cmake --build --preset firmware
-```
+Run `./scripts/setup.sh --repair`, then rerun your original build or experiment.
+Repair preserves invalid managed checkouts under `.deps-backups/`, prints their
+locations, and restores the source pins. It includes required SDK submodules;
+it leaves clean dependencies alone. Backups remain available if restoration
+fails. Normal setup/build never silently discards edits.
+
+`.deps/` contains third-party source, not project code. The bridge's
+`.clang-format-ignore` excludes dependencies, backups and build products from
+file-based clang-format runs. Editor integrations or other formatters may need
+matching exclusions of their own.
+
+### Existing SDK and compiler installations
+
+`PICO_SDK_PATH` selects an existing SDK; it must match the exact pin and required
+submodules. An external SDK is validated only, even with `--repair`. Unset that
+override to use the managed `.deps/pico-sdk`. Scripted firmware configuration
+passes the selected SDK explicitly so a stale CMake cache does not override it.
+`PICO_TOOLCHAIN_PATH` selects an existing Arm compiler directory. Setup also
+recognizes an installed compiler and the workspace's local toolchain cache.
 
 Outputs: `build/firmware/bridge_capture.elf` and `bridge_capture.uf2`.
 SDK import precedes `project()`; SDK initialization follows it. Wrong board or
@@ -77,10 +77,10 @@ platform selections fail configuration. Source pins in `dependencies.json` are:
 SDK `lib/tinyusb` is initialized recursively at its SDK gitlink pin; wireless
 libraries are not required by this board. Picotool is built from the validated
 source checkout rather than selected from the host or an unpinned fetch.
-Bootstrap is idempotent and never resets dirty or stale existing source trees.
-To refresh dependencies intentionally, preserve local work, update the manifest's
-release and full revision together, remove the affected `.deps` checkout and
-`build` configurations, bootstrap again, and rerun both verification paths.
+`scripts/bootstrap.py` remains the low-level fetch/validation implementation used
+by CMake. Use the script entry points above for normal setup and recovery. Changing
+a dependency version is a separate deliberate edit to `dependencies.json`, followed
+by repair and validation; repair itself never changes pins.
 Caches, binaries and generated files are ignored. Configure and every native or
 firmware build validate clean pinned dependency sources and the first-party PIO
 policy before compiling their consumers. Manifest edits trigger reconfiguration.
@@ -107,19 +107,10 @@ and bridge-link operation require instrumented validation in later stories.
 
 The tooling tests use temporary local Git origins to test bootstrap repeatability,
 wrong pins, dirty sources and missing dependencies; policy fixtures verify nonzero
-exit for forbidden source/build rules. Existing source collection can be checked
-from the firmware repository with:
-
-```sh
-./scripts/update_cmake_sources.py
-git diff --exit-code -- CMakeLists_posix.cmake src/CMakeLists.txt
-```
-
-At firmware baseline `2365fbce15391ae445f38962909ab8c8f172d84e`, this generator already changes profile selection
-in both checked-in lists. Story 2.1 verified byte-identical generated outputs
-with and without the bridge tree, then preserved the existing checked-in lists.
-Until that separate generator drift is repaired, run it in a disposable copy
-or save and restore these two files; its nonzero diff is not bridge inclusion.
+exit for forbidden source/build rules. The bridge is outside the main firmware
+source collector. The product's existing
+generated source-list drift is unrelated to this independent project; bridge
+setup never regenerates those product lists.
 
 ## Next: Story 2.2 physical feasibility
 

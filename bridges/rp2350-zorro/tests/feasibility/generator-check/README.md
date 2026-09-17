@@ -5,6 +5,12 @@ RP2350 capture and does not complete C1. The RP2350 firmware is left alone.
 
 ## Start here
 
+For initial setup, run the bridge's [setup script](../../../scripts/setup.sh).
+If a build reports dirty vendored sources, run it with `--repair`; it preserves
+the altered trees before restoring the pins. The [setup guide](../../../README.md#reproducible-setup)
+also covers optional compiler installation. You do not need to run bootstrap
+or individual CMake commands yourself.
+
 From the workspace:
 
 ```sh

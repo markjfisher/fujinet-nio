@@ -272,6 +272,8 @@ class Tooling(unittest.TestCase):
                 )
                 self.assertNotEqual(result.returncode, 0)
                 path.unlink()
+            (root / ".deps-backups").mkdir()
+            (root / ".deps-backups" / "vendor.pio").write_text("vendor")
             (root / ".deps").mkdir()
             (root / ".deps" / "vendor.pio").write_text("vendor")
             self.assertEqual(policy.violations(root), [])
