@@ -30,8 +30,9 @@ ad hoc projects and duplicated firmware support.
 
 Run `generator-check/run.sh --help` from any working directory. The default
 interactive flow and `all` build/check software, guide BOOTSEL identification and
-RAM loading, and wait for your explicit instruction before generating signals.
-Separate `doctor`, `build`, `load`, `run` and `analyse` stages let you inspect or
+local board enrollment when needed, RAM loading, and wait for your explicit
+instruction before generating signals.
+Separate `doctor`, `build`, `configure`, `load`, `run` and `analyse` stages let you inspect or
 repeat individual steps. `--dry-run` previews operations without touching devices.
 Builds never generate signals. No experiment stage runs sudo or changes system
 permissions. Ctrl-C cancels the host workflow; the runner attempts stop and cleans
@@ -43,6 +44,10 @@ raw `.sr` capture, expected/observed measurements and a machine-readable verdict
 Failed runs remain evidence; a busy analyzer or missing capture cannot pass.
 PulseView can open saved captures once sigrok-cli releases the device.
 Build and loader command logs are retained under `build/feasibility/stage-logs/`.
+
+For another user or computer, follow [bench setup and portability](../../docs/bench-setup.md).
+Enrollment saves a per-bench flash identity; USB permission rules match shared
+device types and contain no private board serial.
 
 ## One-time Linux access setup
 

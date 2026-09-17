@@ -32,11 +32,12 @@ Existing dependency pins, validation guards and RP2350 presets remain in use.
 ## Identify and load only the generator
 
 Identify the board before loading anything. The W0 generator observed on this
-bench has flash identity `754765170F445253` and previously ran CMSIS-DAP Debug
+historical bench had flash identity `754765170F445253` and previously ran CMSIS-DAP Debug
 Probe firmware. BOOTSEL inspection identified RP2040 B2 and reported 16 MB
 of external flash; the generator deliberately does not depend on that flash.
 The RP2350 DUT identity is `DCD9EB3F6D168102`; do not load this
-image there. The starter discovers USB addresses afresh during BOOTSEL; it
+image there. Other users enroll their own generator with `configure`, as described
+in [bench setup](bench-setup.md). The starter discovers USB addresses afresh during BOOTSEL; it
 does not reuse a bus address from an earlier run.
 
 The generator starter builds its USB-enabled picotool from the pinned dependency.

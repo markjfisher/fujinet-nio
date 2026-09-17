@@ -2,6 +2,8 @@
 """Offline acceptance, session, transport and acquisition rejection checks."""
 
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
+import threading
 import argparse
 import io
 import json
@@ -20,7 +22,6 @@ M = dict(
     status="implemented",
     preset="stimulus-rp2040",
     target="feasibility_stimulus",
-    expected_flash_id="754765170F445253",
     samplerate_hz=1000000,
     analyzer_channels=["D0", "D1", "D2", "D3", "D7"],
     expected_values=list(range(16)),
@@ -28,6 +29,7 @@ M = dict(
     period_us=300,
     setup_hold_us=100,
 )
+PROFILE = dict(version=1, generator_flash_id="0123456789ABCDEF", analyzer="fx2lafw")
 META = "[global]\nsigrok version=0.5.2\n[device 1]\ncapturefile=logic-1\ntotal probes=8\nsamplerate=1 MHz\nunitsize=1\nprobe1=D0\nprobe2=D1\nprobe3=D2\nprobe4=D3\nprobe8=D7\n"
 
 
@@ -48,6 +50,11 @@ class Experiments(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
         self.capture = self.directory / "capture.sr"
+        loader = self.directory / "picotool"
+        loader.touch()
+        patched = patch.object(e, "PICOTOOL", loader)
+        patched.start()
+        self.addCleanup(patched.stop)
 
     def write_capture(self, data=None, metadata=META, names=None):
         with zipfile.ZipFile(self.capture, "w") as z:
@@ -145,16 +152,16 @@ class Experiments(unittest.TestCase):
 
     def test_identity_not_placeholder(self):
         e.validate_info(
-            "Device Information\n type: RP2040\n flash id: 754765170F445253\n",
-            M["expected_flash_id"],
+            "Device Information\n type: RP2040\n flash id: 0123456789ABCDEF\n",
+            PROFILE["generator_flash_id"],
         )
         for text in (
-            "type: RP2350\nflash id: 754765170F445253",
+            "type: RP2350\nflash id: 0123456789ABCDEF",
             "type: RP2040\nflash id: EEEEEEEEEEEEEEEE",
             "type: RP2040",
         ):
             with self.assertRaises(e.Failure):
-                e.validate_info(text, M["expected_flash_id"])
+                e.validate_info(text, PROFILE["generator_flash_id"])
 
     def test_stale_session(self):
         artifact = self.directory / "firmware.elf"
@@ -162,7 +169,7 @@ class Experiments(unittest.TestCase):
         usb = dict(path="1-2", vid="2e8a", pid="000a", bus=1, address=42, inode=123)
         session = dict(
             experiment=M["id"],
-            flash_id=M["expected_flash_id"],
+            flash_id=PROFILE["generator_flash_id"],
             firmware_sha256=e.digest(artifact),
             usb=usb,
             boot_id=e.boot_id(),
@@ -171,18 +178,18 @@ class Experiments(unittest.TestCase):
             firmware_sha256=e.digest(artifact), revision="built-revision"
         )
         e.save(artifact.with_suffix(".build.json"), session["build_identity"])
-        self.assertEqual(e.validate_session(M, session, artifact, [usb]), usb)
+        self.assertEqual(e.validate_session(M, session, artifact, [usb], PROFILE), usb)
         for change in (
             {"firmware_sha256": "old"},
             {"boot_id": "old"},
             {"flash_id": "EEEEEEEEEEEEEEEE"},
         ):
             with self.assertRaises(e.Failure):
-                e.validate_session(M, dict(session, **change), artifact, [usb])
+                e.validate_session(M, dict(session, **change), artifact, [usb], PROFILE)
         with self.assertRaises(e.Failure):
-            e.validate_session(M, session, artifact, [dict(usb, address=43)])
+            e.validate_session(M, session, artifact, [dict(usb, address=43)], PROFILE)
         with self.assertRaises(e.Failure):
-            e.validate_session(M, session, artifact, [dict(usb, inode=124)])
+            e.validate_session(M, session, artifact, [dict(usb, inode=124)], PROFILE)
 
     def test_fresh_ack_required(self):
         console = Mock()
@@ -236,7 +243,8 @@ class Experiments(unittest.TestCase):
         ):
             self.assertEqual(e.main(["--manifest", str(manifest), "all"]), 1)
         self.assertEqual(
-            sorted(p.name for p in self.directory.iterdir()), ["experiment.json"]
+            sorted(p.name for p in self.directory.iterdir()),
+            ["experiment.json", "picotool"],
         )
 
     def test_existing_output_retained(self):
@@ -293,7 +301,7 @@ class Experiments(unittest.TestCase):
         usb = dict(path="1-2", vid="2e8a", pid="000a", bus=1, address=42, inode=123)
         session = dict(
             experiment=M["id"],
-            flash_id=M["expected_flash_id"],
+            flash_id=PROFILE["generator_flash_id"],
             firmware_sha256=e.digest(artifact),
             usb=usb,
             boot_id=e.boot_id(),
@@ -305,7 +313,9 @@ class Experiments(unittest.TestCase):
             usb_path=None,
             timeout=0.001,
             analyzer="fx2lafw",
+            bench=self.directory / "bench.json",
         )
+        e.save(args.bench, PROFILE)
         e.save(args.session, session)
         return artifact, usb, session, args
 
@@ -326,7 +336,7 @@ class Experiments(unittest.TestCase):
     def test_load_tracks_port_and_exact_snapshot(self):
         artifact, usb, session, args = self.fixture()
         bootsel = dict(usb, pid="0003", address=41, inode=122)
-        info = "type: RP2040\nflash id: 754765170F445253"
+        info = "type: RP2040\nflash id: 0123456789ABCDEF"
         original = artifact.read_bytes()
         args.session = Path(e.os.path.relpath(args.session))
 
@@ -362,7 +372,7 @@ class Experiments(unittest.TestCase):
             patch.object(e, "usb_devices", side_effect=devices),
             patch.object(e, "access"),
             patch.object(
-                e, "command", return_value="type: RP2040\nflash id: 754765170F445253"
+                e, "command", return_value="type: RP2040\nflash id: 0123456789ABCDEF"
             ),
             patch.object(e.time, "sleep"),
         ):
@@ -672,6 +682,401 @@ class Experiments(unittest.TestCase):
         self.assertIn("KeyboardInterrupt", e.COMMAND_LOG[-1]["termination"])
         self.assertEqual(e.COMMAND_LOG[-1]["returncode"], -15)
         e.COMMAND_LOG.clear()
+
+    @contextlib.contextmanager
+    def enrollment(self, args, devices=None, info=None, answer="yes"):
+        usb = dict(path="1-2", vid="2e8a", pid="0003", bus=1, address=41, inode=122)
+        with (
+            patch.object(e, "usb_devices", side_effect=devices, return_value=[usb]),
+            patch.object(e, "access"),
+            patch.object(
+                e,
+                "command",
+                return_value=info or "type: RP2040\nflash id: 0123456789abcdef",
+            ) as cmd,
+            patch.object(e.sys.stdin, "isatty", return_value=True),
+            patch(
+                "builtins.input",
+                side_effect=answer if callable(answer) else None,
+                return_value=answer,
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            yield usb, cmd
+
+    def test_configure_success_and_transient_analyzer(self):
+        _, _, _, args = self.fixture()
+        args.bench.unlink()
+        args.analyzer = "fx2lafw:conn=1.99"
+        with self.enrollment(args) as (usb, cmd):
+            self.assertEqual(e.configure(args), usb)
+        self.assertEqual(e.read_profile(args.bench), PROFILE)
+        self.assertEqual(
+            [c.args[0][1] for c in cmd.call_args_list],
+            ["scripts/bootstrap.py", "info", "info"],
+        )
+        self.assertEqual(set(json.loads(args.bench.read_text())), set(PROFILE))
+
+    def test_configure_wrong_type_missing_and_placeholder_identity(self):
+        _, _, _, args = self.fixture()
+        args.bench.unlink()
+        for info in (
+            "type: RP2350\nflash id: 0123456789abcdef",
+            "type: RP2040",
+            *["type: RP2040\nflash id: " + c * 16 for c in "0EF"],
+        ):
+            with (
+                self.subTest(info=info),
+                self.enrollment(args, info=info),
+                self.assertRaises(e.Failure),
+            ):
+                e.configure(args)
+            self.assertFalse(args.bench.exists())
+
+    def test_configure_ambiguity_and_explicit_selection(self):
+        _, _, _, args = self.fixture()
+        first = dict(path="1-2", vid="2e8a", pid="0003", bus=1, address=41, inode=122)
+        second = dict(first, path="1-3", address=42)
+        with (
+            self.enrollment(args, devices=lambda: [first, second]),
+            self.assertRaises(e.Failure),
+        ):
+            e.configure(args)
+        args.usb_path = "1-3"
+        with self.enrollment(args, devices=lambda: [first, second]):
+            self.assertEqual(e.configure(args), second)
+
+    def test_configure_cancel_and_existing_replacement(self):
+        _, _, _, args = self.fixture()
+        original = args.bench.read_bytes()
+        for answer in ("", "no"):
+            with self.enrollment(args, answer=answer), self.assertRaises(e.Failure):
+                e.configure(args)
+            self.assertEqual(args.bench.read_bytes(), original)
+        args.bench.unlink()
+        with self.enrollment(args, answer="no"), self.assertRaises(e.Failure):
+            e.configure(args)
+        self.assertFalse(args.bench.exists())
+
+    def test_configure_reenumeration_during_confirmation(self):
+        _, _, _, args = self.fixture()
+        original = args.bench.read_bytes()
+        first = dict(path="1-2", vid="2e8a", pid="0003", bus=1, address=41, inode=122)
+        with (
+            self.enrollment(
+                args, devices=[[first], [first], [dict(first, address=99)]]
+            ),
+            self.assertRaises(e.Failure),
+        ):
+            e.configure(args)
+        self.assertEqual(args.bench.read_bytes(), original)
+
+    def test_profile_changed_during_enrollment_and_run_prompt(self):
+        artifact, usb, _, args = self.fixture()
+        changed = dict(PROFILE, generator_flash_id="ABCDEF0123456789")
+
+        def prompt(*unused):
+            e.save(args.bench, changed)
+            return "yes"
+
+        with self.enrollment(args, answer=prompt), self.assertRaises(e.Failure):
+            e.configure(args)
+        self.assertEqual(e.read_profile(args.bench), changed)
+        e.save(args.bench, PROFILE)
+        with (
+            self.fake_run(usb, prompt=prompt) as (_, _, constructor),
+            self.assertRaises(e.Failure),
+        ):
+            e.physical_run(M, args, artifact)
+        constructor.assert_not_called()
+
+    def test_missing_picotool_is_actionable_before_usb(self):
+        _, _, _, args = self.fixture()
+        e.PICOTOOL.unlink()
+        with (
+            patch.object(e, "usb_devices", side_effect=AssertionError("USB")),
+            patch.object(e.sys.stdin, "isatty", return_value=True),
+            self.assertRaisesRegex(e.Failure, "run.sh.*build"),
+        ):
+            e.configure(args)
+
+    def test_strict_invalid_profile_no_effects(self):
+        manifest = self.directory / "experiment.json"
+        e.save(manifest, M)
+        bench = self.directory / "bench.json"
+        for value in (
+            [],
+            {},
+            dict(PROFILE, version=True),
+            dict(PROFILE, version=2),
+            dict(PROFILE, usb_path="1-2"),
+            dict(PROFILE, analyzer="fx2lafw:conn=1.42"),
+            dict(PROFILE, generator_flash_id="EEEEEEEEEEEEEEEE"),
+        ):
+            e.save(bench, value)
+            with (
+                patch.object(e, "command", side_effect=AssertionError("command")),
+                patch.object(e, "usb_devices", side_effect=AssertionError("USB")),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                for stage in ("configure", "load", "run", "all"):
+                    self.assertEqual(
+                        e.main(
+                            ["--manifest", str(manifest), "--bench", str(bench), stage]
+                        ),
+                        1,
+                    )
+
+    def test_missing_profile_offline_and_explicit_load_run(self):
+        manifest = self.directory / "experiment.json"
+        e.save(manifest, M)
+        bench = self.directory / "missing.json"
+        self.write_capture()
+        common = ["--manifest", str(manifest), "--bench", str(bench)]
+        with (
+            patch.object(e, "usb_devices", side_effect=AssertionError("USB")),
+            patch.object(e, "command", side_effect=AssertionError("command")),
+            patch.object(e, "build") as build,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(e.main(common + ["build"]), 0)
+            build.assert_called_once_with(M)
+            self.assertEqual(
+                e.main(common + ["analyse", "--capture", str(self.capture)]), 0
+            )
+            for stage in ("configure", "doctor", "all", "load", "run"):
+                self.assertEqual(e.main(common + [stage, "--dry-run"]), 0)
+            for stage in ("load", "run"):
+                self.assertEqual(e.main(common + [stage]), 1)
+            with self.assertRaises(SystemExit) as result:
+                e.main(common + ["--help"])
+            self.assertEqual(result.exception.code, 0)
+        self.assertFalse(bench.exists())
+
+    def test_different_profile_rejects_old_session(self):
+        artifact, usb, session, args = self.fixture()
+        alternate = dict(PROFILE, generator_flash_id="ABCDEF0123456789")
+        with self.assertRaises(e.Failure):
+            e.validate_session(M, session, artifact, [usb], alternate)
+        e.save(args.bench, dict(PROFILE, generator_flash_id="0123456789abcdef"))
+        self.assertEqual(e.read_profile(args.bench), PROFILE)
+
+    def test_default_all_real_enrollment_order_and_revalidation(self):
+        _, _, _, args = self.fixture()
+        args.bench.unlink()
+        manifest = self.directory / "experiment.json"
+        e.save(manifest, M)
+        order = []
+
+        def load(manifest, actual, artifact):
+            order.append("load")
+            self.assertEqual(e.read_profile(actual.bench), PROFILE)
+            self.assertEqual(actual.usb_path, "1-2")
+            self.assertEqual(actual.analyzer, "fx2lafw:conn=1.99")
+
+        with (
+            self.enrollment(args) as (_, cmd),
+            patch.object(
+                e,
+                "static_prerequisites",
+                side_effect=lambda **kw: order.append("prerequisites"),
+            ),
+            patch.object(e, "build", side_effect=lambda m: order.append("build")),
+            patch.object(e, "doctor", side_effect=lambda *a: order.append("doctor")),
+            patch.object(e, "load", side_effect=load),
+            patch.object(e, "physical_run", side_effect=lambda *a: order.append("run")),
+            patch(
+                "builtins.input",
+                side_effect=lambda *a: order.append("confirm") or "yes",
+            ),
+        ):
+            self.assertEqual(
+                e.main(
+                    [
+                        "--manifest",
+                        str(manifest),
+                        "--bench",
+                        str(args.bench),
+                        "--analyzer",
+                        "fx2lafw:conn=1.99",
+                    ]
+                ),
+                0,
+            )
+        self.assertEqual(
+            order, ["prerequisites", "build", "doctor", "confirm", "load", "run"]
+        )
+
+    def test_load_other_valid_identity_never_loads(self):
+        artifact, usb, _, args = self.fixture()
+        with (
+            patch.object(e, "usb_devices", return_value=[dict(usb, pid="0003")]),
+            patch.object(e, "access"),
+            patch.object(
+                e, "command", return_value="type: RP2040\nflash id: ABCDEF0123456789"
+            ) as command,
+            self.assertRaises(e.Failure),
+        ):
+            e.load(M, args, artifact)
+        self.assertFalse(
+            any(call.args[0][1] == "load" for call in command.call_args_list)
+        )
+
+    def test_confirmed_other_board_replacement_invalidates_session(self):
+        artifact, usb, session, args = self.fixture()
+        with self.enrollment(args, info="type: RP2040\nflash id: ABCDEF0123456789"):
+            e.configure(args)
+        profile = e.read_profile(args.bench)
+        self.assertEqual(profile["generator_flash_id"], "ABCDEF0123456789")
+        with self.assertRaises(e.Failure):
+            e.validate_session(M, session, artifact, [usb], profile)
+
+    def test_profile_publication_failures_clean_up_and_preserve_existing(self):
+        _, _, _, args = self.fixture()
+        previous = args.bench.read_bytes()
+        for target in (
+            "json.dump",
+            "os.fsync",
+            "os.replace",
+            "tempfile.NamedTemporaryFile",
+        ):
+            with (
+                self.subTest(target=target),
+                patch("experiment." + target, side_effect=OSError("injected")),
+                self.assertRaises(OSError),
+            ):
+                e.publish_profile(args.bench, PROFILE, previous)
+            self.assertEqual(args.bench.read_bytes(), previous)
+            self.assertEqual(list(self.directory.glob(".bench-*")), [])
+        real_temporary = e.tempfile.NamedTemporaryFile
+
+        @contextlib.contextmanager
+        def bad_flush(**kwargs):
+            with real_temporary(**kwargs) as stream:
+                wrapped = Mock(wraps=stream)
+                wrapped.name = stream.name
+                wrapped.flush.side_effect = OSError("flush")
+                yield wrapped
+
+        with (
+            patch.object(e.tempfile, "NamedTemporaryFile", side_effect=bad_flush),
+            self.assertRaises(OSError),
+        ):
+            e.publish_profile(args.bench, PROFILE, previous)
+        self.assertEqual(args.bench.read_bytes(), previous)
+        self.assertEqual(list(self.directory.glob(".bench-*")), [])
+
+    def test_profile_concurrent_creation_and_replacement(self):
+        _, _, _, args = self.fixture()
+        previous = args.bench.read_bytes()
+        changed = dict(PROFILE, generator_flash_id="ABCDEF0123456789")
+        e.publish_profile(args.bench, changed, previous)
+        with self.assertRaises(e.Failure):
+            e.publish_profile(args.bench, PROFILE, previous)
+        self.assertEqual(e.read_profile(args.bench), changed)
+        args.bench.unlink()
+
+        def concurrent_link(*unused):
+            e.save(args.bench, changed)
+            raise FileExistsError("concurrent creator")
+
+        with (
+            patch.object(e.os, "link", side_effect=concurrent_link),
+            self.assertRaises(FileExistsError),
+        ):
+            e.publish_profile(args.bench, PROFILE, None)
+        self.assertEqual(e.read_profile(args.bench), changed)
+        self.assertEqual(list(self.directory.glob(".bench-*")), [])
+
+    def test_simultaneous_profile_replacements_have_one_winner(self):
+        _, _, _, args = self.fixture()
+        previous = args.bench.read_bytes()
+        barrier = threading.Barrier(2)
+
+        def publish(identity):
+            barrier.wait(timeout=5)
+            try:
+                e.publish_profile(
+                    args.bench, dict(PROFILE, generator_flash_id=identity), previous
+                )
+                return identity
+            except e.Failure:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(publish, ("ABCDEF0123456789", "FEDCBA9876543210")))
+        winners = [result for result in results if result]
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(e.read_profile(args.bench)["generator_flash_id"], winners[0])
+        self.assertEqual(list(self.directory.glob(".bench-*")), [])
+
+    def test_configure_requires_terminal_before_commands(self):
+        _, _, _, args = self.fixture()
+        with (
+            patch.object(e.sys.stdin, "isatty", return_value=False),
+            patch.object(e, "command", side_effect=AssertionError("command")),
+            patch.object(e, "usb_devices", side_effect=AssertionError("USB")),
+            self.assertRaisesRegex(e.Failure, "Interactive terminal"),
+        ):
+            e.configure(args)
+
+    def test_invalid_profile_recovery_and_offline_independence(self):
+        _, _, _, args = self.fixture()
+        args.bench.write_text("invalid")
+        with self.assertRaisesRegex(e.Failure, "Recovery: move.*configure --bench"):
+            e.read_profile(args.bench)
+        manifest = self.directory / "manifest.json"
+        e.save(manifest, M)
+        self.write_capture()
+        common = ["--manifest", str(manifest), "--bench", str(args.bench)]
+        with (
+            patch.object(e, "build") as build,
+            patch.object(e, "usb_devices", side_effect=AssertionError("USB")),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(e.main(common + ["build"]), 0)
+            build.assert_called_once_with(M)
+            self.assertEqual(
+                e.main(common + ["analyse", "--capture", str(self.capture)]), 0
+            )
+        self.assertEqual(args.bench.read_text(), "invalid")
+
+    def test_dry_run_reports_selection_and_quotes_guidance(self):
+        _, _, _, args = self.fixture()
+        manifest = self.directory / "manifest.json"
+        e.save(manifest, M)
+        output = io.StringIO()
+        with (
+            contextlib.redirect_stdout(output),
+            patch.object(e, "usb_devices", side_effect=AssertionError("USB")),
+        ):
+            self.assertEqual(
+                e.main(
+                    [
+                        "--manifest",
+                        str(manifest),
+                        "--bench",
+                        str(args.bench),
+                        "--usb-path",
+                        "1-2",
+                        "--analyzer",
+                        "fx2lafw:conn=1.99",
+                        "--dry-run",
+                    ]
+                ),
+                0,
+            )
+        plan = json.loads(output.getvalue())
+        self.assertEqual(plan["bench"], str(args.bench.resolve()))
+        self.assertEqual(plan["generator_flash_id"], PROFILE["generator_flash_id"])
+        self.assertEqual(plan["analyzer"], "fx2lafw:conn=1.99")
+        self.assertEqual(plan["usb_path"], "1-2")
+        with patch.object(e, "ROOT", Path("/tmp/space bridge")):
+            self.assertIn(
+                "'/tmp/space bridge/tests/feasibility/generator-check/run.sh'",
+                e.configure_instruction(args.bench),
+            )
 
     def test_starter_from_other_cwd(self):
         starter = Path(__file__).parent / "generator-check/run.sh"

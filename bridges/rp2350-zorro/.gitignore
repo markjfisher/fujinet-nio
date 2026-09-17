@@ -1,4 +1,5 @@
 /.deps/
 /.deps-backups/
+/.bench/
 /build/
 __pycache__/

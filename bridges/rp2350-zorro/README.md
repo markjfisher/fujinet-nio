@@ -114,6 +114,10 @@ setup never regenerates those product lists.
 
 ## Next: Story 2.2 physical feasibility
 
+For a different computer or RP2040, follow [bench setup and portability](docs/bench-setup.md).
+USB mode IDs are shared across compatible boards; the selected board identity
+belongs in ignored local configuration, not the experiment manifest.
+
 The [experiment plan](docs/story-2-2-experiment-plan.md) extends this skeleton with
 an independent RP2040 stimulus generator and USB-observable Core2350B DUT, then
 measured timing and later buffered real-bus validation. It defines staged wiring,

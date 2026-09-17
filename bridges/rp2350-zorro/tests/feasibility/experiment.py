@@ -392,7 +392,205 @@ def boot_id():
     return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
 
 
-def validate_info(info, identity):
+def configure_instruction(path):
+    return f"No enrolled generator. Run {shlex.quote(str(ROOT / 'tests/feasibility/generator-check/run.sh'))} configure --bench {shlex.quote(str(path))} with your RP2040 in BOOTSEL."
+
+
+def read_profile(path, required=False):
+    try:
+        return parse_profile(path, required)
+    except Failure as error:
+        if Path(path).exists():
+            raise Failure(
+                "configuration",
+                str(error)
+                + f". Recovery: move {shlex.quote(str(path))} aside, then run "
+                + configure_instruction(path),
+            ) from error
+        raise
+
+
+def parse_profile(path, required=False):
+    try:
+        value = json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        require(not required, configure_instruction(path), "configuration")
+        return None
+    except (OSError, ValueError) as error:
+        raise Failure(
+            "configuration", f"Invalid bench profile {path}: {error}"
+        ) from error
+    require(
+        isinstance(value, dict)
+        and set(value) == {"version", "generator_flash_id", "analyzer"}
+        and type(value["version"]) is int
+        and value["version"] == 1,
+        f"Invalid bench profile {path}: expected version 1 and only generator_flash_id, analyzer",
+        "configuration",
+    )
+    identity = value["generator_flash_id"]
+    require(
+        isinstance(identity, str)
+        and re.fullmatch(r"[0-9a-fA-F]{16}", identity)
+        and identity.upper() not in ("0" * 16, "E" * 16, "F" * 16),
+        "Invalid generator_flash_id: expected non-placeholder 16hex flash identity",
+        "configuration",
+    )
+    require(
+        value["analyzer"] == "fx2lafw",
+        "Invalid analyzer: profile supports fx2lafw only; use --analyzer for transient conn selection",
+        "configuration",
+    )
+    return dict(value, generator_flash_id=identity.upper())
+
+
+def assert_profile(args, expected):
+    require(
+        read_profile(args.bench, required=True) == expected,
+        "Bench profile changed during operation; restart with the intended profile.",
+        "configuration",
+    )
+
+
+def identify_bootsel(args, identity=None):
+    require(
+        PICOTOOL.is_file(),
+        f"Build pinned USB picotool first: {shlex.quote(str(ROOT / 'tests/feasibility/generator-check/run.sh'))} build",
+        "environment",
+    )
+    deadline = time.monotonic() + args.timeout
+    selected = None
+    while time.monotonic() < deadline:
+        candidates = [
+            d
+            for d in usb_devices()
+            if (d["vid"], d["pid"]) == ("2e8a", "0003")
+            and (not args.usb_path or d["path"] == args.usb_path)
+        ]
+        require(
+            len(candidates) <= 1,
+            "Ambiguous RP2040 BOOTSEL devices; specify --usb-path from doctor.",
+            "transport",
+        )
+        if candidates:
+            selected = candidates[0]
+            break
+        time.sleep(0.2)
+    require(selected is not None, "Timed out waiting for RP2040 BOOTSEL", "transport")
+    access(selected)
+    info = command(
+        [
+            PICOTOOL,
+            "info",
+            "-a",
+            "--bus",
+            selected["bus"],
+            "--address",
+            selected["address"],
+        ],
+        "transport",
+        10,
+    )
+    discovered = validate_info(info, identity)
+    require(
+        selected in usb_devices(), "USB identity changed during validation", "transport"
+    )
+    return selected, info, discovered
+
+
+def configure(args):
+    # Remember exact existing bytes so a concurrent edit during the prompt cannot
+    # become an accidentally authorized replacement.
+    read_profile(args.bench)
+    require(
+        sys.stdin.isatty(),
+        "Interactive terminal required to confirm bench enrollment",
+        "configuration",
+    )
+    previous = args.bench.read_bytes() if args.bench.exists() else None
+    require(
+        PICOTOOL.is_file(),
+        f"Build pinned USB picotool first: {shlex.quote(str(ROOT / 'tests/feasibility/generator-check/run.sh'))} build",
+        "environment",
+    )
+    command(
+        [sys.executable, "scripts/bootstrap.py", "--mode", "stimulus", "--check"],
+        "environment",
+    )
+    print(
+        f"Hold BOOT while reconnecting your RP2040. Waiting at most {args.timeout:g}s; enrollment reads identity only.",
+        flush=True,
+    )
+    selected, info, identity = identify_bootsel(args)
+    print(
+        f"Discovered RP2040 flash identity {identity}; physical USB path {selected['path']}",
+        flush=True,
+    )
+    prompt = (
+        f"Replace existing bench profile {args.bench}"
+        if previous is not None
+        else f"Enroll generator in {args.bench}"
+    )
+    require(
+        input(prompt + "? Type yes to confirm: ").strip().lower() == "yes",
+        "Enrollment cancelled; profile unchanged",
+        "cancelled",
+    )
+    require(
+        selected in usb_devices(),
+        "USB device changed during confirmation; configure again",
+        "transport",
+    )
+    confirmed, _, _ = identify_bootsel(args, identity)
+    require(
+        confirmed == selected,
+        "USB device changed during confirmation; configure again",
+        "transport",
+    )
+    value = dict(version=1, generator_flash_id=identity, analyzer="fx2lafw")
+    publish_profile(args.bench, value, previous)
+    print(f"Enrolled {identity} in {args.bench}")
+    args.enrolled_profile = value
+    return selected
+
+
+def publish_profile(path, value, previous):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        # Keep this inode separate from the replaced profile inode. Every
+        # cooperating writer holds it across compare and atomic publication.
+        with (path.parent / (path.name + ".lock")).open("a") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            with tempfile.NamedTemporaryFile(
+                mode="w", dir=path.parent, prefix=".bench-", delete=False
+            ) as stream:
+                temporary = Path(stream.name)
+                json.dump(value, stream, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            current = path.read_bytes() if path.exists() else None
+            require(
+                current == previous,
+                "Bench profile changed during confirmation; configure again",
+                "configuration",
+            )
+            if previous is None:
+                os.link(temporary, path)
+            else:
+                os.replace(temporary, path)
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def validate_info(info, identity=None):
     require(
         re.search(r"(?im)^\s*(?:type|device type):\s*RP2040\b", info) is not None,
         "picotool did not verify RP2040 type",
@@ -400,10 +598,14 @@ def validate_info(info, identity):
     )
     match = re.search(r"(?im)^\s*flash id:\s*(?:0x)?([0-9a-f]{16})\s*$", info)
     require(
-        match is not None and match[1].upper() == identity.upper(),
+        match is not None
+        and match[1].upper() not in ("0" * 16, "F" * 16, "E" * 16)
+        and (identity is None or match[1].upper() == identity.upper()),
         "wrong or unavailable generator flash identity",
         "transport",
     )
+
+    return match[1].upper()
 
 
 def validate_ram_elf(artifact):
@@ -445,6 +647,7 @@ def validate_ram_elf(artifact):
 
 
 def load(m, args, artifact):
+    profile = read_profile(args.bench, required=True)
     args.session = args.session.resolve()
     require(artifact.is_file(), "Build the firmware before load", "transport")
     build_identity = provenance(artifact)
@@ -469,35 +672,12 @@ def load(m, args, artifact):
     )
     print(
         "Hold BOOT while reconnecting the RP2040 generator (or BOOT + reset), then release BOOT.\n"
-        f"Waiting at most {args.timeout:g}s for flash identity {m['expected_flash_id']}. RAM load starts idle firmware only.",
+        f"Waiting at most {args.timeout:g}s for flash identity {profile['generator_flash_id']}. RAM load starts idle firmware only.",
         flush=True,
     )
-    deadline = time.monotonic() + args.timeout
-    selected = None
-    while time.monotonic() < deadline:
-        candidates = [
-            d
-            for d in usb_devices()
-            if (d["vid"], d["pid"]) == ("2e8a", "0003")
-            and (not args.usb_path or d["path"] == args.usb_path)
-        ]
-        require(
-            len(candidates) <= 1,
-            "Ambiguous RP2040 BOOTSEL devices; specify --usb-path from doctor.",
-            "transport",
-        )
-        if candidates:
-            selected = candidates[0]
-            break
-        time.sleep(0.2)
-    require(selected is not None, "Timed out waiting for RP2040 BOOTSEL", "transport")
-    access(selected)
+    selected, info, _ = identify_bootsel(args, profile["generator_flash_id"])
+    assert_profile(args, profile)
     selector = ["--bus", selected["bus"], "--address", selected["address"]]
-    info = command([PICOTOOL, "info", "-a", *selector], "transport", 10)
-    validate_info(info, m["expected_flash_id"])
-    require(
-        selected in usb_devices(), "USB identity changed during validation", "transport"
-    )
     command([PICOTOOL, "load", "-v", "-x", snapshot, *selector], "transport", 30)
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
@@ -516,7 +696,8 @@ def load(m, args, artifact):
                 continue
             record = dict(
                 experiment=m["id"],
-                flash_id=m["expected_flash_id"],
+                flash_id=profile["generator_flash_id"],
+                bench_profile=profile,
                 firmware_sha256=loaded_hash,
                 artifact_snapshot=str(snapshot),
                 build_identity=build_identity,
@@ -539,7 +720,7 @@ def load(m, args, artifact):
     )
 
 
-def validate_session(m, session, artifact, devices):
+def validate_session(m, session, artifact, devices, profile):
     identity = provenance(artifact)
     require(
         session.get("build_identity") == identity,
@@ -548,7 +729,7 @@ def validate_session(m, session, artifact, devices):
     )
     require(
         session.get("experiment") == m["id"]
-        and session.get("flash_id") == m["expected_flash_id"]
+        and session.get("flash_id") == profile["generator_flash_id"]
         and session.get("firmware_sha256") == digest(artifact)
         and session.get("boot_id") == boot_id(),
         "Stale or mismatched session; use load to validate BOOTSEL identity and current firmware.",
@@ -695,6 +876,7 @@ def await_acquisition(child, log, timeout=5):
 
 
 def physical_run(m, args, artifact):
+    profile = read_profile(args.bench, required=True)
     require(
         args.output is not None,
         "run/all requires --output NEW_DIRECTORY",
@@ -710,7 +892,7 @@ def physical_run(m, args, artifact):
     child = console = None
     try:
         session = json.loads(args.session.read_text())
-        d = validate_session(m, session, artifact, usb_devices())
+        d = validate_session(m, session, artifact, usb_devices(), profile)
         require(
             not args.usb_path or args.usb_path == d["path"],
             "--usb-path differs from validated session",
@@ -718,6 +900,7 @@ def physical_run(m, args, artifact):
         )
         save(args.output / "session.json", session)
         save(args.output / "manifest.json", m)
+        save(args.output / "bench.json", profile)
         report["firmware_sha256"] = digest(artifact)
         report["argv"] = sys.argv
         report["build_identity"] = session["build_identity"]
@@ -736,7 +919,8 @@ def physical_run(m, args, artifact):
         input(
             "Check wiring. Press Enter to arm acquisition and emit one 16-value burst (Ctrl-C cancels): "
         )
-        d = validate_session(m, session, artifact, usb_devices())
+        assert_profile(args, profile)
+        d = validate_session(m, session, artifact, usb_devices(), profile)
         port = serial_port(d)
         with (
             (args.output / "console.log").open("w") as serial_log,
@@ -837,6 +1021,18 @@ def configure_toolchain():
 
 
 def doctor(m, args):
+    profile = read_profile(args.bench)
+    print(
+        f"Bench: {args.bench}; "
+        + (
+            f"generator {profile['generator_flash_id']}"
+            if profile
+            else configure_instruction(args.bench)
+        )
+    )
+    print(
+        "RP2040 USB mode IDs: 2e8a:0003 = BOOTSEL; 2e8a:000a = RAM CDC. These are not board identity."
+    )
     configure_toolchain()
     problems = []
     for tool in (
@@ -903,15 +1099,21 @@ def doctor(m, args):
 def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__,
-        epilog="Default all is interactive: build, doctor, BOOTSEL RAM load, Enter, acquisition, run, analyse. No flash write; no sudo. Offline: build or analyse --capture FILE. Missing/stale session: load again with --usb-path to validate identity.",
+        epilog="Default all is interactive: build, doctor, enroll missing bench profile, BOOTSEL RAM load, Enter, acquisition, run, analyse. No flash write; no sudo. Offline: build or analyse --capture FILE. Missing/stale session: load again with --usb-path to validate identity.",
     )
     p.add_argument(
         "stage",
         nargs="?",
         default="all",
-        choices=["doctor", "build", "load", "run", "analyse", "all"],
+        choices=["doctor", "build", "configure", "load", "run", "analyse", "all"],
     )
     p.add_argument("--manifest", type=Path, required=True)
+    p.add_argument(
+        "--bench",
+        type=Path,
+        default=ROOT / ".bench/generator-check.json",
+        help="machine-local board/analyzer profile",
+    )
     p.add_argument(
         "--dry-run",
         action="store_true",
@@ -936,7 +1138,7 @@ def main(argv=None):
     )
     p.add_argument(
         "--analyzer",
-        default="fx2lafw",
+        default=None,
         help="sigrok driver, optionally fx2lafw:conn=BUS.ADDRESS to select one analyzer",
     )
     p.add_argument(
@@ -956,6 +1158,11 @@ def main(argv=None):
             f"{m.get('id')}: unimplemented. Read {args.manifest.parent/'README.md'} for prerequisites; no operations performed.",
             "unimplemented",
         )
+        profile = (
+            None if args.stage in ("build", "analyse") else read_profile(args.bench)
+        )
+        analyzer_override = args.analyzer
+        args.analyzer = args.analyzer or (profile["analyzer"] if profile else "fx2lafw")
         require(
             re.fullmatch(r"fx2lafw(?::conn=[0-9]+\.[0-9]+)?", args.analyzer),
             "--analyzer must be fx2lafw or fx2lafw:conn=BUS.ADDRESS",
@@ -972,6 +1179,12 @@ def main(argv=None):
                 json.dumps(
                     dict(
                         stage=args.stage,
+                        bench=str(args.bench.resolve()),
+                        generator_flash_id=(
+                            profile["generator_flash_id"] if profile else None
+                        ),
+                        analyzer=args.analyzer,
+                        usb_path=args.usb_path,
                         manifest=str(args.manifest),
                         artifact=str(artifact),
                         session=str(args.session),
@@ -979,16 +1192,19 @@ def main(argv=None):
                         actions={
                             "doctor": "check pinned sources, tools, USB permissions and analyzer scan",
                             "build": "bootstrap pins; configure/build/test host Debug+Release; build stimulus and pinned USB picotool",
+                            "configure": "read RP2040 BOOTSEL identity; confirm enrollment; atomically save local bench profile",
                             "load": "wait for selected RP2040 BOOTSEL; verify flash ID; RAM load idle image; follow physical USB port; persist hash session",
                             "run": "validate fresh output and session; explicit Enter; start analyzer and verify data transfer; run; fresh completion; stop; analyse",
                             "analyse": "validate existing capture metadata and finite waveform",
-                            "all": "build -> doctor -> load -> run -> analyse",
+                            "all": "build -> doctor -> configure if missing -> load -> run -> analyse",
                         }[args.stage],
                     ),
                     indent=2,
                 )
             )
             return 0
+        if args.stage in ("load", "run"):
+            read_profile(args.bench, required=True)
         if args.stage in ("all", "run") and args.output is None:
             args.output = (
                 ROOT
@@ -1011,9 +1227,19 @@ def main(argv=None):
             build(m)
         if args.stage in ("all", "doctor"):
             doctor(m, args)
+        if args.stage == "configure" or (args.stage == "all" and profile is None):
+            selected = configure(args)
+            if args.stage == "all":
+                args.usb_path = selected["path"]
+                profile = args.enrolled_profile
+                assert_profile(args, profile)
+                args.analyzer = analyzer_override or profile["analyzer"]
         if args.stage in ("all", "load"):
+            if profile is not None:
+                assert_profile(args, profile)
             load(m, args, artifact)
         if args.stage in ("all", "run"):
+            assert_profile(args, profile)
             physical_run(m, args, artifact)
         if args.stage == "analyse":
             require(

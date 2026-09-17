@@ -5,7 +5,6 @@
   "stage": "Generator bring-up; not a C1 or RP2350 result",
   "preset": "stimulus-rp2040",
   "target": "feasibility_stimulus",
-  "expected_flash_id": "754765170F445253",
   "data_gpio": [
     2,
     3,

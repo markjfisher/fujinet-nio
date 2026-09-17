@@ -18,8 +18,10 @@ repos/fujinet-nio/bridges/rp2350-zorro/tests/feasibility/generator-check/run.sh
 ```
 
 The starter explains its stages, builds the same pinned project and native tests,
-then tells you when to use BOOTSEL. It waits for the intended RP2040, verifies its
-identity, loads a RAM image and follows its physical USB port to the new console.
+then tells you when to use BOOTSEL. On first use it asks you to enroll your RP2040
+and saves its flash identity in ignored `.bench/generator-check.json`. It verifies
+that identity before loading a RAM image, then follows the physical USB port to
+the new console.
 It asks before generating a burst. Normal-user access must be configured first;
 see [one-time access setup](../README.md#one-time-linux-access-setup).
 
@@ -30,6 +32,7 @@ Run from this folder for individual steps:
 ./run.sh doctor
 ./run.sh --dry-run
 ./run.sh build
+./run.sh configure
 ./run.sh load
 ./run.sh run
 ./run.sh analyse --capture ../../../docs/feasibility/results/2026-09-17-generator/w0-final-001.sr
@@ -50,11 +53,14 @@ the bytes actually loaded. Rebuild through this starter if that record is missin
 or no longer matches the image. Offline analysis prints its verdict; `--output`
 also retains a report in a new directory.
 
-The configured generator flash ID is `754765170F445253`. The RP2350 DUT is
-`DCD9EB3F6D168102` and must not be loaded by this starter. USB bus addresses change;
-the starter discovers them. RAM serial `EEEEEEEEEEEEEEEE` is not a unique board
-identity. If you change boards, inspect/update the manifest and identify the new
-board deliberately; do not substitute an arbitrary ttyACM port.
+For another machine or board, see [bench setup and portability](../../../docs/bench-setup.md).
+The shared experiment manifest contains no personal board identity. `configure`
+reads BOOTSEL information and asks before saving/replacing local selection; it
+never loads an image or generates signals. Use `--bench PATH` for another profile.
+USB bus addresses and serial ports are discovered on each host. Runtime serial
+`EEEEEEEEEEEEEEEE` is not a unique board identity. The loader only accepts RP2040;
+it cannot use the RP2350 DUT as a generator. After changing a board, USB connection
+or host session, `load` establishes a fresh verified session before `run`.
 
 ## Wiring and expected result
 
@@ -88,7 +94,8 @@ PulseView after the runner exits to inspect the signal yourself.
 
 ## Inspect the implementation
 
-- [experiment.json](experiment.json): identity, pins, analyzer mapping and literal expectations.
+- [experiment.json](experiment.json): fixed pins, analyzer mapping and literal expectations.
+- Local `.bench/generator-check.json` under the bridge: your selected generator identity (ignored by Git).
 - [src/stimulus_program.c](src/stimulus_program.c): this experiment's APIO waveform and register configuration, compiled unchanged into hardware and native tests.
 - [shared RP2040 entry point](../../../lab/rp2040/main.c): SDK loading, GPIO ownership and USB handling.
 - [shared control](../../../lab/rp2040/stimulus_control.c) and [header](../../../lab/rp2040/stimulus.h): bounded commands/session behavior.
