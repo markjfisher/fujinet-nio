@@ -28,6 +28,17 @@
         "PICO_BOARD": "waveshare_core2350b",
         "PICO_PLATFORM": "rp2350-arm-s"
       }
+    },
+    {
+      "name": "stimulus-rp2040",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/stimulus-rp2040",
+      "cacheVariables": {
+        "BRIDGE_MODE": "stimulus",
+        "CMAKE_BUILD_TYPE": "Release",
+        "PICO_BOARD": "pico",
+        "PICO_PLATFORM": "rp2040"
+      }
     }
   ],
   "buildPresets": [
@@ -42,6 +53,10 @@
     {
       "name": "firmware",
       "configurePreset": "firmware"
+    },
+    {
+      "name": "stimulus-rp2040",
+      "configurePreset": "stimulus-rp2040"
     }
   ],
   "testPresets": [

@@ -127,4 +127,7 @@ The [experiment plan](docs/story-2-2-experiment-plan.md) extends this skeleton w
 an independent RP2040 stimulus generator and USB-observable Core2350B DUT, then
 measured timing and later buffered real-bus validation. It defines staged wiring,
 test cases, implementation packages and evidence requirements. Its new firmware
-targets and run commands are planned, not available in the Story 2.1 skeleton.
+RP2350 observer and two-board runner remain planned. The isolated
+[RP2040 W0 generator](docs/rp2040-generator.md) is now available as the
+`stimulus-rp2040` preset (workspace `rp2040-stimulus` command), with explicit
+USB run/stop control and RAM-only ELF/UF2 outputs.

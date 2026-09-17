@@ -1,9 +1,14 @@
 # Story 2.2 — RP2350B Zorro-facing feasibility experiment
 
-Status: concrete plan, 2026-09-17. No firmware changes or hardware measurements
-are claimed by this document. Work packages below remain unchecked. Proposed
-commands, targets and files are implementation deliverables unless marked existing.
-This is one Story 2.2 with staged execution, not new dispatch stories.
+Status: staged plan, updated 2026-09-17. The generator-first slice now has
+an isolated RAM-only RP2040 target, shared APIO instruction tests, USB control
+and initial independent analyzer captures; see the [generator guide](rp2040-generator.md)
+and [measured evidence](feasibility/results/2026-09-17-generator/report.md).
+This partially delivers E0–E2; the DUT observer and two-board runner are not
+implemented. Work-package checkboxes remain open until their full gates pass.
+Commands/targets in the original planned interface below remain future work
+unless explicitly documented as available in the generator guide. This remains
+one Story 2.2, not new dispatch stories, and is not accepted Zorro feasibility.
 
 ## Goal and relationship to Story 2.1
 
@@ -71,7 +76,9 @@ check continuity, and retain a wiring photo. Do not mix profiles across binaries
 User reports wiring W0 in progress (2026-09-17); completion and continuity checks
 are not yet recorded. Wire with both USB supplies disconnected. Use the multimeter
 to check the GPIO-to-GPIO connections and unintended shorts before powering.
-Story 2.2 stimulus/USB diagnostic firmware remains to be implemented.
+RP2040 stimulus/USB diagnostics are now available; RP2350 observer firmware
+remains to be implemented. Analyzer observations verify the generator signals,
+not a completed electrical continuity or DUT test record.
 
 | Net | RP2040 generator | Core2350B DUT | Initial state / ownership |
 | --- | --- | --- | --- |

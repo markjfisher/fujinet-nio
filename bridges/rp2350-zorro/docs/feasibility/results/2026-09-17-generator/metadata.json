@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-17",
+  "rp2040": {
+    "flash_id": "754765170F445253",
+    "silicon": "B2",
+    "flash_bytes": 16777216,
+    "ram_usb_serial": "EEEEEEEEEEEEEEEE",
+    "port": "ttyACM0"
+  },
+  "dut_untouched": {
+    "serial": "DCD9EB3F6D168102",
+    "port": "ttyACM1"
+  },
+  "analyzer": {
+    "driver": "fx2lafw",
+    "channels": {
+      "D0": "D0",
+      "D1": "D1",
+      "D2": "D2",
+      "D3": "D3",
+      "D7": "/AS"
+    },
+    "sample_rate_hz": 1000000
+  },
+  "firmware_baseline": "eceaa5447d922c65ccb258b72514206e9f1fe135",
+  "firmware_dirty": true,
+  "artifacts": {
+    "feasibility_stimulus.elf": "e7359ea2d684f47a28a85f0e6a120b416ed54af528b43f454edd95c7cec1cfd9",
+    "feasibility_stimulus.uf2": "3488426c5fd8192dc319c8050e8c9a13bee88cb7b54b20849cb1eeae4752ad46"
+  },
+  "claim": "Generator bring-up only; no DUT capture or Zorro feasibility result"
+}

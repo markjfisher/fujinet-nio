@@ -67,6 +67,8 @@ class Tooling(unittest.TestCase):
                 ("mode", ["-DBRIDGE_MODE=invalid"], "BRIDGE_MODE must be host or firmware"),
                 ("board", ["-DBRIDGE_MODE=firmware", "-DPICO_BOARD=pico2", "-DPICO_PLATFORM=rp2350-arm-s"], "Firmware requires"),
                 ("platform", ["-DBRIDGE_MODE=firmware", "-DPICO_BOARD=waveshare_core2350b", "-DPICO_PLATFORM=rp2040"], "Firmware requires"),
+                ("stimulus-board", ["-DBRIDGE_MODE=stimulus", "-DPICO_BOARD=pico2", "-DPICO_PLATFORM=rp2040"], "Stimulus requires"),
+                ("stimulus-platform", ["-DBRIDGE_MODE=stimulus", "-DPICO_BOARD=pico", "-DPICO_PLATFORM=rp2350-arm-s"], "Stimulus requires"),
                 ("sdk", ["-DBRIDGE_MODE=firmware", "-DPICO_BOARD=waveshare_core2350b", "-DPICO_PLATFORM=rp2350-arm-s", f"-DPICO_SDK_PATH={tmp}/missing-sdk"], "Missing dependency"),
             ]:
                 result = subprocess.run(["cmake", "-S", str(ROOT), "-B", str(Path(tmp) / name), *args], capture_output=True, text=True)
@@ -134,6 +136,8 @@ class Tooling(unittest.TestCase):
             self.assertEqual(cli("host", root / "missing-sdk").returncode, 0)
             self.assertIn("Missing dependency", cli("firmware", root / "missing-sdk").stderr)
             self.assertEqual(cli("firmware", clone).returncode, 0)
+            self.assertEqual(cli("stimulus", clone).returncode, 0)
+            self.assertIn("Missing dependency", cli("stimulus", root / "missing-sdk").stderr)
             pins["pico-sdk"] = dict(pin, revision="0" * 40)
             manifest.write_text(json.dumps(pins))
             result = cli("firmware", clone)

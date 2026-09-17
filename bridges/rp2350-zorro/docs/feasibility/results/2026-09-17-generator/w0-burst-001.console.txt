@@ -1,0 +1,6 @@
+idle generated=0
+idle generated=0
+running samples=16 nominal_hz=100000
+complete generated=16 nominal_hz=100000
+complete generated=16 nominal_hz=100000
+complete generated=16 nominal_hz=100000

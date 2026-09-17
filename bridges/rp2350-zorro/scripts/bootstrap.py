@@ -49,7 +49,7 @@ def setup(path, pin, check_only=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["host", "firmware"], required=True)
+    parser.add_argument("--mode", choices=["host", "firmware", "stimulus"], required=True)
     parser.add_argument("--check", action="store_true", help="validate only; never download")
     parser.add_argument("--sdk-path", type=Path)
     args = parser.parse_args()
