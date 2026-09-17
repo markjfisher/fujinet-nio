@@ -208,6 +208,21 @@ The selected facility is a **shared-directory record adapter**:
   directory channel locally and never selects `FN_BUILD_ZORRO`, `fujibus-tcp`,
   `SlipFramer`, or a byte serial/PTY/TCP channel.
 
+The independent host client owns one outstanding exchange until its reply arrives.
+A timeout or receive failure after acceptance permanently quarantines that client:
+further sends and receives report `UnknownCompletion`, including after local
+adapter reset. A late reply cannot complete a later request. Clients cannot be
+copied. Discarding a client and constructing another against a still-running
+peer is not recovery; retire the old peer and establish a fresh session first.
+
+The process launcher exclusively owns its directory, removes stale `IDENTITY`
+before spawning, and requires the exact token from a live child. The runner
+publishes readiness after startup cleanup and transport setup, with termination
+handlers already installed, and removes readiness on orderly shutdown. Directory
+reuse requires the prior runner to be stopped and reaped; concurrent runners or
+clients sharing a directory are unsupported. A crash may leave files, so launch
+cleanup is required even when orderly shutdown normally removes them.
+
 Sockets, SLIP-over-TCP, and the PTY Zorro stub were rejected for this harness:
 Amiberry already bridges SLIP over TCP and can mount a host directory
 (`filesystem2` / workbench `shares:`); the resident broker has DOS I/O and no

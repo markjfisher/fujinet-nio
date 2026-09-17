@@ -247,8 +247,12 @@ struct ExchangeResult {
     IOResponse service{};
     bool framed_ok{false};
     IOResponse framed{};
-    std::size_t transmissions{0};
-    std::size_t accepted{0};
+    fujinet::io::PacketIOStatus request_send_status{fujinet::io::PacketIOStatus::NoData};
+    fujinet::io::PacketIOStatus reply_send_status{fujinet::io::PacketIOStatus::NoData};
+    std::size_t request_transmissions{0};
+    std::size_t request_accepted{0};
+    std::size_t reply_attempts{0};
+    std::size_t reply_accepted{0};
 };
 
 inline ExchangeResult exchange_serial(DiskDevice& device, std::uint8_t command,
@@ -261,7 +265,12 @@ inline ExchangeResult exchange_serial(DiskDevice& device, std::uint8_t command,
 
     FujiBusPacket packet(WireDeviceId::DiskService, command);
     packet.setData(ByteBuffer(payload.begin(), payload.end()));
-    ch.push(packet.serialize());
+    BytePipeChannel requester;
+    const auto wire = packet.serialize();
+    requester.write(wire.data(), wire.size());
+    out.request_transmissions = requester.writeCalls;
+    out.request_accepted = 1;
+    ch.push(requester.take_tx());
     transport.poll();
 
     IORequest req{};
@@ -271,8 +280,8 @@ inline ExchangeResult exchange_serial(DiskDevice& device, std::uint8_t command,
     out.service = device.handle(req);
     out.handled = true;
     transport.send(out.service);
-    out.transmissions = ch.writeCalls;
-    out.accepted = ch.writeCalls > 0 ? 1 : 0;
+    out.reply_attempts = ch.writeCalls;
+    out.reply_accepted = ch.writeCalls > 0 ? 1 : 0;
 
     const auto tx = ch.take_tx();
     ch.push(tx);
@@ -303,20 +312,23 @@ inline ExchangeResult exchange_native(DiskDevice& device, std::uint8_t command,
     fujinet::io::NativeFramer framer;
     fujinet::io::FujiBusTransport transport(ch, framer);
 
+    // Separate sending adapters measure actual request and response attempts.
+    PacketIODouble requester(4096, 4, 8192);
+    PacketChannel requestChannel(&requester);
+    fujinet::io::NativeFramer requestFramer;
     const ByteBuffer raw = encode_request(command, payload);
-    if (requestFate == NativeRequestFate::Unavailable) {
-        io.peerAvailable = false;
-    }
-    io.enqueue(raw);
+    if (requestFate == NativeRequestFate::Unavailable) requester.peerAvailable = false;
+    requestFramer.sendPacket(requestChannel, raw);
+    out.request_send_status = requestFramer.sendStatus();
+    out.request_transmissions = requester.sendCalls;
+    out.request_accepted = requester.acceptedCount;
+    ByteBuffer delivered;
+    if (!requester.takeSent(delivered) || !io.enqueue(delivered)) return out;
     transport.poll();
 
     IORequest req{};
     out.received_request = transport.receive(req);
-    if (!out.received_request) {
-        out.transmissions = io.sendCalls;
-        out.accepted = io.acceptedCount;
-        return out;
-    }
+    if (!out.received_request) return out;
 
     out.service = device.handle(req);
     out.handled = true;
@@ -328,11 +340,12 @@ inline ExchangeResult exchange_native(DiskDevice& device, std::uint8_t command,
     }
 
     transport.send(out.service);
-    out.transmissions = io.sendCalls;
-    out.accepted = io.acceptedCount;
+    out.reply_send_status = framer.sendStatus();
+    out.reply_attempts = io.sendCalls;
+    out.reply_accepted = io.acceptedCount;
 
     ByteBuffer sent;
-    if (replyFate == NativeReplyFate::Deliver && io.takeSent(sent)) {
+    if (io.takeSent(sent)) {
         io.enqueue(sent);
         transport.poll();
         out.framed_ok = transport.receiveResponse(out.framed);
@@ -390,10 +403,30 @@ inline std::vector<std::uint8_t> unique_sector(std::uint8_t marker)
     return sector;
 }
 
-inline bool read_ok_contains(const IOResponse& resp, std::uint8_t marker)
+// Literal protocol fields, independent of production disk encoders. The fixture
+// uses slot 1, 256-byte sectors, and four raw sectors.
+inline std::vector<std::uint8_t> expected_sector_reply(std::uint32_t lba)
 {
-    if (resp.status != StatusCode::Ok || resp.payload.size() < 11 + kSectorSize) return false;
-    return resp.payload[11] == 0x5A && resp.payload[12] == marker;
+    return {1, 0, 0, 0, 1,
+            static_cast<std::uint8_t>(lba), static_cast<std::uint8_t>(lba >> 8),
+            static_cast<std::uint8_t>(lba >> 16), static_cast<std::uint8_t>(lba >> 24),
+            0, 1};
+}
+
+inline bool response_matches(const IOResponse& resp, std::uint8_t command,
+                             StatusCode status, const std::vector<std::uint8_t>& payload)
+{
+    // id is synthetic transport-local bookkeeping, not an on-wire field.
+    return resp.deviceId == to_device_id(WireDeviceId::DiskService) &&
+           resp.command == command && resp.status == status && resp.payload == payload;
+}
+
+inline bool read_matches_marker_sector(const IOResponse& resp, std::uint8_t marker)
+{
+    auto expected = expected_sector_reply(1);
+    const auto sector = unique_sector(marker);
+    expected.insert(expected.end(), sector.begin(), sector.end());
+    return response_matches(resp, 0x03, StatusCode::Ok, expected);
 }
 
 } // namespace disk_parity

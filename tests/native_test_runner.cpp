@@ -131,8 +131,19 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    const auto identity = std::filesystem::path(directory) /
+                          fujinet::native_test::kDirectoryPacketIdentityName;
+    std::filesystem::remove(identity, ec);
+    if (ec) return 1;
+    std::signal(SIGINT, handle_stop);
+    std::signal(SIGTERM, handle_stop);
+
     auto packets = std::make_unique<DirectoryPacketIO>(
         directory, kAdapterCapacity, DirectoryPacketRole::Host);
+    if (packets->requires_reset()) {
+        FN_LOGE(TAG, "Native-test startup record cleanup failed");
+        return 1;
+    }
 
     const auto profile = native_test_profile();
     FN_LOGI(TAG, "fujinet-nio-native-test starting (identity=%s)", kNativeTestIdentityToken);
@@ -170,14 +181,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::signal(SIGINT, handle_stop);
-    std::signal(SIGTERM, handle_stop);
-
     while (!g_stop.load()) {
         core.tick();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
+    std::filesystem::remove(identity, ec);
     (void)packets->reset();
     FN_LOGI(TAG, "fujinet-nio-native-test exiting (identity=%s)", kNativeTestIdentityToken);
     return 0;

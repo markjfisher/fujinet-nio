@@ -389,4 +389,144 @@ TEST_CASE("no fallback: serial and TCP env do not construct SlipFramer or a byte
     std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("client contains timeout and late reply across local reset")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    DirectoryPacketIO host(dir.string(), 128, DirectoryPacketRole::Host);
+    NativeTestClient client(dir.string(), 128);
+    const auto request = make_raw_request(
+        WireDeviceId::Clock, static_cast<std::uint8_t>(ClockCommand::GetTime), {});
+    REQUIRE(client.send_raw(request) == PacketIOStatus::Ok);
+    std::uint8_t received[128]{};
+    REQUIRE(host.receive(received, sizeof(received)).status == PacketIOStatus::Ok);
+    // The remote peer owns the request now, although the request file is gone.
+    CHECK(client.send_raw(request) == PacketIOStatus::Backpressure);
+    CHECK_FALSE(client.wait_record(std::chrono::steady_clock::now()));
+    CHECK(client.send_raw(request) == PacketIOStatus::UnknownCompletion);
+    REQUIRE(client.reset_local_records() == PacketIOStatus::Ok);
+    CHECK(client.send_raw(request) == PacketIOStatus::UnknownCompletion);
+    // A remote reply published after local cleanup cannot release containment.
+    fujinet::io::protocol::FujiBusPacket late(WireDeviceId::Clock,
+        static_cast<std::uint8_t>(ClockCommand::GetTime));
+    late.addParamU8(static_cast<std::uint8_t>(StatusCode::Ok));
+    late.setData({1, 0, 0, 0, 0, 0xF1, 0x53, 0x65, 0, 0, 0, 0});
+    const auto lateRaw = late.serializeRaw();
+    REQUIRE(decode_raw(lateRaw).got);
+    REQUIRE(host.send(lateRaw.data(), lateRaw.size()) == PacketIOStatus::Ok);
+    std::vector<std::uint8_t> out{0xAA};
+    CHECK(client.receive_raw(out).status == PacketIOStatus::UnknownCompletion);
+    CHECK(out.empty());
+    CHECK(client.send_raw(request) == PacketIOStatus::UnknownCompletion);
+    CHECK_FALSE(std::filesystem::exists(dir / kDirectoryPacketToHostName));
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("stale identity does not make a failed launch ready")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    REQUIRE(native_test_records::write_native_test_identity(dir.string()));
+    NativeTestRunnerProcess runner;
+    REQUIRE(runner.spawn("/nonexistent/native-test-runner", dir));
+    CHECK_FALSE(runner.wait_for_identity_file(dir, std::chrono::milliseconds(100)));
+    runner.terminate();
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("runner restart waits for fresh readiness in the same directory")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    NativeTestRunnerProcess runner;
+    const auto request = make_raw_request(
+        WireDeviceId::Clock, static_cast<std::uint8_t>(ClockCommand::GetTime), {});
+    for (int launch = 0; launch < 2; ++launch) {
+        REQUIRE(native_test_records::write_native_test_identity(dir.string()));
+        REQUIRE(write_bytes(dir / kDirectoryPacketToHostName, {0xAA}));
+        REQUIRE(runner.spawn(runner_path(), dir));
+        REQUIRE(runner.wait_for_identity_file(dir, kExchangeTimeout));
+        CHECK(read_identity_file(dir) == "native-test\n");
+        NativeTestClient client(dir.string(), 2048);
+        REQUIRE(client.send_raw(request) == PacketIOStatus::Ok);
+        auto reply = client.wait_record(std::chrono::steady_clock::now() + kExchangeTimeout);
+        REQUIRE(reply);
+        REQUIRE(decode_raw(*reply).got);
+        runner.terminate();
+        CHECK_FALSE(std::filesystem::exists(dir / native_test_records::kDirectoryPacketIdentityName));
+    }
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("in-process exchange deadline contains its eventual real reply")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    NativeTestHostStack stack(dir.string(), 128);
+    REQUIRE(stack.ready());
+    NativeTestClient client(dir.string(), 128);
+    const auto request = make_raw_request(
+        WireDeviceId::Clock, static_cast<std::uint8_t>(ClockCommand::GetTime), {});
+    CHECK_FALSE(stack.exchange(client, request, std::chrono::milliseconds(0)));
+    stack.tick(); // The real handler completes after the caller's deadline.
+    REQUIRE(std::filesystem::exists(dir / kDirectoryPacketToGuestName));
+    std::vector<std::uint8_t> out;
+    CHECK(client.receive_raw(out).status == PacketIOStatus::UnknownCompletion);
+    CHECK(out.empty());
+    REQUIRE(client.reset_local_records() == PacketIOStatus::Ok);
+    CHECK(client.send_raw(request) == PacketIOStatus::UnknownCompletion);
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("receive failure preserves quarantine after local record cleanup")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    DirectoryPacketIO host(dir.string(), 128, DirectoryPacketRole::Host);
+    NativeTestClient client(dir.string(), 16);
+    const auto request = make_raw_request(
+        WireDeviceId::Clock, static_cast<std::uint8_t>(ClockCommand::GetTime), {});
+    REQUIRE(client.send_raw(request) == PacketIOStatus::Ok);
+    std::uint8_t received[128]{};
+    REQUIRE(host.receive(received, sizeof(received)).status == PacketIOStatus::Ok);
+    const std::vector<std::uint8_t> oversized(32, 0x55);
+    REQUIRE(host.send(oversized.data(), oversized.size()) == PacketIOStatus::Ok);
+    std::vector<std::uint8_t> out;
+    CHECK(client.receive_raw(out).status == PacketIOStatus::Oversized);
+    CHECK(out.empty());
+    REQUIRE(client.reset_local_records() == PacketIOStatus::Ok);
+    CHECK(client.receive_raw(out).status == PacketIOStatus::UnknownCompletion);
+    CHECK(client.send_raw(request) == PacketIOStatus::UnknownCompletion);
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("live runner readiness requires the exact identity token")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    NativeTestRunnerProcess runner;
+    REQUIRE(runner.spawn(runner_path(), dir));
+    REQUIRE(runner.wait_for_identity_file(dir, kExchangeTimeout));
+    const auto identity = dir / native_test_records::kDirectoryPacketIdentityName;
+    REQUIRE(write_bytes(identity, {'x'}));
+    CHECK_FALSE(runner.wait_for_identity_file(dir, std::chrono::milliseconds(10)));
+    REQUIRE(native_test_records::write_native_test_identity(dir.string()));
+    CHECK(runner.wait_for_identity_file(dir, kExchangeTimeout));
+    runner.terminate();
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("runner does not publish readiness when startup cleanup fails")
+{
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    REQUIRE(std::filesystem::create_directory(dir / kDirectoryPacketToHostName));
+    NativeTestRunnerProcess runner;
+    REQUIRE(runner.spawn(runner_path(), dir));
+    CHECK_FALSE(runner.wait_for_identity_file(dir, kExchangeTimeout));
+    CHECK_FALSE(std::filesystem::exists(dir / native_test_records::kDirectoryPacketIdentityName));
+    runner.terminate();
+    std::filesystem::remove_all(dir);
+}
+
 }

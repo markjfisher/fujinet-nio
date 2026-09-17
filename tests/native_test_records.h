@@ -9,6 +9,7 @@
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/platform/posix/fs_factory.h"
 
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <fcntl.h>
@@ -84,19 +85,36 @@ public:
         : _io(std::move(directory), capacity, DirectoryPacketRole::Client)
     {}
 
+    NativeTestClient(const NativeTestClient&) = delete;
+    NativeTestClient& operator=(const NativeTestClient&) = delete;
+
+    // No local operation proves the remote peer has finished an abandoned request.
+    void abandon_exchange() { if (_outstanding) _quarantined = true; }
+
     PacketIOStatus send_raw(const std::vector<std::uint8_t>& raw)
     {
-        return _io.send(raw.data(), raw.size());
+        if (_quarantined) return PacketIOStatus::UnknownCompletion;
+        if (_outstanding) return PacketIOStatus::Backpressure;
+        const auto status = _io.send(raw.data(), raw.size());
+        _outstanding = status == PacketIOStatus::Ok;
+        if (status == PacketIOStatus::UnknownCompletion) _quarantined = true;
+        return status;
     }
 
     PacketReceiveResult receive_raw(std::vector<std::uint8_t>& out)
     {
+        out.clear();
+        if (_quarantined) return {PacketIOStatus::UnknownCompletion};
+        if (!_outstanding) return {PacketIOStatus::NoData};
         out.assign(_io.capacity(), 0);
         const auto result = _io.receive(out.data(), out.size());
         if (result.status == PacketIOStatus::Ok) {
             out.resize(result.size);
+            _outstanding = false;
         } else {
             out.clear();
+            if (result.status != PacketIOStatus::NoData &&
+                result.status != PacketIOStatus::Incomplete) abandon_exchange();
         }
         return result;
     }
@@ -111,17 +129,22 @@ public:
                 return out;
             }
             if (result.status != PacketIOStatus::NoData) {
+                abandon_exchange();
                 return std::nullopt;
             }
             ::usleep(2000);
         }
+        abandon_exchange();
         return std::nullopt;
     }
 
-    DirectoryPacketIO& io() { return _io; }
+    // Local cleanup cannot clear outstanding ownership or quarantine.
+    PacketIOStatus reset_local_records() { return _io.reset(); }
 
 private:
     DirectoryPacketIO _io;
+    bool _outstanding{false};
+    bool _quarantined{false};
 };
 
 class NativeTestHostStack {
@@ -150,7 +173,7 @@ public:
         _transport = fujinet::core::setup_transports(_core, _channel, profile, nullptr);
     }
 
-    bool ready() const { return _registered_fs && _transport != nullptr; }
+    bool ready() const { return _registered_fs && _transport != nullptr && !_packets.requires_reset(); }
 
     void tick() { _core.tick(); }
 
@@ -174,10 +197,12 @@ public:
                 return out;
             }
             if (once.status != PacketIOStatus::NoData) {
+                client.abandon_exchange();
                 return std::nullopt;
             }
             ::usleep(1000);
         }
+        client.abandon_exchange();
         return std::nullopt;
     }
 
@@ -189,6 +214,8 @@ private:
     FujinetCore _core;
     fujinet::io::ITransport* _transport{nullptr};
 };
+
+inline std::string read_identity_file(const std::filesystem::path& directory);
 
 class NativeTestRunnerProcess {
 public:
@@ -203,6 +230,13 @@ public:
                const std::vector<std::string>& extra_env = {})
     {
         terminate();
+        _output.clear();
+        // Exclusive directory ownership: remove stale readiness before the child
+        // can publish this launch's identity, even if exec subsequently fails.
+        std::error_code ec;
+        std::filesystem::remove(directory / kDirectoryPacketIdentityName, ec);
+        if (ec) return false;
+        _directory = directory;
         int fds[2];
         if (::pipe(fds) != 0) {
             return false;
@@ -239,27 +273,28 @@ public:
     bool wait_for_identity_file(const std::filesystem::path& directory,
                                 std::chrono::milliseconds timeout)
     {
-        const auto path = directory / kDirectoryPacketIdentityName;
+        if (directory != _directory) return false;
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
-            if (std::filesystem::exists(path)) {
-                return true;
-            }
-            if (!running()) {
-                return false;
+            if (!running()) return false;
+            if (read_identity_file(directory) == std::string(kNativeTestIdentityToken) + "\n") {
+                return running();
             }
             drain_stdout();
             ::usleep(2000);
         }
-        return std::filesystem::exists(path);
+        return false;
     }
 
-    bool running() const
+    bool running()
     {
-        if (_pid <= 0) {
+        if (_pid <= 0) return false;
+        int status = 0;
+        const auto result = ::waitpid(_pid, &status, WNOHANG);
+        if (result == _pid || (result < 0 && errno == ECHILD)) {
+            _pid = -1;
             return false;
         }
-        const int result = ::kill(_pid, 0);
         return result == 0;
     }
 
@@ -314,6 +349,7 @@ private:
     pid_t _pid{-1};
     int _stdout{-1};
     std::string _output;
+    std::filesystem::path _directory;
 };
 
 inline std::string capture_runner_help(const char* runner_path)

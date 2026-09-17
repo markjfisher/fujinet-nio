@@ -38,6 +38,7 @@ public:
 
     const std::string& directory() const { return _directory; }
     DirectoryPacketRole role() const { return _role; }
+    bool requires_reset() const { return _reset_required; }
 
 private:
     std::string receive_path() const;
