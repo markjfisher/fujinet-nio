@@ -168,6 +168,7 @@ int main(int argc, char** argv)
 
     fujinet::core::register_file_device(core);
     fujinet::core::register_clock_device(core);
+    fujinet::core::register_disk_device(core);
 
     auto channel = std::make_unique<DirectoryPacketChannel>(packets.get());
     if (!fujinet::core::setup_transports(core, *channel, profile, nullptr)) {

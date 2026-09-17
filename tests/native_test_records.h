@@ -161,6 +161,7 @@ public:
         _registered_fs = hostFs && _core.storageManager().registerFileSystem(std::move(hostFs));
         fujinet::core::register_file_device(_core);
         fujinet::core::register_clock_device(_core);
+        fujinet::core::register_disk_device(_core);
 
         // Local FujiBusNative profile; never current_build_profile() or channel factory.
         const fujinet::build::BuildProfile profile{

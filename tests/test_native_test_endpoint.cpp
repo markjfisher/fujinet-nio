@@ -13,6 +13,9 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <memory>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -151,6 +154,105 @@ TEST_CASE("happy exchange: independent client gets production clock and file-lis
     CHECK(alpha->size_bytes == 2);
     CHECK(stack.channel().byteCalls == 0);
 
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("real disk endpoint reads and flushes slot eight with independent backing verification")
+{
+    bool subprocess = false;
+    SUBCASE("helper registers DiskDevice") {}
+    SUBCASE("actual runner registers DiskDevice") { subprocess = true; }
+
+    const auto dir = make_temp_dir();
+    REQUIRE_FALSE(dir.empty());
+    std::filesystem::create_directories(dir / "host-fs");
+    const auto image = dir / "host-fs" / "disposable.adf";
+    std::vector<std::uint8_t> expected(1760 * 512);
+    for (std::size_t i = 0; i < expected.size(); ++i)
+        expected[i] = static_cast<std::uint8_t>(i * 37 + i / 512 + 19);
+    REQUIRE(write_bytes(image, expected));
+
+    NativeTestRunnerProcess runner;
+    std::unique_ptr<NativeTestHostStack> stack;
+    if (subprocess) {
+        REQUIRE(runner.spawn(runner_path(), dir));
+        REQUIRE(runner.wait_for_identity_file(dir, kExchangeTimeout));
+    } else {
+        stack = std::make_unique<NativeTestHostStack>(dir.string(), 2048);
+        REQUIRE(stack->ready());
+    }
+    NativeTestClient client(dir.string(), 2048);
+    auto exchange = [&](std::uint8_t command, const std::vector<std::uint8_t>& payload) {
+        const auto request = make_raw_request(WireDeviceId::DiskService, command, payload);
+        std::optional<std::vector<std::uint8_t>> raw;
+        if (stack) {
+            raw = stack->exchange(client, request, kExchangeTimeout);
+        } else {
+            REQUIRE(client.send_raw(request) == PacketIOStatus::Ok);
+            raw = client.wait_record(std::chrono::steady_clock::now() + kExchangeTimeout);
+        }
+        REQUIRE(raw);
+        const auto reply = decode_raw(*raw);
+        REQUIRE(reply.got);
+        CHECK(reply.device == 0xFC);
+        CHECK(reply.command == command);
+        return reply;
+    };
+    auto backing = [&]() {
+        std::ifstream input(image, std::ios::binary);
+        REQUIRE(input.is_open());
+        return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(input), {});
+    };
+
+    // Literal v1 protocol fields; no production disk payload codec builds expectations.
+    const auto empty = exchange(0x05, {1, 8});
+    REQUIRE(empty.status == StatusCode::Ok);
+    REQUIRE(empty.payload.size() == 13);
+    CHECK((empty.payload[1] & 1) == 0);
+    const std::string uri = "host:/disposable.adf";
+    std::vector<std::uint8_t> mount{1, 8, 0, 0, 0, 0,
+                                  static_cast<std::uint8_t>(uri.size()), 0};
+    mount.insert(mount.end(), uri.begin(), uri.end());
+    const auto mounted = exchange(0x01, mount);
+    REQUIRE(mounted.status == StatusCode::Ok);
+    CHECK(mounted.payload == std::vector<std::uint8_t>{1, 1, 0, 0, 8, 4, 0, 2, 0xE0, 6, 0, 0});
+
+    const auto initial = exchange(0x03, {1, 8, 17, 0, 0, 0, 0, 2});
+    REQUIRE(initial.status == StatusCode::Ok);
+    REQUIRE(initial.payload.size() == 523);
+    const std::vector<std::uint8_t> readMetadata{1, 0, 0, 0, 8, 17, 0, 0, 0, 0, 2};
+    CHECK(std::equal(readMetadata.begin(), readMetadata.end(), initial.payload.begin()));
+    CHECK(std::equal(initial.payload.begin() + 11, initial.payload.end(), expected.begin() + 17 * 512));
+    CHECK(backing() == expected);
+
+    std::vector<std::uint8_t> write{1, 8, 17, 0, 0, 0, 0, 2};
+    for (std::size_t i = 0; i < 512; ++i)
+        write.push_back(static_cast<std::uint8_t>(i * 13 + 0xC0));
+    REQUIRE(exchange(0x04, write).status == StatusCode::Ok);
+    REQUIRE(exchange(0x0E, {1, 8}).status == StatusCode::Ok);
+    std::copy(write.begin() + 8, write.end(), expected.begin() + 17 * 512);
+    CHECK(backing() == expected); // Entire image, including both sides of the sector.
+    const auto reread = exchange(0x03, {1, 8, 17, 0, 0, 0, 0, 2});
+    REQUIRE(reread.status == StatusCode::Ok);
+    REQUIRE(reread.payload.size() == 523);
+    CHECK(std::equal(readMetadata.begin(), readMetadata.end(), reread.payload.begin()));
+    CHECK(std::equal(reread.payload.begin() + 11, reread.payload.end(), write.begin() + 8));
+    const auto info = exchange(0x05, {1, 8});
+    REQUIRE(info.status == StatusCode::Ok);
+    REQUIRE(info.payload.size() == 13);
+    CHECK((info.payload[1] & 5) == 1); // Still inserted, flush cleared dirty.
+    const auto otherSlot = exchange(0x05, {1, 1});
+    REQUIRE(otherSlot.status == StatusCode::Ok);
+    REQUIRE(otherSlot.payload.size() == 13);
+    CHECK((otherSlot.payload[1] & 1) == 0);
+
+    write[2] = 0xE0; write[3] = 6; // LBA 1760 lies beyond the image.
+    CHECK(exchange(0x04, write).status == StatusCode::InvalidRequest);
+    CHECK(backing() == expected);
+    if (stack) CHECK(stack->channel().byteCalls == 0);
+    runner.terminate();
+    stack.reset();
+    CHECK(backing() == expected);
     std::filesystem::remove_all(dir);
 }
 
