@@ -31,7 +31,7 @@ program is laboratory equipment. Story 2.3 owns bridge-to-ESP feasibility.
 | RP2040 development board | Available: TZT Pico-style purple AliExpress board, advertised 16 MB flash, USB-C, BOOTSEL, 40 pins; independent stimulus generator |
 | Breadboard and Dupont leads | Available; short signal paths and common GND for initial 3.3 V experiments |
 | Two USB data connections | Required, one console per board; identify each by reported role and unique board ID |
-| Logic analyzer | Available: inexpensive eight-channel USB unit with CLK/GND; exact model, USB connector, software, input limits and sample-rate capabilities unverified |
+| Logic analyzer | Available: inexpensive eight-channel USB unit labelled CH1–CH8 plus GNC/CLK (ground label as reported); exact model, USB connector, software, input limits and sample-rate capabilities unverified |
 | Oscilloscope and suitable probes | HANMATEK DOS1102 available; verify probe configuration and usable measurement capabilities. Use for timing, analog edge quality and output release |
 | Multimeter | Simple unit available; use for continuity and supply/ground checks |
 | Weak bias / series resistors, later buffers | Select and document with the output/release fixture; needed before bidirectional tests, not guessed production parts |
@@ -83,13 +83,25 @@ Story 2.2 stimulus/USB diagnostic firmware remains to be implemented.
 | /AS | GP6 output | GP1 input | Deasserted high before arming |
 | USB | Generator USB | DUT USB | Separate host ports; no inter-board USB link |
 
-Optional W0 analyzer attachment: CH0 to /AS (DUT GP1), CH1–CH4 to D0–D3
-(DUT GP2–GP5), and analyzer GND to common GND. Leave CH5–CH7 unused initially.
-Confirm channel labels and 3.3 V input compatibility before connecting. The CLK
-terminal is not a required W0 connection; leave it disconnected until the unit's
-function/pinout is identified. Five simultaneous channels cover W0; eight channels
-cannot observe the entire sixteen-bit W1 fixture at once. Later captures must name
-the observed subset; separate runs are not a simultaneous full-bus trace.
+User-reported W0 analyzer signal wiring (2026-09-17):
+
+| Analyzer channel | Signal | Core2350B GPIO |
+| --- | --- | --- |
+| CH1 | D0 | GP2 |
+| CH2 | D1 | GP3 |
+| CH3 | D2 | GP4 |
+| CH4 | D3 | GP5 |
+| CH8 | /AS | GP1 |
+
+The unit is labelled CH1–CH8 plus GNC/CLK as reported by the user. CH5–CH7
+are unused. Confirm the reported GNC terminal is ground, then connect it to the
+boards' common GND; ground connection and input compatibility are not yet verified.
+Leave CLK disconnected until its function/pinout is identified. Capture software
+must map its channel numbering explicitly to these physical labels, including
+CH8 for /AS. Five simultaneous channels cover W0; eight channels cannot observe
+the entire sixteen-bit W1 fixture at once. Later captures must name the observed
+subset; separate runs are not a simultaneous full-bus trace. Signal attachment
+alone does not establish completed continuity checks or a passing experiment.
 
 This preserves Story 2.1's DUT GP1 /AS and GP2–5 data configuration. No DUT output
 or acknowledgement wire is needed for the initial capture experiment. Analyzer
