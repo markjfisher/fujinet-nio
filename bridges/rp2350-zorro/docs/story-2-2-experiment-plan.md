@@ -31,9 +31,9 @@ program is laboratory equipment. Story 2.3 owns bridge-to-ESP feasibility.
 | RP2040 development board | Available: TZT Pico-style purple AliExpress board, advertised 16 MB flash, USB-C, BOOTSEL, 40 pins; independent stimulus generator |
 | Breadboard and Dupont leads | Available; short signal paths and common GND for initial 3.3 V experiments |
 | Two USB data connections | Required, one console per board; identify each by reported role and unique board ID |
-| Logic analyzer | Not confirmed; optional if the available scope can resolve the required digital timing/channels |
-| Oscilloscope and suitable probes | Scope available; model/probes unconfirmed. Use for timing, analog edge quality and output release after USB functional bring-up |
-| Multimeter | Availability unconfirmed; needed to check continuity and supply/ground arrangement |
+| Logic analyzer | Available: inexpensive eight-channel USB unit with CLK/GND; exact model, USB connector, software, input limits and sample-rate capabilities unverified |
+| Oscilloscope and suitable probes | HANMATEK DOS1102 available; verify probe configuration and usable measurement capabilities. Use for timing, analog edge quality and output release |
+| Multimeter | Simple unit available; use for continuity and supply/ground checks |
 | Weak bias / series resistors, later buffers | Select and document with the output/release fixture; needed before bidirectional tests, not guessed production parts |
 | Passive Zorro-II breakout | Being fabricated; provides access only, no level conversion or output protection |
 | A500/Zorro-II adapter and actual host | Later real-bus stage; confirm exact board/revision, connection and availability |
@@ -42,8 +42,7 @@ The user identifies a TZT Pico-style RP2040 clone with a separate four-pin
 debug/power adapter. Verify its exact header map and flash device/configuration
 before wiring/flashing; do not assume the official Pico SDK board configuration
 fully describes the advertised 16 MB clone. The debug header is not required
-for this USB bench. GPIO names
-below are chip GPIO numbers, not physical header positions. The runner must reject
+for this USB bench. GPIO names below are chip GPIO numbers, not physical header positions. The runner must reject
 an unverified board/wiring profile. Board identification and instrumentation gaps
 do not prevent host tests, target plumbing or the portability spike.
 
@@ -56,7 +55,8 @@ outputs until explicitly armed. USB enumeration never starts a waveform.
 Select analyzer sample rate/channel count and scope bandwidth from the shortest
 interval and edge being measured, at the simultaneous channel count in use.
 Record sampling uncertainty and probe loading. A slow analyzer is useful for
-bring-up but cannot certify a tighter limit than it resolves. USB consoles are sufficient for initial pattern/count/recovery diagnostics. They
+bring-up but cannot certify a tighter limit than it resolves. USB consoles are
+sufficient for initial pattern/count/recovery diagnostics. They
 do not measure pin timing or prove output release. Without external measurements,
 record functional results and **timing unverified**, not inferred nanosecond margins.
 
@@ -68,6 +68,11 @@ check continuity, and retain a wiring photo. Do not mix profiles across binaries
 
 ### W0 — reproduce the existing four-bit capture
 
+User reports wiring W0 in progress (2026-09-17); completion and continuity checks
+are not yet recorded. Wire with both USB supplies disconnected. Use the multimeter
+to check the GPIO-to-GPIO connections and unintended shorts before powering.
+Story 2.2 stimulus/USB diagnostic firmware remains to be implemented.
+
 | Net | RP2040 generator | Core2350B DUT | Initial state / ownership |
 | --- | --- | --- | --- |
 | GND | GND | GND | Common reference |
@@ -77,6 +82,14 @@ check continuity, and retain a wiring photo. Do not mix profiles across binaries
 | D3 | GP5 output | GP5 input | Generator drives data |
 | /AS | GP6 output | GP1 input | Deasserted high before arming |
 | USB | Generator USB | DUT USB | Separate host ports; no inter-board USB link |
+
+Optional W0 analyzer attachment: CH0 to /AS (DUT GP1), CH1–CH4 to D0–D3
+(DUT GP2–GP5), and analyzer GND to common GND. Leave CH5–CH7 unused initially.
+Confirm channel labels and 3.3 V input compatibility before connecting. The CLK
+terminal is not a required W0 connection; leave it disconnected until the unit's
+function/pinout is identified. Five simultaneous channels cover W0; eight channels
+cannot observe the entire sixteen-bit W1 fixture at once. Later captures must name
+the observed subset; separate runs are not a simultaneous full-bus trace.
 
 This preserves Story 2.1's DUT GP1 /AS and GP2–5 data configuration. No DUT output
 or acknowledgement wire is needed for the initial capture experiment. Analyzer
@@ -341,9 +354,11 @@ failed runs and explain exclusions; do not publish only the fastest passing run.
 - TZT RP2040 clone exact revision, flash device/SDK configuration and physical
   header map; W0/W1 remain provisional until verified. The advertised memory size
   is user-reported, not a verified board specification.
-- Available oscilloscope model/probes and channel/bandwidth limits; analyzer and
-  multimeter availability. Start with USB functional diagnostics; schedule scope
-  measurements for timing and release, without assuming additional purchases.
+- Eight-channel analyzer exact model, host capture software, input limits and
+  simultaneous sample rate; HANMATEK DOS1102 probe configuration and usable
+  measurement resolution. All three instruments are available, including the
+  multimeter. Start with USB functional diagnostics and W0 traces; qualify each
+  timing measurement against actual instrument settings.
 - Breakout and A500 adapter revisions/schematics, buffering circuit and timing
   source editions; resolve before E6, not by importing a speculative production ABI.
 - Verify the proposed APIO instruction-builder/RP2040-loader seam in E0; no claim
