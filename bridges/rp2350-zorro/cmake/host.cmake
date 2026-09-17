@@ -1,0 +1,16 @@
+# Build upstream source, including the sole APIO_EMU_IMPL in epio_apio.c.
+file(GLOB EPIO_SOURCES CONFIGURE_DEPENDS "${DEPS}/epio/src/*.c")
+add_library(epio STATIC ${EPIO_SOURCES})
+add_dependencies(epio bridge_validate)
+target_include_directories(epio PUBLIC "${DEPS}/epio/include" "${DEPS}/apio/include")
+target_compile_definitions(epio PUBLIC APIO_EMULATION=1)
+# epio exposes enum-bearing structs; consumers must use the same ABI.
+target_compile_options(epio PUBLIC -fshort-enums)
+add_executable(test_capture tests/test_capture.c src/capture_program.c)
+add_dependencies(test_capture bridge_validate)
+target_include_directories(test_capture PRIVATE src)
+target_link_libraries(test_capture PRIVATE epio)
+target_compile_options(test_capture PRIVATE -Wall -Wextra -Werror)
+add_test(NAME capture COMMAND test_capture)
+add_test(NAME tooling COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tooling.py")
+add_test(NAME pio_policy COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_pio_policy.py")

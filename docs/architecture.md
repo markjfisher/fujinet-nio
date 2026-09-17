@@ -9,6 +9,9 @@ See [Slot catalogue and active disk mounts](slot_state.md) for the AppStore
 backing model, typed service boundary, sparse-index semantics, and lazy-mount
 interaction.
 
+The isolated [RP2350 Zorro bridge skeleton](../bridges/rp2350-zorro/README.md)
+provides native PIO behavior tests and an RP2350B firmware build for later feasibility work.
+
 ## **Table of Contents**
 1. [Overview](#overview)  
 2. [Design Principles](#design-principles)  
