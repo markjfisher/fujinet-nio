@@ -1,0 +1,12 @@
+{
+  "assertions_before_stop": 4,
+  "values": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "as_high_for_remainder_after_final_edge_plus_1ms": true,
+  "stop_latency": "not measured; no synchronized stop-command timing marker",
+  "high_impedance": "not established"
+}

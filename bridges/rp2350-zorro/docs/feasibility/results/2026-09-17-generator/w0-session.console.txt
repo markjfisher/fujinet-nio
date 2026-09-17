@@ -1,0 +1,5 @@
+complete generated=16 nominal_hz=100000
+error unknown command
+error invalid or oversized command
+error invalid or oversized command
+complete generated=16 nominal_hz=100000

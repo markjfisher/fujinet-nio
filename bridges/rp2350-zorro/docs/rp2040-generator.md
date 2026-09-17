@@ -35,8 +35,8 @@ code and initialized data load into SRAM, without a flash boot stage or flash
 part assumption. Power cycling restores whatever firmware was already in flash.
 The ELF/UF2 is a RAM image, not a persistent installation.
 
-The same APIO-authored seven instruction words are used by native epio tests
-and the SDK PIO loader. No APIO RP2350 MMIO initialization runs on RP2040.
+The same APIO-authored seven instruction words and register configuration
+are used by native epio tests and the SDK PIO loader. No APIO RP2350 MMIO initialization runs on RP2040.
 Existing dependency pins, validation guards and RP2350 presets remain in use.
 
 ## Identify and load only the generator
@@ -97,7 +97,7 @@ generator port, then open it with DTR asserted:
 ```sh
 ls -l /dev/serial/by-id/
 export GEN_PORT=/dev/serial/by-id/REPLACE_WITH_IDENTIFIED_GENERATOR
-uv run --with pyserial python -m serial.tools.miniterm "$GEN_PORT" 115200 --raw
+uv run --with pyserial==3.5 python -m serial.tools.miniterm "$GEN_PORT" 115200 --raw
 ```
 
 The baud setting is conventional USB CDC configuration; PIO sets signal timing.
@@ -126,7 +126,9 @@ by this deadline.
 
 ## Independent analyzer oracle
 
-In another terminal, arm the analyzer **before** entering `run` in the console:
+Close or disconnect the live analyzer in PulseView before using sigrok-cli;
+only one application can claim its USB interface. In another terminal, arm the
+analyzer **before** entering `run` in the console:
 
 ```sh
 sigrok-cli --scan

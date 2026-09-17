@@ -1,0 +1,153 @@
+{
+  "capture": "build/feasibility/generator-bringup/w0-final-002.sr",
+  "sample_rate": 1000000,
+  "assertions": 16,
+  "values": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "measurements": [
+    {
+      "value": 0,
+      "fall_sample": 330536,
+      "rise_sample": 330636,
+      "low_us": 100,
+      "setup_us": 330536,
+      "hold_us": 100
+    },
+    {
+      "value": 1,
+      "fall_sample": 330836,
+      "rise_sample": 330936,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 2,
+      "fall_sample": 331136,
+      "rise_sample": 331236,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 3,
+      "fall_sample": 331436,
+      "rise_sample": 331536,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 4,
+      "fall_sample": 331736,
+      "rise_sample": 331836,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 5,
+      "fall_sample": 332036,
+      "rise_sample": 332136,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 6,
+      "fall_sample": 332336,
+      "rise_sample": 332436,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 7,
+      "fall_sample": 332636,
+      "rise_sample": 332736,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 8,
+      "fall_sample": 332936,
+      "rise_sample": 333036,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 9,
+      "fall_sample": 333236,
+      "rise_sample": 333336,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 10,
+      "fall_sample": 333536,
+      "rise_sample": 333636,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 11,
+      "fall_sample": 333836,
+      "rise_sample": 333936,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 12,
+      "fall_sample": 334136,
+      "rise_sample": 334236,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 13,
+      "fall_sample": 334436,
+      "rise_sample": 334536,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 14,
+      "fall_sample": 334736,
+      "rise_sample": 334836,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 100
+    },
+    {
+      "value": 15,
+      "fall_sample": 335036,
+      "rise_sample": 335136,
+      "low_us": 100,
+      "setup_us": 100,
+      "hold_us": 114
+    }
+  ]
+}

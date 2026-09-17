@@ -1,0 +1,15 @@
+{
+  "firmware_revision": "bbf69259883d9bc489642aea2778f623263e7c3a",
+  "source_state": "Executable source committed; subsequent changes documentation/evidence only",
+  "artifacts": {
+    "feasibility_stimulus.elf": "3ce6a0f7f5962e0fad13b73bffd9b8b43bb4611bd841de1d656d9c5c2c6fb1a4",
+    "feasibility_stimulus.uf2": "f04d5624a19fc04aad17c93ac3ed3b0212f885ac330893b79a5997f71dd61bf2"
+  },
+  "physical_status": "passed: two complete bursts, partial-command DTR reconnect/invalid commands, active stop and rearm",
+  "captures": {
+    "w0-final-001.sr": "c7b2d6efa8700c060c0f1eeff46d6772bc60b4328bcf478a1827fd274a5730f6",
+    "w0-final-002.sr": "1f303ccdf37df7d9dfbb81740d28f58cbca6d27b140cdc3d4d6560969e19afa3",
+    "w0-session.sr": "5d5a882fb4c99d804d307a28cf0b8fcde56a910624481e9a04ce9d636d256a6c",
+    "w0-stop.sr": "94e4c872aca2e5c1f8514ec2725b896c052e02954db3ce85437cebb53ee27d1d"
+  }
+}

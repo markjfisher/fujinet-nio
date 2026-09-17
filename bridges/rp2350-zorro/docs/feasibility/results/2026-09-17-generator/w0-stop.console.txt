@@ -1,0 +1,5 @@
+complete generated=16 nominal_hz=100000
+running samples=16 nominal_hz=100000
+stopped generated=unknown
+stopped generated=unknown
+stopped generated=unknown

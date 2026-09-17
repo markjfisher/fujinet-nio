@@ -1,4 +1,4 @@
-complete generated=16 nominal_hz=100000
+stopped generated=unknown
 running samples=16 nominal_hz=100000
 complete generated=16 nominal_hz=100000
 complete generated=16 nominal_hz=100000
