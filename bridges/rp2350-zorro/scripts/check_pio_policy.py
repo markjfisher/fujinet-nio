@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reject first-party PIO text files and assembler-generation build rules."""
+
 import os
 from pathlib import Path
 import re
@@ -20,11 +21,21 @@ def violations(root):
             if path.suffix.lower() == ".pio":
                 found.append(f"{relative}: forbidden PIO text source")
             # Test fixtures and this guard discuss forbidden rules intentionally.
-            build_rule = (path.name in {"CMakeLists.txt", "Makefile", "GNUmakefile", "CMakePresets.json"}
-                          or path.suffix.lower() in {".cmake", ".mk", ".sh", ".yml", ".yaml"}
-                          or (path.suffix == ".py" and relative.parts[0] != "tests"
-                              and relative != Path("scripts/check_pio_policy.py")))
-            if build_rule and re.search(r"pioasm|pico_generate_pio_header|\.pio\b", path.read_text(), re.IGNORECASE):
+            build_rule = (
+                path.name
+                in {"CMakeLists.txt", "Makefile", "GNUmakefile", "CMakePresets.json"}
+                or path.suffix.lower() in {".cmake", ".mk", ".sh", ".yml", ".yaml"}
+                or (
+                    path.suffix == ".py"
+                    and relative.parts[0] != "tests"
+                    and relative != Path("scripts/check_pio_policy.py")
+                )
+            )
+            if build_rule and re.search(
+                r"pioasm|pico_generate_pio_header|\.pio\b",
+                path.read_text(),
+                re.IGNORECASE,
+            ):
                 found.append(f"{relative}: forbidden PIO text build workflow")
     return found
 

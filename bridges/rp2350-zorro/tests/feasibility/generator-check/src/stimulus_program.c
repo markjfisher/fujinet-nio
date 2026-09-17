@@ -16,10 +16,9 @@ stimulus_registers stimulus_config(uint32_t system_hz) {
      * field positions against its SDK. Native tests consume these same words.
      * Floor to the PIO divider's 16.8 resolution; 125 MHz is exactly /1250. */
     return (stimulus_registers){
-        .clkdiv=(uint32_t)(((uint64_t)system_hz * 256 / STIMULUS_HZ) << 8),
-        .execctrl=(STIMULUS_WORDS-1u) << 12,
-        .shiftctrl=0,
-        .pinctrl=STIMULUS_DATA_BASE | (STIMULUS_AS_PIN << 5) |
-            (STIMULUS_DATA_BITS << 20) | (1u << 26)
-    };
+        .clkdiv = (uint32_t)(((uint64_t)system_hz * 256 / STIMULUS_HZ) << 8),
+        .execctrl = (STIMULUS_WORDS - 1u) << 12,
+        .shiftctrl = 0,
+        .pinctrl = STIMULUS_DATA_BASE | (STIMULUS_AS_PIN << 5) |
+                   (STIMULUS_DATA_BITS << 20) | (1u << 26)};
 }

@@ -1,6 +1,6 @@
 #include "capture_program.h"
-#include "pico/stdlib.h"
 #include "hardware/pio.h"
+#include "pico/stdlib.h"
 
 int main(void) {
     /* No stdio initialization: UART would overlap the input-only fixture. */

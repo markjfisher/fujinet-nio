@@ -7,7 +7,8 @@ void capture_program_init(void) {
     APIO_GPIO_INIT();
     APIO_GPIO_INPUT_ONLY(CAPTURE_STROBE_PIN);
     APIO_GPIO_PULL_UP(CAPTURE_STROBE_PIN);
-    for (int pin = CAPTURE_DATA_BASE; pin < CAPTURE_DATA_BASE + CAPTURE_DATA_BITS; ++pin) {
+    for (int pin = CAPTURE_DATA_BASE;
+         pin < CAPTURE_DATA_BASE + CAPTURE_DATA_BITS; ++pin) {
         APIO_GPIO_INPUT_ONLY(pin);
         APIO_GPIO_PULL_DOWN(pin);
     }
