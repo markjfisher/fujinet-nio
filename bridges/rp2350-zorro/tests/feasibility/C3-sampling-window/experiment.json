@@ -1,0 +1,9 @@
+{
+  "id": "C3",
+  "title": "Capture sampling window",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Sweep data-change offset around /AS assertion",
+  "expected": "Characterize old/new transition and measurement uncertainty",
+  "requires": "W0; configurable independent stimulus, DUT observation and adequate instrumentation"
+}

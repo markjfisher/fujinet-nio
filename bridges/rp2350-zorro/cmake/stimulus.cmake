@@ -2,7 +2,7 @@ if(NOT PICO_RP2040)
     message(FATAL_ERROR "Stimulus requires RP2040")
 endif()
 add_executable(feasibility_stimulus lab/rp2040/main.c
-    lab/rp2040/stimulus_program.c lab/rp2040/stimulus_control.c)
+    tests/feasibility/generator-check/src/stimulus_program.c lab/rp2040/stimulus_control.c)
 add_dependencies(feasibility_stimulus bridge_validate)
 target_include_directories(feasibility_stimulus PRIVATE lab/rp2040 "${DEPS}/apio/include")
 target_link_libraries(feasibility_stimulus PRIVATE pico_stdlib hardware_pio hardware_clocks)

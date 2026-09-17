@@ -1,0 +1,9 @@
+{
+  "id": "C9",
+  "title": "Reset and recovery",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Abort, reset/reboot either board, disconnect console",
+  "expected": "Defined idle/released outputs and no stale-run data; rearm correctly",
+  "requires": "Both firmware roles with bounded cleanup; explicit physical fault procedure"
+}

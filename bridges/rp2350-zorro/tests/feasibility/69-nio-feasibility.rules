@@ -1,0 +1,8 @@
+# Optional local-desktop access for the RP2040 laboratory fixture.
+# Install before systemd's 73-seat-late.rules; never installed by experiment.py.
+# Access is for the active local seat user, not world-writable device nodes.
+# RP2040 ROM BOOTSEL USB access (picotool).
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="0003", TAG+="uaccess"
+# RP2040 SDK CDC USB interface and serial console, including RAM builds.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="000a", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="000a", TAG+="uaccess"

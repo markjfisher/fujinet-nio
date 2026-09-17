@@ -1,0 +1,9 @@
+{
+  "id": "C6",
+  "title": "FIFO pressure and backpressure",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Pause or slow DUT drain then resume",
+  "expected": "Account for all samples, stalls, losses and timeouts",
+  "requires": "W1 capture/drain controls; separate baseline and handshake variants"
+}

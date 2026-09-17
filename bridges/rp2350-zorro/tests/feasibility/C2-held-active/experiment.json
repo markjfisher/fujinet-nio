@@ -1,0 +1,9 @@
+{
+  "id": "C2",
+  "title": "Held-active strobe",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Hold /AS low and change data",
+  "expected": "Exactly one capture per assertion",
+  "requires": "C1 baseline; held-active stimulus and DUT observation"
+}

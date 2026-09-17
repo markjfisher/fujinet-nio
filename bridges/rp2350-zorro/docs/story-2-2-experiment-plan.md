@@ -10,6 +10,36 @@ Commands/targets in the original planned interface below remain future work
 unless explicitly documented as available in the generator guide. This remains
 one Story 2.2, not new dispatch stories, and is not accepted Zorro feasibility.
 
+## Repeatable experiment contract — user amendment, 2026-09-17
+
+Every implemented experiment must be independently runnable and inspectable from
+its own folder under `tests/feasibility/`, using one `run.sh` starter. The
+[experiment index](../tests/feasibility/README.md) distinguishes the implemented
+`generator-check` equipment validation from the C0–C10 matrix. Prior generator
+captures support E0–E2, but do not complete C1 or establish DUT behavior.
+
+Each implemented folder contains its specific source/configuration, README,
+expected observations and tests or links to focused shared tests. Reference
+shared board/USB/APIO support rather than copying another project. The starter
+must expose build, load, run and analyse separately, plus a visible interactive
+full flow. It must give BOOTSEL instructions and wait for the identified board,
+load only its verified target, wait for re-enumeration, explain signals and wait
+for the user to start. Preserve raw capture/logs, firmware hashes, failures and
+expected/observed verdicts in fresh output directories. Offline analysis and
+builds must not require connected boards.
+
+Permission setup is an explicit one-time prerequisite, checked by a doctor stage;
+no repeated ad hoc sudo commands, implicit system-policy changes or agent-private
+temporary harnesses are an accepted experiment interface. Dry-run and Ctrl-C
+provide preview and cancellation. Never claim pass from a stale console greeting,
+failed analyzer acquisition or an unverified USB identity. The user permits
+replacing the RP2040 debug firmware, but RAM-only loading remains sufficient for
+the current generator check; no persistent flash change is required.
+
+Retain C0. Future matrix folders declare their missing software/hardware and
+refuse execution until implemented; they do not contain pretend test firmware.
+Completing this runner work does not close the full E0–E7 or real-bus gates.
+
 ## Goal and relationship to Story 2.1
 
 Determine which timing-sensitive bus-facing operations an RP2350B can perform,
@@ -248,7 +278,7 @@ Each package ends in a reviewable result; they do not add entries to stories.yam
 
 | Package | Files / action | Completion test / gate |
 | --- | --- | --- |
-| [ ] E0: portability and fixture definition | `tests/feasibility/test_stimulus_program.c`, `lab/rp2040/stimulus_program.{c,h}`, `lab/rp2040/pio_loader.c`, `docs/feasibility/wiring.md` — test APIO instruction builder/SDK loading and map actual boards; record instruments | Native encoding/configuration checks, RP2040 compile and slow pulse/capture bring-up; physical header mapping confirmed, external waveform verification required before timing claims |
+| [ ] E0: portability and fixture definition | `tests/feasibility/test_stimulus_program.c`, `tests/feasibility/generator-check/src/stimulus_program.c`, shared `lab/rp2040/stimulus.h`, `lab/rp2040/pio_loader.c`, `docs/feasibility/wiring.md` — test APIO instruction builder/SDK loading and map actual boards; record instruments | Native encoding/configuration checks, RP2040 compile and slow pulse/capture bring-up; physical header mapping confirmed, external waveform verification required before timing claims |
 | [ ] E1: integrated targets | Extend `CMakeLists.txt`, `CMakePresets.json`, `cmake/host.cmake`, `scripts/bootstrap.py`, `tests/test_tooling.py`; add `cmake/feasibility.cmake` — preserve 2.1 presets, isolate RP2040 platform/board validation and caches | Existing host Debug/Release, firmware and policy checks pass; new DUT and stimulus ELF/UF2 build; incorrect board/platform rejected |
 | [ ] E2: USB observability and runner | `src/feasibility/main.c`, `src/feasibility/console.{c,h}`, `lab/rp2040/main.c`, `tests/feasibility/run_bench.py`, `tests/feasibility/test_runner.py` — implement role/ID handshake, bounded logging, ARM/RUN/STOP/results, timeout cleanup | Fake-console tests for swapped IDs, stale run IDs, loss/timeout; two real consoles enumerate; outputs remain inactive until armed |
 | [ ] E3: physical four-bit reproduction | `tests/feasibility/cases/w0.json`, `tests/feasibility/test_capture_cases.c`; reuse `src/capture_program.c`; `docs/feasibility/results/` — execute C0–C4 | Exact data/count functional evidence, red/green for additions, external pulse/window traces where instruments permit; limits explicitly bounded |

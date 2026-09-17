@@ -1,0 +1,9 @@
+{
+  "id": "C8",
+  "title": "Direction change and release",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Alternate reads/writes and vary release gaps",
+  "expected": "Correct first sample; measured release and no overlapping drive",
+  "requires": "C7; reviewed output-enable and bias fixture; external measurement"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "C7",
+  "title": "Read response",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Release generator data; selected DUT returns known pattern",
+  "expected": "Correct independently sampled data and measured data-valid/ACK timing",
+  "requires": "Reviewed bidirectional W1 fixture with appropriate bias/resistance and instrumentation"
+}

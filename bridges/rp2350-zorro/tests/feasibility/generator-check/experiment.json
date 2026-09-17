@@ -1,0 +1,45 @@
+{
+  "id": "generator-check",
+  "title": "Independent RP2040 W0 generator validation",
+  "status": "implemented",
+  "stage": "Generator bring-up; not a C1 or RP2350 result",
+  "preset": "stimulus-rp2040",
+  "target": "feasibility_stimulus",
+  "expected_flash_id": "754765170F445253",
+  "data_gpio": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "strobe_gpio": 6,
+  "analyzer_channels": [
+    "D0",
+    "D1",
+    "D2",
+    "D3",
+    "D7"
+  ],
+  "expected_values": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "samplerate_hz": 1000000,
+  "pulse_us": 100,
+  "period_us": 300,
+  "setup_hold_us": 100
+}

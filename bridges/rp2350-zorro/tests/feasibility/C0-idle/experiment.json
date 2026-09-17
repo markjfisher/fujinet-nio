@@ -1,0 +1,9 @@
+{
+  "id": "C0",
+  "title": "Idle capture suppression",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "/AS high while data changes",
+  "expected": "No DUT captures or IRQ activity",
+  "requires": "W0; USB-observable RP2350 capture firmware and idle stimulus"
+}

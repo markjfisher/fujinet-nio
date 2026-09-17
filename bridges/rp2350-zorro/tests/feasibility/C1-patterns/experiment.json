@@ -1,0 +1,9 @@
+{
+  "id": "C1",
+  "title": "Known pattern capture",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "All sixteen values, alternating A/5, seeded sequences",
+  "expected": "One exact DUT capture per assertion, ordered words, no silent discard",
+  "requires": "W0; generator sequences and USB-observable RP2350 capture firmware"
+}

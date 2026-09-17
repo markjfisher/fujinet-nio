@@ -131,3 +131,8 @@ RP2350 observer and two-board runner remain planned. The isolated
 [RP2040 W0 generator](docs/rp2040-generator.md) is now available as the
 `stimulus-rp2040` preset (workspace `rp2040-stimulus` command), with explicit
 USB run/stop control and RAM-only ELF/UF2 outputs.
+
+Start repeatable bench work with the [experiment index](tests/feasibility/README.md)
+and `tests/feasibility/generator-check/run.sh`. Inspect, build, load, run and
+analyse independently; the default flow guides you through BOOTSEL and waits
+before output. C0–C10 are explicit planned cases, not completed experiments.

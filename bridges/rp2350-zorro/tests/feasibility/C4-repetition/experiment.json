@@ -1,0 +1,9 @@
+{
+  "id": "C4",
+  "title": "Pulse and gap limits",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Reduce low pulses and high gaps independently",
+  "expected": "Correct counts above observed limits; characterize failures below",
+  "requires": "C1 baseline; programmable timing, bounded capture and instrumentation"
+}

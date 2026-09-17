@@ -1,0 +1,9 @@
+{
+  "id": "C5",
+  "title": "Wider data and control",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "4/8/16-bit patterns with R/W, lane strobes and SELECT",
+  "expected": "Correct selected data/lane behavior; no unselected response",
+  "requires": "Reviewed W1 wiring; wider APIO tests and firmware; channel coverage plan"
+}

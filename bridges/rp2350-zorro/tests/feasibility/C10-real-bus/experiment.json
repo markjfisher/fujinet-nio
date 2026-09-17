@@ -1,0 +1,9 @@
+{
+  "id": "C10",
+  "title": "Representative real Zorro-II bus",
+  "status": "planned",
+  "stage": "Story 2.2 matrix experiment",
+  "stimulus": "Bounded actual-host accesses via buffered interface",
+  "expected": "Requirements mapped to actual traces, margins and pass/fail/untested",
+  "requires": "Passive breakout, A500 adapter/host, reviewed buffering and authoritative timing requirements"
+}
