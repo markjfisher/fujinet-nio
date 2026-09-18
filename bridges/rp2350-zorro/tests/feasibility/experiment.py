@@ -934,8 +934,7 @@ def load_dut(m, args, artifact):
              "--address", selected["address"]], "transport", 30)
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
-        runtime = [d for d in usb_devices() if d["path"] == selected["path"]
-                   and d["pid"] not in ("0009", "000f")]
+        runtime = [d for d in usb_devices() if d["path"] == selected["path"]]
         if len(runtime) == 1:
             try:
                 port = preferred_serial_port(runtime[0])

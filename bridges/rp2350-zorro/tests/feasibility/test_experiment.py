@@ -1208,7 +1208,9 @@ class Experiments(unittest.TestCase):
         args.dut_port = str(dut_port)
         args.dut_usb_path = "1-3"
         dut_bootsel = dict(usb, path="1-3", pid="000f", address=43)
-        dut_runtime = dict(dut_bootsel, pid="000a")
+        # Product IDs identify firmware packaging, not a stable application
+        # identity. The fixture's Core2350B exposes its CDC firmware as 0009.
+        dut_runtime = dict(dut_bootsel, pid="0009")
         manifest = self.c0_manifest()
         with (
             patch.object(e, "usb_devices", side_effect=[[dut_bootsel], [dut_runtime]]),
