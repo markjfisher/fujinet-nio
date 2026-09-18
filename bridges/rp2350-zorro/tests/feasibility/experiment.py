@@ -902,13 +902,10 @@ def load_dut(m, args, artifact):
     contract = m.get("dut")
     if not contract:
         return
-    require(args.dut_port and args.dut_usb_path,
-            "This experiment needs --dut-port /dev/serial/by-id/... and --dut-usb-path for the Core2350B",
+    require(args.dut_usb_path,
+            "This experiment needs --dut-usb-path for the Core2350B",
             "configuration")
     require(artifact.is_file(), "Build DUT firmware before load", "transport")
-    port = Path(args.dut_port)
-    require(port.exists() and os.access(port, os.R_OK | os.W_OK),
-            "DUT serial port is unavailable: " + str(port), "transport")
     validate_ram_elf(artifact, 0x20082000)
     print("Hold BOOT while reconnecting the Core2350B DUT, then release BOOT. "
           f"Waiting at most {args.timeout:g}s at USB {args.dut_usb_path}.", flush=True)
@@ -937,12 +934,22 @@ def load_dut(m, args, artifact):
              "--address", selected["address"]], "transport", 30)
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
-        if port.exists() and os.access(port, os.R_OK | os.W_OK):
+        runtime = [d for d in usb_devices() if d["path"] == selected["path"]
+                   and d["pid"] not in ("0009", "000f")]
+        if len(runtime) == 1:
+            try:
+                port = preferred_serial_port(runtime[0])
+            except Failure:
+                time.sleep(0.2)
+                continue
+            requested = getattr(args, "dut_port", None)
+            require(not requested or Path(requested).resolve() == port.resolve(),
+                    "DUT re-enumerated on a different serial port", "transport")
             record = dict(protocol=contract["protocol"], firmware_sha256=digest(snapshot),
                           artifact_snapshot=str(snapshot), usb_path=selected["path"],
                           serial_port=str(port), picotool_info=info, boot_id=boot_id())
             save(args.session.with_name("dut-session.json"), record)
-            print("Validated DUT RAM session saved; CDC " + str(port))
+            print("Validated DUT RAM session saved; use --dut-port " + str(port))
             return
         time.sleep(0.2)
     raise Failure("transport", "DUT CDC did not become available after RAM load")
@@ -959,7 +966,8 @@ def validate_dut_session(m, args, artifact):
     require(record.get("protocol") == contract["protocol"]
             and record.get("firmware_sha256") == digest(artifact)
             and record.get("boot_id") == boot_id()
-            and args.dut_port == record.get("serial_port"),
+            and (not getattr(args, "dut_port", None)
+                 or Path(args.dut_port).resolve() == Path(record["serial_port"]).resolve()),
             "Stale or mismatched DUT session; use load again.", "transport")
     port = Path(record["serial_port"])
     require(port.exists() and os.access(port, os.R_OK | os.W_OK),
@@ -1484,10 +1492,8 @@ def main(argv=None):
         if args.stage in ("load", "run"):
             read_profile(args.bench, required=True)
         if m.get("dut") and args.stage in ("all", "load"):
-            require(args.dut_port and args.dut_usb_path,
-                    "This experiment needs --dut-port and --dut-usb-path", "configuration")
-        if m.get("dut") and args.stage == "run":
-            require(args.dut_port, "This experiment needs --dut-port", "configuration")
+            require(args.dut_usb_path,
+                    "This experiment needs --dut-usb-path", "configuration")
         if args.stage in ("all", "run") and args.output is None:
             args.output = (
                 ROOT

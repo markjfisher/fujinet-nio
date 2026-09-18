@@ -1208,10 +1208,12 @@ class Experiments(unittest.TestCase):
         args.dut_port = str(dut_port)
         args.dut_usb_path = "1-3"
         dut_bootsel = dict(usb, path="1-3", pid="000f", address=43)
+        dut_runtime = dict(dut_bootsel, pid="000a")
         manifest = self.c0_manifest()
         with (
-            patch.object(e, "usb_devices", return_value=[dut_bootsel]),
+            patch.object(e, "usb_devices", side_effect=[[dut_bootsel], [dut_runtime]]),
             patch.object(e, "access"),
+            patch.object(e, "preferred_serial_port", return_value=dut_port),
             patch.object(e, "command", return_value="type: RP2350"),
             contextlib.redirect_stdout(io.StringIO()),
         ):

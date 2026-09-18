@@ -29,13 +29,13 @@ From this directory:
 ./run.sh build
 ./run.sh doctor
 ./run.sh configure                  # only if the bench is not enrolled
-./run.sh load --dut-port /dev/serial/by-id/USB-DUT --dut-usb-path 1-2.3
-./run.sh run --dut-port /dev/serial/by-id/USB-DUT --output /tmp/c0-run-001
+./run.sh load --dut-usb-path 1-2.3
+./run.sh run --output /tmp/c0-run-001
 ./run.sh analyse --capture /tmp/c0-run-001/capture.sr
 python3 ../report_summary.py /tmp/c0-run-001/report.json
 ```
 
-With no stage, `./run.sh --dut-port ... --dut-usb-path ...` runs build, doctor,
+With no stage, `./run.sh --dut-usb-path ...` runs build, doctor,
 enrollment if needed, RAM-loads the RP2040 and then the Core2350B, requests an
 interactive wiring confirmation, acquires one finite run and collects both reports.
 For each `load`, first put the requested board alone into BOOTSEL when prompted.
