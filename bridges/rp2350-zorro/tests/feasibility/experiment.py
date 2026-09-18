@@ -1378,7 +1378,7 @@ def physical_run(m, args, artifact, dut_image=None):
                 report["waveform"] = analyse(args.output / "capture.sr", m)
                 evidence = dut_report(dut_console, m["dut"]) if dut_console else None
                 report.update(acceptance(m, evidence))
-                if report["waveform"]["analysis_kind"] in ("burst", "held_active"):
+                if report["waveform"]["analysis_kind"] in ("burst", "held_active", "idle"):
                     import waveform_visual
                     visual = args.output / "waveform.svg"
                     waveform_visual.write_svg(report, visual)

@@ -45,6 +45,12 @@ picotool force-loads the RP2040 and Core2350B without BOOTSEL. `run` uses the
 bound sessions. A pass requires both waveform and DUT evidence; offline
 `analyse` remains waveform-only and incomplete.
 
+Each physical C1 run also writes `waveform.svg`. It first identifies the burst
+within the complete analyser acquisition, then renders the original D0–D3 and
+`/AS` samples around it. Green lines mark every `/AS` falling edge, and the value
+cells beneath them make the captured sequence readable against the raw waveform.
+The SVG is visual evidence only; `report.json` remains the authoritative verdict.
+
 The finite control protocol is lab equipment only. It has no FujiBus or future
 bridge ABI meaning. See the [experiment index](../README.md) and the
 [Story 2.2 plan](../../../docs/story-2-2-experiment-plan.md).

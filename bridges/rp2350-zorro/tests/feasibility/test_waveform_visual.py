@@ -49,7 +49,7 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">D3<", text)
         self.assertIn(">/AS<", text)
         self.assertIn('class="overview-event"', text)
-        self.assertIn("DUT reported 0x3", text)
+        self.assertIn("DUT reported: 0x3", text)
         self.assertIn("0xA", text)
         self.assertIn("not externally visible", text)
 
@@ -66,6 +66,51 @@ class WaveformVisualTests(unittest.TestCase):
             text = output.read_text()
         self.assertIn("whole acquisition", text)
         self.assertNotIn('class="data" d=', text)
+
+    def test_repeated_transactions_label_values_across_pulse_intervals(self):
+        report = {
+            "experiment": "C1",
+            "waveform": {"sample_rate": 1_000_000,
+                         "transactions": [
+                             {"assert_sample": 100, "release_sample": 150,
+                              "capture_value": 1, "phases": [{"value": 1, "start_sample": 100, "end_sample": 150}]},
+                             {"assert_sample": 300, "release_sample": 350,
+                              "capture_value": 10, "phases": [{"value": 10, "start_sample": 300, "end_sample": 350}]},
+                         ]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "waveform.svg"
+            visual.write_svg(report, output)
+            text = output.read_text()
+        self.assertIn(">0x1<", text)
+        self.assertIn("Expected at /AS falls", text)
+
+    def test_idle_svg_shows_data_changes_high_strobe_and_dut_counters(self):
+        report = {
+            "experiment": "C0",
+            "dut_evidence": {"status": "observed", "observed": {
+                "capture_count": 0, "capture_irq_count": 0}},
+            "waveform": {"analysis_kind": "idle", "sample_rate": 1_000_000,
+                         "limits": "lead-in may be unobservable. No DUT capture count or IRQ was observed.",
+                         "measurements": [
+                             {"value": 0, "start_sample": 0, "end_sample": 100},
+                             {"value": 1, "start_sample": 100, "end_sample": 200},
+                             {"value": 2, "start_sample": 200, "end_sample": 300},
+                         ]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            capture = Path(directory) / "capture.sr"
+            with zipfile.ZipFile(capture, "w") as archive:
+                archive.writestr("logic-1-1", bytes([0x80] * 100 + [0x81] * 100 + [0x82] * 100 + [0x80] * 200))
+            report["waveform"]["capture"] = str(capture)
+            output = Path(directory) / "waveform.svg"
+            visual.write_svg(report, output)
+            text = output.read_text()
+        self.assertIn("data-transition sequence", text)
+        self.assertIn("/AS: high throughout the saved capture", text)
+        self.assertIn("capture_count=0; capture_irq_count=0", text)
+        self.assertIn("Decoded data while /AS is high", text)
+        self.assertNotIn("No DUT capture count or IRQ was observed.", text)
 
 
 if __name__ == "__main__":
