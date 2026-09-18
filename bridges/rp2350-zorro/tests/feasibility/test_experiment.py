@@ -1143,15 +1143,21 @@ class Experiments(unittest.TestCase):
 
     def test_c1_burst_analysis_checks_all_pattern_groups(self):
         manifest = self.c1_manifest()
-        data = b"\x80" * 200 + b"".join(
-            bytes([128 + value]) * 100 + bytes([value]) * 100 +
-            bytes([128 + value]) * 100
-            for value in manifest["expected_values"]
-        ) + b"\x8c" * 200
+        holds = manifest["hold_us"]
+        self.assertEqual(len(holds), len(manifest["expected_values"]) - 1)
+        pieces = [b"\x80" * 200]
+        for index, value in enumerate(manifest["expected_values"]):
+            if index:
+                pieces.append(bytes([128 + value]) * manifest["setup_us"])
+            pieces.append(bytes([value]) * manifest["pulse_us"])
+            pieces.append(bytes([128 + value]) * (holds[index] if index < len(holds) else 200))
+        data = b"".join(pieces)
         self.write_capture(data)
         report = e.analyse(self.capture, manifest)
+        self.assertEqual(report["analysis_kind"], "burst")
         self.assertEqual(report["assertions"], 28)
         self.assertEqual(report["values"][-4:], [6, 13, 3, 12])
+        self.assertEqual([row["hold_us"] for row in report["measurements"][:-1]], holds)
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):

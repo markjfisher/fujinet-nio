@@ -60,6 +60,21 @@ class ReportSummaryTests(unittest.TestCase):
         self.assertIn("Evidence scope: stimulus-and-dut", output)
         self.assertIn("DUT observed: capture_count=0, capture_irq_count=0", output)
 
+    def test_burst_summary_uses_declared_analysis_kind(self):
+        output = summary.format_report({
+            "status": "passed",
+            "waveform": {"analysis_kind": "burst", "assertions": 2,
+                         "values": [1, 2],
+                         "limits": "First setup is not independently observable.",
+                         "measurements": [
+                             {"setup_us": 9999, "low_us": 100, "hold_us": 110},
+                             {"setup_us": 100, "low_us": 100, "hold_us": 125},
+                         ]},
+        })
+        self.assertIn("Pulses: 2", output)
+        self.assertIn("Setup: min 100, max 100 us", output)
+        self.assertIn("Hold: min 110, max 125 us", output)
+
     def test_unknown_analysis_kind_uses_generic_output(self):
         output = summary.format_report({"status": "passed", "waveform": {"analysis_kind": "future"}})
         self.assertIn("Stimulus status: passed", output)

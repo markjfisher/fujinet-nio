@@ -6,6 +6,12 @@ alternating `A,5` values, then the fixed seeded tail `6,D,3,C`. The Core2350B
 must report exactly those 28 captured words, 28 capture IRQs, and no omitted or
 extra word.
 
+Each `/AS` low pulse and its preceding setup interval is 100 us. The released
+hold interval is manifest-declared per transition: 110 us in the linear/tail
+groups, 120 us between alternating values, and 130 us at group boundaries. The
+extra PIO control instructions cause those holds; they are measured evidence,
+not an analyser tolerance.
+
 This uses the C0 capture APIO implementation and the shared RAM-only observer
 firmware. Its C1 stimulus is APIO source in `src/`; host EPIO tests verify the
 instruction words, output/strobe sequence, completion, rearm and abort. No PIO

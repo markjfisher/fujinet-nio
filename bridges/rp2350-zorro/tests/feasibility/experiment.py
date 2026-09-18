@@ -151,6 +151,25 @@ def analyse(path, manifest):
         data[0] & 128 and data[-1] & 128, "capture starts or ends with asserted strobe"
     )
 
+    def duration(name, index):
+        value = manifest.get(name + "_us")
+        if value is None and name in ("setup", "hold"):
+            value = manifest.get("setup_hold_us")
+        require(value is not None, "Missing " + name + " timing expectation", "configuration")
+        if isinstance(value, list):
+            require(
+                index < len(value),
+                "Missing " + name + " timing expectation for pulse " + str(index),
+                "configuration",
+            )
+            value = value[index]
+        require(
+            isinstance(value, (int, float)) and value > 0,
+            "Invalid " + name + " timing expectation",
+            "configuration",
+        )
+        return value
+
     def near(samples, us, label):
         state.update(
             expected_us=us, observed_us=samples * 1000000 / hz, measurement=label
@@ -165,7 +184,7 @@ def analyse(path, manifest):
             sample=f, pulse=n, expected_value=value, observed_value=data[f] & 15
         )
         check(f < r and (n == 0 or rise[n - 1] < f), "invalid edge ordering")
-        near(r - f, manifest["pulse_us"], "pulse")
+        near(r - f, duration("pulse", n), "pulse")
         wrong = next((i for i in range(f, r) if data[i] & 15 != value), None)
         if wrong is not None:
             state.update(sample=wrong, observed_value=data[wrong] & 15)
@@ -176,13 +195,22 @@ def analyse(path, manifest):
         while after < len(data) and data[after] & 15 == value:
             after += 1
         if n:
-            near(f - before, manifest["setup_hold_us"], "setup")
+            near(f - before, duration("setup", n), "setup")
             if "period_us" in manifest:
                 near(f - fall[n - 1], manifest["period_us"], "period")
         if n < len(expected) - 1:
-            near(after - r, manifest["setup_hold_us"], "hold")
+            near(after - r, duration("hold", n), "hold")
+        trailing_hold = manifest.get(
+            "trailing_hold_us",
+            manifest.get("setup_us", manifest.get("setup_hold_us")),
+        )
+        require(
+            isinstance(trailing_hold, (int, float)) and trailing_hold > 0,
+            "Missing or invalid trailing hold timing expectation",
+            "configuration",
+        )
         check(
-            len(data) - r >= round(manifest["setup_hold_us"] * hz / 1000000),
+            len(data) - r >= round(trailing_hold * hz / 1000000),
             "truncated trailing hold",
         )
         rows.append(
@@ -196,6 +224,7 @@ def analyse(path, manifest):
             )
         )
     return dict(
+        analysis_kind=kind,
         capture=str(path),
         capture_sha256=digest(path),
         sample_rate=hz,
@@ -1222,7 +1251,8 @@ def physical_run(m, args, artifact, dut_image=None):
             "configuration",
         )
         input(
-            "Check wiring. Press Enter to arm acquisition and emit one 16-value burst (Ctrl-C cancels): "
+            "Check wiring. Press Enter to arm acquisition and emit one "
+            f"{len(m['expected_values'])}-value burst (Ctrl-C cancels): "
         )
         assert_profile(args, profile)
         d = validate_session(m, session, artifact, usb_devices(), profile)

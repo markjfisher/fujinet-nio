@@ -69,8 +69,12 @@ def burst_lines(waveform, manifest):
     if values:
         lines.append("Values: " + values)
     rows = waveform.get("measurements", [])
+    limits = waveform.get("limits", "").lower()
     for report_key, label in (("setup_us", "Setup"), ("low_us", "Width"), ("hold_us", "Hold")):
-        values = [row.get(report_key) for row in rows if isinstance(row, dict)]
+        selected = rows
+        if report_key == "setup_us" and "first setup" in limits:
+            selected = rows[1:]
+        values = [row.get(report_key) for row in selected if isinstance(row, dict)]
         values = [value for value in values if isinstance(value, (int, float))]
         if values:
             lines.append(label + ": min {:.3g}, max {:.3g} us".format(min(values), max(values)))
