@@ -11,7 +11,7 @@ observer and proves the idle suppression baseline.
 | [generator-check](generator-check/README.md) | Independent 0–15 W0 waveform | Implemented; interactive runner plus separate stages |
 | [C0-idle](C0-idle/README.md) | No capture without assertion; stimulus and DUT counters | Implemented; requires physical two-board run |
 | [C1-patterns](C1-patterns/README.md) | Exact captured patterns and counts | Implemented; requires physical two-board run |
-| [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Planned |
+| [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Implemented; requires physical two-board run |
 | [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Planned |
 | [C4-repetition](C4-repetition/README.md) | Pulse/gap limits | Planned |
 | [C5-width-control](C5-width-control/README.md) | Wider data, direction and selection | Planned |
@@ -46,6 +46,10 @@ Results belong in fresh directories under the bridge's ignored `build/` tree
 raw `.sr` capture, expected/observed measurements and a machine-readable verdict.
 Failed runs remain evidence; a busy analyzer or missing capture cannot pass.
 PulseView can open saved captures once sigrok-cli releases the device.
+Burst and held-active physical runs also generate `waveform.svg`: a compact event
+map of the analysed strobe/data intervals and the DUT-reported values. It is a
+debug aid alongside the raw `capture.sr`; it does not claim an unmeasured internal
+PIO sample-clock position.
 Build and loader command logs are retained under `build/feasibility/stage-logs/`.
 
 Summarise an existing report without rerunning its analysis or changing its verdict:

@@ -3,6 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct {
+    unsigned cycles, value, strobe;
+} stimulus_phase;
+
 /* Independent oracle, linked only into the host test. Cycle indices are
  * zero-based observations AFTER stepping epio once. Before data_start_cycle
  * the first value is expected; after the sequence the last value is held.
@@ -20,6 +24,10 @@ typedef struct {
     unsigned low_offset, low_cycles;
     unsigned completion_irq_cycle, observation_cycles;
     unsigned abort_after_cycles;
+    /* Optional literal cycle schedule for non-periodic behaviors such as a
+       single held-active strobe with data transitions. */
+    const stimulus_phase *phases;
+    size_t phase_count;
 } stimulus_expectations;
 
 extern const stimulus_expectations stimulus_expected;

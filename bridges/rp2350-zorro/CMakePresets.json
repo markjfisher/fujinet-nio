@@ -67,6 +67,18 @@
         "STIMULUS_SAMPLE_COUNT": "28",
         "STIMULUS_STORAGE": "flash"
       }
+    },
+    {
+      "name": "stimulus-c2-rp2040",
+      "inherits": "stimulus-rp2040",
+      "binaryDir": "${sourceDir}/build/stimulus-c2-rp2040",
+      "cacheVariables": {
+        "STIMULUS_EXPERIMENT": "C2-held-active",
+        "STIMULUS_TARGET": "feasibility_c2_held_active",
+        "STIMULUS_WORDS": "12",
+        "STIMULUS_SAMPLE_COUNT": "1",
+        "STIMULUS_STORAGE": "flash"
+      }
     }
   ],
   "buildPresets": [
@@ -97,6 +109,10 @@
     {
       "name": "stimulus-c1-rp2040",
       "configurePreset": "stimulus-c1-rp2040"
+    },
+    {
+      "name": "stimulus-c2-rp2040",
+      "configurePreset": "stimulus-c2-rp2040"
     }
   ],
   "testPresets": [

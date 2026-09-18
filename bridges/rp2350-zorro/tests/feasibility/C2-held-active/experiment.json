@@ -1,9 +1,29 @@
 {
   "id": "C2",
   "title": "Held-active strobe",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
-  "stimulus": "Hold /AS low and change data",
-  "expected": "Exactly one capture per assertion",
-  "requires": "C1 baseline; held-active stimulus and DUT observation"
+  "status": "implemented",
+  "stage": "C2 two-board held-active capture",
+  "stimulus": "Assert /AS once; hold low while data changes 3, A, 5, C",
+  "expected": "One capture of 3 and one capture IRQ; later held-low values do not recapture",
+  "requires": "W0 two-board fixture; RP2040 and RP2350 USB consoles",
+  "preset": "stimulus-c2-rp2040",
+  "target": "feasibility_c2_held_active",
+  "source_dir": "tests/feasibility/C2-held-active/src",
+  "analysis_kind": "held_active",
+  "load_mode": "flash",
+  "data_gpio": [2, 3, 4, 5],
+  "strobe_gpio": 6,
+  "analyzer_channels": ["D0", "D1", "D2", "D3", "D7"],
+  "expected_values": [3],
+  "held_active_values": [3, 10, 5, 12],
+  "samplerate_hz": 1000000,
+  "setup_us": 200,
+  "pulse_us": 830,
+  "active_phase_us": [210, 210, 210, 200],
+  "dut": {
+    "preset": "dut-c0-rp2350",
+    "target": "feasibility_dut",
+    "protocol": "capture-observer-v1",
+    "expected": {"capture_count": 1, "capture_irq_count": 1, "values": [3]}
+  }
 }

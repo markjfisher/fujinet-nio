@@ -75,6 +75,22 @@ class ReportSummaryTests(unittest.TestCase):
         self.assertIn("Setup: min 100, max 100 us", output)
         self.assertIn("Hold: min 110, max 125 us", output)
 
+    def test_held_active_summary_links_capture_to_held_values(self):
+        output = summary.format_report({
+            "status": "passed",
+            "waveform_visual": "/tmp/waveform.svg",
+            "waveform": {"analysis_kind": "held_active", "transactions": [{
+                "capture_value": 3,
+                "phases": [{"value": 3, "hold_us": 210},
+                           {"value": 10, "hold_us": 210},
+                           {"value": 5, "hold_us": 210},
+                           {"value": 12, "hold_us": 200}],
+            }]},
+        })
+        self.assertIn("Capture transaction value: 3", output)
+        self.assertIn("Values while /AS low: 3, 10, 5, 12", output)
+        self.assertIn("Waveform map: /tmp/waveform.svg", output)
+
     def test_unknown_analysis_kind_uses_generic_output(self):
         output = summary.format_report({"status": "passed", "waveform": {"analysis_kind": "future"}})
         self.assertIn("Stimulus status: passed", output)

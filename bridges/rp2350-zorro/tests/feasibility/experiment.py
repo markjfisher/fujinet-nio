@@ -126,9 +126,11 @@ def analyse(path, manifest):
             ),
         ) from e
     kind = manifest.get("analysis_kind", "burst")
-    require(kind in ("burst", "idle"), "Unknown analysis_kind", "configuration")
+    require(kind in ("burst", "idle", "held_active"), "Unknown analysis_kind", "configuration")
     if kind == "idle":
         return analyse_idle(path, manifest, data, hz)
+    if kind == "held_active":
+        return analyse_held_active(path, manifest, data, hz)
     rows = []
     state = dict(expected=manifest["expected_values"], sample=None)
 
@@ -300,6 +302,70 @@ def analyse_idle(path, manifest, data, hz):
         observed_falls=[],
         strobe="high throughout capture",
         limits="First/last data hold includes acquisition lead-in/release; data outside the detected sequence may float.",
+    )
+
+
+def analyse_held_active(path, manifest, data, hz):
+    """Verify one strobe interval and every data phase within it."""
+    expected = manifest["held_active_values"]
+    state = dict(expected=expected)
+
+    def check(condition, message):
+        if not condition:
+            raise Failure("waveform", message, state)
+
+    check(len(data) > 1, "empty capture")
+    falls = [i for i in range(1, len(data)) if data[i - 1] & 128 and not data[i] & 128]
+    rises = [i for i in range(1, len(data)) if not data[i - 1] & 128 and data[i] & 128]
+    state.update(observed_falls=falls, observed_rises=rises)
+    check(len(falls) == len(rises) == 1, "expected one complete held-active strobe")
+    fall, rise = falls[0], rises[0]
+    check(fall < rise and data[0] & 128 and data[-1] & 128, "invalid held-active edge ordering")
+    observed_low_us = (rise - fall) * 1000000 / hz
+    state.update(expected_us=manifest["pulse_us"], observed_us=observed_low_us)
+    check(abs(observed_low_us - manifest["pulse_us"]) <= 2, "held-active strobe width outside 2 us tolerance")
+    start = fall
+    value = data[start] & 15
+    phases = []
+    for sample in range(fall + 1, rise):
+        current = data[sample] & 15
+        if current != value:
+            phases.append(dict(value=value, start_sample=start, end_sample=sample,
+                               hold_us=(sample - start) * 1000000 / hz))
+            start, value = sample, current
+    phases.append(dict(value=value, start_sample=start, end_sample=rise,
+                       hold_us=(rise - start) * 1000000 / hz))
+    values = [phase["value"] for phase in phases]
+    state.update(observed_values=values, phases=phases)
+    check(values == expected, "held-active data phases differ from manifest")
+    expected_phase_us = manifest["active_phase_us"]
+    check(len(expected_phase_us) == len(phases), "held-active timing contract length differs from phases")
+    for phase, expected_us in zip(phases, expected_phase_us):
+        state.update(value=phase["value"], expected_us=expected_us,
+                     observed_us=phase["hold_us"])
+        check(abs(phase["hold_us"] - expected_us) <= 2,
+              "held-active data phase outside 2 us tolerance")
+    before = fall
+    while before and (data[before - 1] & 15) == expected[0]:
+        before -= 1
+    setup_us = (fall - before) * 1000000 / hz
+    state.update(expected_us=manifest["setup_us"], observed_us=setup_us)
+    check(setup_us >= manifest["setup_us"] - 2, "initial data setup shorter than manifest")
+    return dict(
+        analysis_kind="held_active",
+        capture=str(path),
+        capture_sha256=digest(path),
+        sample_rate=hz,
+        assertions=1,
+        values=values,
+        observed_falls=falls,
+        observed_rises=rises,
+        measurements=[dict(value=expected[0], fall_sample=fall, rise_sample=rise,
+                           low_us=observed_low_us, setup_us=setup_us,
+                           hold_us=phases[0]["hold_us"])],
+        transactions=[dict(index=0, assert_sample=fall, release_sample=rise,
+                           capture_value=expected[0], phases=phases)],
+        limits="The /AS fall marks the capture transaction. W0 has no external marker for the exact internal PIO sample clock; initial data is held through the first low phase.",
     )
 
 
@@ -1312,6 +1378,11 @@ def physical_run(m, args, artifact, dut_image=None):
                 report["waveform"] = analyse(args.output / "capture.sr", m)
                 evidence = dut_report(dut_console, m["dut"]) if dut_console else None
                 report.update(acceptance(m, evidence))
+                if report["waveform"]["analysis_kind"] in ("burst", "held_active"):
+                    import waveform_visual
+                    visual = args.output / "waveform.svg"
+                    waveform_visual.write_svg(report, visual)
+                    report["waveform_visual"] = str(visual)
             finally:
                 if console is not None:
                     try:

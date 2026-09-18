@@ -83,7 +83,27 @@ def burst_lines(waveform, manifest):
     return lines
 
 
-FORMATTERS = {"idle": idle_lines, "burst": burst_lines, "pulse": burst_lines}
+def held_active_lines(waveform, manifest):
+    lines = []
+    transactions = waveform.get("transactions", [])
+    if transactions:
+        transaction = transactions[0]
+        lines.append("Asserted transactions: " + str(len(transactions)))
+        if transaction.get("capture_value") is not None:
+            lines.append("Capture transaction value: " + str(transaction["capture_value"]))
+        phases = transaction.get("phases", [])
+        values = compact_values([phase.get("value") for phase in phases])
+        if values:
+            lines.append("Values while /AS low: " + values)
+        holds = [phase.get("hold_us") for phase in phases if isinstance(phase, dict)]
+        holds = [hold for hold in holds if isinstance(hold, (int, float))]
+        if holds:
+            lines.append("Held-low phases: min {:.3g}, max {:.3g} us".format(min(holds), max(holds)))
+    return lines
+
+
+FORMATTERS = {"idle": idle_lines, "burst": burst_lines, "pulse": burst_lines,
+              "held_active": held_active_lines}
 
 
 def host_test_summary(report):
@@ -147,6 +167,8 @@ def format_report(report):
         lines.append("Firmware SHA-256: " + str(firmware))
     if waveform.get("sample_rate") is not None:
         lines.append("Analyzer sample rate: " + format_rate(waveform["sample_rate"]))
+    if report.get("waveform_visual"):
+        lines.append("Waveform map: " + str(report["waveform_visual"]))
     host_tests = host_test_summary(report)
     if host_tests:
         lines.append("Host tests: " + host_tests)

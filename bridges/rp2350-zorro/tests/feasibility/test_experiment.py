@@ -1105,6 +1105,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C1-patterns/experiment.json").read_text()
         )
 
+    def c2_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C2-held-active/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1158,6 +1163,27 @@ class Experiments(unittest.TestCase):
         self.assertEqual(report["assertions"], 28)
         self.assertEqual(report["values"][-4:], [6, 13, 3, 12])
         self.assertEqual([row["hold_us"] for row in report["measurements"][:-1]], holds)
+
+    def test_c2_held_active_analysis_marks_one_capture_transaction(self):
+        manifest = self.c2_manifest()
+        data = (b"\x80" * 200 + b"\x83" * 200 + b"\x03" * 210 +
+                b"\x0a" * 210 + b"\x05" * 210 + b"\x0c" * 200 + b"\x8c" * 200)
+        self.write_capture(data)
+        report = e.analyse(self.capture, manifest)
+        self.assertEqual(report["analysis_kind"], "held_active")
+        self.assertEqual(report["values"], [3, 10, 5, 12])
+        self.assertEqual(report["assertions"], 1)
+        self.assertEqual(report["transactions"][0]["capture_value"], 3)
+        self.assertEqual([phase["hold_us"] for phase in
+                          report["transactions"][0]["phases"]], [210, 210, 210, 200])
+
+    def test_c2_rejects_a_second_held_active_strobe(self):
+        data = (b"\x80" * 200 + b"\x83" * 200 + b"\x03" * 210 +
+                b"\x0a" * 210 + b"\x05" * 210 + b"\x0c" * 200 + b"\x8c" * 100 +
+                b"\x0c" * 100 + b"\x8c" * 100)
+        self.write_capture(data)
+        with self.assertRaises(e.Failure):
+            e.analyse(self.capture, self.c2_manifest())
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):
@@ -1256,6 +1282,21 @@ class Experiments(unittest.TestCase):
         status = e.acceptance(self.c1_manifest(), evidence)
         self.assertEqual(status["experiment_status"], "passed")
         console.line.return_value = console.line.return_value.rsplit(",", 1)[0] + ",0"
+        with self.assertRaises(e.Failure):
+            e.dut_report(console, contract)
+
+    def test_c2_dut_requires_only_the_preasserted_value(self):
+        contract = self.c2_manifest()["dut"]
+        console = Mock()
+        console.line.return_value = (
+            "result protocol=capture-observer-v1 capture_count=1 "
+            "capture_irq_count=1 values=3"
+        )
+        self.assertEqual(e.dut_report(console, contract)["observed"]["values"], [3])
+        console.line.return_value = (
+            "result protocol=capture-observer-v1 capture_count=2 "
+            "capture_irq_count=2 values=3,10"
+        )
         with self.assertRaises(e.Failure):
             e.dut_report(console, contract)
 

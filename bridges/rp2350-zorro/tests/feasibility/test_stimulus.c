@@ -103,6 +103,14 @@ static epio_t *waveform_init(void) {
 }
 static unsigned expected_strobe(unsigned cycle) {
     const stimulus_expectations *x = &stimulus_expected;
+    if (x->phases) {
+        for (size_t n = 0; n < x->phase_count; ++n) {
+            if (cycle < x->phases[n].cycles)
+                return x->phases[n].strobe;
+            cycle -= x->phases[n].cycles;
+        }
+        return x->phases[x->phase_count - 1].strobe;
+    }
     if (cycle < x->data_start_cycle)
         return 1;
     unsigned elapsed = cycle - x->data_start_cycle;
@@ -116,19 +124,27 @@ static unsigned expected_strobe(unsigned cycle) {
     }
     return 1;
 }
-static size_t expected_sample(unsigned cycle) {
+static unsigned expected_data(unsigned cycle) {
     const stimulus_expectations *x = &stimulus_expected;
+    if (x->phases) {
+        for (size_t n = 0; n < x->phase_count; ++n) {
+            if (cycle < x->phases[n].cycles)
+                return x->phases[n].value;
+            cycle -= x->phases[n].cycles;
+        }
+        return x->phases[x->phase_count - 1].value;
+    }
     if (cycle < x->data_start_cycle)
-        return 0;
+        return x->values[0];
     unsigned elapsed = cycle - x->data_start_cycle;
     for (size_t sample = 0; sample + 1 < x->value_count; ++sample) {
         unsigned period = x->period_cycles ? x->period_cycles[sample] :
                           x->data_period_cycles;
         if (elapsed < period)
-            return sample;
+            return x->values[sample];
         elapsed -= period;
     }
-    return x->value_count - 1;
+    return x->values[x->value_count - 1];
 }
 static void waveform_check(epio_t *e) {
     const stimulus_expectations *x = &stimulus_expected;
@@ -137,8 +153,7 @@ static void waveform_check(epio_t *e) {
         unsigned data = 0;
         for (unsigned p = 2; p <= 5; ++p)
             data |= ((epio_read_pin_states(e) >> p) & 1u) << (p - 2);
-        size_t sample = expected_sample(cycle);
-        CHECK(data == x->values[sample]);
+        CHECK(data == expected_data(cycle));
         CHECK(((epio_read_pin_states(e) >> 6) & 1u) == expected_strobe(cycle));
         /* Generator completion IRQ, independent of any DUT observation. */
         CHECK(epio_peek_block_irq_num(e, 0, 0) ==
@@ -163,9 +178,20 @@ static epio_t *waveform_rearm(epio_t *e) {
 }
 static void waveform_test(void) {
     const stimulus_expectations *x = &stimulus_expected;
-    CHECK(x->value_count && x->data_period_cycles);
-    CHECK(x->low_offset <= x->data_period_cycles);
-    CHECK(x->low_cycles <= x->data_period_cycles - x->low_offset);
+    if (x->phases) {
+        unsigned cycles = 0;
+        CHECK(x->phase_count);
+        for (size_t n = 0; n < x->phase_count; ++n) {
+            CHECK(x->phases[n].cycles && x->phases[n].value < 16 &&
+                  x->phases[n].strobe <= 1);
+            cycles += x->phases[n].cycles;
+        }
+        CHECK(cycles >= x->completion_irq_cycle);
+    } else {
+        CHECK(x->value_count && x->data_period_cycles);
+        CHECK(x->low_offset <= x->data_period_cycles);
+        CHECK(x->low_cycles <= x->data_period_cycles - x->low_offset);
+    }
     CHECK(x->observation_cycles > x->completion_irq_cycle);
     CHECK(x->abort_after_cycles && x->abort_after_cycles <= x->completion_irq_cycle);
     epio_t *e = waveform_init();
