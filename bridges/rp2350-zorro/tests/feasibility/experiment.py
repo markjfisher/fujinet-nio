@@ -539,14 +539,14 @@ def preferred_serial_port(d):
 def dut_connection_hints(args):
     """Print copyable C0 arguments from connected RP devices; never guess roles."""
     devices = [d for d in usb_devices() if d["vid"] == "2e8a"]
-    bootsel = [d for d in devices if d["pid"] in ("0009", "000f")]
-    if len(bootsel) == 1:
-        d = bootsel[0]
+    dut_usb = [d for d in devices if d["pid"] in ("0009", "000f")]
+    if len(dut_usb) == 1:
+        d = dut_usb[0]
         suffix = " (serial " + d["serial"] + ")" if d.get("serial") else ""
-        print("C0 DUT BOOTSEL: --dut-usb-path " + d["path"] + suffix)
-        print("C0 DUT port: unavailable while BOOTSEL is active; run doctor again after the RAM load.")
-    elif len(bootsel) > 1:
-        print("C0 DUT BOOTSEL candidates: " + ", ".join(d["path"] for d in bootsel))
+        print("C0 DUT USB: --dut-usb-path " + d["path"] + suffix)
+        print("C0 DUT port: unavailable until the feasibility DUT firmware is RAM-loaded.")
+    elif len(dut_usb) > 1:
+        print("C0 DUT USB candidates: " + ", ".join(d["path"] for d in dut_usb))
     generator_path = None
     try:
         generator_path = json.loads(args.session.read_text()).get("usb", {}).get("path")
@@ -907,8 +907,8 @@ def load_dut(m, args, artifact):
             "configuration")
     require(artifact.is_file(), "Build DUT firmware before load", "transport")
     validate_ram_elf(artifact, 0x20082000)
-    print("Hold BOOT while reconnecting the Core2350B DUT, then release BOOT. "
-          f"Waiting at most {args.timeout:g}s at USB {args.dut_usb_path}.", flush=True)
+    print("Keep the Core2350B connected. picotool will force its compatible USB "
+          f"firmware into the loader at USB {args.dut_usb_path} (up to {args.timeout:g}s).", flush=True)
     deadline = time.monotonic() + args.timeout
     selected = info = None
     while time.monotonic() < deadline:
@@ -917,20 +917,32 @@ def load_dut(m, args, artifact):
         if candidates:
             candidate = candidates[0]
             access(candidate)
-            possible = command([PICOTOOL, "info", "-a", "--bus", candidate["bus"],
+            possible = command([PICOTOOL, "info", "-a", "-f", "--bus", candidate["bus"],
                                 "--address", candidate["address"]], "transport", 10)
             if re.search(r"(?im)^\s*(?:type|device type):\s*RP2350\b", possible):
                 selected, info = candidate, possible
                 break
         time.sleep(0.2)
-    require(selected is not None, "Timed out waiting for RP2350 DUT BOOTSEL", "transport")
+    require(selected is not None, "Timed out waiting for compatible RP2350 DUT USB device", "transport")
     snapshot_dir = args.session.parent / "artifacts"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     snapshot = snapshot_dir / ("dut-" + uuid.uuid4().hex + ".elf")
     with snapshot.open("xb") as stream:
         stream.write(artifact.read_bytes())
     snapshot.chmod(0o400)
-    command([PICOTOOL, "load", "-v", "-x", snapshot, "--bus", selected["bus"],
+    # The forced info call reboots back to application mode, which can change
+    # the USB address. Re-select by stable physical path before forced load.
+    deadline = time.monotonic() + args.timeout
+    selected = None
+    while time.monotonic() < deadline:
+        refreshed = [d for d in usb_devices() if d["path"] == args.dut_usb_path]
+        require(len(refreshed) <= 1, "Ambiguous DUT USB path", "transport")
+        if refreshed:
+            selected = refreshed[0]
+            break
+        time.sleep(0.2)
+    require(selected is not None, "DUT USB path did not re-enumerate after identification", "transport")
+    command([PICOTOOL, "load", "-v", "-x", "-f", snapshot, "--bus", selected["bus"],
              "--address", selected["address"]], "transport", 30)
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:

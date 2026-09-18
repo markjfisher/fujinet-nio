@@ -1211,7 +1211,7 @@ class Experiments(unittest.TestCase):
         dut_runtime = dict(dut_bootsel, pid="000a")
         manifest = self.c0_manifest()
         with (
-            patch.object(e, "usb_devices", side_effect=[[dut_bootsel], [dut_runtime]]),
+            patch.object(e, "usb_devices", side_effect=[[dut_bootsel], [dut_bootsel], [dut_runtime]]),
             patch.object(e, "access"),
             patch.object(e, "preferred_serial_port", return_value=dut_port),
             patch.object(e, "command", return_value="type: RP2350"),
@@ -1238,7 +1238,7 @@ class Experiments(unittest.TestCase):
             e, "usb_devices", return_value=[dut]
         ):
             e.dut_connection_hints(args)
-        self.assertIn("C0 DUT BOOTSEL: --dut-usb-path 1-3 (serial DUT)", output.getvalue())
+        self.assertIn("C0 DUT USB: --dut-usb-path 1-3 (serial DUT)", output.getvalue())
 
     def test_source_identity_hashes_selected_experiment(self):
         root = self.directory / "bridge"
