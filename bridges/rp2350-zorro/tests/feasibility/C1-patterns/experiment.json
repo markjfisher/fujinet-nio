@@ -1,9 +1,26 @@
 {
   "id": "C1",
   "title": "Known pattern capture",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
-  "stimulus": "All sixteen values, alternating A/5, seeded sequences",
+  "status": "implemented",
+  "stage": "C1 two-board known pattern capture",
+  "stimulus": "0..15, alternating A/5, seeded tail 6,D,3,C",
   "expected": "One exact DUT capture per assertion, ordered words, no silent discard",
-  "requires": "W0; generator sequences and USB-observable RP2350 capture firmware"
+  "requires": "W0 two-board fixture; RP2040 and RP2350 USB consoles",
+  "preset": "stimulus-c1-rp2040",
+  "target": "feasibility_c1_patterns",
+  "source_dir": "tests/feasibility/C1-patterns/src",
+  "analysis_kind": "burst",
+  "data_gpio": [2, 3, 4, 5],
+  "strobe_gpio": 6,
+  "analyzer_channels": ["D0", "D1", "D2", "D3", "D7"],
+  "expected_values": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 10, 5, 10, 5, 10, 5, 10, 5, 6, 13, 3, 12],
+  "samplerate_hz": 1000000,
+  "pulse_us": 100,
+  "setup_hold_us": 100,
+  "dut": {
+    "preset": "dut-c0-rp2350",
+    "target": "feasibility_dut",
+    "protocol": "capture-observer-v1",
+    "expected": {"capture_count": 28, "capture_irq_count": 28, "values": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 10, 5, 10, 5, 10, 5, 10, 5, 6, 13, 3, 12]}
+  }
 }

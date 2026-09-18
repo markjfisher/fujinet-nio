@@ -133,6 +133,7 @@ def format_report(report):
         if isinstance(dut.get("observed"), dict):
             counters = ", ".join(
                 f"{key}={value}" for key, value in dut["observed"].items()
+                if key != "values" or value
             )
             lines.append("DUT observed: " + counters)
     if build.get("revision"):

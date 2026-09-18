@@ -1084,6 +1084,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C0-idle/experiment.json").read_text()
         )
 
+    def c1_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C1-patterns/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1119,6 +1124,18 @@ class Experiments(unittest.TestCase):
                 self.write_capture(data)
                 with self.assertRaises(e.Failure):
                     e.analyse(self.capture, self.c0_manifest())
+
+    def test_c1_burst_analysis_checks_all_pattern_groups(self):
+        manifest = self.c1_manifest()
+        data = b"\x80" * 200 + b"".join(
+            bytes([128 + value]) * 100 + bytes([value]) * 100 +
+            bytes([128 + value]) * 100
+            for value in manifest["expected_values"]
+        ) + b"\x8c" * 200
+        self.write_capture(data)
+        report = e.analyse(self.capture, manifest)
+        self.assertEqual(report["assertions"], 28)
+        self.assertEqual(report["values"][-4:], [6, 13, 3, 12])
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):
@@ -1189,8 +1206,8 @@ class Experiments(unittest.TestCase):
         contract = self.c0_manifest()["dut"]
         console = Mock()
         console.line.side_effect = [
-            "reset protocol=capture-counters-v1",
-            "result protocol=capture-counters-v1 capture_count=0 capture_irq_count=0",
+            "reset protocol=capture-observer-v1",
+            "result protocol=capture-observer-v1 capture_count=0 capture_irq_count=0 values=",
         ]
         e.dut_reset(console, contract["protocol"])
         evidence = e.dut_report(console, contract)
@@ -1200,7 +1217,23 @@ class Experiments(unittest.TestCase):
         self.assertEqual(status["experiment_status"], "passed")
         self.assertEqual(status["evidence_scope"], "stimulus-and-dut")
         console.line.side_effect = None
-        console.line.return_value = "result protocol=capture-counters-v1 capture_count=1 capture_irq_count=1"
+        console.line.return_value = "result protocol=capture-observer-v1 capture_count=1 capture_irq_count=1 values=1"
+        with self.assertRaises(e.Failure):
+            e.dut_report(console, contract)
+
+    def test_c1_dut_requires_the_ordered_values(self):
+        contract = self.c1_manifest()["dut"]
+        values = ",".join(map(str, contract["expected"]["values"]))
+        console = Mock()
+        console.line.return_value = (
+            "result protocol=capture-observer-v1 capture_count=28 "
+            "capture_irq_count=28 values=" + values
+        )
+        evidence = e.dut_report(console, contract)
+        self.assertEqual(evidence["observed"]["values"], contract["expected"]["values"])
+        status = e.acceptance(self.c1_manifest(), evidence)
+        self.assertEqual(status["experiment_status"], "passed")
+        console.line.return_value = console.line.return_value.rsplit(",", 1)[0] + ",0"
         with self.assertRaises(e.Failure):
             e.dut_report(console, contract)
 

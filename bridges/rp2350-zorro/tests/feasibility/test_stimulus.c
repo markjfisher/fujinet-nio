@@ -48,7 +48,7 @@ static void control_test(void) {
     CHECK(!s.active && releases == 2);
     command(&s, "run\n");
     stimulus_poll(&s, 20, true, true);
-    CHECK(!s.active && s.generated == 16 && strstr(s.result, "complete"));
+    CHECK(!s.active && s.generated == STIMULUS_SAMPLE_COUNT && strstr(s.result, "complete"));
     command(&s, "run\n");
     stimulus_poll(&s, 20, false, false);
     CHECK(!s.active && strstr(s.result, "disconnect"));
@@ -106,9 +106,29 @@ static unsigned expected_strobe(unsigned cycle) {
     if (cycle < x->data_start_cycle)
         return 1;
     unsigned elapsed = cycle - x->data_start_cycle;
-    unsigned phase = elapsed % x->data_period_cycles;
-    return !(elapsed / x->data_period_cycles < x->value_count &&
-             phase >= x->low_offset && phase - x->low_offset < x->low_cycles);
+    for (size_t sample = 0; sample < x->value_count; ++sample) {
+        unsigned period = x->period_cycles ? x->period_cycles[sample] :
+                          x->data_period_cycles;
+        if (elapsed < period)
+            return !(elapsed >= x->low_offset &&
+                     elapsed - x->low_offset < x->low_cycles);
+        elapsed -= period;
+    }
+    return 1;
+}
+static size_t expected_sample(unsigned cycle) {
+    const stimulus_expectations *x = &stimulus_expected;
+    if (cycle < x->data_start_cycle)
+        return 0;
+    unsigned elapsed = cycle - x->data_start_cycle;
+    for (size_t sample = 0; sample + 1 < x->value_count; ++sample) {
+        unsigned period = x->period_cycles ? x->period_cycles[sample] :
+                          x->data_period_cycles;
+        if (elapsed < period)
+            return sample;
+        elapsed -= period;
+    }
+    return x->value_count - 1;
 }
 static void waveform_check(epio_t *e) {
     const stimulus_expectations *x = &stimulus_expected;
@@ -117,10 +137,7 @@ static void waveform_check(epio_t *e) {
         unsigned data = 0;
         for (unsigned p = 2; p <= 5; ++p)
             data |= ((epio_read_pin_states(e) >> p) & 1u) << (p - 2);
-        size_t sample = cycle >= x->data_start_cycle ?
-            (cycle - x->data_start_cycle) / x->data_period_cycles : 0;
-        if (sample >= x->value_count)
-            sample = x->value_count - 1;
+        size_t sample = expected_sample(cycle);
         CHECK(data == x->values[sample]);
         CHECK(((epio_read_pin_states(e) >> 6) & 1u) == expected_strobe(cycle));
         /* Generator completion IRQ, independent of any DUT observation. */

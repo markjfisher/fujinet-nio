@@ -177,7 +177,8 @@ def analyse(path, manifest):
             after += 1
         if n:
             near(f - before, manifest["setup_hold_us"], "setup")
-            near(f - fall[n - 1], manifest["period_us"], "period")
+            if "period_us" in manifest:
+                near(f - fall[n - 1], manifest["period_us"], "period")
         if n < len(expected) - 1:
             near(after - r, manifest["setup_hold_us"], "hold")
         check(
@@ -279,8 +280,8 @@ def acceptance(manifest, dut_evidence=None):
         if isinstance(dut_evidence, dict) and dut_evidence.get("status") == "observed"
         else "stimulus-only"
     )
-    if manifest.get("analysis_kind") == "idle":
-        if manifest.get("dut") and evidence_scope == "stimulus-and-dut":
+    if manifest.get("dut"):
+        if evidence_scope == "stimulus-and-dut":
             return dict(
                 status="passed",
                 category=None,
@@ -300,6 +301,12 @@ def acceptance(manifest, dut_evidence=None):
                 reason="This report has waveform evidence only; no DUT counter report was collected.",
             ),
         )
+    if manifest.get("analysis_kind") == "idle":
+        return dict(status="stimulus_passed", category=None,
+                    stimulus_status="passed", experiment_status="incomplete",
+                    evidence_scope="stimulus-only",
+                    dut_evidence=dict(status="not_observed",
+                                      reason="This report has waveform evidence only; no DUT counter report was collected."))
     return dict(status="passed", category=None, evidence_scope=evidence_scope)
 
 
@@ -322,9 +329,10 @@ def dut_report(console, contract):
     line = console.line(3)
     match = re.fullmatch(
         r"result protocol=" + re.escape(protocol) +
-        r" capture_count=([0-9]+) capture_irq_count=([0-9]+)", line)
+        r" capture_count=([0-9]+) capture_irq_count=([0-9]+) values=([0-9,]*)", line)
     require(match is not None, "Malformed DUT counter report: " + line, "transport")
-    observed = dict(capture_count=int(match[1]), capture_irq_count=int(match[2]))
+    observed = dict(capture_count=int(match[1]), capture_irq_count=int(match[2]),
+                    values=[] if not match[3] else [int(value) for value in match[3].split(",")])
     expected = contract["expected"]
     require(all(observed.get(key) == value for key, value in expected.items()),
             "DUT counters differ from manifest expectation", "dut",
@@ -1084,15 +1092,15 @@ class Console:
                 os.close(self.fd)
 
 
-def fresh_completion(console, timeout=3):
+def fresh_completion(console, samples=16, timeout=3):
     console.send("run")
     running = False
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         line = console.line(max(0.01, deadline - time.monotonic()))
-        if line == "running samples=16 nominal_hz=100000":
+        if line == f"running samples={samples} nominal_hz=100000":
             running = True
-        elif line == "complete generated=16 nominal_hz=100000":
+        elif line == f"complete generated={samples} nominal_hz=100000":
             require(
                 running,
                 "completion arrived without fresh running acknowledgement",
@@ -1231,7 +1239,7 @@ def physical_run(m, args, artifact, dut_image=None):
                 require(
                     child.poll() is None, "analyser stopped before run", "acquisition"
                 )
-                fresh_completion(console)
+                fresh_completion(console, len(m["expected_values"]))
                 try:
                     rc = child.wait(timeout=10)
                 except subprocess.TimeoutExpired as e:

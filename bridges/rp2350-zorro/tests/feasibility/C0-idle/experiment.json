@@ -47,10 +47,11 @@
   "dut": {
     "preset": "dut-c0-rp2350",
     "target": "feasibility_dut",
-    "protocol": "capture-counters-v1",
+    "protocol": "capture-observer-v1",
     "expected": {
       "capture_count": 0,
-      "capture_irq_count": 0
+      "capture_irq_count": 0,
+      "values": []
     }
   }
 }

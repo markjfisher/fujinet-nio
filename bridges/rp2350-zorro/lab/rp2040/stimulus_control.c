@@ -1,5 +1,7 @@
 #include "stimulus.h"
 #include <string.h>
+#define STRINGIFY_INNER(value) #value
+#define STR(value) STRINGIFY_INNER(value)
 void stimulus_init(stimulus_control *s, void (*start)(void *),
                    void (*release)(void *), void *ctx) {
     *s = (stimulus_control){.start = start,
@@ -22,8 +24,8 @@ void stimulus_poll(stimulus_control *s, uint64_t now, bool connected,
             finish(s, "aborted disconnect generated=unknown");
     } else if (s->active) {
         if (done) {
-            s->generated = 16;
-            finish(s, "complete generated=16 nominal_hz=100000");
+            s->generated = STIMULUS_SAMPLE_COUNT;
+            finish(s, "complete generated=" STR(STIMULUS_SAMPLE_COUNT) " nominal_hz=100000");
         } else if (now >= s->deadline)
             finish(s, "aborted timeout generated=unknown");
     }
@@ -46,7 +48,7 @@ const char *stimulus_feed(stimulus_control *s, int ch, uint64_t now) {
     if (!used)
         return NULL;
     if (!strcmp(s->line, "help"))
-        return "commands: run (16 samples), stop, status, help";
+        return "commands: run (" STR(STIMULUS_SAMPLE_COUNT) " samples), stop, status, help";
     if (!strcmp(s->line, "status"))
         return s->result;
     if (!strcmp(s->line, "stop")) {
@@ -60,7 +62,7 @@ const char *stimulus_feed(stimulus_control *s, int ch, uint64_t now) {
         s->generated = 0;
         s->active = true;
         s->deadline = now + 100000;
-        s->result = "running samples=16 nominal_hz=100000";
+        s->result = "running samples=" STR(STIMULUS_SAMPLE_COUNT) " nominal_hz=100000";
         s->start(s->ctx);
         return s->result;
     }

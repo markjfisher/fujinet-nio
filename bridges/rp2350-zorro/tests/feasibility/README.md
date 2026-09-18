@@ -10,7 +10,7 @@ observer and proves the idle suppression baseline.
 | --- | --- | --- |
 | [generator-check](generator-check/README.md) | Independent 0–15 W0 waveform | Implemented; interactive runner plus separate stages |
 | [C0-idle](C0-idle/README.md) | No capture without assertion; stimulus and DUT counters | Implemented; requires physical two-board run |
-| [C1-patterns](C1-patterns/README.md) | Exact captured patterns and counts | Planned |
+| [C1-patterns](C1-patterns/README.md) | Exact captured patterns and counts | Implemented; requires physical two-board run |
 | [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Planned |
 | [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Planned |
 | [C4-repetition](C4-repetition/README.md) | Pulse/gap limits | Planned |

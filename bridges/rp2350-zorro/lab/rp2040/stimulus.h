@@ -3,7 +3,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#ifndef STIMULUS_WORDS
 #define STIMULUS_WORDS 7
+#endif
+#ifndef STIMULUS_SAMPLE_COUNT
+#define STIMULUS_SAMPLE_COUNT 16
+#endif
 #define STIMULUS_HZ 100000
 #define STIMULUS_DATA_BASE 2
 #define STIMULUS_DATA_BITS 4

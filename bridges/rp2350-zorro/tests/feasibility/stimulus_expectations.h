@@ -12,6 +12,9 @@ typedef struct {
     const uint16_t *words;
     size_t word_count;
     const unsigned *values;
+    /* Optional per-value cadence. Entry n spans value n until n+1; the final
+       entry is ignored. NULL means data_period_cycles for every value. */
+    const unsigned *period_cycles;
     size_t value_count;
     unsigned data_start_cycle, data_period_cycles;
     unsigned low_offset, low_cycles;

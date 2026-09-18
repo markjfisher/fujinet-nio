@@ -1,20 +1,36 @@
-# C1-patterns: Known pattern capture
+# C1-patterns: known pattern capture
 
-**Status: planned, not implemented.** `./run.sh` reports this status and exits
-without building, loading firmware or touching devices. No experiment pass is
-claimed by the presence of this folder.
+**C1 is a two-board W0 experiment.** The RP2040 drives 28 asserted `/AS`
+transactions at 100 kHz PIO rate. The ordered values are `0..15`, eight
+alternating `A,5` values, then the fixed seeded tail `6,D,3,C`. The Core2350B
+must report exactly those 28 captured words, 28 capture IRQs, and no omitted or
+extra word.
 
-- Stimulus: All sixteen values, alternating A/5, seeded sequences.
-- Expected observation: One exact DUT capture per assertion, ordered words, no silent discard.
-- Prerequisites: W0; generator sequences and USB-observable RP2350 capture firmware.
+This uses the C0 capture APIO implementation and the shared RAM-only observer
+firmware. Its C1 stimulus is APIO source in `src/`; host EPIO tests verify the
+instruction words, output/strobe sequence, completion, rearm and abort. No PIO
+text file is used.
 
-[`experiment.json`](experiment.json) records this case's contract. Implement its
-experiment-specific APIO source/configuration and failing-then-passing epio tests
-here when this case is developed. Reference shared board/console support; do not
-copy complete projects or manufacture placeholder firmware. Its starter must
-then support the shared build/load/run/analyse controls and result format.
+Wiring remains W0: RP2040 GP2–GP5 to Core2350B GP2–GP5, RP2040 GP6 (`/AS`) to
+Core2350B GP1, shared ground, analyzer CH1–CH4 on D0–D3, and CH8 on `/AS`.
+Keep signals at 3.3 V. The analyzer verifies 28 low pulses and their sampled
+values; the Core's USB report independently verifies captures and IRQ counts.
 
-See the [experiment index](../README.md) and
-[Story 2.2 plan](../../../docs/story-2-2-experiment-plan.md). The existing
-[generator check](../generator-check/README.md) validates test equipment only;
-it does not satisfy this case.
+From this directory:
+
+```sh
+./run.sh build
+./run.sh doctor
+./run.sh load --dut-usb-path 7-1.3.3.4.3
+./run.sh run --output /tmp/c1-run-001
+python3 ../report_summary.py /tmp/c1-run-001/report.json
+```
+
+For `load`, put only the RP2040 in BOOTSEL. Leave the Core connected normally;
+the runner force-loads its RAM observer and records the discovered CDC port.
+`run` uses those bound sessions. A pass requires both waveform and DUT evidence;
+offline `analyse` remains waveform-only and incomplete.
+
+The finite control protocol is lab equipment only. It has no FujiBus or future
+bridge ABI meaning. See the [experiment index](../README.md) and the
+[Story 2.2 plan](../../../docs/story-2-2-experiment-plan.md).

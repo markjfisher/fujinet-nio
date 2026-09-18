@@ -55,6 +55,17 @@
         "STIMULUS_EXPERIMENT": "C0-idle",
         "STIMULUS_TARGET": "feasibility_c0_idle"
       }
+    },
+    {
+      "name": "stimulus-c1-rp2040",
+      "inherits": "stimulus-rp2040",
+      "binaryDir": "${sourceDir}/build/stimulus-c1-rp2040",
+      "cacheVariables": {
+        "STIMULUS_EXPERIMENT": "C1-patterns",
+        "STIMULUS_TARGET": "feasibility_c1_patterns",
+        "STIMULUS_WORDS": "30",
+        "STIMULUS_SAMPLE_COUNT": "28"
+      }
     }
   ],
   "buildPresets": [
@@ -81,6 +92,10 @@
     {
       "name": "stimulus-c0-rp2040",
       "configurePreset": "stimulus-c0-rp2040"
+    },
+    {
+      "name": "stimulus-c1-rp2040",
+      "configurePreset": "stimulus-c1-rp2040"
     }
   ],
   "testPresets": [
