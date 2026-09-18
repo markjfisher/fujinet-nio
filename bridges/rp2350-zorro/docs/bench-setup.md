@@ -3,7 +3,10 @@
 The current automated bench runner supports **Linux PCs with a compatible RP2040
 board and an eight-channel fx2lafw analyzer**. It is not tied to a username, one
 USB socket, or the original TZT board. Windows/macOS hardware discovery and serial
-control are not implemented. The RP2350 observer and C0–C10 remain future work.
+control are not implemented.
+
+This document describes host and bench setup shared by the feasibility experiments.
+See the feasibility index for currently implemented experiments.
 
 ## First setup
 

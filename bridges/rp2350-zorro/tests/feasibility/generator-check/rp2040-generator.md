@@ -1,6 +1,12 @@
 # RP2040 W0 stimulus generator
 
-**Repeatable entry point:** use the [generator-check starter and source map](../tests/feasibility/generator-check/README.md). Its staged runner replaces the ad hoc load/capture procedure from initial bring-up.
+This is the historical version of the original W0 stimulus generator documentation.
+This is superceded by the README.md in this folder.
+
+---
+
+**Repeatable entry point:** use the [generator-check starter and source map](README.md).
+Its staged runner replaces the ad hoc load/capture procedure from initial bring-up.
 
 This isolated lab target emits one finite ascending four-bit burst after an
 explicit USB `run`. It implements only the generator portion of E0–E3 in the
