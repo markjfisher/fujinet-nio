@@ -25,8 +25,12 @@ class ReportSummaryTests(unittest.TestCase):
             "build_identity": {"revision": "revision", "manifest": {
                 "title": "Idle capture suppression", "data_period_us": 210}},
             "dut_evidence": {"status": "not_observed", "reason": "No observer"},
-            "commands": [{"argv": ["ctest", "--preset", "host"],
-                          "output": "100% tests passed out of 8"}],
+            "commands": [
+                {"argv": ["ctest", "--preset", "host"],
+                 "output": "100% tests passed out of 8"},
+                {"argv": ["ctest", "--preset", "host-release"],
+                 "output": "100% tests passed out of 8"},
+            ],
             "waveform": {"analysis_kind": "idle", "sample_rate": 1000000,
                          "evidence_scope": "stimulus-only", "values": list(range(16)),
                          "observed_falls": [], "strobe": "high throughout capture",
@@ -41,7 +45,7 @@ class ReportSummaryTests(unittest.TestCase):
         self.assertIn("/AS falls: 0", output)
         self.assertIn("Interior holds (first/last excluded): min 209, max 210, mean 210 us", output)
         self.assertIn("Configured period: 210 us", output)
-        self.assertIn("Host tests: 8/8 passed", output)
+        self.assertIn("Host tests: Debug 8/8 passed; Release 8/8 passed", output)
 
     def test_missing_optional_fields(self):
         self.assertEqual(summary.format_report({"status": "failed"}), "Stimulus status: failed")

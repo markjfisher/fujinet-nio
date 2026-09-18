@@ -93,7 +93,16 @@ def host_test_summary(report):
         if match:
             total = int(match[2])
             passed = round(total * int(match[1]) / 100)
-            results.append("{}/{} passed".format(passed, total))
+            argv = list(map(str, command["argv"]))
+            try:
+                preset = argv[argv.index("--preset") + 1]
+            except (ValueError, IndexError):
+                preset = None
+            label = {"host": "Debug", "host-release": "Release"}.get(preset)
+            if label is None and preset:
+                label = "preset " + preset
+            result = "{}/{} passed".format(passed, total)
+            results.append((label + " " if label else "") + result)
     if not results:
         return None
     return "; ".join(results)
