@@ -64,7 +64,8 @@
         "STIMULUS_EXPERIMENT": "C1-patterns",
         "STIMULUS_TARGET": "feasibility_c1_patterns",
         "STIMULUS_WORDS": "30",
-        "STIMULUS_SAMPLE_COUNT": "28"
+        "STIMULUS_SAMPLE_COUNT": "28",
+        "STIMULUS_STORAGE": "flash"
       }
     }
   ],

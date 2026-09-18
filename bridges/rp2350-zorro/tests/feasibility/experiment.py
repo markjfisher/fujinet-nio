@@ -550,17 +550,18 @@ def preferred_serial_port(d):
     return port
 
 
-def dut_connection_hints(args):
-    """Print copyable C0 arguments from connected RP devices; never guess roles."""
+def dut_connection_hints(m, args):
+    """Print copyable manifest-DUT arguments from connected RP devices; never guess roles."""
+    label = m["id"] + " DUT"
     devices = [d for d in usb_devices() if d["vid"] == "2e8a"]
     dut_usb = [d for d in devices if d["pid"] in ("0009", "000f")]
     if len(dut_usb) == 1:
         d = dut_usb[0]
         suffix = " (serial " + d["serial"] + ")" if d.get("serial") else ""
-        print("C0 DUT USB: --dut-usb-path " + d["path"] + suffix)
-        print("C0 DUT port: unavailable until the feasibility DUT firmware is RAM-loaded.")
+        print(label + " USB: --dut-usb-path " + d["path"] + suffix)
+        print(label + " port: unavailable until the feasibility DUT firmware is RAM-loaded.")
     elif len(dut_usb) > 1:
-        print("C0 DUT USB candidates: " + ", ".join(d["path"] for d in dut_usb))
+        print(label + " USB candidates: " + ", ".join(d["path"] for d in dut_usb))
     generator_path = None
     try:
         generator_path = json.loads(args.session.read_text()).get("usb", {}).get("path")
@@ -570,13 +571,13 @@ def dut_connection_hints(args):
     if len(runtime) == 1:
         d = runtime[0]
         try:
-            print("C0 DUT arguments: --dut-usb-path {} --dut-port {}".format(
+            print(label + " arguments: --dut-usb-path {} --dut-port {}".format(
                 d["path"], preferred_serial_port(d)))
         except Failure as error:
-            print("C0 DUT runtime found at {} but no accessible CDC port: {}".format(
+            print(label + " runtime found at {} but no accessible CDC port: {}".format(
                 d["path"], error))
     elif len(runtime) > 1:
-        print("C0 DUT runtime candidates: " + ", ".join(d["path"] for d in runtime))
+        print(label + " runtime candidates: " + ", ".join(d["path"] for d in runtime))
 
 
 def boot_id():
@@ -856,20 +857,46 @@ def load(m, args, artifact):
         "Artifact changed while taking load snapshot; rebuild.",
         "transport",
     )
-    validate_ram_elf(snapshot)
+    load_mode = m.get("load_mode", "ram")
+    require(load_mode in ("ram", "flash"), "Unknown generator load_mode", "configuration")
+    if load_mode == "ram":
+        validate_ram_elf(snapshot)
     command(
         [sys.executable, "scripts/bootstrap.py", "--mode", "stimulus", "--check"],
         "transport",
     )
-    print(
-        "Hold BOOT while reconnecting the RP2040 generator (or BOOT + reset), then release BOOT.\n"
-        f"Waiting at most {args.timeout:g}s for flash identity {profile['generator_flash_id']}. RAM load starts idle firmware only.",
-        flush=True,
-    )
-    selected, info, _ = identify_bootsel(args, profile["generator_flash_id"])
+    if load_mode == "ram":
+        print(
+            "Hold BOOT while reconnecting the RP2040 generator (or BOOT + reset), then release BOOT.\n"
+            f"Waiting at most {args.timeout:g}s for flash identity {profile['generator_flash_id']}. RAM load starts idle firmware only.",
+            flush=True,
+        )
+        selected, info, _ = identify_bootsel(args, profile["generator_flash_id"])
+        force = []
+    else:
+        require(args.usb_path, "Flash-installed generator needs --usb-path from doctor", "configuration")
+        print("Keep the flash-installed RP2040 connected. picotool will force its USB "
+              f"firmware into the loader at USB {args.usb_path}.", flush=True)
+        deadline = time.monotonic() + args.timeout
+        selected = None
+        while time.monotonic() < deadline:
+            candidates = [d for d in usb_devices() if d["path"] == args.usb_path]
+            require(len(candidates) <= 1, "Ambiguous RP2040 USB path", "transport")
+            if candidates:
+                selected = candidates[0]
+                access(selected)
+                break
+            time.sleep(0.2)
+        require(selected is not None, "Timed out waiting for flash-installed RP2040", "transport")
+        if selected["pid"] == "0003":
+            selected, info, _ = identify_bootsel(args, profile["generator_flash_id"])
+            force = []
+        else:
+            info = "forced flash load by physical USB path"
+            force = ["-f"]
     assert_profile(args, profile)
     selector = ["--bus", selected["bus"], "--address", selected["address"]]
-    command([PICOTOOL, "load", "-v", "-x", snapshot, *selector], "transport", 30)
+    command([PICOTOOL, "load", "-v", "-x", snapshot, *force, *selector], "transport", 30)
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
         runtime = [
@@ -900,14 +927,15 @@ def load(m, args, artifact):
             )
             args.session.parent.mkdir(parents=True, exist_ok=True)
             save(args.session, record)
+            label = "RAM" if load_mode == "ram" else "flash"
             print(
-                f'Validated RAM session saved to {args.session}; CDC {port}; physical port {d["path"]}'
+                f'Validated {label} session saved to {args.session}; CDC {port}; physical port {d["path"]}'
             )
             return
         time.sleep(0.2)
     raise Failure(
         "transport",
-        "RAM CDC re-enumeration/access timed out; inspect permissions. No session recorded.",
+        f"{load_mode} CDC re-enumeration/access timed out; inspect permissions. No session recorded.",
     )
 
 
@@ -1003,7 +1031,7 @@ def validate_session(m, session, artifact, devices, profile):
         and session.get("flash_id") == profile["generator_flash_id"]
         and session.get("firmware_sha256") == digest(artifact)
         and session.get("boot_id") == boot_id(),
-        "Stale or mismatched session; use load to validate BOOTSEL identity and current firmware.",
+        "Stale or mismatched session; use load to validate the selected generator and current firmware.",
         "transport",
     )
     d = session.get("usb")
@@ -1377,7 +1405,7 @@ def doctor(m, args):
         except Failure as e:
             problems.append(str(e))
     if m.get("dut"):
-        dut_connection_hints(args)
+        dut_connection_hints(m, args)
     try:
         scan = command(
             ["sigrok-cli", "--driver", args.analyzer, "--scan"], "acquisition", 10
@@ -1395,7 +1423,7 @@ def doctor(m, args):
 def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__,
-        epilog="Default all is interactive: build, doctor, enroll missing bench profile, BOOTSEL RAM load, Enter, acquisition, run, analyse. No flash write; no sudo. Offline: build or analyse --capture FILE. Missing/stale session: load again with --usb-path to validate identity.",
+        epilog="Default all is interactive: build, doctor, enroll missing bench profile, manifest-selected generator load, Enter, acquisition, run, analyse. RAM experiments require BOOTSEL; a manifest may intentionally install a flash fixture. No sudo. Offline: build or analyse --capture FILE. Missing/stale session: load again with --usb-path to validate identity.",
     )
     p.add_argument(
         "stage",
@@ -1426,7 +1454,7 @@ def main(argv=None):
     p.add_argument(
         "--session",
         type=Path,
-        help="RAM-load session (default: build/feasibility/EXPERIMENT/session.json)",
+        help="generator load session (default: build/feasibility/EXPERIMENT/session.json)",
     )
     p.add_argument(
         "--usb-path",
@@ -1495,7 +1523,7 @@ def main(argv=None):
                             "doctor": "check pinned sources, tools, USB permissions and analyzer scan",
                             "build": "bootstrap pins; configure/build/test host Debug+Release; build manifest stimulus/DUT images and pinned USB picotool",
                             "configure": "read RP2040 BOOTSEL identity; confirm enrollment; atomically save local bench profile",
-                            "load": "wait for selected RP2040 then manifest DUT BOOTSEL; RAM load both images and persist sessions",
+                            "load": "perform the manifest-selected generator load, then load the manifest DUT image and persist sessions",
                             "run": "validate sessions; reset DUT counters; explicit Enter; acquire/run/analyse; collect DUT report",
                             "analyse": "validate existing capture metadata and finite waveform",
                             "all": "build -> doctor -> configure if missing -> load -> run -> analyse",

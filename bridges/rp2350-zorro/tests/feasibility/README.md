@@ -31,8 +31,10 @@ ad hoc projects and duplicated firmware support.
 
 Run `generator-check/run.sh --help` from any working directory. The default
 interactive flow and `all` build/check software, guide BOOTSEL identification and
-local board enrollment when needed, RAM loading, and wait for your explicit
-instruction before generating signals.
+local board enrollment when needed, load the manifest-selected fixture, and wait
+for your explicit instruction before generating signals. Most current experiments
+use a RAM-loaded RP2040; C1 deliberately installs its reusable generator fixture
+in flash after one BOOTSEL install.
 Separate `doctor`, `build`, `configure`, `load`, `run` and `analyse` stages let you inspect or
 repeat individual steps. `--dry-run` previews operations without touching devices.
 Builds never generate signals. No experiment stage runs sudo or changes system

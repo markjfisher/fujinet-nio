@@ -5,6 +5,7 @@ set(STIMULUS_EXPERIMENT "" CACHE STRING "Experiment stimulus source directory")
 set(STIMULUS_TARGET "" CACHE STRING "Experiment firmware target")
 set(STIMULUS_WORDS "7" CACHE STRING "PIO instruction words for selected stimulus")
 set(STIMULUS_SAMPLE_COUNT "16" CACHE STRING "Assertions in selected stimulus")
+set(STIMULUS_STORAGE "ram" CACHE STRING "Stimulus storage: ram or flash")
 if(NOT STIMULUS_EXPERIMENT MATCHES "^[A-Za-z0-9_-]+$" OR
    NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/${STIMULUS_EXPERIMENT}/src/stimulus_program.c")
     message(FATAL_ERROR "Select an experiment directory containing src/stimulus_program.c")
@@ -16,6 +17,9 @@ if(NOT STIMULUS_WORDS MATCHES "^[1-9][0-9]*$" OR STIMULUS_WORDS GREATER 32 OR
    NOT STIMULUS_SAMPLE_COUNT MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "Stimulus word and sample counts must be positive (PIO words <= 32)")
 endif()
+if(NOT STIMULUS_STORAGE MATCHES "^(ram|flash)$")
+    message(FATAL_ERROR "STIMULUS_STORAGE must be ram or flash")
+endif()
 add_executable(${STIMULUS_TARGET} lab/rp2040/main.c
     tests/feasibility/${STIMULUS_EXPERIMENT}/src/stimulus_program.c lab/rp2040/stimulus_control.c)
 add_dependencies(${STIMULUS_TARGET} bridge_validate)
@@ -26,6 +30,8 @@ target_compile_definitions(${STIMULUS_TARGET} PRIVATE STIMULUS_WORDS=${STIMULUS_
     STIMULUS_SAMPLE_COUNT=${STIMULUS_SAMPLE_COUNT})
 pico_enable_stdio_uart(${STIMULUS_TARGET} 0)
 pico_enable_stdio_usb(${STIMULUS_TARGET} 1)
-# No flash identification/boot-stage assumptions; ROM loads this image into SRAM.
-pico_set_binary_type(${STIMULUS_TARGET} no_flash)
+if(STIMULUS_STORAGE STREQUAL "ram")
+    # No flash identification/boot-stage assumptions; ROM loads this image into SRAM.
+    pico_set_binary_type(${STIMULUS_TARGET} no_flash)
+endif()
 pico_add_extra_outputs(${STIMULUS_TARGET})

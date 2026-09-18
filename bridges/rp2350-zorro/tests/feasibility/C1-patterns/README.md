@@ -21,15 +21,23 @@ From this directory:
 ```sh
 ./run.sh build
 ./run.sh doctor
-./run.sh load --dut-usb-path 7-1.3.3.4.3
+./run.sh load --usb-path 7-1.3.3.4.4 --dut-usb-path 7-1.3.3.4.3
 ./run.sh run --output /tmp/c1-run-001
 python3 ../report_summary.py /tmp/c1-run-001/report.json
 ```
 
-For `load`, put only the RP2040 in BOOTSEL. Leave the Core connected normally;
-the runner force-loads its RAM observer and records the discovered CDC port.
-`run` uses those bound sessions. A pass requires both waveform and DUT evidence;
-offline `analyse` remains waveform-only and incomplete.
+The first C1 `load` replaces the RP2040 Debug Probe firmware with this persistent
+flash fixture, so put that RP2040 in BOOTSEL once. Give the physical path shown
+by `doctor`; for this bench it is `7-1.3.3.4.4`:
+
+```sh
+./run.sh load --usb-path 7-1.3.3.4.4 --dut-usb-path 7-1.3.3.4.3
+```
+
+Later C1 loads use the same command with both boards connected normally:
+picotool force-loads the RP2040 and Core2350B without BOOTSEL. `run` uses the
+bound sessions. A pass requires both waveform and DUT evidence; offline
+`analyse` remains waveform-only and incomplete.
 
 The finite control protocol is lab equipment only. It has no FujiBus or future
 bridge ABI meaning. See the [experiment index](../README.md) and the

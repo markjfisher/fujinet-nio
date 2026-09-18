@@ -360,6 +360,22 @@ class Experiments(unittest.TestCase):
         self.assertEqual(saved["usb"]["path"], "1-2")
         self.assertEqual(Path(saved["artifact_snapshot"]).read_bytes(), original)
 
+    def test_flash_load_uses_physical_path_and_force_without_ram_validation(self):
+        artifact, usb, session, args = self.fixture()
+        args.usb_path = usb["path"]
+        c1 = self.c1_manifest()
+        with (
+            patch.object(e, "usb_devices", side_effect=[[usb], [usb]]),
+            patch.object(e, "access"),
+            patch.object(e, "serial_port", return_value=Path("/dev/fake")),
+            patch.object(e, "validate_ram_elf", side_effect=AssertionError("RAM validation")),
+            patch.object(e, "command", return_value="") as cmd,
+        ):
+            e.load(c1, args, artifact)
+        loader = next(call.args[0] for call in cmd.call_args_list if call.args[0][1] == "load")
+        self.assertIn("-f", loader)
+        self.assertEqual(loader[-4:], ["--bus", 1, "--address", 42])
+
     def test_load_wrong_reenumeration_port_fails(self):
         artifact, usb, session, args = self.fixture()
         args.session.unlink()
@@ -1274,14 +1290,14 @@ class Experiments(unittest.TestCase):
             patch.object(e, "preferred_serial_port", return_value=Path("/dev/serial/by-id/dut")),
             contextlib.redirect_stdout(io.StringIO()) as output,
         ):
-            e.dut_connection_hints(args)
+            e.dut_connection_hints(self.c1_manifest(), args)
         self.assertIn("--dut-usb-path 1-3 --dut-port /dev/serial/by-id/dut", output.getvalue())
         dut["pid"] = "0009"
         with contextlib.redirect_stdout(io.StringIO()) as output, patch.object(
             e, "usb_devices", return_value=[dut]
         ):
-            e.dut_connection_hints(args)
-        self.assertIn("C0 DUT USB: --dut-usb-path 1-3 (serial DUT)", output.getvalue())
+            e.dut_connection_hints(self.c1_manifest(), args)
+        self.assertIn("C1 DUT USB: --dut-usb-path 1-3 (serial DUT)", output.getvalue())
 
     def test_source_identity_hashes_selected_experiment(self):
         root = self.directory / "bridge"

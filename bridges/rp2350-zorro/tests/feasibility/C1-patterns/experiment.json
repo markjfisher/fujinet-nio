@@ -10,6 +10,7 @@
   "target": "feasibility_c1_patterns",
   "source_dir": "tests/feasibility/C1-patterns/src",
   "analysis_kind": "burst",
+  "load_mode": "flash",
   "data_gpio": [2, 3, 4, 5],
   "strobe_gpio": 6,
   "analyzer_channels": ["D0", "D1", "D2", "D3", "D7"],
