@@ -7,9 +7,10 @@ capture and one capture IRQ, with the single value `3`. Any second capture while
 the strobe remains low fails the experiment.
 
 The saved run includes `capture.sr`, the machine-readable `report.json`, both
-USB console logs, and `waveform.svg`. The SVG is an event map derived from the
-same analysed capture: it labels the one strobe interval, each held-active data
-phase, and the DUT-reported capture. It identifies the falling `/AS` edge as the
+USB console logs, and `waveform.svg`. The SVG begins with the whole acquisition
+and highlights the small detected event window, then shows the original saved
+logic-analyser D0–D3 and `/AS` traces around that window. It labels the decoded
+held-active phases and the DUT-reported capture. The falling `/AS` edge is the
 capture transaction boundary. W0 has no physical pin marking the exact internal
 PIO `IN PINS` clock, so the diagram states that limitation rather than claiming a
 false nanosecond sample position; `D=3` remains stable for 210 us after assertion.

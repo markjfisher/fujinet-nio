@@ -46,10 +46,11 @@ Results belong in fresh directories under the bridge's ignored `build/` tree
 raw `.sr` capture, expected/observed measurements and a machine-readable verdict.
 Failed runs remain evidence; a busy analyzer or missing capture cannot pass.
 PulseView can open saved captures once sigrok-cli releases the device.
-Burst and held-active physical runs also generate `waveform.svg`: a compact event
-map of the analysed strobe/data intervals and the DUT-reported values. It is a
-debug aid alongside the raw `capture.sr`; it does not claim an unmeasured internal
-PIO sample-clock position.
+Burst and held-active physical runs also generate `waveform.svg`: it shows the
+detected event's position in the complete acquisition, followed by a zoomed
+rendering of the saved D0–D3 and `/AS` analyser samples, decoded phases and
+DUT-reported values. It is a debug aid alongside the raw `capture.sr`; it does
+not claim an unmeasured internal PIO sample-clock position.
 Build and loader command logs are retained under `build/feasibility/stage-logs/`.
 
 Summarise an existing report without rerunning its analysis or changing its verdict:
