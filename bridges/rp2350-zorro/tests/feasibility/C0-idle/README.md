@@ -30,7 +30,7 @@ From this directory:
 ./run.sh doctor
 ./run.sh configure                  # only if the bench is not enrolled
 ./run.sh load --dut-port /dev/serial/by-id/USB-DUT --dut-usb-path 1-2.3
-./run.sh run --dut-port /dev/serial/by-id/USB-DUT --dut-usb-path 1-2.3 --output /tmp/c0-run-001
+./run.sh run --dut-port /dev/serial/by-id/USB-DUT --output /tmp/c0-run-001
 ./run.sh analyse --capture /tmp/c0-run-001/capture.sr
 python3 ../report_summary.py /tmp/c0-run-001/report.json
 ```

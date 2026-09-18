@@ -487,6 +487,7 @@ def usb_devices():
                     bus=int((p / "busnum").read_text()),
                     address=int((p / "devnum").read_text()),
                     inode=p.resolve().stat().st_ino,
+                    serial=(p / "serial").read_text().strip() if (p / "serial").exists() else None,
                 )
             )
         except (OSError, ValueError):
@@ -521,6 +522,47 @@ def serial_port(d):
         "transport",
     )
     return ports[0]
+
+
+def preferred_serial_port(d):
+    """Use a stable by-id link when the connected CDC device exposes one."""
+    port = serial_port(d)
+    for link in Path("/dev/serial/by-id").glob("*"):
+        try:
+            if link.resolve() == port.resolve():
+                return link
+        except OSError:
+            continue
+    return port
+
+
+def dut_connection_hints(args):
+    """Print copyable C0 arguments from connected RP devices; never guess roles."""
+    devices = [d for d in usb_devices() if d["vid"] == "2e8a"]
+    bootsel = [d for d in devices if d["pid"] in ("0009", "000f")]
+    if len(bootsel) == 1:
+        d = bootsel[0]
+        suffix = " (serial " + d["serial"] + ")" if d.get("serial") else ""
+        print("C0 DUT BOOTSEL: --dut-usb-path " + d["path"] + suffix)
+        print("C0 DUT port: unavailable while BOOTSEL is active; run doctor again after the RAM load.")
+    elif len(bootsel) > 1:
+        print("C0 DUT BOOTSEL candidates: " + ", ".join(d["path"] for d in bootsel))
+    generator_path = None
+    try:
+        generator_path = json.loads(args.session.read_text()).get("usb", {}).get("path")
+    except (OSError, ValueError):
+        pass
+    runtime = [d for d in devices if d["pid"] == "000a" and d["path"] != generator_path]
+    if len(runtime) == 1:
+        d = runtime[0]
+        try:
+            print("C0 DUT arguments: --dut-usb-path {} --dut-port {}".format(
+                d["path"], preferred_serial_port(d)))
+        except Failure as error:
+            print("C0 DUT runtime found at {} but no accessible CDC port: {}".format(
+                d["path"], error))
+    elif len(runtime) > 1:
+        print("C0 DUT runtime candidates: " + ", ".join(d["path"] for d in runtime))
 
 
 def boot_id():
@@ -1310,6 +1352,8 @@ def doctor(m, args):
                 print("CDC: " + str(serial_port(d)))
         except Failure as e:
             problems.append(str(e))
+    if m.get("dut"):
+        dut_connection_hints(args)
     try:
         scan = command(
             ["sigrok-cli", "--driver", args.analyzer, "--scan"], "acquisition", 10
@@ -1439,9 +1483,11 @@ def main(argv=None):
             return 0
         if args.stage in ("load", "run"):
             read_profile(args.bench, required=True)
-        if m.get("dut") and args.stage in ("all", "load", "run"):
+        if m.get("dut") and args.stage in ("all", "load"):
             require(args.dut_port and args.dut_usb_path,
                     "This experiment needs --dut-port and --dut-usb-path", "configuration")
+        if m.get("dut") and args.stage == "run":
+            require(args.dut_port, "This experiment needs --dut-port", "configuration")
         if args.stage in ("all", "run") and args.output is None:
             args.output = (
                 ROOT

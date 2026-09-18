@@ -1221,6 +1221,23 @@ class Experiments(unittest.TestCase):
         with self.assertRaises(e.Failure):
             e.validate_dut_session(manifest, args, artifact)
 
+    def test_dut_connection_hints_print_copyable_arguments(self):
+        _, usb, _, args = self.fixture()
+        dut = dict(usb, path="1-3", serial="DUT", pid="000a")
+        with (
+            patch.object(e, "usb_devices", return_value=[usb, dut]),
+            patch.object(e, "preferred_serial_port", return_value=Path("/dev/serial/by-id/dut")),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            e.dut_connection_hints(args)
+        self.assertIn("--dut-usb-path 1-3 --dut-port /dev/serial/by-id/dut", output.getvalue())
+        dut["pid"] = "0009"
+        with contextlib.redirect_stdout(io.StringIO()) as output, patch.object(
+            e, "usb_devices", return_value=[dut]
+        ):
+            e.dut_connection_hints(args)
+        self.assertIn("C0 DUT BOOTSEL: --dut-usb-path 1-3 (serial DUT)", output.getvalue())
+
     def test_source_identity_hashes_selected_experiment(self):
         root = self.directory / "bridge"
         for folder in (
