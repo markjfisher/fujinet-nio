@@ -80,13 +80,14 @@ sudo install -m 0644 69-nio-feasibility.rules /etc/udev/rules.d/69-nio-feasibili
 sudo udevadm control --reload-rules
 ```
 
-Reconnect the RP2040 after installation. The rule grants the active local desktop
-user access to RP2040 BOOTSEL (`2e8a:0003`) and SDK USB/serial (`2e8a:000a`). It
+Reconnect the boards after installation. The rule grants the active local desktop
+user access to RP2040 BOOTSEL (`2e8a:0003`) and SDK USB/serial (`2e8a:000a`), plus
+the Core2350B/RP2350 USB and CDC console (`2e8a:0009`) used by the C0 DUT. It
 covers those device classes, not just this board; it does not select a target or
 authorize a load. The runner separately verifies the intended flash identity and
-physical USB path. It does not grant RP2350 (`2e8a:0009`) access. Your analyzer's
-packaged sigrok rules remain responsible for analyzer access. The `69-` ordering
-is intentional: the tag must exist before systemd's `73-seat-late.rules` applies it.
+physical USB path. Your analyzer's packaged sigrok rules remain responsible for
+analyzer access. The `69-` ordering is intentional: the tag must exist before
+systemd's `73-seat-late.rules` applies it.
 
 For SSH/headless hosts without an active local seat, this rule may not grant
 access: arrange an appropriate device-access group with the machine administrator

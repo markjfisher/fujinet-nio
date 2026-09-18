@@ -933,12 +933,14 @@ def load_dut(m, args, artifact):
     command([PICOTOOL, "load", "-v", "-x", snapshot, "-f", "--bus", selected["bus"],
              "--address", selected["address"]], "transport", 30)
     deadline = time.monotonic() + args.timeout
+    cdc_error = None
     while time.monotonic() < deadline:
         runtime = [d for d in usb_devices() if d["path"] == selected["path"]]
         if len(runtime) == 1:
             try:
                 port = preferred_serial_port(runtime[0])
-            except Failure:
+            except Failure as error:
+                cdc_error = str(error)
                 time.sleep(0.2)
                 continue
             requested = getattr(args, "dut_port", None)
@@ -951,7 +953,8 @@ def load_dut(m, args, artifact):
             print("Validated DUT RAM session saved; use --dut-port " + str(port))
             return
         time.sleep(0.2)
-    raise Failure("transport", "DUT CDC did not become available after RAM load")
+    detail = ("; last observation: " + cdc_error) if cdc_error else ""
+    raise Failure("transport", "DUT CDC did not become available after RAM load" + detail)
 
 
 def validate_dut_session(m, args, artifact):
