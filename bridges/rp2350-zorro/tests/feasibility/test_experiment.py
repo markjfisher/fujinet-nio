@@ -1096,10 +1096,12 @@ class Experiments(unittest.TestCase):
         report = e.analyse(self.capture, self.c0_manifest())
         self.assertEqual(report["values"], list(range(16)))
         self.assertEqual(report["observed_falls"], [])
-        self.assertEqual(report["evidence_scope"], "stimulus-only")
+        self.assertNotIn("evidence_scope", report)
+        self.assertNotIn("DUT", report["limits"])
         status = e.acceptance(self.c0_manifest())
         self.assertEqual(status["status"], "stimulus_passed")
         self.assertEqual(status["experiment_status"], "incomplete")
+        self.assertEqual(status["evidence_scope"], "stimulus-only")
         self.assertEqual(status["dut_evidence"]["status"], "not_observed")
 
     def test_c0_rejects_asserted_strobe_and_missing_data(self):
@@ -1196,6 +1198,7 @@ class Experiments(unittest.TestCase):
         status = e.acceptance(self.c0_manifest(), evidence)
         self.assertEqual(status["status"], "passed")
         self.assertEqual(status["experiment_status"], "passed")
+        self.assertEqual(status["evidence_scope"], "stimulus-and-dut")
         console.line.side_effect = None
         console.line.return_value = "result protocol=capture-counters-v1 capture_count=1 capture_irq_count=1"
         with self.assertRaises(e.Failure):

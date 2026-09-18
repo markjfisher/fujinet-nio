@@ -120,7 +120,7 @@ def format_report(report):
     for label, value in (
         ("Stimulus status", report.get("stimulus_status") or report.get("status")),
         ("Experiment status", report.get("experiment_status")),
-        ("Evidence scope", waveform.get("evidence_scope")),
+        ("Evidence scope", report.get("evidence_scope") or waveform.get("evidence_scope")),
     ):
         if value is not None:
             lines.append(f"{label}: {value}")

@@ -53,9 +53,11 @@ class ReportSummaryTests(unittest.TestCase):
     def test_dut_observed_counters_are_presented(self):
         output = summary.format_report({
             "status": "passed",
+            "evidence_scope": "stimulus-and-dut",
             "dut_evidence": {"status": "observed", "observed": {
                 "capture_count": 0, "capture_irq_count": 0}},
         })
+        self.assertIn("Evidence scope: stimulus-and-dut", output)
         self.assertIn("DUT observed: capture_count=0, capture_irq_count=0", output)
 
     def test_unknown_analysis_kind_uses_generic_output(self):

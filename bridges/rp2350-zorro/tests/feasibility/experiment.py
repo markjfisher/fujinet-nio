@@ -269,32 +269,38 @@ def analyse_idle(path, manifest, data, hz):
         measurements=rows,
         observed_falls=[],
         strobe="high throughout capture",
-        evidence_scope="stimulus-only",
-        limits="First/last data hold includes unobservable lead-in/release; data outside the sequence may float. No DUT capture count or IRQ was observed.",
+        limits="First/last data hold includes acquisition lead-in/release; data outside the detected sequence may float.",
     )
 
 
 def acceptance(manifest, dut_evidence=None):
+    evidence_scope = (
+        "stimulus-and-dut"
+        if isinstance(dut_evidence, dict) and dut_evidence.get("status") == "observed"
+        else "stimulus-only"
+    )
     if manifest.get("analysis_kind") == "idle":
-        if manifest.get("dut") and dut_evidence is not None:
+        if manifest.get("dut") and evidence_scope == "stimulus-and-dut":
             return dict(
                 status="passed",
                 category=None,
                 stimulus_status="passed",
                 experiment_status="passed",
+                evidence_scope=evidence_scope,
                 dut_evidence=dut_evidence,
             )
         return dict(
             status="stimulus_passed",
             category=None,
             stimulus_status="passed",
-                experiment_status="incomplete",
-                dut_evidence=dict(
-                    status="not_observed",
-                    reason="This report has waveform evidence only; no DUT counter report was collected.",
+            experiment_status="incomplete",
+            evidence_scope=evidence_scope,
+            dut_evidence=dict(
+                status="not_observed",
+                reason="This report has waveform evidence only; no DUT counter report was collected.",
             ),
         )
-    return dict(status="passed", category=None)
+    return dict(status="passed", category=None, evidence_scope=evidence_scope)
 
 
 def dut_artifact(manifest):
