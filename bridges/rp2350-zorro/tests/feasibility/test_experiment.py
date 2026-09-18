@@ -1078,6 +1078,152 @@ class Experiments(unittest.TestCase):
                 e.configure_instruction(args.bench),
             )
 
+    def c0_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C0-idle/experiment.json").read_text()
+        )
+
+    def idle_waveform(self):
+        return (
+            b"\x80" * 300
+            + b"".join(bytes([128 + n]) * 210 for n in range(16))
+            + b"\x8f" * 300
+        )
+
+    def test_c0_idle_waveform_and_no_dut_claim(self):
+        self.write_capture(self.idle_waveform())
+        report = e.analyse(self.capture, self.c0_manifest())
+        self.assertEqual(report["values"], list(range(16)))
+        self.assertEqual(report["observed_falls"], [])
+        self.assertEqual(report["evidence_scope"], "stimulus-only")
+        status = e.acceptance(self.c0_manifest())
+        self.assertEqual(status["status"], "stimulus_passed")
+        self.assertEqual(status["experiment_status"], "incomplete")
+        self.assertEqual(status["dut_evidence"]["status"], "not_observed")
+
+    def test_c0_rejects_asserted_strobe_and_missing_data(self):
+        baseline = self.idle_waveform()
+        for data in (
+            b"\x80" * 5000,
+            baseline[:1000],
+            baseline + baseline,
+            waveform(),
+            bytes([baseline[0] & 15]) + baseline[1:],
+            baseline[:1000] + b"\x00" + baseline[1001:],
+            baseline[:-1] + bytes([baseline[-1] & 15]),
+        ):
+            with self.subTest(length=len(data)):
+                self.write_capture(data)
+                with self.assertRaises(e.Failure):
+                    e.analyse(self.capture, self.c0_manifest())
+
+    def test_c0_rejects_wrong_data_or_hold(self):
+        for mutation in ("wrong", "glitch", "short", "long", "final"):
+            data = bytearray(self.idle_waveform())
+            if mutation == "wrong":
+                data[300 + 5 * 210 : 300 + 6 * 210] = b"\x84" * 210
+            elif mutation == "glitch":
+                data[300 + 5 * 210 + 100] = 0x84
+            elif mutation == "short":
+                del data[300 + 5 * 210 : 300 + 5 * 210 + 20]
+            elif mutation == "long":
+                data[300 + 5 * 210 : 300 + 5 * 210] = b"\x85" * 20
+            else:
+                data = data[: 300 + 15 * 210 + 100]
+            self.write_capture(data)
+            with self.subTest(mutation=mutation), self.assertRaises(e.Failure):
+                e.analyse(self.capture, self.c0_manifest())
+
+    def test_c0_allows_released_data_outside_timed_sequence(self):
+        self.write_capture(b"\x87" * 100 + self.idle_waveform() + b"\x83" * 100)
+        self.assertEqual(e.analyse(self.capture, self.c0_manifest())["assertions"], 16)
+
+    def test_c0_offline_report_does_not_claim_experiment_pass(self):
+        self.write_capture(self.idle_waveform())
+        manifest = Path(__file__).parent / "C0-idle/experiment.json"
+        output = self.directory / "idle-analysis"
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                e.main(
+                    [
+                        "analyse",
+                        "--manifest",
+                        str(manifest),
+                        "--capture",
+                        str(self.capture),
+                        "--output",
+                        str(output),
+                    ]
+                ),
+                0,
+            )
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(report["status"], "stimulus_passed")
+        self.assertEqual(report["dut_evidence"]["status"], "not_observed")
+
+    def test_c0_physical_runner_reports_stimulus_only(self):
+        artifact, usb, session, args = self.fixture()
+        session["experiment"] = "C0"
+        e.save(args.session, session)
+        self.write_capture(self.idle_waveform())
+
+        def ready(*unused):
+            (args.output / "capture.sr").write_bytes(self.capture.read_bytes())
+
+        with self.fake_run(usb, acquisition=ready) as (_, child, _):
+            child.poll.side_effect = [None, 0]
+            e.physical_run(self.c0_manifest(), args, artifact)
+        report = json.loads((args.output / "report.json").read_text())
+        self.assertEqual(report["status"], "stimulus_passed")
+        self.assertEqual(report["experiment_status"], "incomplete")
+
+    def test_source_identity_hashes_selected_experiment(self):
+        root = self.directory / "bridge"
+        for folder in (
+            "src",
+            "lab",
+            "cmake",
+            "scripts",
+            "tests/feasibility/generator-check/src",
+            "tests/feasibility/C0-idle/src",
+        ):
+            (root / folder).mkdir(parents=True)
+        for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.json"):
+            (root / name).write_text("fixture")
+        source = root / "tests/feasibility/C0-idle/src/stimulus_program.c"
+        source.write_text("first")
+        with (
+            patch.object(e, "ROOT", root),
+            patch.object(e, "command", return_value="fixture"),
+        ):
+            before = e.source_identity(self.c0_manifest())
+            generator = e.source_identity(M)
+            source.write_text("second")
+            self.assertNotEqual(before, e.source_identity(self.c0_manifest()))
+            self.assertEqual(generator, e.source_identity(M))
+        self.assertIn(
+            "tests/feasibility/C0-idle/src/stimulus_program.c", before["inputs"]
+        )
+
+    def test_c0_dry_run_uses_own_session_and_artifact(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(
+                e.main(
+                    [
+                        "--manifest",
+                        str(Path(__file__).parent / "C0-idle/experiment.json"),
+                        "--dry-run",
+                    ]
+                ),
+                0,
+            )
+        plan = json.loads(output.getvalue())
+        self.assertTrue(plan["session"].endswith("C0/session.json"))
+        self.assertTrue(
+            plan["artifact"].endswith("stimulus-c0-rp2040/feasibility_c0_idle.elf")
+        )
+
     def test_starter_from_other_cwd(self):
         starter = Path(__file__).parent / "generator-check/run.sh"
         result = subprocess.run(

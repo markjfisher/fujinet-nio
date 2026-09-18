@@ -74,8 +74,13 @@ static void control_test(void) {
 static epio_t *waveform_init(void) {
     uint16_t words[STIMULUS_WORDS];
     stimulus_program(words);
+#ifdef STIMULUS_TEST_IDLE
+    const uint16_t expected[] = {0xe02f, 0xe901, 0xa909, 0xe901,
+                                 0x0042, 0xc000, 0x0006};
+#else
     const uint16_t expected[] = {0xe02f, 0xa909, 0xe900, 0xe801,
                                  0x0041, 0xc000, 0x0006};
+#endif
     CHECK(memcmp(words, expected, sizeof expected) == 0);
     epio_t *e = epio_init();
     CHECK(e);
@@ -107,14 +112,24 @@ static void waveform_check(epio_t *e) {
         unsigned data = 0;
         for (unsigned p = 2; p <= 5; ++p)
             data |= ((epio_read_pin_states(e) >> p) & 1u) << (p - 2);
+#ifdef STIMULUS_TEST_IDLE
+        unsigned sample = cycle >= 11 ? (cycle - 11) / 21 : 0;
+#else
         unsigned sample = cycle ? (cycle - 1) / 30 : 0;
+#endif
         if (sample > 15)
             sample = 15;
         CHECK(data == sample);
+#ifdef STIMULUS_TEST_IDLE
+        CHECK(((epio_read_pin_states(e) >> 6) & 1u) == 1);
+        /* Generator completion IRQ is independent of the DUT's IRQ. */
+        CHECK(epio_peek_block_irq_num(e, 0, 0) == (cycle >= 347));
+#else
         unsigned phase = cycle ? (cycle - 1) % 30 : 0;
         CHECK(((epio_read_pin_states(e) >> 6) & 1u) ==
               !(cycle >= 1 && cycle < 481 && phase >= 10 && phase < 20));
         CHECK(epio_peek_block_irq_num(e, 0, 0) == (cycle >= 481));
+#endif
     }
 }
 static epio_t *waveform_rearm(epio_t *e) {
@@ -141,7 +156,11 @@ static void waveform_test(void) {
     waveform_check(e); /* Rearm after a completed burst. */
     e = waveform_rearm(e);
     epio_step_cycles(e, 15); /* Abort inside the first /AS low interval. */
+#ifdef STIMULUS_TEST_IDLE
+    CHECK((epio_read_pin_states(e) & 0x40) != 0);
+#else
     CHECK((epio_read_pin_states(e) & 0x40) == 0);
+#endif
     e = waveform_rearm(e);
     waveform_check(e); /* Independent full 16-sample oracle after abort. */
     epio_free(e);
@@ -239,5 +258,9 @@ int main(void) {
     control_test();
     waveform_test();
     console_test();
+#ifdef STIMULUS_TEST_IDLE
+    puts("C0 stimulus: control and 16 idle data values passed; no DUT observation");
+#else
     puts("stimulus: control and 16 exact setup/low/hold samples passed");
+#endif
 }

@@ -125,6 +125,10 @@ def analyse(path, manifest):
                 expected_rate=manifest["samplerate_hz"], observed_metadata=metadata_text
             ),
         ) from e
+    kind = manifest.get("analysis_kind", "burst")
+    require(kind in ("burst", "idle"), "Unknown analysis_kind", "configuration")
+    if kind == "idle":
+        return analyse_idle(path, manifest, data, hz)
     rows = []
     state = dict(expected=manifest["expected_values"], sample=None)
 
@@ -201,6 +205,90 @@ def analyse(path, manifest):
     )
 
 
+def analyse_idle(path, manifest, data, hz):
+    """Prove one idle data sequence, not DUT capture suppression."""
+    require(len(data) > 1, "empty capture", "acquisition")
+    low = next((index for index, value in enumerate(data) if not value & 128), None)
+    if low is not None:
+        raise Failure("waveform", "/AS asserted in idle capture", dict(sample=low))
+    expected = manifest["expected_values"]
+    require(
+        expected == list(range(16)),
+        "Idle stimulus requires the 0..15 sequence",
+        "configuration",
+    )
+    # Compress data transitions. Data pins float before/after the bounded run;
+    # only the complete timed sequence establishes the driven interval.
+    starts = [0] + [
+        i for i in range(1, len(data)) if (data[i] & 15) != (data[i - 1] & 15)
+    ]
+    ends = starts[1:] + [len(data)]
+    values = [data[i] & 15 for i in starts]
+    candidates = [
+        i
+        for i in range(len(values) - len(expected) + 1)
+        if values[i : i + len(expected)] == expected
+    ]
+    require(len(candidates) == 1, "Expected one complete idle data sequence 0..15")
+    first = candidates[0]
+    period = manifest["data_period_us"]
+    rows = []
+    for n, value in enumerate(expected):
+        index = first + n
+        duration = (ends[index] - starts[index]) * 1000000 / hz
+        # First/last intervals include unknown acquisition lead/trail and pin
+        # release. Interior transitions independently establish exact timing.
+        valid = duration >= period - 2 if n in (0, 15) else abs(duration - period) <= 2
+        if not valid:
+            raise Failure(
+                "waveform",
+                "Idle data hold outside timing tolerance",
+                dict(
+                    value=value,
+                    sample=starts[index],
+                    expected_us=period,
+                    observed_us=duration,
+                    partial_measurements=rows,
+                ),
+            )
+        rows.append(
+            dict(
+                value=value,
+                start_sample=starts[index],
+                end_sample=ends[index],
+                hold_us=duration,
+            )
+        )
+    return dict(
+        capture=str(path),
+        capture_sha256=digest(path),
+        sample_rate=hz,
+        analysis_kind="idle",
+        assertions=16,
+        values=expected,
+        measurements=rows,
+        observed_falls=[],
+        strobe="high throughout capture",
+        evidence_scope="stimulus-only",
+        limits="First/last data hold includes unobservable lead-in/release; data outside the sequence may float. No DUT capture count or IRQ was observed.",
+    )
+
+
+def acceptance(manifest):
+    if manifest.get("analysis_kind") == "idle":
+        return dict(
+            status="stimulus_passed",
+            category=None,
+            stimulus_status="passed",
+            experiment_status="incomplete",
+            dut_evidence=dict(
+                status="not_observed",
+                reason="RP2350 observer firmware is not implemented; no DUT capture count or IRQ evidence.",
+            ),
+        )
+    return dict(status="passed", category=None)
+
+
 def command(args, category="build", timeout=180):
     argv = list(map(str, args))
     print("+ " + shlex.join(argv), flush=True)
@@ -244,7 +332,12 @@ def source_identity(m):
     # Hash source/config inputs as well as recording Git state. Build products,
     # dependency caches and evidence captures are not first-party build inputs.
     inputs = {}
-    for folder in ("src", "lab", "cmake", "tests/feasibility/generator-check/src"):
+    for folder in (
+        "src",
+        "lab",
+        "cmake",
+        m.get("source_dir", "tests/feasibility/generator-check/src"),
+    ):
         for path in sorted((ROOT / folder).rglob("*")):
             if path.is_file():
                 inputs[str(path.relative_to(ROOT))] = digest(path)
@@ -968,14 +1061,14 @@ def physical_run(m, args, artifact):
                     (args.output / "acquisition.log").read_text(errors="replace")
                 )
                 report["waveform"] = analyse(args.output / "capture.sr", m)
-                report.update(status="passed", category=None)
+                report.update(acceptance(m))
             finally:
                 if console is not None:
                     try:
                         console.close()
                     except (OSError, Failure) as e:
                         report["cleanup_error"] = str(e)
-                        if report["status"] == "passed":
+                        if report["status"] in ("passed", "stimulus_passed"):
                             raise Failure(
                                 "transport", "stop cleanup failed: " + str(e)
                             ) from e
@@ -1130,7 +1223,7 @@ def main(argv=None):
     p.add_argument(
         "--session",
         type=Path,
-        default=ROOT / "build/feasibility/generator-check/session.json",
+        help="RAM-load session (default: build/feasibility/EXPERIMENT/session.json)",
     )
     p.add_argument(
         "--usb-path",
@@ -1158,6 +1251,8 @@ def main(argv=None):
             f"{m.get('id')}: unimplemented. Read {args.manifest.parent/'README.md'} for prerequisites; no operations performed.",
             "unimplemented",
         )
+        if args.session is None:
+            args.session = ROOT / "build/feasibility" / m["id"] / "session.json"
         profile = (
             None if args.stage in ("build", "analyse") else read_profile(args.bench)
         )
@@ -1259,7 +1354,7 @@ def main(argv=None):
                 args.output.mkdir(parents=True)
             try:
                 analysis_report.update(
-                    status="passed", category=None, waveform=analyse(args.capture, m)
+                    **acceptance(m), waveform=analyse(args.capture, m)
                 )
             except Failure as error:
                 analysis_report.update(

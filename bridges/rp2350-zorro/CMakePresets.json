@@ -39,6 +39,15 @@
         "PICO_BOARD": "pico",
         "PICO_PLATFORM": "rp2040"
       }
+    },
+    {
+      "name": "stimulus-c0-rp2040",
+      "inherits": "stimulus-rp2040",
+      "binaryDir": "${sourceDir}/build/stimulus-c0-rp2040",
+      "cacheVariables": {
+        "STIMULUS_EXPERIMENT": "C0-idle",
+        "STIMULUS_TARGET": "feasibility_c0_idle"
+      }
     }
   ],
   "buildPresets": [
@@ -57,6 +66,10 @@
     {
       "name": "stimulus-rp2040",
       "configurePreset": "stimulus-rp2040"
+    },
+    {
+      "name": "stimulus-c0-rp2040",
+      "configurePreset": "stimulus-c0-rp2040"
     }
   ],
   "testPresets": [

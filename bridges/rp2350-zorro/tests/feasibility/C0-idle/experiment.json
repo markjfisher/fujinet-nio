@@ -1,9 +1,47 @@
 {
   "id": "C0",
   "title": "Idle capture suppression",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
+  "status": "implemented",
+  "stage": "C0 stimulus validation only; DUT capture suppression remains unobserved",
   "stimulus": "/AS high while data changes",
   "expected": "No DUT captures or IRQ activity",
-  "requires": "W0; USB-observable RP2350 capture firmware and idle stimulus"
+  "requires": "W0; USB-observable RP2350 capture firmware and idle stimulus",
+  "preset": "stimulus-c0-rp2040",
+  "target": "feasibility_c0_idle",
+  "source_dir": "tests/feasibility/C0-idle/src",
+  "analysis_kind": "idle",
+  "data_gpio": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "strobe_gpio": 6,
+  "analyzer_channels": [
+    "D0",
+    "D1",
+    "D2",
+    "D3",
+    "D7"
+  ],
+  "expected_values": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "samplerate_hz": 1000000,
+  "data_period_us": 210
 }
