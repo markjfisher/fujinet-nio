@@ -910,38 +910,26 @@ def load_dut(m, args, artifact):
     print("Keep the Core2350B connected. picotool will force its compatible USB "
           f"firmware into the loader at USB {args.dut_usb_path} (up to {args.timeout:g}s).", flush=True)
     deadline = time.monotonic() + args.timeout
-    selected = info = None
+    selected = None
     while time.monotonic() < deadline:
         candidates = [d for d in usb_devices() if d["path"] == args.dut_usb_path]
         require(len(candidates) <= 1, "Ambiguous DUT USB path", "transport")
         if candidates:
             candidate = candidates[0]
             access(candidate)
-            possible = command([PICOTOOL, "info", "-a", "-f", "--bus", candidate["bus"],
-                                "--address", candidate["address"]], "transport", 10)
-            if re.search(r"(?im)^\s*(?:type|device type):\s*RP2350\b", possible):
-                selected, info = candidate, possible
-                break
+            selected = candidate
+            break
         time.sleep(0.2)
-    require(selected is not None, "Timed out waiting for compatible RP2350 DUT USB device", "transport")
+    require(selected is not None, "Timed out waiting for DUT USB path", "transport")
     snapshot_dir = args.session.parent / "artifacts"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     snapshot = snapshot_dir / ("dut-" + uuid.uuid4().hex + ".elf")
     with snapshot.open("xb") as stream:
         stream.write(artifact.read_bytes())
     snapshot.chmod(0o400)
-    # The forced info call reboots back to application mode, which can change
-    # the USB address. Re-select by stable physical path before forced load.
-    deadline = time.monotonic() + args.timeout
-    selected = None
-    while time.monotonic() < deadline:
-        refreshed = [d for d in usb_devices() if d["path"] == args.dut_usb_path]
-        require(len(refreshed) <= 1, "Ambiguous DUT USB path", "transport")
-        if refreshed:
-            selected = refreshed[0]
-            break
-        time.sleep(0.2)
-    require(selected is not None, "DUT USB path did not re-enumerate after identification", "transport")
+    # A single forced load performs the application-to-BOOTSEL handoff and
+    # transfer atomically. A preceding forced info command would reboot the
+    # DUT back to its application and race this load.
     command([PICOTOOL, "load", "-v", "-x", snapshot, "-f", "--bus", selected["bus"],
              "--address", selected["address"]], "transport", 30)
     deadline = time.monotonic() + args.timeout
@@ -959,7 +947,7 @@ def load_dut(m, args, artifact):
                     "DUT re-enumerated on a different serial port", "transport")
             record = dict(protocol=contract["protocol"], firmware_sha256=digest(snapshot),
                           artifact_snapshot=str(snapshot), usb_path=selected["path"],
-                          serial_port=str(port), picotool_info=info, boot_id=boot_id())
+                          serial_port=str(port), boot_id=boot_id())
             save(args.session.with_name("dut-session.json"), record)
             print("Validated DUT RAM session saved; use --dut-port " + str(port))
             return

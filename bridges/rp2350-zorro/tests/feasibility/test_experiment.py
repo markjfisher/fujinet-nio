@@ -1211,13 +1211,14 @@ class Experiments(unittest.TestCase):
         dut_runtime = dict(dut_bootsel, pid="000a")
         manifest = self.c0_manifest()
         with (
-            patch.object(e, "usb_devices", side_effect=[[dut_bootsel], [dut_bootsel], [dut_runtime]]),
+            patch.object(e, "usb_devices", side_effect=[[dut_bootsel], [dut_runtime]]),
             patch.object(e, "access"),
             patch.object(e, "preferred_serial_port", return_value=dut_port),
             patch.object(e, "command", return_value="type: RP2350") as command,
             contextlib.redirect_stdout(io.StringIO()),
         ):
             e.load_dut(manifest, args, artifact)
+        self.assertEqual([call.args[0][1] for call in command.call_args_list], ["load"])
         load_args = next(call.args[0] for call in command.call_args_list if call.args[0][1] == "load")
         image_index = next(index for index, value in enumerate(load_args) if str(value).endswith(".elf"))
         self.assertLess(image_index, load_args.index("-f"))
