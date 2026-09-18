@@ -50,6 +50,14 @@ class ReportSummaryTests(unittest.TestCase):
     def test_missing_optional_fields(self):
         self.assertEqual(summary.format_report({"status": "failed"}), "Stimulus status: failed")
 
+    def test_dut_observed_counters_are_presented(self):
+        output = summary.format_report({
+            "status": "passed",
+            "dut_evidence": {"status": "observed", "observed": {
+                "capture_count": 0, "capture_irq_count": 0}},
+        })
+        self.assertIn("DUT observed: capture_count=0, capture_irq_count=0", output)
+
     def test_unknown_analysis_kind_uses_generic_output(self):
         output = summary.format_report({"status": "passed", "waveform": {"analysis_kind": "future"}})
         self.assertIn("Stimulus status: passed", output)

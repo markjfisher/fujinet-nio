@@ -2,13 +2,14 @@
 
 Start with **[generator-check](generator-check/README.md)**. It is the independent
 RP2040 equipment check we already captured, now packaged for you to build, load,
-run and analyse. It is **not C1 completion**: C1 needs the RP2350 to capture and
-report the stimulus. The RP2350 observer has not been implemented.
+run and analyse. It is **not C1 completion**: C1 needs asserted-strobe patterns
+and ordered RP2350 captures. C0 now supplies the shared USB-observable capture
+observer and proves the idle suppression baseline.
 
 | Folder | Purpose | Status |
 | --- | --- | --- |
 | [generator-check](generator-check/README.md) | Independent 0–15 W0 waveform | Implemented; interactive runner plus separate stages |
-| [C0-idle](C0-idle/README.md) | No capture without assertion; stimulus oracle | Implemented; DUT observation pending |
+| [C0-idle](C0-idle/README.md) | No capture without assertion; stimulus and DUT counters | Implemented; requires physical two-board run |
 | [C1-patterns](C1-patterns/README.md) | Exact captured patterns and counts | Planned |
 | [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Planned |
 | [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Planned |

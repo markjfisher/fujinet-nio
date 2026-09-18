@@ -43,6 +43,11 @@
       }
     },
     {
+      "name": "dut-c0-rp2350",
+      "inherits": "firmware",
+      "binaryDir": "${sourceDir}/build/dut-c0-rp2350"
+    },
+    {
       "name": "stimulus-c0-rp2040",
       "inherits": "stimulus-rp2040",
       "binaryDir": "${sourceDir}/build/stimulus-c0-rp2040",
@@ -68,6 +73,10 @@
     {
       "name": "stimulus-rp2040",
       "configurePreset": "stimulus-rp2040"
+    },
+    {
+      "name": "dut-c0-rp2350",
+      "configurePreset": "dut-c0-rp2350"
     },
     {
       "name": "stimulus-c0-rp2040",

@@ -274,19 +274,56 @@ def analyse_idle(path, manifest, data, hz):
     )
 
 
-def acceptance(manifest):
+def acceptance(manifest, dut_evidence=None):
     if manifest.get("analysis_kind") == "idle":
+        if manifest.get("dut") and dut_evidence is not None:
+            return dict(
+                status="passed",
+                category=None,
+                stimulus_status="passed",
+                experiment_status="passed",
+                dut_evidence=dut_evidence,
+            )
         return dict(
             status="stimulus_passed",
             category=None,
             stimulus_status="passed",
-            experiment_status="incomplete",
-            dut_evidence=dict(
-                status="not_observed",
-                reason="RP2350 observer firmware is not implemented; no DUT capture count or IRQ evidence.",
+                experiment_status="incomplete",
+                dut_evidence=dict(
+                    status="not_observed",
+                    reason="This report has waveform evidence only; no DUT counter report was collected.",
             ),
         )
     return dict(status="passed", category=None)
+
+
+def dut_artifact(manifest):
+    dut = manifest.get("dut")
+    if not dut:
+        return None
+    return ROOT / "build" / dut["preset"] / (dut["target"] + ".elf")
+
+
+def dut_reset(console, protocol):
+    console.send("reset")
+    require(console.line(3) == "reset protocol=" + protocol,
+            "DUT did not acknowledge a fresh counter reset", "transport")
+
+
+def dut_report(console, contract):
+    protocol = contract["protocol"]
+    console.send("report")
+    line = console.line(3)
+    match = re.fullmatch(
+        r"result protocol=" + re.escape(protocol) +
+        r" capture_count=([0-9]+) capture_irq_count=([0-9]+)", line)
+    require(match is not None, "Malformed DUT counter report: " + line, "transport")
+    observed = dict(capture_count=int(match[1]), capture_irq_count=int(match[2]))
+    expected = contract["expected"]
+    require(all(observed.get(key) == value for key, value in expected.items()),
+            "DUT counters differ from manifest expectation", "dut",
+            )
+    return dict(status="observed", protocol=protocol, expected=expected, observed=observed)
 
 
 def command(args, category="build", timeout=180):
@@ -398,7 +435,10 @@ def build(m):
     bridge_setup.validate_compiler_cache(ROOT / "build" / m["preset"])
     before = source_identity(m)
     command([str(ROOT / "scripts/create-deps.sh"), "--mode", "all"])
-    for preset in ("host", "host-release", m["preset"]):
+    presets = ["host", "host-release", m["preset"]]
+    if m.get("dut"):
+        presets.append(m["dut"]["preset"])
+    for preset in presets:
         sdk_args = (
             []
             if preset.startswith("host")
@@ -428,10 +468,11 @@ def build(m):
         "Source/config changed during build; rerun build.",
         "build",
     )
-    artifact = ROOT / "build" / m["preset"] / (m["target"] + ".elf")
-    before["firmware_sha256"] = digest(artifact)
-    before["cmake_cache_sha256"] = digest(artifact.parent / "CMakeCache.txt")
-    save(artifact.with_suffix(".build.json"), before)
+    for artifact in filter(None, (ROOT / "build" / m["preset"] / (m["target"] + ".elf"), dut_artifact(m))):
+        identity = dict(before)
+        identity["firmware_sha256"] = digest(artifact)
+        identity["cmake_cache_sha256"] = digest(artifact.parent / "CMakeCache.txt")
+        save(artifact.with_suffix(".build.json"), identity)
 
 
 def usb_devices():
@@ -702,7 +743,7 @@ def validate_info(info, identity=None):
     return match[1].upper()
 
 
-def validate_ram_elf(artifact):
+def validate_ram_elf(artifact, ram_end=0x20042000):
     data = artifact.read_bytes()
     require(
         len(data) >= 52 and data[:7] == b"\x7fELF\x01\x01\x01",
@@ -713,7 +754,7 @@ def validate_ram_elf(artifact):
     entry, offset, size, count = header[3], header[4], header[8], header[9]
     require(
         header[1] == 40
-        and 0x20000000 <= (entry & ~1) < 0x20042000
+        and 0x20000000 <= (entry & ~1) < ram_end
         and size == 32
         and count > 0,
         "Expected ARM RAM-only entry/program headers",
@@ -732,8 +773,8 @@ def validate_ram_elf(artifact):
             require(
                 filesz <= memsz
                 and fileoff + filesz <= len(data)
-                and 0x20000000 <= physical < physical + memsz <= 0x20042000
-                and 0x20000000 <= virtual < virtual + memsz <= 0x20042000,
+                and 0x20000000 <= physical < physical + memsz <= ram_end
+                and 0x20000000 <= virtual < virtual + memsz <= ram_end,
                 "ELF contains non-RAM or invalid load segment; refusing load",
                 "transport",
             )
@@ -812,6 +853,76 @@ def load(m, args, artifact):
         "transport",
         "RAM CDC re-enumeration/access timed out; inspect permissions. No session recorded.",
     )
+
+
+def load_dut(m, args, artifact):
+    """Load a manifest-declared DUT image; port identity stays explicit."""
+    contract = m.get("dut")
+    if not contract:
+        return
+    require(args.dut_port and args.dut_usb_path,
+            "This experiment needs --dut-port /dev/serial/by-id/... and --dut-usb-path for the Core2350B",
+            "configuration")
+    require(artifact.is_file(), "Build DUT firmware before load", "transport")
+    port = Path(args.dut_port)
+    require(port.exists() and os.access(port, os.R_OK | os.W_OK),
+            "DUT serial port is unavailable: " + str(port), "transport")
+    validate_ram_elf(artifact, 0x20082000)
+    print("Hold BOOT while reconnecting the Core2350B DUT, then release BOOT. "
+          f"Waiting at most {args.timeout:g}s at USB {args.dut_usb_path}.", flush=True)
+    deadline = time.monotonic() + args.timeout
+    selected = info = None
+    while time.monotonic() < deadline:
+        candidates = [d for d in usb_devices() if d["path"] == args.dut_usb_path]
+        require(len(candidates) <= 1, "Ambiguous DUT USB path", "transport")
+        if candidates:
+            candidate = candidates[0]
+            access(candidate)
+            possible = command([PICOTOOL, "info", "-a", "--bus", candidate["bus"],
+                                "--address", candidate["address"]], "transport", 10)
+            if re.search(r"(?im)^\s*(?:type|device type):\s*RP2350\b", possible):
+                selected, info = candidate, possible
+                break
+        time.sleep(0.2)
+    require(selected is not None, "Timed out waiting for RP2350 DUT BOOTSEL", "transport")
+    snapshot_dir = args.session.parent / "artifacts"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = snapshot_dir / ("dut-" + uuid.uuid4().hex + ".elf")
+    with snapshot.open("xb") as stream:
+        stream.write(artifact.read_bytes())
+    snapshot.chmod(0o400)
+    command([PICOTOOL, "load", "-v", "-x", snapshot, "--bus", selected["bus"],
+             "--address", selected["address"]], "transport", 30)
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        if port.exists() and os.access(port, os.R_OK | os.W_OK):
+            record = dict(protocol=contract["protocol"], firmware_sha256=digest(snapshot),
+                          artifact_snapshot=str(snapshot), usb_path=selected["path"],
+                          serial_port=str(port), picotool_info=info, boot_id=boot_id())
+            save(args.session.with_name("dut-session.json"), record)
+            print("Validated DUT RAM session saved; CDC " + str(port))
+            return
+        time.sleep(0.2)
+    raise Failure("transport", "DUT CDC did not become available after RAM load")
+
+
+def validate_dut_session(m, args, artifact):
+    contract = m.get("dut")
+    if not contract:
+        return None
+    try:
+        record = json.loads(args.session.with_name("dut-session.json").read_text())
+    except (OSError, ValueError) as error:
+        raise Failure("transport", "Missing/invalid DUT session; use load again.") from error
+    require(record.get("protocol") == contract["protocol"]
+            and record.get("firmware_sha256") == digest(artifact)
+            and record.get("boot_id") == boot_id()
+            and args.dut_port == record.get("serial_port"),
+            "Stale or mismatched DUT session; use load again.", "transport")
+    port = Path(record["serial_port"])
+    require(port.exists() and os.access(port, os.R_OK | os.W_OK),
+            "DUT serial port is unavailable: " + str(port), "transport")
+    return port
 
 
 def validate_session(m, session, artifact, devices, profile):
@@ -902,9 +1013,10 @@ class Console:
                 return
         raise Failure("transport", "generator command synchronization failed")
 
-    def close(self):
+    def close(self, stop=True):
         try:
-            self.send("stop")
+            if stop:
+                self.send("stop")
         finally:
             try:
                 fcntl.ioctl(
@@ -969,7 +1081,7 @@ def await_acquisition(child, log, timeout=5):
     )
 
 
-def physical_run(m, args, artifact):
+def physical_run(m, args, artifact, dut_image=None):
     profile = read_profile(args.bench, required=True)
     require(
         args.output is not None,
@@ -983,10 +1095,13 @@ def physical_run(m, args, artifact):
     )
     args.output.mkdir(parents=True)
     report = dict(experiment=m["id"], status="failed", category="transport")
-    child = console = None
+    child = console = dut_console = None
     try:
+        require(not m.get("dut") or dut_image is not None,
+                "DUT contract requires a DUT firmware artifact", "configuration")
         session = json.loads(args.session.read_text())
         d = validate_session(m, session, artifact, usb_devices(), profile)
+        dut_port = validate_dut_session(m, args, dut_image) if m.get("dut") else None
         require(
             not args.usb_path or args.usb_path == d["path"],
             "--usb-path differs from validated session",
@@ -998,6 +1113,8 @@ def physical_run(m, args, artifact):
         report["firmware_sha256"] = digest(artifact)
         report["argv"] = sys.argv
         report["build_identity"] = session["build_identity"]
+        if dut_image is not None:
+            report["dut_firmware_sha256"] = digest(dut_image)
         report["analyzer_version"] = command(
             ["sigrok-cli", "--version"], "environment"
         ).strip()
@@ -1016,13 +1133,20 @@ def physical_run(m, args, artifact):
         assert_profile(args, profile)
         d = validate_session(m, session, artifact, usb_devices(), profile)
         port = serial_port(d)
+        require(dut_port is None or str(dut_port) != str(port),
+                "Generator and DUT serial ports must be distinct", "transport")
         with (
             (args.output / "console.log").open("w") as serial_log,
+            (args.output / "dut-console.log").open("w") as dut_log,
             (args.output / "acquisition.log").open("w") as acquisition_log,
         ):
             console = Console(port, serial_log)
+            if dut_port is not None:
+                dut_console = Console(dut_port, dut_log)
             try:
                 console.synchronize()
+                if dut_console is not None:
+                    dut_reset(dut_console, m["dut"]["protocol"])
                 cmd = [
                     "sigrok-cli",
                     "--loglevel",
@@ -1062,7 +1186,8 @@ def physical_run(m, args, artifact):
                     (args.output / "acquisition.log").read_text(errors="replace")
                 )
                 report["waveform"] = analyse(args.output / "capture.sr", m)
-                report.update(acceptance(m))
+                evidence = dut_report(dut_console, m["dut"]) if dut_console else None
+                report.update(acceptance(m, evidence))
             finally:
                 if console is not None:
                     try:
@@ -1074,6 +1199,12 @@ def physical_run(m, args, artifact):
                                 "transport", "stop cleanup failed: " + str(e)
                             ) from e
                     console = None
+                if dut_console is not None:
+                    try:
+                        dut_console.close(stop=False)
+                    except OSError as e:
+                        report["dut_cleanup_error"] = str(e)
+                    dut_console = None
     except BaseException as e:
         report.update(
             status="failed",
@@ -1142,7 +1273,10 @@ def doctor(m, args):
         print(f'{tool}: {found or "MISSING: install tool or source scripts/env.sh"}')
         if not found:
             problems.append(tool)
-    for mode in ("host", "stimulus"):
+    modes = ["host", "stimulus"]
+    if m.get("dut"):
+        modes.append("firmware")
+    for mode in modes:
         try:
             command(
                 [sys.executable, "scripts/bootstrap.py", "--mode", mode, "--check"],
@@ -1230,6 +1364,8 @@ def main(argv=None):
         "--usb-path",
         help="physical USB port (e.g. 1-2.3), shown by doctor; never bus address or EEEE serial",
     )
+    p.add_argument("--dut-port", help="Core2350B USB CDC port, preferably /dev/serial/by-id/..." )
+    p.add_argument("--dut-usb-path", help="Core2350B BOOTSEL physical USB path shown by doctor")
     p.add_argument(
         "--analyzer",
         default=None,
@@ -1270,6 +1406,7 @@ def main(argv=None):
             "configuration",
         )
         artifact = ROOT / "build" / m["preset"] / (m["target"] + ".elf")
+        dut_image = dut_artifact(m)
         if args.dry_run:
             print(
                 json.dumps(
@@ -1283,14 +1420,15 @@ def main(argv=None):
                         usb_path=args.usb_path,
                         manifest=str(args.manifest),
                         artifact=str(artifact),
+                        dut_artifact=str(dut_image) if dut_image else None,
                         session=str(args.session),
                         output=str(args.output),
                         actions={
                             "doctor": "check pinned sources, tools, USB permissions and analyzer scan",
-                            "build": "bootstrap pins; configure/build/test host Debug+Release; build stimulus and pinned USB picotool",
+                            "build": "bootstrap pins; configure/build/test host Debug+Release; build manifest stimulus/DUT images and pinned USB picotool",
                             "configure": "read RP2040 BOOTSEL identity; confirm enrollment; atomically save local bench profile",
-                            "load": "wait for selected RP2040 BOOTSEL; verify flash ID; RAM load idle image; follow physical USB port; persist hash session",
-                            "run": "validate fresh output and session; explicit Enter; start analyzer and verify data transfer; run; fresh completion; stop; analyse",
+                            "load": "wait for selected RP2040 then manifest DUT BOOTSEL; RAM load both images and persist sessions",
+                            "run": "validate sessions; reset DUT counters; explicit Enter; acquire/run/analyse; collect DUT report",
                             "analyse": "validate existing capture metadata and finite waveform",
                             "all": "build -> doctor -> configure if missing -> load -> run -> analyse",
                         }[args.stage],
@@ -1301,6 +1439,9 @@ def main(argv=None):
             return 0
         if args.stage in ("load", "run"):
             read_profile(args.bench, required=True)
+        if m.get("dut") and args.stage in ("all", "load", "run"):
+            require(args.dut_port and args.dut_usb_path,
+                    "This experiment needs --dut-port and --dut-usb-path", "configuration")
         if args.stage in ("all", "run") and args.output is None:
             args.output = (
                 ROOT
@@ -1334,9 +1475,10 @@ def main(argv=None):
             if profile is not None:
                 assert_profile(args, profile)
             load(m, args, artifact)
+            load_dut(m, args, dut_image)
         if args.stage in ("all", "run"):
             assert_profile(args, profile)
-            physical_run(m, args, artifact)
+            physical_run(m, args, artifact, dut_image)
         if args.stage == "analyse":
             require(
                 args.capture is not None,

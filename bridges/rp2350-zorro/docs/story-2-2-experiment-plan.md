@@ -4,8 +4,9 @@ Status: staged plan, updated 2026-09-17. The generator-first slice now has
 an isolated RAM-only RP2040 target, shared APIO instruction tests, USB control
 and initial independent analyzer captures; see the [generator guide](rp2040-generator.md)
 and [measured evidence](feasibility/results/2026-09-17-generator/report.md).
-This partially delivers E0–E2; the DUT observer and two-board runner are not
-implemented. Work-package checkboxes remain open until their full gates pass.
+The C0 DUT observer and two-board runner are implemented; their physical evidence
+run remains outstanding. Work-package checkboxes remain open until their full
+gates pass.
 Commands/targets in the original planned interface below remain future work
 unless explicitly documented as available in the generator guide. This remains
 one Story 2.2, not new dispatch stories, and is not accepted Zorro feasibility.

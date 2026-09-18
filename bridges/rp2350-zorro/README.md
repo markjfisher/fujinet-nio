@@ -120,14 +120,13 @@ belongs in ignored local configuration, not the experiment manifest.
 
 The [experiment plan](docs/story-2-2-experiment-plan.md) extends this skeleton with
 an independent RP2040 stimulus generator and USB-observable Core2350B DUT, then
-measured timing and later buffered real-bus validation. It defines staged wiring,
-test cases, implementation packages and evidence requirements. Its new firmware
-RP2350 observer and two-board runner remain planned. The isolated
-[RP2040 W0 generator](docs/rp2040-generator.md) is now available as the
-`stimulus-rp2040` preset (workspace `rp2040-stimulus` command), with explicit
-USB run/stop control and RAM-only ELF/UF2 outputs.
+measured timing and later buffered real-bus validation. C0 now has a RAM-only
+RP2350 capture-counter firmware and a combined two-board runner; later stimulus
+and real-bus cases remain planned. The isolated [RP2040 W0 generator](docs/rp2040-generator.md)
+uses the `stimulus-rp2040` preset with explicit USB run/stop control.
 
 Start repeatable bench work with the [experiment index](tests/feasibility/README.md)
 and `tests/feasibility/generator-check/run.sh`. Inspect, build, load, run and
 analyse independently; the default flow guides you through BOOTSEL and waits
-before output. C0–C10 are explicit planned cases, not completed experiments.
+before output. C0 is implemented pending its physical evidence run; C1–C10 remain
+explicit planned cases.

@@ -1171,12 +1171,55 @@ class Experiments(unittest.TestCase):
         def ready(*unused):
             (args.output / "capture.sr").write_bytes(self.capture.read_bytes())
 
+        # The generic generator path remains available for manifests without a
+        # DUT contract; C0's combined path is covered by the counter protocol
+        # test below.
+        manifest = self.c0_manifest()
+        manifest.pop("dut")
         with self.fake_run(usb, acquisition=ready) as (_, child, _):
             child.poll.side_effect = [None, 0]
-            e.physical_run(self.c0_manifest(), args, artifact)
+            e.physical_run(manifest, args, artifact)
         report = json.loads((args.output / "report.json").read_text())
         self.assertEqual(report["status"], "stimulus_passed")
         self.assertEqual(report["experiment_status"], "incomplete")
+
+    def test_dut_counter_protocol_and_acceptance(self):
+        contract = self.c0_manifest()["dut"]
+        console = Mock()
+        console.line.side_effect = [
+            "reset protocol=capture-counters-v1",
+            "result protocol=capture-counters-v1 capture_count=0 capture_irq_count=0",
+        ]
+        e.dut_reset(console, contract["protocol"])
+        evidence = e.dut_report(console, contract)
+        self.assertEqual(evidence["status"], "observed")
+        status = e.acceptance(self.c0_manifest(), evidence)
+        self.assertEqual(status["status"], "passed")
+        self.assertEqual(status["experiment_status"], "passed")
+        console.line.side_effect = None
+        console.line.return_value = "result protocol=capture-counters-v1 capture_count=1 capture_irq_count=1"
+        with self.assertRaises(e.Failure):
+            e.dut_report(console, contract)
+
+    def test_dut_load_and_session_are_artifact_bound(self):
+        artifact, usb, _, args = self.fixture()
+        dut_port = self.directory / "dut-cdc"
+        dut_port.touch()
+        args.dut_port = str(dut_port)
+        args.dut_usb_path = "1-3"
+        dut_bootsel = dict(usb, path="1-3", pid="000f", address=43)
+        manifest = self.c0_manifest()
+        with (
+            patch.object(e, "usb_devices", return_value=[dut_bootsel]),
+            patch.object(e, "access"),
+            patch.object(e, "command", return_value="type: RP2350"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            e.load_dut(manifest, args, artifact)
+        self.assertEqual(e.validate_dut_session(manifest, args, artifact), dut_port)
+        artifact.write_bytes(b"new image")
+        with self.assertRaises(e.Failure):
+            e.validate_dut_session(manifest, args, artifact)
 
     def test_source_identity_hashes_selected_experiment(self):
         root = self.directory / "bridge"

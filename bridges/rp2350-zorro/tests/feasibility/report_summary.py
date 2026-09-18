@@ -130,6 +130,11 @@ def format_report(report):
             lines.append("DUT evidence: " + str(dut["status"]))
         if dut.get("reason"):
             lines.append("DUT reason: " + str(dut["reason"]))
+        if isinstance(dut.get("observed"), dict):
+            counters = ", ".join(
+                f"{key}={value}" for key, value in dut["observed"].items()
+            )
+            lines.append("DUT observed: " + counters)
     if build.get("revision"):
         lines.append("Git revision: " + str(build["revision"]))
     firmware = report.get("firmware_sha256") or build.get("firmware_sha256")
