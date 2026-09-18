@@ -22,6 +22,7 @@ M = dict(
     status="implemented",
     preset="stimulus-rp2040",
     target="feasibility_stimulus",
+    source_dir="tests/feasibility/generator-check/src",
     samplerate_hz=1000000,
     analyzer_channels=["D0", "D1", "D2", "D3", "D7"],
     expected_values=list(range(16)),
@@ -1201,9 +1202,23 @@ class Experiments(unittest.TestCase):
             source.write_text("second")
             self.assertNotEqual(before, e.source_identity(self.c0_manifest()))
             self.assertEqual(generator, e.source_identity(M))
+            contract = source.with_name("stimulus_expectations.c")
+            contract.write_text("independent oracle")
+            with_contract = e.source_identity(self.c0_manifest())
+            self.assertIn(str(contract.relative_to(root)), with_contract["inputs"])
+            contract.write_text("changed oracle")
+            self.assertNotEqual(with_contract, e.source_identity(self.c0_manifest()))
+            self.assertEqual(generator, e.source_identity(M))
         self.assertIn(
             "tests/feasibility/C0-idle/src/stimulus_program.c", before["inputs"]
         )
+        self.assertIn("tests/feasibility/stimulus_expectations.h", before["inputs"])
+
+    def test_source_identity_requires_explicit_source_directory(self):
+        manifest = dict(M)
+        del manifest["source_dir"]
+        with self.assertRaises(KeyError):
+            e.source_identity(manifest)
 
     def test_c0_dry_run_uses_own_session_and_artifact(self):
         output = io.StringIO()

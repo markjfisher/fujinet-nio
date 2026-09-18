@@ -1,10 +1,14 @@
 if(NOT PICO_RP2040)
     message(FATAL_ERROR "Stimulus requires RP2040")
 endif()
-set(STIMULUS_EXPERIMENT "generator-check" CACHE STRING "Experiment stimulus source directory")
-set(STIMULUS_TARGET "feasibility_stimulus" CACHE STRING "Experiment firmware target")
-if(NOT STIMULUS_EXPERIMENT MATCHES "^(generator-check|C0-idle)$")
-    message(FATAL_ERROR "Unsupported stimulus experiment: ${STIMULUS_EXPERIMENT}")
+set(STIMULUS_EXPERIMENT "" CACHE STRING "Experiment stimulus source directory")
+set(STIMULUS_TARGET "" CACHE STRING "Experiment firmware target")
+if(NOT STIMULUS_EXPERIMENT MATCHES "^[A-Za-z0-9_-]+$" OR
+   NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/${STIMULUS_EXPERIMENT}/src/stimulus_program.c")
+    message(FATAL_ERROR "Select an experiment directory containing src/stimulus_program.c")
+endif()
+if(NOT STIMULUS_TARGET MATCHES "^[A-Za-z0-9_-]+$")
+    message(FATAL_ERROR "Select a stimulus firmware target")
 endif()
 add_executable(${STIMULUS_TARGET} lab/rp2040/main.c
     tests/feasibility/${STIMULUS_EXPERIMENT}/src/stimulus_program.c lab/rp2040/stimulus_control.c)

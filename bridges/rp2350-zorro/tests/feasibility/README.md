@@ -83,5 +83,47 @@ before running hardware stages. The runner reports missing access and stops;
 it does not fall back to arbitrary devices or a sudo retry. No device-specific
 `setfacl` sequence from the original session is part of the repeatable procedure.
 
+## Extending the stimulus tests
+
+The shared [host test](test_stimulus.c) links the selected experiment's APIO
+program and its independent `src/stimulus_expectations.c` oracle. The small
+[contract](stimulus_expectations.h) describes instruction words/count, data
+values, first-data cycle and cadence, the low strobe interval within each value,
+completion IRQ cycle, observation length and an abort point. Cycles are zero-based
+observations after each epio step. A zero low duration means /AS always stays high.
+The test checks every cycle, completion, repeat runs and rearm after abort.
+Expectation data is host-only and is not compiled into the RP2040 firmware.
+
+`generator-check` supplies 30-cycle values with /AS low during cycles 10–19
+of each value, and completion at cycle 481. `C0-idle` supplies 21-cycle values,
+no low strobe interval and completion at cycle 347. Both observe 550 cycles;
+their program words and timing expectations live beside their respective programs.
+These are generator tests: they provide no DUT capture/IRQ evidence.
+
+To implement C1 later (it is not implemented by this refactor):
+
+1. Supply `C1-*/src/stimulus_program.c` and `src/stimulus_expectations.c`, exporting
+   `stimulus_expected` using the contract above. Keep the expectations independent
+   of the program being checked.
+2. Fill in that directory's `experiment.json`, `README.md` and thin `run.sh`
+   wrapper. Set an explicit bridge-relative `source_dir`, firmware preset/target,
+   analyzer mapping and behavioral analysis fields. Reuse an existing
+   `analysis_kind` when its checks describe the new waveform.
+3. Add one `add_stimulus_test(directory executable ctest_name)` registration in
+   [stimulus_tests.cmake](../../cmake/stimulus_tests.cmake).
+4. Add configure/build presets in [CMakePresets.json](../../CMakePresets.json),
+   with a separate binary directory, `STIMULUS_EXPERIMENT` directory name and
+   `STIMULUS_TARGET`. No generic CMake branch or shared test edit is needed.
+5. Run the experiment's `run.sh build`: it tests both native configurations and
+   builds the RAM firmware. Then use its existing load/run/analyse stages for
+   physical validation.
+
+This contract covers the current W0 fixture: four data bits, a periodic optional
+active-low strobe, seven program words and the shared 16-value console protocol.
+A later experiment needing a new behavior (such as variable-length phases or
+different pin groups) should extend that capability explicitly, not add an
+experiment-name conditional. Provenance hashes the manifest-selected source
+directory (including its oracle), shared harness/contract and CMake inputs.
+
 The [Story 2.2 plan](../../docs/story-2-2-experiment-plan.md) remains authoritative
 for test-first PIO behavior, fixture changes, evidence and later real-bus gates.

@@ -5,6 +5,8 @@
   "stage": "Generator bring-up; not a C1 or RP2350 result",
   "preset": "stimulus-rp2040",
   "target": "feasibility_stimulus",
+  "source_dir": "tests/feasibility/generator-check/src",
+  "analysis_kind": "burst",
   "data_gpio": [
     2,
     3,

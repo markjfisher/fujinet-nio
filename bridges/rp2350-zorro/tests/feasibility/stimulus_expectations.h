@@ -1,0 +1,23 @@
+#ifndef STIMULUS_EXPECTATIONS_H
+#define STIMULUS_EXPECTATIONS_H
+#include <stddef.h>
+#include <stdint.h>
+
+/* Independent oracle, linked only into the host test. Cycle indices are
+ * zero-based observations AFTER stepping epio once. Before data_start_cycle
+ * the first value is expected; after the sequence the last value is held.
+ * /AS is high outside each sample's [low_offset, low_offset + low_cycles).
+ * A zero low_cycles describes an entirely deasserted strobe. */
+typedef struct {
+    const uint16_t *words;
+    size_t word_count;
+    const unsigned *values;
+    size_t value_count;
+    unsigned data_start_cycle, data_period_cycles;
+    unsigned low_offset, low_cycles;
+    unsigned completion_irq_cycle, observation_cycles;
+    unsigned abort_after_cycles;
+} stimulus_expectations;
+
+extern const stimulus_expectations stimulus_expected;
+#endif

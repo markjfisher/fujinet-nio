@@ -37,7 +37,9 @@
         "BRIDGE_MODE": "stimulus",
         "CMAKE_BUILD_TYPE": "Release",
         "PICO_BOARD": "pico",
-        "PICO_PLATFORM": "rp2040"
+        "PICO_PLATFORM": "rp2040",
+        "STIMULUS_EXPERIMENT": "generator-check",
+        "STIMULUS_TARGET": "feasibility_stimulus"
       }
     },
     {

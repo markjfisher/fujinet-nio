@@ -336,7 +336,7 @@ def source_identity(m):
         "src",
         "lab",
         "cmake",
-        m.get("source_dir", "tests/feasibility/generator-check/src"),
+        m["source_dir"],
     ):
         for path in sorted((ROOT / folder).rglob("*")):
             if path.is_file():
@@ -344,7 +344,8 @@ def source_identity(m):
     for path in sorted((ROOT / "scripts").iterdir()):
         if path.is_file() and path.suffix in (".py", ".sh"):
             inputs[str(path.relative_to(ROOT))] = digest(path)
-    inputs["tests/feasibility/experiment.py"] = digest(Path(__file__))
+    for name in ("experiment.py", "test_stimulus.c", "stimulus_expectations.h"):
+        inputs["tests/feasibility/" + name] = digest(Path(__file__).with_name(name))
     for name in ("CMakeLists.txt", "CMakePresets.json", "dependencies.json"):
         inputs[name] = digest(ROOT / name)
     return dict(

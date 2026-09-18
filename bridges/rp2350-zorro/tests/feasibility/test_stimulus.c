@@ -1,4 +1,5 @@
 #include "stimulus.h"
+#include "stimulus_expectations.h"
 #include <epio.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,19 +75,13 @@ static void control_test(void) {
 static epio_t *waveform_init(void) {
     uint16_t words[STIMULUS_WORDS];
     stimulus_program(words);
-#ifdef STIMULUS_TEST_IDLE
-    const uint16_t expected[] = {0xe02f, 0xe901, 0xa909, 0xe901,
-                                 0x0042, 0xc000, 0x0006};
-#else
-    const uint16_t expected[] = {0xe02f, 0xa909, 0xe900, 0xe801,
-                                 0x0041, 0xc000, 0x0006};
-#endif
-    CHECK(memcmp(words, expected, sizeof expected) == 0);
+    CHECK(stimulus_expected.word_count == STIMULUS_WORDS);
+    CHECK(memcmp(words, stimulus_expected.words, sizeof words) == 0);
     epio_t *e = epio_init();
     CHECK(e);
     stimulus_registers config = stimulus_config(100000);
     CHECK(config.clkdiv == (1u << 16));
-    CHECK(config.execctrl == (6u << 12));
+    CHECK(config.execctrl == ((STIMULUS_WORDS - 1u) << 12));
     CHECK(config.shiftctrl == 0);
     CHECK(config.pinctrl == (2u | (6u << 5) | (4u << 20) | (1u << 26)));
     CHECK(stimulus_config(125000000).clkdiv == (1250u << 16));
@@ -96,7 +91,7 @@ static epio_t *waveform_init(void) {
                        .shiftctrl = config.shiftctrl,
                        .pinctrl = config.pinctrl};
     epio_set_sm_reg(e, 0, 0, &r);
-    for (unsigned i = 0; i < 7; ++i)
+    for (unsigned i = 0; i < STIMULUS_WORDS; ++i)
         epio_set_instr(e, 0, i, words[i]);
     for (unsigned p = 2; p <= 6; ++p) {
         epio_set_gpio_output_control(e, p, 0);
@@ -106,30 +101,31 @@ static epio_t *waveform_init(void) {
     epio_enable_sm(e, 0, 0);
     return e;
 }
+static unsigned expected_strobe(unsigned cycle) {
+    const stimulus_expectations *x = &stimulus_expected;
+    if (cycle < x->data_start_cycle)
+        return 1;
+    unsigned elapsed = cycle - x->data_start_cycle;
+    unsigned phase = elapsed % x->data_period_cycles;
+    return !(elapsed / x->data_period_cycles < x->value_count &&
+             phase >= x->low_offset && phase - x->low_offset < x->low_cycles);
+}
 static void waveform_check(epio_t *e) {
-    for (unsigned cycle = 0; cycle < 550; ++cycle) {
+    const stimulus_expectations *x = &stimulus_expected;
+    for (unsigned cycle = 0; cycle < x->observation_cycles; ++cycle) {
         epio_step_cycles(e, 1);
         unsigned data = 0;
         for (unsigned p = 2; p <= 5; ++p)
             data |= ((epio_read_pin_states(e) >> p) & 1u) << (p - 2);
-#ifdef STIMULUS_TEST_IDLE
-        unsigned sample = cycle >= 11 ? (cycle - 11) / 21 : 0;
-#else
-        unsigned sample = cycle ? (cycle - 1) / 30 : 0;
-#endif
-        if (sample > 15)
-            sample = 15;
-        CHECK(data == sample);
-#ifdef STIMULUS_TEST_IDLE
-        CHECK(((epio_read_pin_states(e) >> 6) & 1u) == 1);
-        /* Generator completion IRQ is independent of the DUT's IRQ. */
-        CHECK(epio_peek_block_irq_num(e, 0, 0) == (cycle >= 347));
-#else
-        unsigned phase = cycle ? (cycle - 1) % 30 : 0;
-        CHECK(((epio_read_pin_states(e) >> 6) & 1u) ==
-              !(cycle >= 1 && cycle < 481 && phase >= 10 && phase < 20));
-        CHECK(epio_peek_block_irq_num(e, 0, 0) == (cycle >= 481));
-#endif
+        size_t sample = cycle >= x->data_start_cycle ?
+            (cycle - x->data_start_cycle) / x->data_period_cycles : 0;
+        if (sample >= x->value_count)
+            sample = x->value_count - 1;
+        CHECK(data == x->values[sample]);
+        CHECK(((epio_read_pin_states(e) >> 6) & 1u) == expected_strobe(cycle));
+        /* Generator completion IRQ, independent of any DUT observation. */
+        CHECK(epio_peek_block_irq_num(e, 0, 0) ==
+              (cycle >= x->completion_irq_cycle));
     }
 }
 static epio_t *waveform_rearm(epio_t *e) {
@@ -149,20 +145,23 @@ static epio_t *waveform_rearm(epio_t *e) {
     return e;
 }
 static void waveform_test(void) {
+    const stimulus_expectations *x = &stimulus_expected;
+    CHECK(x->value_count && x->data_period_cycles);
+    CHECK(x->low_offset <= x->data_period_cycles);
+    CHECK(x->low_cycles <= x->data_period_cycles - x->low_offset);
+    CHECK(x->observation_cycles > x->completion_irq_cycle);
+    CHECK(x->abort_after_cycles && x->abort_after_cycles <= x->completion_irq_cycle);
     epio_t *e = waveform_init();
     waveform_check(e);
     CHECK(epio_peek_block_irq_num(e, 0, 0) == 1);
     e = waveform_rearm(e);
     waveform_check(e); /* Rearm after a completed burst. */
     e = waveform_rearm(e);
-    epio_step_cycles(e, 15); /* Abort inside the first /AS low interval. */
-#ifdef STIMULUS_TEST_IDLE
-    CHECK((epio_read_pin_states(e) & 0x40) != 0);
-#else
-    CHECK((epio_read_pin_states(e) & 0x40) == 0);
-#endif
+    epio_step_cycles(e, x->abort_after_cycles);
+    CHECK(((epio_read_pin_states(e) >> 6) & 1u) ==
+          expected_strobe(x->abort_after_cycles - 1));
     e = waveform_rearm(e);
-    waveform_check(e); /* Independent full 16-sample oracle after abort. */
+    waveform_check(e); /* Independent full oracle after abort. */
     epio_free(e);
 }
 typedef struct {
@@ -258,9 +257,5 @@ int main(void) {
     control_test();
     waveform_test();
     console_test();
-#ifdef STIMULUS_TEST_IDLE
-    puts("C0 stimulus: control and 16 idle data values passed; no DUT observation");
-#else
-    puts("stimulus: control and 16 exact setup/low/hold samples passed");
-#endif
+    puts("stimulus: control, waveform contract and rearm passed; no DUT observation");
 }
