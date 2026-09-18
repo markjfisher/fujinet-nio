@@ -1214,10 +1214,14 @@ class Experiments(unittest.TestCase):
             patch.object(e, "usb_devices", side_effect=[[dut_bootsel], [dut_bootsel], [dut_runtime]]),
             patch.object(e, "access"),
             patch.object(e, "preferred_serial_port", return_value=dut_port),
-            patch.object(e, "command", return_value="type: RP2350"),
+            patch.object(e, "command", return_value="type: RP2350") as command,
             contextlib.redirect_stdout(io.StringIO()),
         ):
             e.load_dut(manifest, args, artifact)
+        load_args = next(call.args[0] for call in command.call_args_list if call.args[0][1] == "load")
+        image_index = next(index for index, value in enumerate(load_args) if str(value).endswith(".elf"))
+        self.assertLess(image_index, load_args.index("-f"))
+        self.assertLess(load_args.index("-f"), load_args.index("--bus"))
         self.assertEqual(e.validate_dut_session(manifest, args, artifact), dut_port)
         artifact.write_bytes(b"new image")
         with self.assertRaises(e.Failure):

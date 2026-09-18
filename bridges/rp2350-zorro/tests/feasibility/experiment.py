@@ -942,7 +942,7 @@ def load_dut(m, args, artifact):
             break
         time.sleep(0.2)
     require(selected is not None, "DUT USB path did not re-enumerate after identification", "transport")
-    command([PICOTOOL, "load", "-v", "-x", "-f", snapshot, "--bus", selected["bus"],
+    command([PICOTOOL, "load", "-v", "-x", snapshot, "-f", "--bus", selected["bus"],
              "--address", selected["address"]], "transport", 30)
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
