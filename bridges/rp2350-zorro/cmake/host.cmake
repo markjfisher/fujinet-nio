@@ -28,5 +28,6 @@ endfunction()
 include(cmake/stimulus_tests.cmake)
 add_test(NAME experiment_runner COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/test_experiment.py")
 add_test(NAME experiment_runner_optimized COMMAND "${Python3_EXECUTABLE}" -O "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/test_experiment.py")
+add_test(NAME report_summary COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/test_report_summary.py")
 
 add_test(NAME setup COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_setup.py")

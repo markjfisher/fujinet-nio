@@ -45,6 +45,16 @@ Failed runs remain evidence; a busy analyzer or missing capture cannot pass.
 PulseView can open saved captures once sigrok-cli releases the device.
 Build and loader command logs are retained under `build/feasibility/stage-logs/`.
 
+Summarise an existing report without rerunning its analysis or changing its verdict:
+
+```sh
+python3 tests/feasibility/report_summary.py build/feasibility/C0/<run>/report.json
+```
+
+The summary shows recorded status/evidence/provenance and uses the report's
+`analysis_kind` only to select a presentation formatter. It does not validate a
+capture or make an independent pass/fail decision.
+
 For another user or computer, follow [bench setup and portability](../../docs/bench-setup.md).
 Enrollment saves a per-bench flash identity; USB permission rules match shared
 device types and contain no private board serial.
