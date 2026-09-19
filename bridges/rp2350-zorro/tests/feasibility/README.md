@@ -75,6 +75,9 @@ capture uses a wider `unitsize`. Transaction records can declare
 `classification` as `accepted`, `rejected` or `uncertain`; their boundaries and
 sampled values are rendered directly. Only `idle` and semantic layouts such as
 sampling-window/repetition retain small `analysis_kind` presentation hooks.
+The visual mapping presents Sigrok `D0` as physical `CH1` (and so on); use an
+optional `physical_channel` lane field when another analyzer needs a different
+front-panel name.
 The analyser also derives `waveform.analyzer_coverage`: each data bus records
 its width and observed bit numbers, controls record their labels/channels, and
 `summary` makes partial instrumentation explicit, for example `3/16 data bits

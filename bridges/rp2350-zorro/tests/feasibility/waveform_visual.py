@@ -174,6 +174,7 @@ def lanes(config):
                                    role=declaration.get("role", "data"),
                                    polarity=bit.get("polarity", declaration.get("polarity", "active-high")),
                                    channel=bit.get("channel"),
+                                   physical_channel=bit.get("physical_channel", declaration.get("physical_channel")),
                                    sample_bit=channel_bit(bit),
                                    bus_label=declaration.get("label")))
         else:
@@ -181,6 +182,7 @@ def lanes(config):
                                role=declaration.get("role", "control"),
                                polarity=declaration.get("polarity", "active-high"),
                                channel=declaration.get("channel"),
+                               physical_channel=declaration.get("physical_channel"),
                                sample_bit=channel_bit(declaration)))
     if not result:
         raise ValueError("report has no visual lane configuration")
@@ -326,9 +328,17 @@ def lane_classes(lane):
     return "control-lane", "control"
 
 
+def display_channel(lane):
+    """Prefer physical labels over Sigrok's internal D-number names."""
+    if lane.get("physical_channel"):
+        return str(lane["physical_channel"])
+    match = re.fullmatch(r"D(\d+)", str(lane.get("channel", "")))
+    return "CH{}".format(int(match[1]) + 1) if match else str(lane.get("channel", ""))
+
+
 def lane_mapping(all_lanes):
-    """Show the manifest's logical-name to analyzer-channel correspondence."""
-    mapped = ["{}←{}".format(lane["label"], lane["channel"])
+    """Show the logical-signal to physical-analyzer-channel correspondence."""
+    mapped = ["{}←{}".format(lane["label"], display_channel(lane))
               for lane in all_lanes if lane.get("channel") is not None]
     return "Analyzer mapping: " + ", ".join(mapped) if mapped else None
 
