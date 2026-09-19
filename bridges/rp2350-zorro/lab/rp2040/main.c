@@ -85,7 +85,14 @@ static void start(void *unused) {
     pio_interrupt_clear(pio0, 0);
     pio_sm_set_pins_with_mask(pio0, 0, STIMULUS_IDLE_PIN_VALUES,
                               STIMULUS_PIN_MASK);
+    /* Read fixtures give the PIO program ownership of output-enable.  The
+       initial all-input state prevents the generator ever fighting DUT data
+       drive while it waits for the first command word. */
+#if STIMULUS_DYNAMIC_DIRECTIONS
+    pio_sm_set_pindirs_with_mask(pio0, 0, 0, STIMULUS_PIN_MASK);
+#else
     pio_sm_set_pindirs_with_mask(pio0, 0, STIMULUS_PIN_MASK, STIMULUS_PIN_MASK);
+#endif
     for (unsigned pin = STIMULUS_OUTPUT_BASE;
          pin < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++pin)
         pio_gpio_init(pio0, pin);

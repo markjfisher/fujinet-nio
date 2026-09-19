@@ -32,6 +32,10 @@ typedef struct {
        a host-only oracle, independent from the firmware's DMA source table. */
     const uint32_t *output_words;
     size_t output_word_count;
+    /* Optional pin-level transitions. Direction words may be consumed by a
+       dynamic-direction program without creating a visible pin transition. */
+    const uint32_t *visible_output_words;
+    size_t visible_output_word_count;
 } stimulus_expectations;
 
 extern const stimulus_expectations stimulus_expected;

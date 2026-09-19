@@ -9,6 +9,14 @@ if(NOT DUT_DRAIN_PAUSE_US MATCHES "^[0-9]+$" OR
    NOT DUT_PRESSURE_ASSERTIONS MATCHES "^[0-9]+$")
     message(FATAL_ERROR "DUT pressure settings must be non-negative integers")
 endif()
+set(DUT_BIDIRECTIONAL_EXPERIMENT "" CACHE STRING
+    "Experiment directory supplying src/response_values.c for the bidirectional DUT")
+if(NOT DUT_BIDIRECTIONAL_EXPERIMENT STREQUAL "" AND
+   (NOT DUT_CAPTURE_W1 OR
+    NOT DUT_BIDIRECTIONAL_EXPERIMENT MATCHES "^[A-Za-z0-9_-]+$" OR
+    NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/tests/feasibility/${DUT_BIDIRECTIONAL_EXPERIMENT}/src/response_values.c"))
+    message(FATAL_ERROR "Bidirectional DUT requires W1 and an experiment response_values.c")
+endif()
 if((DUT_DRAIN_PAUSE_US GREATER 0 OR DUT_PRESSURE_ASSERTIONS GREATER 0) AND
    (NOT DUT_CAPTURE_W1 OR DUT_DRAIN_PAUSE_US EQUAL 0 OR DUT_PRESSURE_ASSERTIONS EQUAL 0))
     message(FATAL_ERROR "DUT pressure mode requires W1 plus a non-zero pause and assertion count")
@@ -96,5 +104,19 @@ else()
         pico_enable_stdio_usb(feasibility_dut 1)
         pico_set_binary_type(feasibility_dut no_flash)
         pico_add_extra_outputs(feasibility_dut)
+        if(NOT DUT_BIDIRECTIONAL_EXPERIMENT STREQUAL "")
+            add_executable(feasibility_bidirectional
+                src/feasibility_bidirectional.c src/capture_program.c src/response_program.c
+                tests/feasibility/${DUT_BIDIRECTIONAL_EXPERIMENT}/src/response_values.c)
+            add_dependencies(feasibility_bidirectional bridge_validate)
+            target_include_directories(feasibility_bidirectional PRIVATE src "${DEPS}/apio/include")
+            target_link_libraries(feasibility_bidirectional PRIVATE pico_stdlib hardware_pio)
+            target_compile_options(feasibility_bidirectional PRIVATE -Wall -Wextra -Werror)
+            target_compile_definitions(feasibility_bidirectional PRIVATE CAPTURE_W1=1)
+            pico_enable_stdio_uart(feasibility_bidirectional 0)
+            pico_enable_stdio_usb(feasibility_bidirectional 1)
+            pico_set_binary_type(feasibility_bidirectional no_flash)
+            pico_add_extra_outputs(feasibility_bidirectional)
+        endif()
     endif()
 endif()

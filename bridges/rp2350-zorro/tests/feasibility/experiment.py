@@ -98,6 +98,12 @@ def generated_sample_count(manifest):
                     "width_control DUT values must match accepted transactions",
                     "configuration")
         return len(accepted)
+    if manifest.get("analysis_kind") == "read_response":
+        cases = manifest.get("read_transactions")
+        require(isinstance(cases, list) and cases and
+                all(isinstance(case.get("value"), int) for case in cases),
+                "read_response needs declared read_transactions", "configuration")
+        return len(cases)
     expected = manifest.get("expected_values")
     require(isinstance(expected, list) and expected,
             "experiment needs expected_values", "configuration")
@@ -107,12 +113,13 @@ def generated_sample_count(manifest):
 def generator_run_description(manifest):
     """Return the human wiring/prompt description without naming an experiment."""
     samples = generated_sample_count(manifest)
-    if manifest.get("analysis_kind") == "width_control":
-        cases = manifest["control_transactions"]
+    if manifest.get("analysis_kind") in ("width_control", "read_response"):
+        cases = manifest["read_transactions"] if manifest.get("analysis_kind") == "read_response" else manifest["control_transactions"]
         wiring = ("GP2..17 = D0..15, GP18 = /AS, GP19 = R/W, "
                   "GP20 = /UDS, GP21 = /LDS, GP22 = SELECT; "
                   "analyzer D0..D7 follows this experiment's W1 mapping; common ground.")
-        description = f"{len(cases)} /AS assertions ({samples} accepted writes)"
+        action = "read" if manifest.get("analysis_kind") == "read_response" else "accepted write"
+        description = f"{len(cases)} /AS assertions ({samples} {action}{'' if samples == 1 else 's'})"
     else:
         wiring = "GP2..5 = D0..3, GP6 = /AS, analyzer D0,D1,D2,D3,D7; common ground."
         description = f"{samples}-value burst"
@@ -193,7 +200,7 @@ def analyse(path, manifest):
             ),
         ) from e
     kind = manifest.get("analysis_kind", "burst")
-    require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition", "width_control"), "Unknown analysis_kind", "configuration")
+    require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition", "width_control", "read_response"), "Unknown analysis_kind", "configuration")
     if kind == "idle":
         result = analyse_idle(path, manifest, data, hz)
         return attach_visualization(result, manifest)
@@ -208,6 +215,9 @@ def analyse(path, manifest):
         return attach_visualization(result, manifest)
     if kind == "width_control":
         result = analyse_width_control(path, manifest, data, hz)
+        return attach_visualization(result, manifest)
+    if kind == "read_response":
+        result = analyse_read_response(path, manifest, data, hz)
         return attach_visualization(result, manifest)
     rows = []
     state = dict(expected=manifest["expected_values"], sample=None)
@@ -712,6 +722,61 @@ def analyse_width_control(path, manifest, data, hz):
                 limits="The analyzer observes /AS, SELECT, R/W, /UDS, /LDS and D0/D8/D15 only. Full 16-bit values are independently checked by the DUT report; this trace is not a simultaneous full-bus capture.")
 
 
+def analyse_read_response(path, manifest, data, hz):
+    """Validate a released generator bus, DUT /ACK, and the declared subset.
+
+    This is deliberately a capability decoder: lane/channel names and response
+    values come from the manifest, never from a C-number.
+    """
+    signals, cases = manifest.get("analyzer_signals"), manifest.get("read_transactions")
+    require(isinstance(signals, dict) and isinstance(cases, list) and cases,
+            "read_response needs analyzer_signals and read_transactions", "configuration")
+    def channel(name):
+        match = re.fullmatch(r"D([0-7])", str(signals.get(name)))
+        require(match is not None, "invalid read-response channel for " + name, "configuration")
+        return int(match[1])
+    as_bit, select_bit, rw_bit, ack_bit = (channel(name) for name in ("as", "select", "rw", "ack"))
+    bits = {}
+    for name, value in signals.get("data_bits", {}).items():
+        match = re.fullmatch(r"D([0-9]|1[0-5])", str(name))
+        channel_match = re.fullmatch(r"D([0-7])", str(value))
+        require(match and channel_match, "invalid read-response data_bits", "configuration")
+        bits[int(match[1])] = int(channel_match[1])
+    require(bits, "read_response needs observed data bits", "configuration")
+    falls = [index for index in range(1, len(data)) if data[index - 1] & (1 << as_bit) and not data[index] & (1 << as_bit)]
+    rises = [index for index in range(1, len(data)) if not data[index - 1] & (1 << as_bit) and data[index] & (1 << as_bit)]
+    require(len(falls) == len(rises) == len(cases), "unexpected read-response /AS edges")
+    rows, transactions = [], []
+    for index, (case, fall, rise) in enumerate(zip(cases, falls, rises)):
+        low_us = (rise - fall) * 1000000 / hz
+        require(abs(low_us - manifest["pulse_us"]) <= 2,
+                "read-response /AS width outside 2 us tolerance")
+        require(((data[fall] >> select_bit) & 1) == case["select"] and
+                ((data[fall] >> rw_bit) & 1) == case["rw"],
+                "read-response controls differ at /AS fall")
+        ack_low = [sample for sample in range(fall, rise) if not data[sample] & (1 << ack_bit)]
+        require(ack_low, "read-response /ACK was never asserted")
+        sample = ack_low[len(ack_low) // 2]
+        observed = {"D" + str(bit): 1 if data[sample] & (1 << channel_bit) else 0
+                    for bit, channel_bit in bits.items()}
+        for bit, actual in ((bit, observed["D" + str(bit)]) for bit in bits):
+            require(actual == ((case["value"] >> bit) & 1),
+                    "read-response observed data bit differs while /ACK is asserted")
+        row = dict(index=index, id=case["id"], value=case["value"], accepted=True,
+                   fall_sample=fall, rise_sample=rise, sample=sample, low_us=low_us,
+                   controls={"select": case["select"], "rw": case["rw"], "ack": case["ack"]},
+                   observed_data=observed)
+        rows.append(row)
+        transactions.append(dict(index=index, id=case["id"], accepted=True,
+            assert_sample=fall, release_sample=rise, sample_sample=sample,
+            capture_value=case["value"], phases=[dict(value=case["value"], start_sample=fall, end_sample=rise, hold_us=low_us)]))
+    return dict(capture=str(path), capture_sha256=digest(path), sample_rate=hz,
+                analysis_kind="read_response", assertions=len(rows), accepted_assertions=len(rows),
+                values=[row["value"] for row in rows], observed_falls=falls, observed_rises=rises,
+                measurements=rows, transactions=transactions, analyzer_signals=signals,
+                limits="The analyzer observes /AS, SELECT, R/W, /ACK and a three-bit data subset. Full response words come from the DUT report; 1 MHz timing is functional evidence only.")
+
+
 def acceptance(manifest, dut_evidence=None):
     evidence_scope = (
         "stimulus-and-dut"
@@ -765,24 +830,26 @@ def dut_report(console, contract):
     protocol = contract["protocol"]
     console.send("report")
     line = console.line(3)
-    match = re.fullmatch(
-        r"result protocol=" + re.escape(protocol) +
-        r" capture_count=([0-9]+) capture_irq_count=([0-9]+)"
-        r"(?: raw_capture_count=([0-9]+) rejected_capture_count=([0-9]+))?"
-        r"(?: pressure_pause_count=([0-9]+) pressure_pause_us=([0-9]+)"
-        r" pressure_expected_assertions=([0-9]+) unobserved_assertion_count=([0-9]+))?"
-        r" values=([0-9,]*)", line)
-    require(match is not None, "Malformed DUT counter report: " + line, "transport")
-    observed = dict(capture_count=int(match[1]), capture_irq_count=int(match[2]),
-                    values=[] if not match[9] else [int(value) for value in match[9].split(",")])
-    if match[3] is not None:
-        observed.update(raw_capture_count=int(match[3]),
-                        rejected_capture_count=int(match[4]))
-    if match[5] is not None:
-        observed.update(pressure_pause_count=int(match[5]),
-                        pressure_pause_us=int(match[6]),
-                        pressure_expected_assertions=int(match[7]),
-                        unobserved_assertion_count=int(match[8]))
+    tokens = line.split()
+    require(tokens and tokens[0] == "result", "Malformed DUT counter report: " + line, "transport")
+    fields = {}
+    for token in tokens[1:]:
+        key, separator, value = token.partition("=")
+        require(separator and key and key not in fields,
+                "Malformed DUT counter report: " + line, "transport")
+        fields[key] = value
+    require(fields.pop("protocol", None) == protocol,
+            "Malformed DUT counter report: " + line, "transport")
+    observed = {}
+    for key, value in fields.items():
+        if key.endswith("values"):
+            require(re.fullmatch(r"[0-9]*(?:,[0-9]+)*", value) is not None,
+                    "Malformed DUT values: " + line, "transport")
+            observed[key] = [] if not value else [int(item) for item in value.split(",")]
+        else:
+            require(re.fullmatch(r"[0-9]+", value) is not None,
+                    "Malformed DUT counter report: " + line, "transport")
+            observed[key] = int(value)
     expected = contract["expected"]
     differences = {key: dict(expected=value, observed=observed.get(key))
                    for key, value in expected.items()

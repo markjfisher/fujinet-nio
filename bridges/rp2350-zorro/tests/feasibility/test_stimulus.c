@@ -189,16 +189,18 @@ static void waveform_wide_check(epio_t *e) {
         epio_step_cycles(e, 1);
         uint32_t current = output_pins(e);
         if (current != prior) {
-            CHECK(observed < x->output_word_count);
-            if (current != x->output_words[observed])
+            size_t visible_count = x->visible_output_words ? x->visible_output_word_count : x->output_word_count;
+            const uint32_t *visible = x->visible_output_words ? x->visible_output_words : x->output_words;
+            CHECK(observed < visible_count);
+            if (current != visible[observed])
                 fprintf(stderr, "wide word %zu: expected 0x%x, observed 0x%x\n",
-                        observed, x->output_words[observed], current);
-            CHECK(current == x->output_words[observed++]);
+                        observed, visible[observed], current);
+            CHECK(current == visible[observed++]);
             prior = current;
         }
     }
     CHECK(fed == x->output_word_count);
-    CHECK(observed == x->output_word_count);
+    CHECK(observed == (x->visible_output_words ? x->visible_output_word_count : x->output_word_count));
     CHECK(epio_peek_block_irq_num(e, 0, 0) == 1);
 }
 #endif
