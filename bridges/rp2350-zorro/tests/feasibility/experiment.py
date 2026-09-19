@@ -1574,7 +1574,9 @@ def fresh_completion(console, samples=16, timeout=3):
 def check_acquisition_log(text):
     require(
         not re.search(
-            r"(?i)(failed|\berror\b|busy|denied|LIBUSB_TRANSFER_(?:ERROR|TIMED_OUT|STALL|NO_DEVICE|OVERFLOW))",
+            r"(?i)(failed to (?:claim|open|start)|\b(?:busy|denied)\b|"
+            r"LIBUSB_(?:ERROR|TRANSFER_(?:ERROR|TIMED_OUT|STALL|NO_DEVICE|OVERFLOW))|"
+            r"receive_transfer\(\): error)",
             text,
         ),
         "analyser failure; inspect acquisition.log",

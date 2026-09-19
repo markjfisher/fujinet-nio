@@ -234,6 +234,12 @@ class Experiments(unittest.TestCase):
         log = self.directory / "acquisition.log"
         child = Mock()
         child.poll.return_value = None
+        # sigrok probes a user firmware directory before using the packaged
+        # fx2lafw image; that first lookup is a normal, successful fallback.
+        e.check_acquisition_log(
+            "resource: Attempt to open '/home/user/fx2lafw-saleae-logic.fw' "
+            "failed: No such file. Opened '/usr/share/sigrok-firmware/fx2lafw-saleae-logic.fw'."
+        )
         log.write_text("fx2lafw: Failed to claim interface: busy")
         with self.assertRaises(e.Failure):
             e.await_acquisition(child, log)
