@@ -22,6 +22,9 @@ void response_program_init(void) {
     APIO_SET_SM(RESPONSE_SM);
     APIO_WRAP_BOTTOM();
     APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(RESPONSE_AS_PIN));
+    /* A write may occur between reads.  Do not drive data until the fixture
+       declares a read; this guard is what makes the program safe for C8. */
+    APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(19));
     APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(RESPONSE_AS_PIN));
     /* !NULL makes all 32 output-enable bits one; OUT PINS is configured for
        D[15:0], so the following pull supplies only the response value. */

@@ -754,20 +754,26 @@ def analyse_read_response(path, manifest, data, hz):
         require(((data[fall] >> select_bit) & 1) == case["select"] and
                 ((data[fall] >> rw_bit) & 1) == case["rw"],
                 "read-response controls differ at /AS fall")
+        direction = case.get("direction", "read")
+        require(direction in ("read", "write"), "invalid read-response direction", "configuration")
         ack_low = [sample for sample in range(fall, rise) if not data[sample] & (1 << ack_bit)]
-        require(ack_low, "read-response /ACK was never asserted")
-        sample = ack_low[len(ack_low) // 2]
+        if direction == "read":
+            require(ack_low, "read-response /ACK was never asserted")
+            sample = ack_low[len(ack_low) // 2]
+        else:
+            require(not ack_low, "write transaction unexpectedly asserted /ACK")
+            sample = fall
         observed = {"D" + str(bit): 1 if data[sample] & (1 << channel_bit) else 0
                     for bit, channel_bit in bits.items()}
         for bit, actual in ((bit, observed["D" + str(bit)]) for bit in bits):
             require(actual == ((case["value"] >> bit) & 1),
                     "read-response observed data bit differs while /ACK is asserted")
-        row = dict(index=index, id=case["id"], value=case["value"], accepted=True,
+        row = dict(index=index, id=case["id"], value=case["value"], accepted=direction == "read",
                    fall_sample=fall, rise_sample=rise, sample=sample, low_us=low_us,
                    controls={"select": case["select"], "rw": case["rw"], "ack": case["ack"]},
                    observed_data=observed)
         rows.append(row)
-        transactions.append(dict(index=index, id=case["id"], accepted=True,
+        transactions.append(dict(index=index, id=case["id"], accepted=direction == "read",
             assert_sample=fall, release_sample=rise, sample_sample=sample,
             capture_value=case["value"], phases=[dict(value=case["value"], start_sample=fall, end_sample=rise, hold_us=low_us)]))
     return dict(capture=str(path), capture_sha256=digest(path), sample_rate=hz,
