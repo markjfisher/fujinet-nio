@@ -187,8 +187,8 @@ def write_transactions_svg(report, path):
     sampling_window = waveform.get("analysis_kind") == "sampling_window"
     simple_transactions = all(len(event.get("phases") or []) == 1 for event in events)
     if sampling_window:
-        out.append('<text x="{}" y="{}" class="small" text-anchor="end">captured at /AS fall</text>'.format(
-            left - 14, detail_bottom + 37))
+        out.append('<text x="20" y="{}" class="small">captured at /AS fall</text>'.format(
+            detail_bottom + 37))
     for index, event in enumerate(events):
         fall, rise = event["assert_sample"], event["release_sample"]
         out.append('<line class="capture" x1="{:.2f}" y1="{}" x2="{:.2f}" y2="{}"/>'.format(
