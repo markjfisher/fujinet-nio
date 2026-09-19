@@ -1743,13 +1743,20 @@ def physical_run(m, args, artifact, dut_image=None):
                     (args.output / "acquisition.log").read_text(errors="replace")
                 )
                 report["waveform"] = analyse(args.output / "capture.sr", m)
+                # The capture is useful evidence even when the subsequent DUT
+                # check fails.  Render it as soon as analysis has established
+                # its transaction boundaries, then render it again below after
+                # DUT evidence is available for the final successful report.
+                import waveform_visual
+                visual = args.output / "waveform.svg"
+                waveform_visual.write_svg(report, visual)
+                report["waveform_visual"] = str(visual)
                 evidence = dut_report(dut_console, m["dut"]) if dut_console else None
                 report.update(acceptance(m, evidence))
-                if report["waveform"]["analysis_kind"] in ("burst", "held_active", "idle", "sampling_window", "repetition"):
-                    import waveform_visual
-                    visual = args.output / "waveform.svg"
-                    waveform_visual.write_svg(report, visual)
-                    report["waveform_visual"] = str(visual)
+                # Include the DUT's decoded values/counters in successful
+                # visual evidence.  The first rendering remains on disk if
+                # DUT evidence or acceptance raises a Failure above.
+                waveform_visual.write_svg(report, visual)
             finally:
                 if console is not None:
                     try:

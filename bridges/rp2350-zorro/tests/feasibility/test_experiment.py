@@ -520,6 +520,8 @@ class Experiments(unittest.TestCase):
         self.assertEqual(report["acquisition"]["duration_seconds"], 0.25)
         self.assertEqual(report["acquisition"]["samples"], 250000)
         self.assertIn("250000", report["acquisition"]["argv"])
+        self.assertEqual(report["waveform_visual"], str(args.output / "waveform.svg"))
+        self.assertTrue((args.output / "waveform.svg").is_file())
 
     def test_run_late_acquisition_error(self):
         artifact, usb, session, args = self.fixture()
