@@ -16,7 +16,7 @@
   "analyzer_channels": ["D0", "D1", "D2", "D3", "D7"],
   "expected_values": [1, 2, 5, 6],
   "samplerate_hz": 1000000,
-  "acquisition_seconds": 0.25,
+  "acquisition_seconds": 0.05,
   "sampling_cases": [
     {"id": "pre-10", "relation": "before", "offset_us": 10, "old": 0, "new": 1, "captured": 1, "pulse_us": 20},
     {"id": "post-10", "relation": "after", "offset_us": 10, "old": 2, "new": 3, "captured": 2, "pulse_us": 20},
