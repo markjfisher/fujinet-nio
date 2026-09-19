@@ -1367,12 +1367,13 @@ class Experiments(unittest.TestCase):
             value |= ((case["value"] >> 8) & 1) << 6
             value |= ((case["value"] >> 15) & 1) << 7
             return value
-        cases = self.c5_manifest()["control_transactions"]
+        manifest = self.c5_manifest()
+        cases = manifest["control_transactions"]
         parts = [bytes([sample(cases[0], 1)]) * 200]
         for index, case in enumerate(cases):
-            parts.append(bytes([sample(case, 0)]) * 100)
+            parts.append(bytes([sample(case, 0)]) * manifest["pulse_us"])
             if index + 1 < len(cases):
-                parts.append(bytes([sample(cases[index + 1], 1)]) * 100)
+                parts.append(bytes([sample(cases[index + 1], 1)]) * manifest["setup_us"])
         return b"".join(parts) + b"\x1d" * 100
 
     def test_c5_width_control_analysis_checks_controls_and_observed_bits(self):
@@ -1384,11 +1385,15 @@ class Experiments(unittest.TestCase):
         self.assertEqual(report["values"], self.c5_manifest()["dut"]["expected"]["values"])
         self.assertEqual(report["measurements"][0]["id"], "unselected")
         self.assertEqual(report["measurements"][-1]["id"], "walk-15")
+        self.assertEqual([row["low_us"] for row in report["measurements"]], [120.0] * 22)
+        self.assertEqual([row["setup_us"] for row in report["measurements"][1:]], [110.0] * 21)
 
     def test_c5_rejects_wrong_selected_control_or_observed_data_bit(self):
         baseline = bytearray(self.width_control_waveform())
         # Fifth /AS low is the first accepted write; corrupt SELECT there.
-        baseline[1000] &= ~0x02
+        manifest = self.c5_manifest()
+        first_accepted_low = 200 + 4 * (manifest["pulse_us"] + manifest["setup_us"])
+        baseline[first_accepted_low] &= ~0x02
         self.write_capture(baseline, metadata=META_ALL)
         with self.assertRaises(e.Failure) as error:
             e.analyse(self.capture, self.c5_manifest())

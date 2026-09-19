@@ -24,8 +24,8 @@
   },
   "samplerate_hz": 1000000,
   "acquisition_seconds": 0.05,
-  "pulse_us": 100,
-  "setup_us": 100,
+  "pulse_us": 120,
+  "setup_us": 110,
   "control_transactions": [
     {"id": "unselected", "value": 4951, "accepted": false, "select": 0, "rw": 0, "uds": 0, "lds": 0},
     {"id": "read", "value": 9320, "accepted": false, "select": 1, "rw": 1, "uds": 0, "lds": 0},

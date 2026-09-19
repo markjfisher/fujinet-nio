@@ -51,9 +51,12 @@ const uint32_t stimulus_output_words[STIMULUS_OUTPUT_WORD_COUNT] = {
 void stimulus_program(uint16_t words[STIMULUS_WORDS]) {
     words[0] = APIO_SET_Y(21); /* 22 high/low transaction pairs. */
     words[1] = APIO_PULL_BLOCK;
-    words[2] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 9); /* high/setup: 100 us */
+    /* At the 100 kHz PIO clock, the PULL/OUT/JMP instruction cadence gives
+     * a measured 110 us released interval and 120 us asserted interval.
+     * Keep the manifest's setup_us/pulse_us in step with this program. */
+    words[2] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 9); /* released interval */
     words[3] = APIO_PULL_BLOCK;
-    words[4] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 9); /* /AS phase: 100 us */
+    words[4] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 9); /* /AS asserted interval */
     words[5] = APIO_JMP_Y_DEC(1);
     words[6] = APIO_PULL_BLOCK;
     words[7] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 9);
