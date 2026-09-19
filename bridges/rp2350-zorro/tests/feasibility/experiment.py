@@ -563,8 +563,13 @@ def analyse_width_control(path, manifest, data, hz):
              if data[i - 1] & (1 << as_bit) and not data[i] & (1 << as_bit)]
     rises = [i for i in range(1, len(data))
              if not data[i - 1] & (1 << as_bit) and data[i] & (1 << as_bit)]
-    require(len(falls) == len(rises) == len(cases),
-            "unexpected width/control /AS edges")
+    if len(falls) != len(cases) or len(rises) != len(cases):
+        raise Failure(
+            "waveform",
+            "unexpected width/control /AS edges",
+            dict(expected_assertions=len(cases), observed_falls=falls,
+                 observed_rises=rises, sample_rate=hz),
+        )
     require(data[0] & (1 << as_bit) and data[-1] & (1 << as_bit),
             "width/control /AS must begin and end high")
 
@@ -579,8 +584,10 @@ def analyse_width_control(path, manifest, data, hz):
                 all(case[name] in (0, 1) for name in ("select", "rw", "uds", "lds")),
                 "invalid width/control transaction", "configuration")
         low_us = (rise - fall) * 1000000 / hz
-        require(abs(low_us - manifest["pulse_us"]) <= 2,
-                "width/control /AS width outside 2 us tolerance")
+        if abs(low_us - manifest["pulse_us"]) > 2:
+            raise Failure("waveform", "width/control /AS width outside 2 us tolerance",
+                          dict(transaction=case["id"], expected_us=manifest["pulse_us"],
+                               observed_us=low_us, fall_sample=fall, rise_sample=rise))
         if index:
             setup_us = (fall - rises[index - 1]) * 1000000 / hz
             require(abs(setup_us - manifest["setup_us"]) <= 2,
@@ -589,17 +596,27 @@ def analyse_width_control(path, manifest, data, hz):
             setup_us = None
         for name, channel_bit in control_bits.items():
             actual = 1 if data[fall] & (1 << channel_bit) else 0
-            require(actual == case[name], "width/control " + name + " differs at /AS fall")
-            require(all((sample >> channel_bit) & 1 == case[name]
-                        for sample in data[fall:rise]),
-                    "width/control " + name + " changes while /AS is low")
+            if actual != case[name]:
+                raise Failure("waveform", "width/control " + name + " differs at /AS fall",
+                              dict(transaction=case["id"], signal=name,
+                                   expected=case[name], observed=actual,
+                                   sample=fall))
+            if not all((sample >> channel_bit) & 1 == case[name]
+                       for sample in data[fall:rise]):
+                raise Failure("waveform", "width/control " + name + " changes while /AS is low",
+                              dict(transaction=case["id"], signal=name,
+                                   expected=case[name], assert_sample=fall,
+                                   release_sample=rise))
         observed = {}
         for data_bit, channel_bit in observed_data_bits.items():
             actual = 1 if data[fall] & (1 << channel_bit) else 0
             expected = (value >> data_bit) & 1
-            require(actual == expected and
-                    all((sample >> channel_bit) & 1 == expected for sample in data[fall:rise]),
-                    "width/control observed data bit differs while /AS is low")
+            if actual != expected or not all((sample >> channel_bit) & 1 == expected
+                                             for sample in data[fall:rise]):
+                raise Failure("waveform", "width/control observed data bit differs while /AS is low",
+                              dict(transaction=case["id"], signal="D" + str(data_bit),
+                                   expected=expected, observed=actual,
+                                   assert_sample=fall, release_sample=rise))
             observed["D" + str(data_bit)] = actual
         row = dict(index=index, id=case["id"], value=value,
                    accepted=case["accepted"], fall_sample=fall, rise_sample=rise,

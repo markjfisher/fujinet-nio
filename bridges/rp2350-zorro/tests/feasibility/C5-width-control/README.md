@@ -37,6 +37,17 @@ low/middle/high data bits. It is not a simultaneous 16-bit trace. The saved
 `waveform.svg` labels ignored assertions in orange and selected writes in green;
 the raw `capture.sr` remains available for PulseView.
 
+After reconnecting USB, use `./run.sh doctor` before a hardware run. The stored
+paths are the physical hub topology, not changing USB addresses or `ttyACM`
+numbers. `all` verifies the generator's enrolled flash ID at the configured
+generator path and the Core2350B's serial at the configured DUT path before
+loading. If the boards were moved to different hub sockets, copy the doctor's
+`configure-paths` command; otherwise do not change the local bench profile.
+
+If C5 reports a D8 waveform error, first re-seat CH7/D6 on the shared D8/GP10
+net. A floating CH7 produces many rapid transitions, whereas this C5 sequence
+changes D8 only for its `0x0100` walking-bit transaction.
+
 Run it with the stored W1 USB topology paths:
 
 ```sh

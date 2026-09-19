@@ -1390,8 +1390,18 @@ class Experiments(unittest.TestCase):
         # Fifth /AS low is the first accepted write; corrupt SELECT there.
         baseline[1000] &= ~0x02
         self.write_capture(baseline, metadata=META_ALL)
-        with self.assertRaises(e.Failure):
+        with self.assertRaises(e.Failure) as error:
             e.analyse(self.capture, self.c5_manifest())
+        self.assertEqual(error.exception.details["transaction"], "four-bit")
+        self.assertEqual(error.exception.details["signal"], "select")
+
+    def test_c5_edge_failure_retains_expected_and_observed_edges(self):
+        data = self.width_control_waveform() + b"\x1c" * 3 + b"\x1d" * 100
+        self.write_capture(data, metadata=META_ALL)
+        with self.assertRaises(e.Failure) as error:
+            e.analyse(self.capture, self.c5_manifest())
+        self.assertEqual(error.exception.details["expected_assertions"], 22)
+        self.assertEqual(len(error.exception.details["observed_falls"]), 23)
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):

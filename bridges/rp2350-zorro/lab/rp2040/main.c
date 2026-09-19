@@ -46,18 +46,25 @@ static dma_channel_config stimulus_dma_config;
 #endif
 static void release(void *unused) {
     (void)unused;
+    /* Preload the SIO data and direction latches while PIO still owns the
+     * pins.  Switching the function first exposes reset-value SIO latches and
+     * created a short false /AS assertion at the end of a W1 capture. */
+    if (driving) {
+        gpio_put_masked(STIMULUS_PIN_MASK, STIMULUS_IDLE_PIN_VALUES);
+        for (unsigned pin = STIMULUS_OUTPUT_BASE;
+             pin < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++pin)
+            gpio_set_dir(pin, GPIO_OUT);
+    }
     pio_sm_set_enabled(pio0, 0, false);
 #if STIMULUS_USE_DMA
     dma_channel_abort(stimulus_dma);
 #endif
-    /* Set every output to its declared idle value before making it an input. */
+    /* The prepared SIO pins now take over at their declared idle value. */
     if (driving) {
         for (unsigned pin = STIMULUS_OUTPUT_BASE;
              pin < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++pin) {
             gpio_set_function(pin, GPIO_FUNC_SIO);
-            gpio_set_dir(pin, GPIO_OUT);
         }
-        gpio_put_masked(STIMULUS_PIN_MASK, STIMULUS_IDLE_PIN_VALUES);
         busy_wait_us_32(10);
     }
     for (unsigned pin = STIMULUS_OUTPUT_BASE;
