@@ -89,16 +89,34 @@ class WaveformVisualTests(unittest.TestCase):
         report = {
             "experiment": "C3",
             "waveform": {"analysis_kind": "sampling_window", "sample_rate": 1_000_000,
-                         "measurements": [{"case": "pre-10", "relation": "before", "offset_us": 10, "captured": 1}],
-                         "transactions": [{"assert_sample": 100, "release_sample": 120,
-                                           "capture_value": 1,
-                                           "phases": [{"value": 1, "start_sample": 100, "end_sample": 120}]}]},
+                         "measurements": [
+                             {"case": "pre-10", "relation": "before", "offset_us": 10, "captured": 1},
+                             {"case": "post-10", "relation": "after", "offset_us": 10, "captured": 2},
+                             {"case": "pre-50", "relation": "before", "offset_us": 50, "captured": 5},
+                             {"case": "post-50", "relation": "after", "offset_us": 50, "captured": 6},
+                         ],
+                         "transactions": [
+                             {"assert_sample": 100, "release_sample": 120, "capture_value": 1,
+                              "phases": [{"value": 1, "start_sample": 100, "end_sample": 120}]},
+                             {"assert_sample": 200, "release_sample": 220, "capture_value": 2,
+                              "phases": [{"value": 2, "start_sample": 200, "end_sample": 210},
+                                         {"value": 3, "start_sample": 210, "end_sample": 220}]},
+                             {"assert_sample": 350, "release_sample": 360, "capture_value": 5,
+                              "phases": [{"value": 5, "start_sample": 350, "end_sample": 360}]},
+                             {"assert_sample": 440, "release_sample": 500, "capture_value": 6,
+                              "phases": [{"value": 6, "start_sample": 440, "end_sample": 490},
+                                         {"value": 7, "start_sample": 490, "end_sample": 500}]},
+                         ]},
         }
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "waveform.svg"
             visual.write_svg(report, output)
             text = output.read_text()
         self.assertIn("pre-10: data before /AS by 10 us; captured 0x1", text)
+        self.assertIn("captured at /AS fall", text)
+        self.assertIn('class="capture-phase"', text)
+        for captured in ("0x1", "0x2", "0x5", "0x6"):
+            self.assertIn(">" + captured + "<", text)
 
     def test_idle_svg_shows_data_changes_high_strobe_and_dut_counters(self):
         report = {

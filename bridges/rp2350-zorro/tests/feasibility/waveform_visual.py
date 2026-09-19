@@ -151,7 +151,7 @@ def write_transactions_svg(report, path):
         (report.get("build_identity") or {}).get("manifest", {}).get("title", "waveform evidence"))
     out = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
-        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.label{font-weight:bold}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.capture{stroke:#188038;stroke-width:2}.phase{fill:#e8f0fe;stroke:#1a73e8}.note{fill:#f1f3f4;stroke:#9aa0a6}</style>',
+        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.label{font-weight:bold}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.capture{stroke:#188038;stroke-width:2}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}</style>',
         '<rect width="100%" height="100%" fill="white"/>',
         '<text x="20" y="25" class="label">{}</text>'.format(html.escape(title)),
         '<text x="20" y="48" class="small">Authoritative event boundaries and decoded values come from experiment.py. The detailed traces below are saved logic-analyser samples.</text>',
@@ -184,11 +184,32 @@ def write_transactions_svg(report, path):
         if trace:
             out.append('<path class="{}" d="{}"/>'.format(path_class, trace))
 
+    sampling_window = waveform.get("analysis_kind") == "sampling_window"
     simple_transactions = all(len(event.get("phases") or []) == 1 for event in events)
+    if sampling_window:
+        out.append('<text x="{}" y="{}" class="small" text-anchor="end">captured at /AS fall</text>'.format(
+            left - 14, detail_bottom + 37))
     for index, event in enumerate(events):
         fall, rise = event["assert_sample"], event["release_sample"]
         out.append('<line class="capture" x1="{:.2f}" y1="{}" x2="{:.2f}" y2="{}"/>'.format(
             detail_x(fall), detail_top - 14, detail_x(fall), detail_bottom + 8))
+        if sampling_window:
+            # C3 can change data while /AS is low. The raw phase cells would
+            # describe that later transition, not necessarily the value sampled
+            # at the falling edge. Label that captured value independently and
+            # give even a 10-us event enough room for its complete hex label.
+            prior = events[index - 1]["assert_sample"] if index else detail_start
+            following = events[index + 1]["assert_sample"] if index + 1 < len(events) else detail_end
+            center = detail_x(fall)
+            left_bound = detail_x((prior + fall) / 2) + 2
+            right_bound = detail_x((fall + following) / 2) - 2
+            cell_width = min(48, right_bound - left_bound)
+            cell_left = min(max(center - cell_width / 2, left_bound), right_bound - cell_width)
+            out.append('<rect class="capture-phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(
+                cell_left, detail_bottom + 22, max(1, cell_width)))
+            out.append('<text x="{:.2f}" y="{}" class="small" text-anchor="middle">{}</text>'.format(
+                cell_left + cell_width / 2, detail_bottom + 37, value(event.get("capture_value"))))
+            continue
         if simple_transactions:
             # A pulse is narrower than its setup/released interval. Show the
             # captured value across the interval leading to the next /AS fall
