@@ -74,6 +74,42 @@ def acquisition_parameters(manifest, override=None):
     return seconds, samples
 
 
+def generated_sample_count(manifest):
+    """Return the generator's declared completion count for this capability."""
+    if manifest.get("analysis_kind") == "width_control":
+        cases = manifest.get("control_transactions")
+        require(isinstance(cases, list) and cases,
+                "width_control needs control_transactions", "configuration")
+        accepted = [case for case in cases if case.get("accepted") is True]
+        require(accepted, "width_control needs an accepted transaction", "configuration")
+        require(all(isinstance(case.get("value"), int) for case in accepted),
+                "width_control accepted transaction needs a value", "configuration")
+        expected = manifest.get("dut", {}).get("expected", {}).get("values")
+        require(expected == [case["value"] for case in accepted],
+                "width_control DUT values must match accepted transactions",
+                "configuration")
+        return len(accepted)
+    expected = manifest.get("expected_values")
+    require(isinstance(expected, list) and expected,
+            "experiment needs expected_values", "configuration")
+    return len(expected)
+
+
+def generator_run_description(manifest):
+    """Return the human wiring/prompt description without naming an experiment."""
+    samples = generated_sample_count(manifest)
+    if manifest.get("analysis_kind") == "width_control":
+        cases = manifest["control_transactions"]
+        wiring = ("GP2..17 = D0..15, GP18 = /AS, GP19 = R/W, "
+                  "GP20 = /UDS, GP21 = /LDS, GP22 = SELECT; "
+                  "analyzer D0..D7 follows this experiment's W1 mapping; common ground.")
+        description = f"{len(cases)} /AS assertions ({samples} accepted writes)"
+    else:
+        wiring = "GP2..5 = D0..3, GP6 = /AS, analyzer D0,D1,D2,D3,D7; common ground."
+        description = f"{samples}-value burst"
+    return samples, wiring, description
+
+
 def analyse(path, manifest):
     """Validate sigrok framing and all finite burst edges, independently of PIO."""
     metadata_text = ""
@@ -1610,15 +1646,7 @@ def physical_run(m, args, artifact, dut_image=None):
         report["analyzer_version"] = command(
             ["sigrok-cli", "--version"], "environment"
         ).strip()
-        if m.get("analysis_kind") == "width_control":
-            wiring = ("GP2..17 = D0..15, GP18 = /AS, GP19 = R/W, "
-                      "GP20 = /UDS, GP21 = /LDS, GP22 = SELECT; "
-                      "analyzer D0..D7 follows this experiment's W1 mapping; common ground.")
-            assertions = len(m["control_transactions"])
-            description = f"{assertions} /AS assertions ({len(m['expected_values'])} accepted writes)"
-        else:
-            wiring = "GP2..5 = D0..3, GP6 = /AS, analyzer D0,D1,D2,D3,D7; common ground."
-            description = f"{len(m['expected_values'])}-value burst"
+        samples, wiring, description = generator_run_description(m)
         print(f"Generator {session['flash_id']} on USB {d['path']}: {wiring}", flush=True)
         require(
             sys.stdin.isatty(),
@@ -1676,7 +1704,7 @@ def physical_run(m, args, artifact, dut_image=None):
                 require(
                     child.poll() is None, "analyser stopped before run", "acquisition"
                 )
-                fresh_completion(console, len(m["expected_values"]))
+                fresh_completion(console, samples)
                 try:
                     rc = child.wait(timeout=10)
                 except subprocess.TimeoutExpired as e:

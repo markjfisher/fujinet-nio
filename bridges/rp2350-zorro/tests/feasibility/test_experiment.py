@@ -87,6 +87,12 @@ class Experiments(unittest.TestCase):
         with self.assertRaises(e.Failure):
             e.acquisition_parameters(M, 0)
 
+    def test_c5_generator_description_uses_accepted_transactions(self):
+        samples, wiring, description = e.generator_run_description(self.c5_manifest())
+        self.assertEqual(samples, 18)
+        self.assertIn("GP2..17", wiring)
+        self.assertEqual(description, "22 /AS assertions (18 accepted writes)")
+
     def test_recorded_final_captures(self):
         for name in ("w0-final-001.sr", "w0-final-002.sr"):
             path = e.ROOT / "docs/feasibility/results/2026-09-17-generator" / name
