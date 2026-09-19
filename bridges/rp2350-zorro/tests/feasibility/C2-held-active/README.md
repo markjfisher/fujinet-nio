@@ -27,8 +27,7 @@ Core2350B GP1, shared ground, analyzer CH1–CH4 on D0–D3 and CH8 on `/AS`.
 `doctor` is only needed for initial setup or diagnosis. `configure-paths` stores
 the stable ports in the ignored local bench profile; repeat it after moving a
 cable. Later `all` runs build, load, acquire, analyse and print the report
-summary with no path arguments. The C2 fixture is flash-installed like C1. Since
-this bench already runs the C1 flash fixture, C2 loads without BOOTSEL. A fresh
-board still running only the Debug Probe needs one initial RP2040 BOOTSEL
-install. C2 uses APIO source, host EPIO tests and the shared DUT observer; it
-contains no `.pio` text source or production bridge ABI.
+summary with no path arguments. The C2 fixture is flash-loaded like C1, so its
+normal runs force-load both connected boards without BOOTSEL. C2 uses APIO
+source, host EPIO tests and the shared DUT observer; it contains no `.pio` text
+source or production bridge ABI.

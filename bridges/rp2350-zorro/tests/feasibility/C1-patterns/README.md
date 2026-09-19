@@ -39,9 +39,8 @@ Subsequent physical runs are one command:
 `all` builds, force-loads both boards using the saved paths, waits for Enter,
 captures and analyses the waveform, collects DUT counters, and prints the saved
 report summary. Repeat `configure-paths` after moving a cable; explicit paths
-remain available as a one-off override. The first C1 run replaces the RP2040
-Debug Probe firmware with this persistent flash fixture, so it needs one initial
-RP2040 BOOTSEL install. Later loads use both boards connected normally. A pass
+remain available as a one-off override. The flash-load path force-loads the
+connected RP2040 and Core2350B, so normal C1 runs do not require BOOTSEL. A pass
 requires both waveform and DUT evidence; offline `analyse` remains waveform-only
 and incomplete.
 

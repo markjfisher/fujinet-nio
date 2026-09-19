@@ -48,9 +48,8 @@ remain available for a one-off override.
 `all` builds the host and both firmware targets, force-loads the C3 RP2040
 fixture and RP2350 DUT using the saved paths, waits for your Enter before it
 drives signals, acquires and analyses the waveform, collects DUT evidence, and
-prints the report summary. C3 installs the reusable RP2040 fixture in flash like
-C1 and C2. With the existing flash fixture, both boards stay connected normally;
-a fresh RP2040 that still runs the Debug Probe needs one initial BOOTSEL install.
+prints the report summary. C3 uses the reusable RP2040 flash fixture like C1
+and C2; normal runs force-load both connected boards without BOOTSEL.
 `./run.sh --dry-run` prints the selected images, the 0.25-second / 250,000-sample
 default acquisition and every other planned step. Use `--acquisition-seconds N`
 only when a longer diagnostic capture is useful.

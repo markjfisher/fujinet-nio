@@ -36,8 +36,8 @@ profile retains those selections. Then an implemented two-board experiment runs
 with `./run.sh all --output NEW_DIRECTORY`: it builds, loads both selected images,
 waits for your explicit Enter before generating signals, acquires, analyses,
 collects DUT evidence, and prints the saved report summary. C0 still needs
-RP2040 BOOTSEL on each RAM load; C1–C3 use their flash fixtures after the initial
-install.
+RP2040 BOOTSEL on each RAM load; C1–C3 force-load their connected flash fixtures
+without BOOTSEL.
 
 Separate `doctor`, `build`, `configure`, `configure-paths`, `load`, `run` and
 `analyse` stages remain available for inspection and recovery. `--dry-run`
