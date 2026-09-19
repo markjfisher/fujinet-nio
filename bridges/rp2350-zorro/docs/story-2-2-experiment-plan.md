@@ -1,15 +1,12 @@
 # Story 2.2 — RP2350B Zorro-facing feasibility experiment
 
-Status: staged plan, updated 2026-09-17. The generator-first slice now has
-an isolated RAM-only RP2040 target, shared APIO instruction tests, USB control
-and initial independent analyzer captures; see the [generator guide](rp2040-generator.md)
-and [measured evidence](feasibility/results/2026-09-17-generator/report.md).
-The C0 DUT observer and two-board runner are implemented; their physical evidence
-run remains outstanding. Work-package checkboxes remain open until their full
-gates pass.
-Commands/targets in the original planned interface below remain future work
-unless explicitly documented as available in the generator guide. This remains
-one Story 2.2, not new dispatch stories, and is not accepted Zorro feasibility.
+Status: active feasibility plan, updated 2026-09-19. The reusable W0 framework,
+generator, Core2350B observer and C0–C4 are implemented. Local physical reports
+show passed two-board runs for C0–C4; their raw captures, console logs, firmware
+hashes and SVG evidence are retained under `build/feasibility/`. Those results
+establish the stated synthetic-fixture behavior only. They do not establish a
+Zorro-II timing margin, output safety, sustained transfer capacity, or real-bus
+compatibility. C5–C10 remain planned work in this same Story 2.2.
 
 ## Repeatable experiment contract — user amendment, 2026-09-17
 
@@ -20,14 +17,15 @@ its own folder under `tests/feasibility/`, using one `run.sh` starter. The
 captures support E0–E2, but do not complete C1 or establish DUT behavior.
 
 Each implemented folder contains its specific source/configuration, README,
-expected observations and tests or links to focused shared tests. Reference
+expected observations and tests or links to focused shared tests. It references
 shared board/USB/APIO support rather than copying another project. The starter
-must expose build, load, run and analyse separately, plus a visible interactive
-full flow. It must give BOOTSEL instructions and wait for the identified board,
-load only its verified target, wait for re-enumeration, explain signals and wait
-for the user to start. Preserve raw capture/logs, firmware hashes, failures and
-expected/observed verdicts in fresh output directories. Offline analysis and
-builds must not require connected boards.
+exposes build, load, run and analyse separately, and `all` is the visible,
+interactive build/load/run/analyse/report flow. It loads only its verified
+targets, waits for re-enumeration, explains signals and waits for the user to
+start. C0's RAM generator load requires RP2040 BOOTSEL; C1–C4 use the enrolled
+flash generator and force it into the loader without a button press. Preserve raw
+capture/logs, firmware hashes, failures and expected/observed verdicts in fresh
+output directories. Offline analysis and builds do not require connected boards.
 
 Permission setup is an explicit one-time prerequisite, checked by a doctor stage;
 no repeated ad hoc sudo commands, implicit system-policy changes or agent-private
@@ -37,9 +35,10 @@ failed analyzer acquisition or an unverified USB identity. The user permits
 replacing the RP2040 debug firmware, but RAM-only loading remains sufficient for
 the current generator check; no persistent flash change is required.
 
-Retain C0. Future matrix folders declare their missing software/hardware and
-refuse execution until implemented; they do not contain pretend test firmware.
-Completing this runner work does not close the full E0–E7 or real-bus gates.
+C0–C4 are real two-board experiments, not placeholders. C5–C10 declare their
+missing software/hardware and refuse execution until implemented; they do not
+contain pretend test firmware. Completing W0 does not close the full E0–E7 or
+real-bus gates.
 
 ## Goal and relationship to Story 2.1
 
@@ -50,9 +49,10 @@ the passive Zorro-II breakout and A500/Zorro-II adapter are available.
 
 Story 2.1 supplies [the isolated project](../README.md), pinned Pico SDK/apio/epio,
 separate host/firmware builds, shared APIO capture code, and enforced PIO policy.
-Its firmware currently discards captured words and has USB stdio disabled. This
-story adds observable DUT firmware, independent RP2040 stimulus, a repeatable
-experiment runner, more PIO behaviors, external traces and a feasibility report.
+Story 2.2 now adds the lab-only `feasibility_dut` observer, independent RP2040
+stimulus, a repeatable experiment runner, external traces and machine-readable
+reports. The production `bridge_capture` firmware still discards words and has
+USB stdio disabled; the observer is deliberately not a production bridge ABI.
 
 All work remains under `bridges/rp2350-zorro/`, except workspace task wrappers.
 No FujiBus/service integration, ESP32-S3 test project, RP2350-to-ESP protocol,
@@ -67,7 +67,7 @@ program is laboratory equipment. Story 2.3 owns bridge-to-ESP feasibility.
 | RP2040 development board | Available: TZT Pico-style purple AliExpress board, advertised 16 MB flash, USB-C, BOOTSEL, 40 pins; independent stimulus generator |
 | Breadboard and Dupont leads | Available; short signal paths and common GND for initial 3.3 V experiments |
 | Two USB data connections | Required, one console per board; identify each by reported role and unique board ID |
-| Logic analyzer | Available: inexpensive eight-channel USB unit labelled CH1–CH8 plus GNC/CLK (ground label as reported); exact model, USB connector, software, input limits and sample-rate capabilities unverified |
+| Logic analyzer | Available: inexpensive eight-channel USB fx2lafw-compatible unit labelled CH1–CH8 plus GNC/CLK; used through sigrok-cli/PulseView at 1 MHz for W0. Its electrical limits and higher simultaneous sample-rate capability remain to be recorded before tighter claims. |
 | Oscilloscope and suitable probes | HANMATEK DOS1102 available; verify probe configuration and usable measurement capabilities. Use for timing, analog edge quality and output release |
 | Multimeter | Simple unit available; use for continuity and supply/ground checks |
 | Weak bias / series resistors, later buffers | Select and document with the output/release fixture; needed before bidirectional tests, not guessed production parts |
@@ -104,12 +104,12 @@ check continuity, and retain a wiring photo. Do not mix profiles across binaries
 
 ### W0 — reproduce the existing four-bit capture
 
-User reports wiring W0 in progress (2026-09-17); completion and continuity checks
-are not yet recorded. Wire with both USB supplies disconnected. Use the multimeter
-to check the GPIO-to-GPIO connections and unintended shorts before powering.
-RP2040 stimulus/USB diagnostics are now available; RP2350 observer firmware
-remains to be implemented. Analyzer observations verify the generator signals,
-not a completed electrical continuity or DUT test record.
+W0 is the implemented, passing synthetic fixture for C0–C4. Wire with both USB
+supplies disconnected, and use the multimeter to check GPIO-to-GPIO connections
+and unintended shorts before powering. The analyzer, independent RP2040 and DUT
+USB report provide complementary evidence: the waveform proves the observed nets;
+the DUT report proves the PIO-to-ARM capture path. They are still not a completed
+electrical continuity record for another bench or a Zorro bus validation.
 
 | Net | RP2040 generator | Core2350B DUT | Initial state / ownership |
 | --- | --- | --- | --- |
@@ -187,26 +187,61 @@ A starved generator or incomplete trace invalidates that run, rather than counti
 as DUT success or failure. Use bounded buffers; prepare SRAM/DMA feeding only when
 needed and validate its effect on the generated waveform.
 
-The DUT initially compiles the existing `src/capture_program.c`. Add USB CDC
-reporting in a separate feasibility executable, preserving the existing skeleton.
-Collect data in bounded RAM with counters for received words, mismatches, overflow,
-interrupt status and resets; defer verbose output until the timed burst ends.
+The DUT compiles the shared `src/capture_program.c`. The separate feasibility
+executable adds USB CDC reporting while preserving the production skeleton. It
+collects data in bounded RAM with counters for received words and PIO IRQs; verbose
+output is deferred until the timed burst ends.
 Compare CPU polling/interrupt/DMA draining only as measured experiment variants,
 not a permanent firmware architecture. Preserve input synchronization initially;
 record any later change as a distinct experiment, never silently bypass it.
 
+### PIO-to-ARM architecture coverage
+
+The W0 experiments already use the intended capture ownership split on the
+Core2350B. `PIO0 SM0` executes an APIO-defined loop: wait for `/AS` low, sample
+the four input data pins, blocking-push the word to its RX FIFO, set a PIO IRQ,
+then wait for `/AS` high before accepting another assertion. The feasibility ARM
+firmware drains that RX FIFO into bounded RAM and reports the resulting counts and
+ordered values over USB after the burst. C0–C4 therefore prove the narrow
+hardware path **pin → PIO input shift register → PIO RX FIFO → ARM RAM**; the
+USB console is reporting, never pacing individual bus edges. Their EPIO tests
+exercise the same APIO capture source and assert FIFO and PIO-IRQ behavior.
+
+This is deliberately a baseline, not yet the final transfer architecture. The
+current ARM loop polls both the FIFO and the PIO IRQ; it has no NVIC PIO interrupt
+handler, DMA channel, address/select state machine, output state machine, or
+bounded descriptor/ownership hand-off. `PUSH BLOCK` stalls the capture state
+machine when its RX FIFO fills. That is safe against silent overwrite, but it can
+miss later assertions while stalled. C0–C4 are short enough that they do not
+measure this limit.
+
+The remaining experiments must preserve this division of responsibility rather
+than replacing timed PIO work with CPU GPIO loops:
+
+| Gate | Required architectural evidence |
+| --- | --- |
+| C5 | Record PIO instruction-memory, GPIO-window and state-machine allocation for widened capture/control. PIO must still sample the selected inputs; ARM consumes bounded records. |
+| C6 | Measure the PIO RX FIFO → ARM transfer under deliberate pressure. Compare the current polling baseline with an NVIC-IRQ and/or DMA drain variant, record stall/loss boundaries and select the viable bounded-transfer design. |
+| C7–C8 | Use a separately defined PIO output/turnaround path with data preloaded by ARM or DMA. ARM may arm and replenish bounded buffers; it must not toggle timing-critical response pins per access. |
+| C9 | Prove that reset/abort releases each PIO-owned output and invalidates any ARM-side records from the old run. |
+
+No production mailbox/register ABI is implied by these gates. They establish
+whether PIO-front-end capture plus a bounded PIO-to-ARM transfer can support the
+eventual bridge architecture.
+
 **APIO/RP2040 compatibility gate:** pinned apio v0.3.0 is RP2350-oriented and its
 `include/apio_reg.h` has RP2350 reset/pad/PIO register addresses. It must not perform
-hardware initialization on RP2040. Proposed lab implementation uses a shared C
+hardware initialization on RP2040. The lab implementation uses a shared C
 stimulus builder with APIO instruction-encoding macros and an RP2040 Pico SDK
 loader/configuration shim. The builder's emitted words and configuration manifest
 are used by the native epio stimulus tests and by the RP2040 loader; no hand-copied
 instruction arrays, `.pio` source or pioasm build step. Restrict instructions and
 configurations to the RP2040-supported subset and verify them against the pinned
-SDK/RP2040 documentation. Prove this approach in E0 before relying on it. If it
-fails, report the exact incompatibility and revise the shim/design; do not quietly
-weaken the APIO-only policy or switch to ESP32-S3. Epio is an RP2350 emulator, so
-passing these shared-instruction tests does not establish RP2040 hardware timing.
+SDK/RP2040 documentation. E0 has verified this seam for the W0 instruction subset:
+APIO supplies the encoded words while the RP2040 Pico SDK owns hardware setup.
+That does not claim upstream APIO hardware-initialization support for RP2040.
+Epio is an RP2350 emulator, so passing these shared-instruction tests does not
+establish RP2040 hardware timing.
 
 For every representable DUT behavior, record a failing epio test first, then a
 passing test against the same APIO source compiled for the DUT. Reuse the 2.1
@@ -231,11 +266,11 @@ First implement the named cases as deterministic tests and a physical run recipe
 
 | ID | Stimulus / fault | Independent expectation and evidence |
 | --- | --- | --- |
-| C0 idle | /AS high; change data | No captures or IRQ activity during the bounded observation |
-| C1 patterns | All 16 four-bit values, alternating 0xA/0x5, then seeded sequences | Exact sequence/full words; one capture for each assertion, no silent discard |
-| C2 held-active | Assert /AS once, hold it low while changing data | One sample only; held duration does not create another capture |
-| C3 sampling window | Change data at swept offsets before/after assertion | Map old/new sample transition; meet expectations only outside the measured uncertainty window |
-| C4 repetition | Repeated assertions, decreasing high gap and low width separately | Ordered exact counts above established limits; characterize failures below them |
+| C0 idle | /AS high; change data | **Implemented and passed on W0:** no captures or IRQ activity during the bounded observation |
+| C1 patterns | All 16 four-bit values, alternating 0xA/0x5, then seeded sequences | **Implemented and passed on W0:** exact sequence/full words; one capture for each assertion, no silent discard |
+| C2 held-active | Assert /AS once, hold it low while changing data | **Implemented and passed on W0:** one sample only; held duration does not create another capture |
+| C3 sampling window | Change data at swept offsets before/after assertion | **Implemented and passed on W0:** before/after values at 10 and 50 us offsets; unresolved edge timing remains unmeasured |
+| C4 repetition | Repeated assertions, decreasing high gap and low width separately | **Implemented and passed on W0:** 20 ordered captures across 100/50/20 us low and released-gap points. A failure-boundary sweep remains future work. |
 | C5 width/control | 4 -> 8 -> 16 bits; walking bits, R/W, lane strobes, SELECT | Correct data grouping; no response when unselected; selected lanes follow the recorded fixture rule |
 | C6 pressure | Pause/slow DUT drain until FIFO fills, then resume | Identify actual stall/loss behavior; no completion for unaccepted data; account for all losses/timeouts |
 | C7 reads | Generator releases data; DUT returns a known pattern on selected reads | Generator samples expected data; measured data-valid and /ACK timing, including unavailable data |
@@ -279,10 +314,10 @@ Each package ends in a reviewable result; they do not add entries to stories.yam
 
 | Package | Files / action | Completion test / gate |
 | --- | --- | --- |
-| [ ] E0: portability and fixture definition | `tests/feasibility/test_stimulus_program.c`, `tests/feasibility/generator-check/src/stimulus_program.c`, shared `lab/rp2040/stimulus.h`, `lab/rp2040/pio_loader.c`, `docs/feasibility/wiring.md` — test APIO instruction builder/SDK loading and map actual boards; record instruments | Native encoding/configuration checks, RP2040 compile and slow pulse/capture bring-up; physical header mapping confirmed, external waveform verification required before timing claims |
-| [ ] E1: integrated targets | Extend `CMakeLists.txt`, `CMakePresets.json`, `cmake/host.cmake`, `scripts/bootstrap.py`, `tests/test_tooling.py`; add `cmake/feasibility.cmake` — preserve 2.1 presets, isolate RP2040 platform/board validation and caches | Existing host Debug/Release, firmware and policy checks pass; new DUT and stimulus ELF/UF2 build; incorrect board/platform rejected |
-| [ ] E2: USB observability and runner | `src/feasibility/main.c`, `src/feasibility/console.{c,h}`, `lab/rp2040/main.c`, `tests/feasibility/run_bench.py`, `tests/feasibility/test_runner.py` — implement role/ID handshake, bounded logging, ARM/RUN/STOP/results, timeout cleanup | Fake-console tests for swapped IDs, stale run IDs, loss/timeout; two real consoles enumerate; outputs remain inactive until armed |
-| [ ] E3: physical four-bit reproduction | `tests/feasibility/cases/w0.json`, `tests/feasibility/test_capture_cases.c`; reuse `src/capture_program.c`; `docs/feasibility/results/` — execute C0–C4 | Exact data/count functional evidence, red/green for additions, external pulse/window traces where instruments permit; limits explicitly bounded |
+| [x] E0: portability and fixture definition | Shared `lab/rp2040/stimulus.h`, APIO instruction builders in each experiment source directory, Pico SDK loader/configuration shim and native EPIO stimulus tests | RP2040 builds and analyzer captures use the APIO words. W0 physical header mapping is recorded; 1 MHz analyzer evidence supports W0 functional/tens-of-microseconds observations, not tighter timing claims. |
+| [x] E1: integrated targets | `CMakeLists.txt`, `CMakePresets.json`, `cmake/host.cmake`, `scripts/bootstrap.py`, policy and tooling tests | Host Debug/Release, RP2040 stimulus and RP2350B DUT presets build independently; unsupported board/platform configurations are rejected. |
+| [x] E2: USB observability and runner | `src/feasibility_dut.c`, `lab/rp2040/main.c`, `tests/feasibility/experiment.py` and its host tests | Role-aware USB control, fresh-run evidence, bounded output release, DUT reset/report protocol and stored bench paths work through each experiment's `run.sh`. |
+| [x] E3: physical four-bit reproduction | C0–C4 directories, shared `src/capture_program.c`, EPIO capture tests and generated `report.json`/`waveform.svg` evidence | Passed local W0 two-board C0–C4 reports establish exact functional behavior at the declared conditions. The failure boundary, high-rate endurance and external timing margin remain open. |
 | [ ] E4: width/control/pressure | `src/feasibility/bus_program.{c,h}`, `tests/feasibility/test_bus_program.c`, `tests/feasibility/cases/w1.json`; extend generator and W1 wiring — C5/C6 | Test-first selectable groups and explicit pressure outcome; pin/SM/instruction budget recorded; no false acknowledgements or unreported loss |
 | [ ] E5: reads/turnaround/recovery | Extend E4 APIO source/tests/cases, DUT logging and RP2040 receiver — C7–C9 | Both-side expectations, external read-valid/release measurements and local timeout/reset cleanup; bidirectional fixture reviewed before outputs enabled |
 | [ ] E6: real-bus procedure and execution | `docs/feasibility/zorro-requirements.md`, `docs/feasibility/real-bus-procedure.md`, applicable `src/feasibility/` probe and focused Amiga exerciser only if needed — C10 | Breakout/adapter, reviewed buffering/power/direction and instruments available; cited bus limits and actual captures; no uncontrolled host address writes |
@@ -294,62 +329,44 @@ can begin before E4/E5 or the real-bus hardware arrives. Missing equipment block
 only the experiments needing it. Passing E3 alone cannot mark Story 2.2 physically
 accepted. Implementation remains incremental within the existing skeleton.
 
-Add discoverable workspace wrappers in `workspace:tools/build/nio_build/tasks.py`
-and argument routing in `workspace:tools/build/nio_build/cli.py`, with focused
-coverage under `workspace:tools/build/tests/`. Proposed names: `rp2040-stimulus`
-(build only), `rp2350-feasibility` (host checks plus both firmware builds), and
-`rp2350-feasibility-run` (explicit two-port hardware execution). `--list` and
-`--explain` must show the distinction. Existing `rp2350` tasks remain unchanged;
-no normal build task silently flashes boards, opens consoles or drives pins.
+The workspace exposes `scripts/build.sh rp2040-stimulus` as a discoverable,
+build-only generator task; it neither loads a board nor drives pins. The
+experiment-local `run.sh` remains the hardware interface because it owns the
+selected manifest, enrolled identities, bench topology, interactive arming and
+evidence directory. A future workspace wrapper may build all feasibility targets,
+but must not silently flash boards, open consoles or drive pins.
 
-## Planned build/run interface
+## Implemented build/run interface
 
-Existing regression command from the workspace: `scripts/build.sh rp2350`.
-The following commands are the implementation contract and **do not exist yet**.
-After sourcing the workspace environment, use this bridge as the working directory:
+The existing regression command remains `scripts/build.sh rp2350`. For a W0
+experiment, work in its own directory. After one-time enrollment and
+`configure-paths`, the normal reproducible command is:
 
 ```sh
-python3 scripts/bootstrap.py --mode host
-cmake --preset host
-cmake --build --preset host
-ctest --preset host
-cmake --preset host-release
-cmake --build --preset host-release
-ctest --preset host-release
-
-python3 scripts/bootstrap.py --mode firmware
-cmake --preset dut-feasibility
-cmake --build --preset dut-feasibility
-
-python3 scripts/bootstrap.py --mode stimulus
-cmake --preset stimulus-rp2040 -DPICO_BOARD="$RP2040_BOARD"
-cmake --build --preset stimulus-rp2040
-
-python3 tests/feasibility/run_bench.py \
-  --dut-port "$DUT_PORT" --stimulus-port "$STIMULUS_PORT" \
-  --wiring W0 --cases tests/feasibility/cases/w0.json \
-  --output "$NIO_WORKSPACE/build/feasibility/run-001"
+cd tests/feasibility/C4-repetition
+./run.sh all --output /tmp/c4-run-001
 ```
 
-`RP2040_BOARD` is the verified SDK board ID, not guessed from the chip family.
-Presets use separate `build/dut-feasibility` and `build/stimulus-rp2040` directories;
-firmware targets are `feasibility_dut` and `feasibility_stimulus` respectively.
-DUT retains `waveshare_core2350b` / `rp2350-arm-s`; stimulus uses `rp2040`, never
-RP2350 APIO MMIO setup. Share the locked dependency sources/picotool without
-sharing cross-compilation caches. Host tests remain SDK/ARM-independent.
+`all` builds host Debug/Release tests and the selected RP2040/RP2350 firmware,
+loads both images, resets the DUT counters, waits for explicit Enter before the
+burst, acquires the analyzer trace, collects the DUT report, analyses both sources
+of evidence, writes `report.json` and `waveform.svg`, then prints a summary.
+`doctor`, `configure`, `configure-paths`, `build`, `load`, `run`, `analyse` and
+`report` remain available for diagnosis and inspection; `all --dry-run` previews
+the same sequence without touching hardware.
 
-The runner owns bounded port I/O and must document/install its host serial
-prerequisite (for example a pinned pyserial dependency) before the command is
-considered ready. Flash each role's UF2 via its board's documented USB bootloader
-procedure, verify its returned identity, and only then arm the run. The exact
-button/port and physical header instructions are part of the selected board profile.
+The RP2350B target remains `waveshare_core2350b` / `rp2350-arm-s`; the RP2040
+stimulus target is `pico` / `rp2040`. Firmware and host builds use separate build
+directories and share only the pinned dependency sources/picotool. C0 loads a
+RAM-only generator and requires BOOTSEL. C1–C4 use a flash-installed generator,
+so their normal `all` run force-reboots the known connected board into the loader
+without a button press. The runner verifies enrolled identity and local topology
+paths before it arms either board.
 
-For future implementation, run the narrow firmware-owner gates above plus
-`python3 scripts/check_pio_policy.py` and the new runner tests. If workspace tools
-change, run `PYTHONPATH=tools/build:tools python3 -m unittest discover -s
-tools/build/tests -v` from the workspace after sourcing the environment. Library
-or driver edits are not planned; any necessary later Amiga exerciser requires its
-own named native/targeted build checks before implementation.
+Run the owning experiment's `run.sh build` after a source/toolchain change, plus
+`python3 scripts/check_pio_policy.py` and the focused runner tests when changing
+the framework. Library or driver edits are not planned; a later Amiga exerciser
+requires its own named native/targeted checks before implementation.
 
 ## Real-bus transition and acceptance
 
@@ -401,9 +418,9 @@ failed runs and explain exclusions; do not publish only the fastest passing run.
 
 ## Unresolved inputs and source notes
 
-- TZT RP2040 clone exact revision, flash device/SDK configuration and physical
-  header map; W0/W1 remain provisional until verified. The advertised memory size
-  is user-reported, not a verified board specification.
+- TZT RP2040 clone exact revision, flash device/SDK configuration and complete
+  physical header map. W0 has working mapped GPIOs; W1 remains provisional. The
+  advertised memory size is user-reported, not a verified board specification.
 - Eight-channel analyzer exact model, host capture software, input limits and
   simultaneous sample rate; HANMATEK DOS1102 probe configuration and usable
   measurement resolution. All three instruments are available, including the
@@ -411,8 +428,9 @@ failed runs and explain exclusions; do not publish only the fastest passing run.
   timing measurement against actual instrument settings.
 - Breakout and A500 adapter revisions/schematics, buffering circuit and timing
   source editions; resolve before E6, not by importing a speculative production ABI.
-- Verify the proposed APIO instruction-builder/RP2040-loader seam in E0; no claim
-  of upstream RP2040 support is made.
+- W0 verifies the APIO instruction-builder/RP2040-loader seam. It makes no claim
+  of upstream APIO RP2040 hardware-initialization support; a wider W1 program
+  needs its own instruction/configuration validation.
 
 Sources inspected: Story 2.1 files at firmware revision
 `6b654677281fdb551cd77e0de75e3a5fa67a0987`; pinned apio
