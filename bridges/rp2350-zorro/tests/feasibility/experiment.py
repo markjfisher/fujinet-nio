@@ -200,7 +200,10 @@ def analyse(path, manifest):
             ),
         ) from e
     kind = manifest.get("analysis_kind", "burst")
-    require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition", "width_control", "read_response"), "Unknown analysis_kind", "configuration")
+    require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition", "width_control", "read_response", "passive_trace"), "Unknown analysis_kind", "configuration")
+    if kind == "passive_trace":
+        result = analyse_passive_trace(path, manifest, data, hz)
+        return attach_visualization(result, manifest)
     if kind == "idle":
         result = analyse_idle(path, manifest, data, hz)
         return attach_visualization(result, manifest)
@@ -783,6 +786,21 @@ def analyse_read_response(path, manifest, data, hz):
                 limits="The analyzer observes /AS, SELECT, R/W, /ACK and a three-bit data subset. Full response words come from the DUT report; 1 MHz timing is functional evidence only.")
 
 
+def analyse_passive_trace(path, manifest, data, hz):
+    """Retain actual-bus evidence without asserting an invented timing rule."""
+    signals = manifest.get("analyzer_signals", {})
+    match = re.fullmatch(r"D([0-7])", str(signals.get("as")))
+    require(match is not None, "passive_trace needs /AS analyzer channel", "configuration")
+    bit = int(match[1])
+    falls = [index for index in range(1, len(data)) if data[index - 1] & (1 << bit) and not data[index] & (1 << bit)]
+    rises = [index for index in range(1, len(data)) if not data[index - 1] & (1 << bit) and data[index] & (1 << bit)]
+    require(falls, "passive trace has no /AS assertion", "waveform")
+    return dict(capture=str(path), capture_sha256=digest(path), sample_rate=hz,
+                analysis_kind="passive_trace", assertions=len(falls), values=[],
+                observed_falls=falls, observed_rises=rises, measurements=[],
+                limits="Passive trace retained. It is not a Zorro timing verdict until the requirement ledger, electrical configuration and instrument uncertainty are attached.")
+
+
 def acceptance(manifest, dut_evidence=None):
     evidence_scope = (
         "stimulus-and-dut"
@@ -791,11 +809,12 @@ def acceptance(manifest, dut_evidence=None):
     )
     if manifest.get("dut"):
         if evidence_scope == "stimulus-and-dut":
+            status = "evidence_collected" if manifest.get("evidence_only") else "passed"
             return dict(
-                status="passed",
+                status=status,
                 category=None,
                 stimulus_status="passed",
-                experiment_status="passed",
+                experiment_status="evidence_collected" if manifest.get("evidence_only") else "passed",
                 evidence_scope=evidence_scope,
                 dut_evidence=dut_evidence,
             )
@@ -856,7 +875,7 @@ def dut_report(console, contract):
             require(re.fullmatch(r"[0-9]+", value) is not None,
                     "Malformed DUT counter report: " + line, "transport")
             observed[key] = int(value)
-    expected = contract["expected"]
+    expected = contract.get("expected", {})
     differences = {key: dict(expected=value, observed=observed.get(key))
                    for key, value in expected.items()
                    if observed.get(key) != value}
@@ -1789,7 +1808,8 @@ def await_acquisition(child, log, timeout=5):
 
 
 def physical_run(m, args, artifact, dut_image=None):
-    profile = read_profile(args.bench, required=True)
+    external = bool(m.get("external_stimulus"))
+    profile = None if external else read_profile(args.bench, required=True)
     acquisition_seconds, acquisition_samples = acquisition_parameters(
         m, getattr(args, "acquisition_seconds", None)
     )
@@ -1809,51 +1829,55 @@ def physical_run(m, args, artifact, dut_image=None):
     try:
         require(not m.get("dut") or dut_image is not None,
                 "DUT contract requires a DUT firmware artifact", "configuration")
-        session = json.loads(args.session.read_text())
-        d = validate_session(m, session, artifact, usb_devices(), profile)
+        session = None if external else json.loads(args.session.read_text())
+        d = None if external else validate_session(m, session, artifact, usb_devices(), profile)
         dut_port = validate_dut_session(m, args, dut_image) if m.get("dut") else None
         require(
             not args.usb_path or args.usb_path == d["path"],
             "--usb-path differs from validated session",
             "transport",
         )
-        save(args.output / "session.json", session)
+        if session is not None:
+            save(args.output / "session.json", session)
         save(args.output / "manifest.json", m)
         save(args.output / "bench.json", profile)
         report["firmware_sha256"] = digest(artifact)
         report["argv"] = sys.argv
-        report["build_identity"] = session["build_identity"]
+        report["build_identity"] = provenance(artifact) if external else session["build_identity"]
         if dut_image is not None:
             report["dut_firmware_sha256"] = digest(dut_image)
         report["analyzer_version"] = command(
             ["sigrok-cli", "--version"], "environment"
         ).strip()
         samples, wiring, description = generator_run_description(m)
-        print(f"Generator {session['flash_id']} on USB {d['path']}: {wiring}", flush=True)
+        if external:
+            print("Passive real-bus capture: RP2040 generator is not loaded or connected to the bus.", flush=True)
+        else:
+            print(f"Generator {session['flash_id']} on USB {d['path']}: {wiring}", flush=True)
         require(
             sys.stdin.isatty(),
             "Interactive terminal required for explicit Enter before outputs",
             "configuration",
         )
-        input(
-            "Check wiring. Press Enter to arm acquisition and emit one "
-            f"{description} (Ctrl-C cancels): "
-        )
-        assert_profile(args, profile)
-        d = validate_session(m, session, artifact, usb_devices(), profile)
-        port = serial_port(d)
-        require(dut_port is None or str(dut_port) != str(port),
-                "Generator and DUT serial ports must be distinct", "transport")
+        input(("Check reviewed real-bus wiring. Press Enter to arm the passive 5 s capture; perform the bounded host accesses immediately (Ctrl-C cancels): " if external else
+            "Check wiring. Press Enter to arm acquisition and emit one " + f"{description} (Ctrl-C cancels): "))
+        if not external:
+            assert_profile(args, profile)
+            d = validate_session(m, session, artifact, usb_devices(), profile)
+            port = serial_port(d)
+            require(dut_port is None or str(dut_port) != str(port),
+                    "Generator and DUT serial ports must be distinct", "transport")
         with (
             (args.output / "console.log").open("w") as serial_log,
             (args.output / "dut-console.log").open("w") as dut_log,
             (args.output / "acquisition.log").open("w") as acquisition_log,
         ):
-            console = Console(port, serial_log)
+            console = Console(port, serial_log) if not external else None
             if dut_port is not None:
                 dut_console = Console(dut_port, dut_log)
             try:
-                console.synchronize()
+                if console is not None:
+                    console.synchronize()
                 if dut_console is not None:
                     dut_reset(dut_console, m["dut"]["protocol"])
                 cmd = [
@@ -1886,7 +1910,8 @@ def physical_run(m, args, artifact, dut_image=None):
                 require(
                     child.poll() is None, "analyser stopped before run", "acquisition"
                 )
-                fresh_completion(console, samples)
+                if console is not None:
+                    fresh_completion(console, samples)
                 try:
                     rc = child.wait(timeout=10)
                 except subprocess.TimeoutExpired as e:
@@ -2129,7 +2154,8 @@ def main(argv=None):
         )
         if args.session is None:
             args.session = ROOT / "build/feasibility" / m["id"] / "session.json"
-        profile = None if args.stage in ("build", "analyse") else read_profile(args.bench)
+        external = bool(m.get("external_stimulus"))
+        profile = None if external or args.stage in ("build", "analyse") else read_profile(args.bench)
         apply_profile_paths(args, profile)
         analyzer_override = args.analyzer
         args.analyzer = args.analyzer or (profile["analyzer"] if profile else "fx2lafw")
@@ -2182,7 +2208,7 @@ def main(argv=None):
                 )
             )
             return 0
-        if args.stage in ("load", "run", "configure-paths"):
+        if not external and args.stage in ("load", "run", "configure-paths"):
             read_profile(args.bench, required=True)
         if m.get("dut") and args.stage == "load":
             require(args.dut_usb_path,
@@ -2212,7 +2238,7 @@ def main(argv=None):
             build(m)
         if args.stage in ("doctor",):
             doctor(m, args)
-        if args.stage == "configure" or (args.stage == "all" and profile is None):
+        if not external and (args.stage == "configure" or (args.stage == "all" and profile is None)):
             selected = configure(args)
             if args.stage == "all":
                 args.usb_path = selected["path"]
@@ -2227,10 +2253,12 @@ def main(argv=None):
             if m.get("dut"):
                 require(args.dut_usb_path,
                         "This experiment needs --dut-usb-path or a configured bench DUT path", "configuration")
-            load(m, args, artifact)
+            if not external:
+                load(m, args, artifact)
             load_dut(m, args, dut_image)
         if args.stage in ("all", "run"):
-            assert_profile(args, profile)
+            if not external:
+                assert_profile(args, profile)
             physical_run(m, args, artifact, dut_image)
             if args.stage == "all":
                 print_report_summary(args.output / "report.json")

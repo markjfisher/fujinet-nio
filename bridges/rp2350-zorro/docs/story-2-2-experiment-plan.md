@@ -6,8 +6,10 @@ show passed two-board runs for C0–C5; their raw captures, console logs, firmwa
 hashes and SVG evidence are retained under `build/feasibility/`. Those results
 establish the stated synthetic-fixture behavior only. They do not establish a
 Zorro-II timing margin, output safety, sustained transfer capacity, or real-bus
-compatibility. C6 awaits its first physical W1 run; C7–C10 remain planned work
-in this same Story 2.2.
+compatibility. C6 passed on the physical W1 bench. C7–C9 now have buildable
+two-board firmware and explicit physical-fixture procedures; C10 has a passive
+real-bus evidence collector. Their physical evidence and any Zorro timing or
+electrical verdict remain open.
 
 ## Repeatable experiment contract — user amendment, 2026-09-17
 
@@ -280,11 +282,11 @@ First implement the named cases as deterministic tests and a physical run recipe
 | C3 sampling window | Change data at swept offsets before/after assertion | **Implemented and passed on W0:** before/after values at 10 and 50 us offsets; unresolved edge timing remains unmeasured |
 | C4 repetition | Repeated assertions, decreasing high gap and low width separately | **Implemented and passed on W0:** 20 ordered captures across 100/50/20 us low and released-gap points. A failure-boundary sweep remains future work. |
 | C5 width/control | 4 -> 8 -> 16 bits; walking bits, R/W, lane strobes, SELECT | **Implemented and physically passed on W1:** 22 assertions comprising four ignored controls and 18 selected writes. The current PIO fixture uses 120 us `/AS` low and 110 us released intervals. Analyzer checks controls plus D0/D8/D15; DUT reports the 18 full ordered words. |
-| C6 pressure | Pause DUT drain after first RX record until FIFO fills, then resume across a released interval | **Implemented; physical W1 run pending:** sixteen selected writes at 250 kHz PIO cadence, a PIO-only released delay, then four sentinels. `PUSH BLOCK` must retain five early records, account for eleven unobserved assertions, and capture all four recovery sentinels. |
-| C7 reads | Generator releases data; DUT returns a known pattern on selected reads | Generator samples expected data; measured data-valid and /ACK timing, including unavailable data |
-| C8 turnaround | Alternate read/write and lane selection; vary release gap | Correct first value after each change; measured release, no simultaneous drive; unselected bus stays released |
-| C9 recovery | Abort burst, soft-reset/reboot either endpoint, disconnect console | Outputs return to defined idle/released state; no old-run samples/replies; next armed run matches expected data |
-| C10 real bus | Defined actual-host accesses through reviewed interface | Trace each applicable bus requirement to captured timing/electrical evidence and pass/fail/untested verdict |
+| C6 pressure | Pause DUT drain after first RX record until FIFO fills, then resume across a released interval | **Implemented and physically passed on W1:** bounded FIFO stall, explicit loss accounting and ordered recovery sentinels. |
+| C7 reads | Generator releases data; DUT returns a known pattern on selected reads | **Implemented:** DUT PIO qualifies reads, drives a preloaded response and `/ACK`, then releases. Physical fixture evidence is pending. |
+| C8 turnaround | Alternate read/write and lane selection; vary release gap | **Implemented:** PIO-owned direction changes with an R/W guard preventing a response during the write. Physical release/no-contention evidence is pending. |
+| C9 recovery | Abort burst, soft-reset/reboot either endpoint, disconnect console | **Implemented:** fresh sessions/counters and ordered sentinel capture reject stale run evidence. Physical power-cycle/disconnect evidence is pending. |
+| C10 real bus | Defined actual-host accesses through reviewed interface | **Implemented collector:** RP2040 is not connected; passive DUT/analyzer capture reports `evidence_collected`, not a real-bus verdict. Reviewed mapping/buffering and physical evidence remain required. |
 
 C6 must preserve the baseline result even if it exposes a limitation: a blocking
 PUSH prevents FIFO overwrite but does not guarantee that later strobes are observed.

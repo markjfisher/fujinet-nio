@@ -1,9 +1,18 @@
 {
-  "id": "C10",
-  "title": "Representative real Zorro-II bus",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
-  "stimulus": "Bounded actual-host accesses via buffered interface",
-  "expected": "Requirements mapped to actual traces, margins and pass/fail/untested",
-  "requires": "Passive breakout, A500 adapter/host, reviewed buffering and authoritative timing requirements"
+  "id":"C10", "title":"Representative real Zorro-II bus passive trace", "status":"implemented",
+  "stage":"C10 passive real-bus evidence collection", "external_stimulus":true, "evidence_only":true,
+  "stimulus":"Bounded actual-host accesses performed by the operator through the reviewed breakout/interface",
+  "expected":"A retained passive trace and DUT capture report; no timing or electrical feasibility verdict is inferred automatically",
+  "requires":"Passive breakout, A500/Zorro-II adapter, approved level/buffer design, requirement ledger, and reviewed actual pin map",
+  "preset":"stimulus-c10-rp2040", "target":"feasibility_c10_marker", "source_dir":"tests/feasibility/C10-real-bus/src", "analysis_kind":"passive_trace", "load_mode":"flash",
+  "data_gpio":[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], "strobe_gpio":18,
+  "analyzer_channels":["D0","D1","D2","D3","D4","D5","D6","D7"],
+  "analyzer_signals":{"as":"D0","select":"D1","rw":"D2","uds":"D3","lds":"D4","data_bits":{"D0":"D5","D8":"D6","D15":"D7"}},
+  "samplerate_hz":1000000, "acquisition_seconds":5.0,
+  "expected_values":[0],
+  "dut":{"preset":"dut-c10-rp2350","target":"feasibility_dut","protocol":"capture-observer-v1","expected":{}},
+  "waveform_view":{"lanes":[
+    {"label":"D[15:0] observed subset","role":"data","width_bits":16,"bits":[{"label":"D15","channel":"D7","bus_bit":15},{"label":"D8","channel":"D6","bus_bit":8},{"label":"D0","channel":"D5","bus_bit":0}]},
+    {"label":"/LDS","role":"control","channel":"D4","polarity":"active-low"},{"label":"/UDS","role":"control","channel":"D3","polarity":"active-low"},{"label":"R/W","role":"control","channel":"D2","polarity":"active-high"},{"label":"SELECT","role":"control","channel":"D1","polarity":"active-high"},{"label":"/AS","role":"strobe","channel":"D0","polarity":"active-low"}
+  ],"transactions":{"boundary_label":"/AS","expected_label":"Actual-host assertions","report_label":"Passive DUT records","value_format":"hex"}}
 }

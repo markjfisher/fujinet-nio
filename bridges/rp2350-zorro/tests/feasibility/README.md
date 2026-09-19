@@ -15,11 +15,11 @@ observer and proves the idle suppression baseline.
 | [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Implemented; requires physical two-board run |
 | [C4-repetition](C4-repetition/README.md) | Repeated low-width/gap sweep | Implemented; requires physical two-board run |
 | [C5-width-control](C5-width-control/README.md) | W1 selected-write width and control | Implemented; requires physical two-board run and its documented eight-channel subset |
-| [C6-pressure](C6-pressure/README.md) | Bounded FIFO stall, explicit loss and recovery | Implemented; requires physical W1 run and its documented eight-channel subset |
-| [C7-reads](C7-reads/README.md) | Read response timing | Planned |
-| [C8-turnaround](C8-turnaround/README.md) | Direction changes/output release | Planned |
-| [C9-recovery](C9-recovery/README.md) | Reset, abort and recovery | Planned |
-| [C10-real-bus](C10-real-bus/README.md) | Buffered actual-host validation | Planned; later hardware required |
+| [C6-pressure](C6-pressure/README.md) | Bounded FIFO stall, explicit loss and recovery | Implemented; passed on the current W1 bench |
+| [C7-reads](C7-reads/README.md) | Read response timing | Implemented; needs reviewed bidirectional W1 fixture and physical evidence |
+| [C8-turnaround](C8-turnaround/README.md) | Direction changes/output release | Implemented; needs reviewed bidirectional W1 fixture and physical evidence |
+| [C9-recovery](C9-recovery/README.md) | Reset, abort and recovery | Implemented; physical fault/reconnect evidence pending |
+| [C10-real-bus](C10-real-bus/README.md) | Passive actual-host evidence capture | Implemented collector; reviewed real-bus mapping/buffering and hardware evidence pending |
 
 C0 is retained: idle capture suppression is a useful baseline. Planned starters
 fail explicitly without touching hardware. As each case is implemented, its
