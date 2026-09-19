@@ -124,6 +124,7 @@ class ReportSummaryTests(unittest.TestCase):
             "status": "passed",
             "waveform": {"analysis_kind": "width_control", "assertions": 22,
                          "accepted_assertions": 18, "values": [10, 165],
+                         "analyzer_coverage": {"summary": "3/16 data bits + 5 controls observed"},
                          "analyzer_signals": {"data_bits": {
                              "D0": "D5", "D8": "D6", "D15": "D7"}},
                          "measurements": [
@@ -132,6 +133,7 @@ class ReportSummaryTests(unittest.TestCase):
                          ]},
         })
         self.assertIn("/AS assertions: 22 (18 accepted)", output)
+        self.assertIn("Analyzer coverage: 3/16 data bits + 5 controls observed", output)
         self.assertIn("Analyzer subset: /AS, SELECT, R/W, /UDS, /LDS, D0, D15, D8", output)
         self.assertIn("Ignored controls: unselected, read", output)
 

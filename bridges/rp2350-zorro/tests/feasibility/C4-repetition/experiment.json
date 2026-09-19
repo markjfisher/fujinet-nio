@@ -122,6 +122,7 @@
       {
         "label": "D[3:0]",
         "role": "data",
+        "width_bits": 4,
         "bits": [
           {
             "label": "D3",

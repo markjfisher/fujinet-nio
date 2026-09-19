@@ -1390,6 +1390,18 @@ class Experiments(unittest.TestCase):
         self.assertEqual([row["low_us"] for row in report["measurements"]], [120.0] * 22)
         self.assertEqual([row["setup_us"] for row in report["measurements"][1:]], [110.0] * 21)
         self.assertEqual(report["visualization"], self.c5_manifest()["waveform_view"])
+        self.assertEqual(report["analyzer_coverage"], {
+            "data_buses": [{"label": "D[15:0] observed subset", "width_bits": 16,
+                              "observed_bits": [0, 8, 15], "observed_count": 3}],
+            "controls": [
+                {"label": "/LDS", "role": "control", "channel": "D4", "polarity": "active-low"},
+                {"label": "/UDS", "role": "control", "channel": "D3", "polarity": "active-low"},
+                {"label": "R/W", "role": "control", "channel": "D2", "polarity": "active-high"},
+                {"label": "SELECT", "role": "control", "channel": "D1", "polarity": "active-high"},
+                {"label": "/AS", "role": "strobe", "channel": "D0", "polarity": "active-low"},
+            ],
+            "summary": "3/16 data bits + 5 controls observed",
+        })
 
     def test_c5_rejects_wrong_selected_control_or_observed_data_bit(self):
         baseline = bytearray(self.width_control_waveform())

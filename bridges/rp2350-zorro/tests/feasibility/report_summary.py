@@ -33,6 +33,13 @@ def format_rate(rate):
     return "{:g} Hz".format(rate)
 
 
+def coverage_line(waveform):
+    coverage = waveform.get("analyzer_coverage")
+    if not isinstance(coverage, dict) or not coverage.get("summary"):
+        return None
+    return "Analyzer coverage: " + str(coverage["summary"])
+
+
 def marked_edge_artifacts(waveform):
     limits = waveform.get("limits", "").lower()
     return "first/last" in limits and ("lead-in" in limits or "release" in limits)
@@ -217,6 +224,9 @@ def format_report(report):
         lines.append("Firmware SHA-256: " + str(firmware))
     if waveform.get("sample_rate") is not None:
         lines.append("Analyzer sample rate: " + format_rate(waveform["sample_rate"]))
+    coverage = coverage_line(waveform)
+    if coverage:
+        lines.append(coverage)
     if report.get("waveform_visual"):
         lines.append("Waveform SVG: " + str(report["waveform_visual"]))
     host_tests = host_test_summary(report)

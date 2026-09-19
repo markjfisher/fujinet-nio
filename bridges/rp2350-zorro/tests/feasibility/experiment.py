@@ -316,7 +316,46 @@ def attach_visualization(result, manifest):
     view = manifest.get("waveform_view")
     if isinstance(view, dict):
         result["visualization"] = view
+        result["analyzer_coverage"] = coverage_from_view(view, manifest)
     return result
+
+
+def coverage_from_view(view, manifest):
+    """State exactly what the analyser was configured to observe.
+
+    This is evidence scope, not a pass/fail decision: waveform analysis still
+    validates the channels required by its capability.  Keeping the derived
+    count in the report makes an observed subset unmistakable when a wider bus
+    is checked independently by the DUT.
+    """
+    buses, controls = [], []
+    for lane in view.get("lanes", []):
+        if not isinstance(lane, dict):
+            continue
+        bits = lane.get("bits")
+        if lane.get("role") == "data" and isinstance(bits, list):
+            observed = sorted({bit.get("bus_bit") for bit in bits
+                               if isinstance(bit, dict) and
+                               isinstance(bit.get("bus_bit"), int) and
+                               bit.get("channel") is not None})
+            width = lane.get("width_bits", len(manifest.get("data_gpio") or []))
+            require(isinstance(width, int) and width > 0,
+                    "waveform_view data lane needs positive width_bits", "configuration")
+            require(all(0 <= bit < width for bit in observed),
+                    "waveform_view observed data bit is outside width_bits", "configuration")
+            buses.append(dict(label=lane.get("label", "data"), width_bits=width,
+                              observed_bits=observed, observed_count=len(observed)))
+        elif lane.get("role") in ("control", "strobe") and lane.get("channel") is not None:
+            controls.append(dict(label=lane.get("label", "signal"),
+                                 role=lane["role"], channel=lane["channel"],
+                                 polarity=lane.get("polarity", "active-high")))
+    data_summary = " + ".join(
+        "{}/{} {} bits".format(bus["observed_count"], bus["width_bits"],
+                                "data" if len(buses) == 1 else bus["label"])
+        for bus in buses
+    ) or "no data bits"
+    return dict(data_buses=buses, controls=controls,
+                summary="{} + {} controls observed".format(data_summary, len(controls)))
 
 
 def analyse_idle(path, manifest, data, hz):

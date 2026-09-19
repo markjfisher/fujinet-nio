@@ -67,6 +67,7 @@
       {
         "label": "D[15:0] observed subset",
         "role": "data",
+        "width_bits": 16,
         "bits": [
           {
             "label": "D15",

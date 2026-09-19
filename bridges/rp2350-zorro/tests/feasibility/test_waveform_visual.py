@@ -154,6 +154,7 @@ class WaveformVisualTests(unittest.TestCase):
             "build_identity": {"manifest": manifest},
             "dut_evidence": {"observed": {"values": [10]}},
             "waveform": {"analysis_kind": "width_control", "sample_rate": 1_000_000,
+                         "analyzer_coverage": {"summary": "3/16 data bits + 5 controls observed"},
                          "transactions": [
                              {"id": "unselected", "accepted": False,
                               "assert_sample": 100, "release_sample": 200,
@@ -178,6 +179,7 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn("Expected selected writes", text)
         self.assertIn("Ignored controls: unselected", text)
         self.assertIn("Analyzer mapping: D15←D7, D8←D6, D0←D5", text)
+        self.assertIn("Analyzer coverage: 3/16 data bits + 5 controls observed", text)
 
     def test_manifest_drives_wide_lane_mapping_and_window_scale(self):
         report = {

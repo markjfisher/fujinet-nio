@@ -323,6 +323,12 @@ def lane_mapping(all_lanes):
     return "Analyzer mapping: " + ", ".join(mapped) if mapped else None
 
 
+def coverage_summary(waveform):
+    coverage = waveform.get("analyzer_coverage") or {}
+    summary = coverage.get("summary") if isinstance(coverage, dict) else None
+    return "Analyzer coverage: " + str(summary) if summary else None
+
+
 def write_transactions_svg(report, path):
     waveform = report.get("waveform") or {}
     config = view_config(report, waveform)
@@ -356,6 +362,9 @@ def write_transactions_svg(report, path):
     mapping = lane_mapping(all_lanes)
     if mapping:
         annotations.insert(0, mapping)
+    coverage = coverage_summary(waveform)
+    if coverage:
+        annotations.insert(0, coverage)
     annotation_top = detail_bottom + 68
     note_top = annotation_top + 19 * len(annotations) + 12
     height = note_top + (42 if waveform.get("limits") else 10)
@@ -459,6 +468,9 @@ def write_idle_svg(report, path):
     mapping = lane_mapping(all_lanes)
     if mapping:
         annotations.append(mapping)
+    coverage = coverage_summary(waveform)
+    if coverage:
+        annotations.append(coverage)
     strobe_label = next((lane["label"] for lane in all_lanes if lane["role"] == "strobe"), "strobe")
     annotations.extend(["{}: high throughout the saved capture; no active assertion was observed.".format(strobe_label), counter_text])
     annotation_top = detail_bottom + 68
