@@ -1121,6 +1121,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C2-held-active/experiment.json").read_text()
         )
 
+    def c3_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C3-sampling-window/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1195,6 +1200,35 @@ class Experiments(unittest.TestCase):
         self.write_capture(data)
         with self.assertRaises(e.Failure):
             e.analyse(self.capture, self.c2_manifest())
+
+    def sampling_window_waveform(self):
+        return (
+            b"\x80" * 200 + b"\x80" * 50 + b"\x81" * 10 + b"\x01" * 20 + b"\x81" * 50 +
+            b"\x82" * 50 + b"\x02" * 10 + b"\x03" * 10 + b"\x83" * 50 +
+            b"\x84" * 50 + b"\x85" * 50 + b"\x05" * 10 + b"\x85" * 50 +
+            b"\x86" * 50 + b"\x06" * 50 + b"\x07" * 10 + b"\x87" * 200
+        )
+
+    def test_c3_sampling_window_analysis_maps_safe_offsets(self):
+        self.write_capture(self.sampling_window_waveform())
+        report = e.analyse(self.capture, self.c3_manifest())
+        self.assertEqual(report["analysis_kind"], "sampling_window")
+        self.assertEqual(report["values"], [1, 2, 5, 6])
+        self.assertEqual(report["assertions"], 4)
+        self.assertEqual([row["offset_us"] for row in report["measurements"]], [10, 10, 50, 50])
+        self.assertEqual([row["relation"] for row in report["measurements"]], ["before", "after", "before", "after"])
+
+    def test_c3_rejects_wrong_transition_offset_or_captured_value(self):
+        baseline = bytearray(self.sampling_window_waveform())
+        for mutation in ("offset", "captured"):
+            data = bytearray(baseline)
+            if mutation == "offset":
+                data[259] = 0
+            else:
+                data[260] = 2
+            self.write_capture(data)
+            with self.subTest(mutation=mutation), self.assertRaises(e.Failure):
+                e.analyse(self.capture, self.c3_manifest())
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):

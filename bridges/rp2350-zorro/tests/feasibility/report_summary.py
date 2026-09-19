@@ -102,8 +102,25 @@ def held_active_lines(waveform, manifest):
     return lines
 
 
+def sampling_window_lines(waveform, manifest):
+    lines = []
+    rows = waveform.get("measurements", [])
+    if waveform.get("assertions") is not None:
+        lines.append("Sampling cases: " + str(waveform["assertions"]))
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        case = row.get("case", "case")
+        relation = row.get("relation", "")
+        captured = row.get("captured")
+        offset = row.get("offset_us")
+        if captured is not None and offset is not None:
+            lines.append("{}: {} {} us; captured {}".format(case, relation, offset, captured))
+    return lines
+
+
 FORMATTERS = {"idle": idle_lines, "burst": burst_lines, "pulse": burst_lines,
-              "held_active": held_active_lines}
+              "held_active": held_active_lines, "sampling_window": sampling_window_lines}
 
 
 def host_test_summary(report):

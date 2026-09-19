@@ -1,9 +1,32 @@
 {
   "id": "C3",
   "title": "Capture sampling window",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
-  "stimulus": "Sweep data-change offset around /AS assertion",
-  "expected": "Characterize old/new transition and measurement uncertainty",
-  "requires": "W0; configurable independent stimulus, DUT observation and adequate instrumentation"
+  "status": "implemented",
+  "stage": "C3 two-board sampling-window characterization",
+  "stimulus": "Data changes 10 us and 50 us before/after four /AS assertions",
+  "expected": "Before changes capture new data; after changes capture old data outside the unresolved edge",
+  "requires": "W0 two-board fixture; RP2040 and RP2350 USB consoles",
+  "preset": "stimulus-c3-rp2040",
+  "target": "feasibility_c3_sampling_window",
+  "source_dir": "tests/feasibility/C3-sampling-window/src",
+  "analysis_kind": "sampling_window",
+  "load_mode": "flash",
+  "data_gpio": [2, 3, 4, 5],
+  "strobe_gpio": 6,
+  "analyzer_channels": ["D0", "D1", "D2", "D3", "D7"],
+  "expected_values": [1, 2, 5, 6],
+  "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.25,
+  "sampling_cases": [
+    {"id": "pre-10", "relation": "before", "offset_us": 10, "old": 0, "new": 1, "captured": 1, "pulse_us": 20},
+    {"id": "post-10", "relation": "after", "offset_us": 10, "old": 2, "new": 3, "captured": 2, "pulse_us": 20},
+    {"id": "pre-50", "relation": "before", "offset_us": 50, "old": 4, "new": 5, "captured": 5, "pulse_us": 10},
+    {"id": "post-50", "relation": "after", "offset_us": 50, "old": 6, "new": 7, "captured": 6, "pulse_us": 60}
+  ],
+  "dut": {
+    "preset": "dut-c0-rp2350",
+    "target": "feasibility_dut",
+    "protocol": "capture-observer-v1",
+    "expected": {"capture_count": 4, "capture_irq_count": 4, "values": [1, 2, 5, 6]}
+  }
 }

@@ -91,6 +91,19 @@ class ReportSummaryTests(unittest.TestCase):
         self.assertIn("Values while /AS low: 3, 10, 5, 12", output)
         self.assertIn("Waveform map: /tmp/waveform.svg", output)
 
+    def test_sampling_window_summary_shows_offsets_and_capture_side(self):
+        output = summary.format_report({
+            "status": "passed",
+            "waveform": {"analysis_kind": "sampling_window", "assertions": 2,
+                         "measurements": [
+                             {"case": "pre-10", "relation": "before", "offset_us": 10, "captured": 1},
+                             {"case": "post-10", "relation": "after", "offset_us": 10, "captured": 2},
+                         ]},
+        })
+        self.assertIn("Sampling cases: 2", output)
+        self.assertIn("pre-10: before 10 us; captured 1", output)
+        self.assertIn("post-10: after 10 us; captured 2", output)
+
     def test_unknown_analysis_kind_uses_generic_output(self):
         output = summary.format_report({"status": "passed", "waveform": {"analysis_kind": "future"}})
         self.assertIn("Stimulus status: passed", output)

@@ -85,6 +85,21 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">0x1<", text)
         self.assertIn("Expected at /AS falls", text)
 
+    def test_sampling_window_svg_labels_before_after_cases(self):
+        report = {
+            "experiment": "C3",
+            "waveform": {"analysis_kind": "sampling_window", "sample_rate": 1_000_000,
+                         "measurements": [{"case": "pre-10", "relation": "before", "offset_us": 10, "captured": 1}],
+                         "transactions": [{"assert_sample": 100, "release_sample": 120,
+                                           "capture_value": 1,
+                                           "phases": [{"value": 1, "start_sample": 100, "end_sample": 120}]}]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "waveform.svg"
+            visual.write_svg(report, output)
+            text = output.read_text()
+        self.assertIn("pre-10: data before /AS by 10 us; captured 0x1", text)
+
     def test_idle_svg_shows_data_changes_high_strobe_and_dut_counters(self):
         report = {
             "experiment": "C0",

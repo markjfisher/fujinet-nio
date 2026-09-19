@@ -148,11 +148,13 @@ def analyse(path, manifest):
             ),
         ) from e
     kind = manifest.get("analysis_kind", "burst")
-    require(kind in ("burst", "idle", "held_active"), "Unknown analysis_kind", "configuration")
+    require(kind in ("burst", "idle", "held_active", "sampling_window"), "Unknown analysis_kind", "configuration")
     if kind == "idle":
         return analyse_idle(path, manifest, data, hz)
     if kind == "held_active":
         return analyse_held_active(path, manifest, data, hz)
+    if kind == "sampling_window":
+        return analyse_sampling_window(path, manifest, data, hz)
     rows = []
     state = dict(expected=manifest["expected_values"], sample=None)
 
@@ -389,6 +391,64 @@ def analyse_held_active(path, manifest, data, hz):
                            capture_value=expected[0], phases=phases)],
         limits="The /AS fall marks the capture transaction. W0 has no external marker for the exact internal PIO sample clock; initial data is held through the first low phase.",
     )
+
+
+def analyse_sampling_window(path, manifest, data, hz):
+    """Measure declared data transitions before or after each /AS assertion."""
+    cases = manifest.get("sampling_cases")
+    require(isinstance(cases, list) and cases, "sampling_window needs sampling_cases", "configuration")
+    falls = [i for i in range(1, len(data)) if data[i - 1] & 128 and not data[i] & 128]
+    rises = [i for i in range(1, len(data)) if not data[i - 1] & 128 and data[i] & 128]
+    require(len(falls) == len(rises) == len(cases), "unexpected sampling-window strobe edges")
+    require(data[0] & 128 and data[-1] & 128, "sampling-window strobe must begin and end high")
+    changes = [i for i in range(1, len(data)) if (data[i] & 15) != (data[i - 1] & 15)]
+    rows, transactions = [], []
+    for index, (case, fall, rise) in enumerate(zip(cases, falls, rises)):
+        relation = case.get("relation")
+        require(relation in ("before", "after"), "sampling case relation must be before or after", "configuration")
+        expected = case.get("captured")
+        old, newer = case.get("old"), case.get("new")
+        require(all(isinstance(value, int) and 0 <= value < 16 for value in (expected, old, newer)),
+                "sampling case values must be four-bit integers", "configuration")
+        low_us = (rise - fall) * 1000000 / hz
+        require(abs(low_us - case["pulse_us"]) <= 2,
+                "sampling-window strobe width outside 2 us tolerance")
+        captured = data[fall] & 15
+        require(captured == expected, "sampling-window captured unexpected value")
+        if relation == "before":
+            lower = rises[index - 1] if index else 0
+            candidates = [sample for sample in changes if lower < sample < fall]
+            require(candidates, "missing data transition before /AS")
+            transition = candidates[-1]
+            require(data[transition - 1] & 15 == old and data[transition] & 15 == newer,
+                    "unexpected data transition before /AS")
+            offset_us = (fall - transition) * 1000000 / hz
+        else:
+            candidates = [sample for sample in changes if fall < sample < rise]
+            require(candidates, "missing data transition while /AS is low")
+            transition = candidates[0]
+            require(data[fall] & 15 == old and data[transition - 1] & 15 == old and
+                    data[transition] & 15 == newer,
+                    "unexpected data transition after /AS")
+            offset_us = (transition - fall) * 1000000 / hz
+        require(abs(offset_us - case["offset_us"]) <= 2,
+                "sampling-window data offset outside 2 us tolerance")
+        phase_starts = [fall] + [sample for sample in changes if fall < sample < rise]
+        phase_ends = phase_starts[1:] + [rise]
+        phases = [dict(value=data[start] & 15, start_sample=start, end_sample=end,
+                       hold_us=(end - start) * 1000000 / hz)
+                  for start, end in zip(phase_starts, phase_ends)]
+        rows.append(dict(case=case.get("id", str(index)), relation=relation,
+                         old=old, new=newer, captured=captured, fall_sample=fall,
+                         rise_sample=rise, transition_sample=transition,
+                         offset_us=offset_us, low_us=low_us))
+        transactions.append(dict(index=index, assert_sample=fall, release_sample=rise,
+                                 capture_value=captured, phases=phases))
+    return dict(capture=str(path), capture_sha256=digest(path), sample_rate=hz,
+                analysis_kind="sampling_window", assertions=len(falls),
+                values=[row["captured"] for row in rows], observed_falls=falls,
+                observed_rises=rises, measurements=rows, transactions=transactions,
+                limits="External offsets are 1 MHz samples (about ±1 us). W0 has no marker for the internal PIO IN PINS clock.")
 
 
 def acceptance(manifest, dut_evidence=None):
@@ -1407,7 +1467,7 @@ def physical_run(m, args, artifact, dut_image=None):
                 report["waveform"] = analyse(args.output / "capture.sr", m)
                 evidence = dut_report(dut_console, m["dut"]) if dut_console else None
                 report.update(acceptance(m, evidence))
-                if report["waveform"]["analysis_kind"] in ("burst", "held_active", "idle"):
+                if report["waveform"]["analysis_kind"] in ("burst", "held_active", "idle", "sampling_window"):
                     import waveform_visual
                     visual = args.output / "waveform.svg"
                     waveform_visual.write_svg(report, visual)

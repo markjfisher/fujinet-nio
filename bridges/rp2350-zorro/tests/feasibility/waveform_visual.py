@@ -130,6 +130,16 @@ def write_transactions_svg(report, path):
     expected = [event.get("capture_value") for event in events]
     annotation_lines = sequence_lines("Expected at /AS falls: ", expected)
     annotation_lines += sequence_lines("DUT reported: ", observed)
+    if waveform.get("analysis_kind") == "sampling_window":
+        for row in waveform.get("measurements", []):
+            if not isinstance(row, dict):
+                continue
+            annotation_lines.append(
+                "{}: data {} /AS by {} us; captured {}".format(
+                    row.get("case", "case"), row.get("relation", "at"),
+                    row.get("offset_us", "?"), value(row.get("captured"))
+                )
+            )
     annotation_lines.append(
         "green = /AS fall / transaction boundary; no external marker exists for the exact internal PIO sample clock"
     )
