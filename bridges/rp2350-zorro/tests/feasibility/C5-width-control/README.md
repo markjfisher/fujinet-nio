@@ -6,6 +6,11 @@ Core2350B PIO state machine accepts only `SELECT=1`, `R/W=0`, `/UDS=0`,
 `/LDS=0` assertions, captures D[15:0] into its RX FIFO, and the ARM observer
 reports the drained values after the burst.
 
+The DUT `reset` command re-arms its APIO state machine at a released `/AS`
+guard before clearing the report counters. This prevents electrical/loading
+transients before the interactive run from being reported as the first C5
+transaction.
+
 At its declared 100 kHz PIO clock, the stimulus program has a measured 120 us
 `/AS` low phase followed by a 110 us released interval. These exact values are
 the `pulse_us` and `setup_us` contract in `experiment.json`; they are fixture

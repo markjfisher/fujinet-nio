@@ -20,4 +20,5 @@
 #define CAPTURE_SM 0
 #define CAPTURE_IRQ 0
 void capture_program_init(void);
+void capture_program_rearm(void);
 #endif

@@ -25,6 +25,10 @@ void capture_program_init(void) {
     APIO_SET_SM(CAPTURE_SM);
     APIO_WRAP_BOTTOM();
 #ifdef CAPTURE_W1
+    /* Begin only from a released transaction. This is also the arming guard:
+       a reset during an asserted or electrically transient bus state cannot
+       turn that state into the first observed transaction. */
+    APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(CAPTURE_STROBE_PIN));
     /* W1 accepts only selected, write, both-lane assertions. These controls
        are established before /AS and held through the low phase by C5. */
     APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(CAPTURE_SELECT_PIN));
@@ -46,4 +50,11 @@ void capture_program_init(void) {
     APIO_SM_JMP_TO_START();
     APIO_END_BLOCK();
     APIO_ENABLE_SMS(CAPTURE_PIO, (1 << CAPTURE_SM));
+}
+
+void capture_program_rearm(void) {
+    /* Rebuild the APIO-owned SM rather than only clearing ARM-side counters.
+       The lab protocol calls this while the generator is idle, before each
+       burst, so the next capture must start at the released-/AS guard. */
+    capture_program_init();
 }

@@ -26,6 +26,7 @@ static void drain_capture(void) {
 
 static void reset_counters(void) {
     drain_capture();
+    capture_program_rearm();
     capture_count = 0;
     capture_irq_count = 0;
 }

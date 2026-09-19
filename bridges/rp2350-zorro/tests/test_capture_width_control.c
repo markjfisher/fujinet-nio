@@ -20,7 +20,7 @@ static void drive(epio_t *e, unsigned value, unsigned controls) {
 static void selected_write(epio_t *e, unsigned value) {
     /* SELECT=1, R/W=0 and both lane strobes=0 are stable before /AS. */
     drive(e, value, (1u << CAPTURE_STROBE_PIN) | (1u << CAPTURE_SELECT_PIN));
-    epio_step_cycles(e, 4);
+    epio_step_cycles(e, 5); /* released-/AS guard, then four qualifiers */
     drive(e, value, 1u << CAPTURE_SELECT_PIN);
     epio_step_cycles(e, 2); /* WAIT /AS low, then IN PINS. */
     epio_step_cycles(e, 1); /* PUSH */
@@ -46,6 +46,14 @@ int main(void) {
     };
     capture_program_init();
     epio_t *e = epio_from_apio();
+    CHECK(e != NULL);
+
+    /* The DUT protocol rearms before each generator burst. Verify that a
+       rearm begins at the released-/AS guard and cannot accept the first
+       unselected assertion. */
+    capture_program_rearm();
+    epio_free(e);
+    e = epio_from_apio();
     CHECK(e != NULL);
 
     /* Match the C5 invalid-control prefix. Each leaves the PIO waiting for

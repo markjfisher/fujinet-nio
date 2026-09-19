@@ -1489,8 +1489,10 @@ class Experiments(unittest.TestCase):
         self.assertEqual(status["evidence_scope"], "stimulus-and-dut")
         console.line.side_effect = None
         console.line.return_value = "result protocol=capture-observer-v1 capture_count=1 capture_irq_count=1 values=1"
-        with self.assertRaises(e.Failure):
+        with self.assertRaises(e.Failure) as error:
             e.dut_report(console, contract)
+        self.assertEqual(error.exception.details["differences"]["capture_count"],
+                         {"expected": 0, "observed": 1})
 
     def test_c1_dut_requires_the_ordered_values(self):
         contract = self.c1_manifest()["dut"]

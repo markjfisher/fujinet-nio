@@ -40,9 +40,9 @@ class Failure(Exception):
         super().__init__(message)
 
 
-def require(condition, message, category="waveform"):
+def require(condition, message, category="waveform", details=None):
     if not condition:
-        raise Failure(category, message)
+        raise Failure(category, message, details)
 
 
 def digest(path):
@@ -696,9 +696,11 @@ def dut_report(console, contract):
     observed = dict(capture_count=int(match[1]), capture_irq_count=int(match[2]),
                     values=[] if not match[3] else [int(value) for value in match[3].split(",")])
     expected = contract["expected"]
-    require(all(observed.get(key) == value for key, value in expected.items()),
-            "DUT counters differ from manifest expectation", "dut",
-            )
+    differences = {key: dict(expected=value, observed=observed.get(key))
+                   for key, value in expected.items()
+                   if observed.get(key) != value}
+    require(not differences, "DUT counters differ from manifest expectation", "dut",
+            dict(expected=expected, observed=observed, differences=differences))
     return dict(status="observed", protocol=protocol, expected=expected, observed=observed)
 
 
