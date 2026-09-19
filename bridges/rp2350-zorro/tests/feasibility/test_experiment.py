@@ -69,6 +69,14 @@ class Experiments(unittest.TestCase):
         self.write_capture()
         self.assertEqual(e.analyse(self.capture, M)["values"], list(range(16)))
 
+    def test_acquisition_duration_default_manifest_and_override(self):
+        self.assertEqual(e.acquisition_parameters(M), (0.25, 250000))
+        manifest = dict(M, acquisition_seconds=0.5)
+        self.assertEqual(e.acquisition_parameters(manifest), (0.5, 500000))
+        self.assertEqual(e.acquisition_parameters(manifest, 0.75), (0.75, 750000))
+        with self.assertRaises(e.Failure):
+            e.acquisition_parameters(M, 0)
+
     def test_recorded_final_captures(self):
         for name in ("w0-final-001.sr", "w0-final-002.sr"):
             path = e.ROOT / "docs/feasibility/results/2026-09-17-generator" / name
@@ -487,6 +495,9 @@ class Experiments(unittest.TestCase):
         self.assertEqual(report["status"], "passed")
         self.assertEqual(report["build_identity"]["revision"], "built-revision")
         self.assertEqual(report["acquisition"]["returncode"], 0)
+        self.assertEqual(report["acquisition"]["duration_seconds"], 0.25)
+        self.assertEqual(report["acquisition"]["samples"], 250000)
+        self.assertIn("250000", report["acquisition"]["argv"])
 
     def test_run_late_acquisition_error(self):
         artifact, usb, session, args = self.fixture()

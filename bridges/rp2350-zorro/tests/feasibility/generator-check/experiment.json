@@ -40,6 +40,7 @@
     15
   ],
   "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.25,
   "pulse_us": 100,
   "period_us": 300,
   "setup_hold_us": 100

@@ -17,6 +17,7 @@
   "expected_values": [3],
   "held_active_values": [3, 10, 5, 12],
   "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.25,
   "setup_us": 200,
   "pulse_us": 830,
   "active_phase_us": [210, 210, 210, 200],

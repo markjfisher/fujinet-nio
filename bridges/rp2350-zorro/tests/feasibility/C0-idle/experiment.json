@@ -43,6 +43,7 @@
     15
   ],
   "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.25,
   "data_period_us": 210,
   "dut": {
     "preset": "dut-c0-rp2350",

@@ -41,6 +41,13 @@ Builds never generate signals. No experiment stage runs sudo or changes system
 permissions. Ctrl-C cancels the host workflow; the runner attempts stop and cleans
 up acquisition, while firmware independently limits each burst.
 
+Implemented manifests request a 0.25-second analyser capture at 1 MHz (250,000
+samples), leaving ample lead-in for the 3–9 ms W0 bursts without a five-second
+wait or file. Set `"acquisition_seconds"` in an experiment manifest when a later
+case needs a different normal window, or override one run with, for example,
+`./run.sh run --acquisition-seconds 1`. The selected duration and sample count
+are retained in `report.json`.
+
 Results belong in fresh directories under the bridge's ignored `build/` tree
 (or the explicit `--output` path): source/artifact identity, console and tool logs,
 raw `.sr` capture, expected/observed measurements and a machine-readable verdict.

@@ -30,6 +30,7 @@ import bootstrap
 
 PICOTOOL = ROOT / "build/picotool-usb/picotool"
 COMMAND_LOG = []
+DEFAULT_ACQUISITION_SECONDS = 0.25
 
 
 class Failure(Exception):
@@ -50,6 +51,27 @@ def digest(path):
 
 def save(path, value):
     Path(path).write_text(json.dumps(value, indent=2) + "\n")
+
+
+def acquisition_parameters(manifest, override=None):
+    """Return the bounded analyser duration and exact requested sample count."""
+    configured = (
+        override
+        if override is not None
+        else manifest.get("acquisition_seconds", DEFAULT_ACQUISITION_SECONDS)
+    )
+    try:
+        seconds = float(configured)
+    except (TypeError, ValueError) as error:
+        raise Failure("configuration", "acquisition duration must be a number") from error
+    require(
+        0.01 <= seconds <= 60,
+        "acquisition duration must be between 0.01 and 60 seconds",
+        "configuration",
+    )
+    samples = round(manifest["samplerate_hz"] * seconds)
+    require(samples >= 2, "acquisition duration requests too few samples", "configuration")
+    return seconds, samples
 
 
 def analyse(path, manifest):
@@ -1272,6 +1294,9 @@ def await_acquisition(child, log, timeout=5):
 
 def physical_run(m, args, artifact, dut_image=None):
     profile = read_profile(args.bench, required=True)
+    acquisition_seconds, acquisition_samples = acquisition_parameters(
+        m, getattr(args, "acquisition_seconds", None)
+    )
     require(
         args.output is not None,
         "run/all requires --output NEW_DIRECTORY",
@@ -1348,13 +1373,17 @@ def physical_run(m, args, artifact, dut_image=None):
                     "--channels",
                     ",".join(m["analyzer_channels"]),
                     "--samples",
-                    str(m["samplerate_hz"] * 5),
+                    str(acquisition_samples),
                     "--output-file",
                     str(args.output / "capture.sr"),
                 ]
                 print("+ " + shlex.join(cmd), flush=True)
                 report["acquisition"] = dict(
-                    argv=cmd, returncode=None, termination=None
+                    argv=cmd,
+                    duration_seconds=acquisition_seconds,
+                    samples=acquisition_samples,
+                    returncode=None,
+                    termination=None,
                 )
                 child = subprocess.Popen(
                     cmd, stdout=acquisition_log, stderr=subprocess.STDOUT
@@ -1569,6 +1598,11 @@ def main(argv=None):
         help="sigrok driver, optionally fx2lafw:conn=BUS.ADDRESS to select one analyzer",
     )
     p.add_argument(
+        "--acquisition-seconds",
+        type=float,
+        help="analyser capture duration; overrides manifest/default 0.25 seconds (0.01..60)",
+    )
+    p.add_argument(
         "--timeout",
         type=float,
         default=60,
@@ -1604,6 +1638,9 @@ def main(argv=None):
         )
         artifact = ROOT / "build" / m["preset"] / (m["target"] + ".elf")
         dut_image = dut_artifact(m)
+        acquisition_seconds, acquisition_samples = acquisition_parameters(
+            m, args.acquisition_seconds
+        )
         if args.dry_run:
             print(
                 json.dumps(
@@ -1620,6 +1657,8 @@ def main(argv=None):
                         dut_artifact=str(dut_image) if dut_image else None,
                         session=str(args.session),
                         output=str(args.output),
+                        acquisition_seconds=acquisition_seconds,
+                        acquisition_samples=acquisition_samples,
                         actions={
                             "doctor": "check pinned sources, tools, USB permissions and analyzer scan",
                             "build": "bootstrap pins; configure/build/test host Debug+Release; build manifest stimulus/DUT images and pinned USB picotool",

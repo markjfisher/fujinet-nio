@@ -106,8 +106,9 @@ by this deadline.
 
 Close or disconnect the live analyzer in PulseView before using sigrok-cli;
 only one application can claim its USB interface. The starter's `run` stage arms
-a five-second acquisition before sending `run`
-to the generator, and saves `capture.sr` for PulseView. Use `analyse --capture`
+a 0.25-second acquisition before sending `run` to the generator, and saves
+`capture.sr` for PulseView. The duration is manifest controlled and may be
+overridden for one run with `--acquisition-seconds 1`. Use `analyse --capture`
 to check a saved file again. Ctrl-C cancels acquisition and attempts a generator
 stop; failed runs retain their logs and verdict.
 
