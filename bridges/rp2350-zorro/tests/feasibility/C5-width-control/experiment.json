@@ -122,8 +122,9 @@
       "expected_label": "Expected selected writes",
       "report_label": "DUT reported",
       "rejected_summary_label": "Ignored controls",
-      "rejected_label": "ignored",
-      "uncertain_label": "uncertain"
+      "rejected_label": "×",
+      "uncertain_label": "?",
+      "value_format": "hex"
     }
   }
 }

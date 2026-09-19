@@ -50,7 +50,8 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">D3<", text)
         self.assertIn(">/AS<", text)
         self.assertIn('class="overview-event"', text)
-        self.assertIn("DUT reported: 0x3", text)
+        self.assertIn(">DUT reported:<", text)
+        self.assertIn(">0x3<", text)
         self.assertIn("0xA", text)
         self.assertIn("not externally visible", text)
 
@@ -113,7 +114,8 @@ class WaveformVisualTests(unittest.TestCase):
             output = Path(directory) / "waveform.svg"
             visual.write_svg(report, output)
             text = output.read_text()
-        self.assertIn("pre-10: data before /AS by 10 us; captured 0x1", text)
+        self.assertIn(">pre-10:<", text)
+        self.assertIn(">data before /AS by 10 us; captured 0x1<", text)
         self.assertIn("captured at /AS fall", text)
         self.assertIn('class="capture-phase"', text)
         for captured in ("0x1", "0x2", "0x5", "0x6"):
@@ -144,8 +146,11 @@ class WaveformVisualTests(unittest.TestCase):
             output = Path(directory) / "waveform.svg"
             visual.write_svg(report, output)
             text = output.read_text()
-        self.assertIn("low-20: D=3 × 4; low 20 us; internal gap 100 us", text)
-        self.assertIn("gap-20: D=5 × 4; low 100 us; internal gap 20 us", text)
+        self.assertIn(">low-20:<", text)
+        self.assertIn(">D=3 × 4; low 20 us; internal gap 100<", text)
+        self.assertIn(">us<", text)
+        self.assertIn(">gap-20:<", text)
+        self.assertIn(">D=5 × 4; low 100 us; internal gap 20<", text)
 
     def test_width_control_svg_shows_control_subset_and_ignored_assertions(self):
         manifest = json.loads((HERE / "C5-width-control/experiment.json").read_text())
@@ -177,9 +182,14 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">SELECT<", text)
         self.assertIn('class="ignored"', text)
         self.assertIn("Expected selected writes", text)
-        self.assertIn("Ignored controls: unselected", text)
-        self.assertIn("Analyzer mapping: D15←D7, D8←D6, D0←D5", text)
-        self.assertIn("Analyzer coverage: 3/16 data bits + 5 controls observed", text)
+        self.assertIn(">Ignored controls:<", text)
+        self.assertIn(">unselected<", text)
+        self.assertIn(">Analyzer mapping:<", text)
+        self.assertIn("D15←D7, D8←D6, D0←D5", text)
+        self.assertIn(">Analyzer coverage:<", text)
+        self.assertIn(">3/16 data bits + 5 controls observed<", text)
+        self.assertIn("Transaction values are hexadecimal.", text)
+        self.assertIn(">A<", text)
 
     def test_manifest_drives_wide_lane_mapping_and_window_scale(self):
         report = {
@@ -213,7 +223,9 @@ class WaveformVisualTests(unittest.TestCase):
         for label in ("D47", "D23", "D0", "READY", "/AS"):
             self.assertIn(">" + label + "<", text)
         self.assertIn('data-polarity="active-low"', text)
-        self.assertIn("Analyzer mapping: D47←D47, D23←D23, D0←D0, READY←D41, /AS←D40", text)
+        self.assertIn(">Analyzer mapping:<", text)
+        self.assertIn(">D47←D47, D23←D23, D0←D0, READY←D41,<", text)
+        self.assertIn(">/AS←D40<", text)
         self.assertIn('class="uncertain"', text)
         self.assertIn("20.000 ms", text)
         self.assertNotIn("5.000 s", text)

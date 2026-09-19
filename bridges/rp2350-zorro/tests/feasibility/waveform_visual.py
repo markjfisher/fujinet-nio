@@ -220,8 +220,15 @@ def transition_path(samples, start, end, bit, x, high_y, low_y):
     return " ".join(pieces)
 
 
-def sequence_lines(label, numbers, per_line=14):
-    rendered = [value(number) for number in numbers]
+def transaction_value(number, options):
+    """Use a manifest-selected compact form where the SVG declares hex."""
+    if options.get("value_format") == "hex" and isinstance(number, int):
+        return "{:X}".format(number)
+    return value(number)
+
+
+def sequence_lines(label, numbers, per_line=14, renderer=value):
+    rendered = [renderer(number) for number in numbers]
     if not rendered:
         return []
     lines = []
@@ -268,8 +275,10 @@ def transaction_annotations(report, waveform, config, events):
         expected_label = options.get("expected_label", "Expected accepted transactions")
     else:
         expected_label = options.get("expected_label", "Expected at /AS falls")
-    lines = sequence_lines(expected_label + ": ", accepted)
-    lines += sequence_lines(options.get("report_label", "DUT reported") + ": ", observed)
+    renderer = lambda number: transaction_value(number, options)
+    lines = sequence_lines(expected_label + ": ", accepted, renderer=renderer)
+    lines += sequence_lines(options.get("report_label", "DUT reported") + ": ", observed,
+                            renderer=renderer)
     if rejected or uncertain:
         labels = []
         if accepted:
@@ -287,9 +296,10 @@ def transaction_annotations(report, waveform, config, events):
     if not boundary:
         strobe = next((lane["label"] for lane in lanes(config) if lane["role"] == "strobe"), "transaction")
         boundary = strobe
-    lines.append("green = accepted {} boundary; orange = rejected; yellow = uncertain".format(boundary))
-    lines.append("No external marker exists for the exact internal PIO sample clock.")
-    return lines
+    return lines, [
+        "green = accepted {} boundary; orange = rejected; yellow = uncertain".format(boundary),
+        "No external marker exists for the exact internal PIO sample clock.",
+    ]
 
 
 def title(report):
@@ -301,7 +311,7 @@ def title(report):
 def svg_header(width, height, heading):
     return [
         '<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
-        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.label{font-weight:bold}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.idle-window{fill:#d9f2df;fill-opacity:.55}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.control-lane{fill:#f7fbf7}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.control{stroke:#6f42c1;stroke-width:1.7;fill:none}.capture{stroke:#188038;stroke-width:2}.ignored{stroke:#f29900;stroke-width:2;stroke-dasharray:4 3}.uncertain{stroke:#f9ab00;stroke-width:2;stroke-dasharray:2 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}</style>',
+        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.tiny{font-size:10px}.label{font-weight:bold}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.idle-window{fill:#d9f2df;fill-opacity:.55}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.control-lane{fill:#f7fbf7}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.control{stroke:#6f42c1;stroke-width:1.7;fill:none}.capture{stroke:#188038;stroke-width:2}.ignored{stroke:#f29900;stroke-width:2;stroke-dasharray:4 3}.uncertain{stroke:#f9ab00;stroke-width:2;stroke-dasharray:2 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}.table{fill:#f8f9fa;stroke:#9aa0a6}.table-head{fill:#e8eaed}.table-key{font-weight:bold}</style>',
         '<rect width="100%" height="100%" fill="white"/>',
         '<text x="20" y="25" class="label">{}</text>'.format(html.escape(heading)),
         '<text x="20" y="48" class="small">Transaction boundaries, sampling values and classifications come from experiment.py. Detailed traces are saved analyzer samples.</text>',
@@ -329,6 +339,71 @@ def coverage_summary(waveform):
     return "Analyzer coverage: " + str(summary) if summary else None
 
 
+def wrap_text(text, columns):
+    """Wrap display prose without splitting a word or changing report data."""
+    words, lines, current = str(text).split(), [], []
+    length = 0
+    for word in words:
+        proposed = length + (1 if current else 0) + len(word)
+        if current and proposed > columns:
+            lines.append(" ".join(current))
+            current, length = [word], len(word)
+        else:
+            current.append(word)
+            length = proposed
+    if current:
+        lines.append(" ".join(current))
+    return lines or [""]
+
+
+def table_rows(lines, value_columns=38):
+    """Turn report text into wrapped key/value display rows."""
+    rows = []
+    for line in lines:
+        key, separator, detail = str(line).partition(": ")
+        if not separator:
+            rows.extend([(None, chunk) for chunk in wrap_text(key, value_columns + 16)])
+            continue
+        chunks = wrap_text(detail, value_columns)
+        rows.append((key, chunks[0]))
+        rows.extend([(None, chunk) for chunk in chunks[1:]])
+    return rows
+
+
+def draw_table(out, x, y, width, title_text, lines):
+    """Draw a compact two-column table and return its bottom y coordinate."""
+    rows = table_rows(lines)
+    row_height, header_height = 18, 26
+    height = header_height + row_height * len(rows) + 8
+    out.extend([
+        '<rect class="table" x="{}" y="{}" width="{}" height="{}" rx="4"/>'.format(x, y, width, height),
+        '<rect class="table-head" x="{}" y="{}" width="{}" height="{}" rx="4"/>'.format(x, y, width, header_height),
+        '<text x="{}" y="{}" class="label">{}</text>'.format(x + 10, y + 18, html.escape(title_text)),
+    ])
+    key_x, value_x = x + 10, x + 210
+    for index, (key, detail) in enumerate(rows):
+        row_y = y + header_height + 15 + index * row_height
+        if key:
+            out.append('<text x="{}" y="{}" class="small table-key">{}</text>'.format(key_x, row_y, html.escape(key + ":")))
+        out.append('<text x="{}" y="{}" class="small">{}</text>'.format(value_x if key else value_x, row_y, html.escape(detail)))
+    return y + height
+
+
+def table_height(lines):
+    return 26 + 18 * len(table_rows(lines)) + 8
+
+
+def draw_note(out, x, y, width, lines, columns=145):
+    wrapped = []
+    for line in lines:
+        wrapped.extend(wrap_text(line, columns))
+    height = 10 + 17 * len(wrapped)
+    out.append('<rect class="note" x="{}" y="{}" width="{}" height="{}" rx="4"/>'.format(x, y, width, height))
+    for index, line in enumerate(wrapped):
+        out.append('<text x="{}" y="{}" class="small">{}</text>'.format(x + 10, y + 21 + index * 17, html.escape(line)))
+    return y + height
+
+
 def write_transactions_svg(report, path):
     waveform = report.get("waveform") or {}
     config = view_config(report, waveform)
@@ -347,7 +422,7 @@ def write_transactions_svg(report, path):
     detail_end = max(detail_start + 1, detail_end)
     timeline_span, detail_span = timeline_end - timeline_start, detail_end - detail_start
 
-    width, left, plot_width = 1200, 150, 1000
+    width, left, plot_width = 1200, 100, 1080
     overview_top, overview_height = 82, 24
     detail_top, lane_height = 194, 42
     detail_bottom = detail_top + lane_height * len(all_lanes)
@@ -358,16 +433,24 @@ def write_transactions_svg(report, path):
     def detail_x(sample):
         return left + (sample - detail_start) * plot_width / detail_span
 
-    annotations = transaction_annotations(report, waveform, config, events)
+    annotations, legend = transaction_annotations(report, waveform, config, events)
+    provenance = []
     mapping = lane_mapping(all_lanes)
     if mapping:
-        annotations.insert(0, mapping)
+        provenance.append(mapping)
     coverage = coverage_summary(waveform)
     if coverage:
-        annotations.insert(0, coverage)
-    annotation_top = detail_bottom + 68
-    note_top = annotation_top + 19 * len(annotations) + 12
-    height = note_top + (42 if waveform.get("limits") else 10)
+        provenance.insert(0, coverage)
+    options = transaction_options(config)
+    if options.get("value_format") == "hex":
+        legend.insert(0, "Transaction values are hexadecimal.")
+    table_top = detail_bottom + 62
+    left_width, table_gap = 524, 16
+    right_x, right_width = left + left_width + table_gap, plot_width - left_width - table_gap
+    table_bottom = table_top + max(table_height(provenance), table_height(annotations))
+    note_lines = legend + ([waveform["limits"]] if waveform.get("limits") else [])
+    note_height = 10 + 17 * sum(len(wrap_text(line, 145)) for line in note_lines)
+    height = table_bottom + 14 + note_height + 10
     out = svg_header(width, height, title(report))
     out.extend([
         '<text x="20" y="76" class="label">detected transaction window</text>',
@@ -416,11 +499,13 @@ def write_transactions_svg(report, path):
             cell_width = detail_x(end) - detail_x(fall)
             out.append('<rect class="phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(detail_x(fall), detail_bottom + 22, max(1, cell_width)))
             if cell_width >= 18:
-                label = (transaction_options(config).get("rejected_label", "rejected")
+                label = (options.get("rejected_label", "rejected")
                          if state == "rejected" else
-                         transaction_options(config).get("uncertain_label", "uncertain")
+                         options.get("uncertain_label", "uncertain")
                          if state == "uncertain" else value(event.get("capture_value")))
-                out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(detail_x(fall) + 3, detail_bottom + 37, html.escape(label)))
+                if state == "accepted":
+                    label = transaction_value(event.get("capture_value"), options)
+                out.append('<text x="{:.2f}" y="{}" class="tiny" text-anchor="middle">{}</text>'.format(detail_x(fall) + cell_width / 2, detail_bottom + 36, html.escape(label)))
             continue
         for phase in event.get("phases") or []:
             start, end = phase["start_sample"], phase["end_sample"]
@@ -428,11 +513,9 @@ def write_transactions_svg(report, path):
             out.append('<rect class="phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(detail_x(start), detail_bottom + 22, max(1, phase_width)))
             if phase_width >= 28:
                 out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(detail_x(start) + 3, detail_bottom + 37, value(phase.get("value"))))
-    for index, line in enumerate(annotations):
-        out.append('<text x="{}" y="{}" class="small">{}</text>'.format(left, annotation_top + index * 19, html.escape(line)))
-    if waveform.get("limits"):
-        out.append('<rect class="note" x="20" y="{}" width="1160" height="32" rx="4"/>'.format(note_top))
-        out.append('<text x="30" y="{}" class="small">{}</text>'.format(note_top + 21, html.escape(waveform["limits"])))
+    draw_table(out, left, table_top, left_width, "Observed analyzer coverage", provenance)
+    draw_table(out, right_x, table_top, right_width, "Transaction evidence", annotations)
+    draw_note(out, 20, table_bottom + 14, 1160, note_lines)
     out.append('</svg>')
     Path(path).write_text("\n".join(out) + "\n")
 
