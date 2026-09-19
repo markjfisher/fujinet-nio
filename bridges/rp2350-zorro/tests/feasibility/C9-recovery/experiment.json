@@ -1,9 +1,337 @@
 {
   "id": "C9",
   "title": "Reset and recovery",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
-  "stimulus": "Abort, reset/reboot either board, disconnect console",
-  "expected": "Defined idle/released outputs and no stale-run data; rearm correctly",
-  "requires": "Both firmware roles with bounded cleanup; explicit physical fault procedure"
+  "status": "implemented",
+  "stage": "C9 W1 clean rearm and recovery",
+  "stimulus": "A bounded selected-write sequence followed by four sentinels after the generator and DUT have been freshly rearmed",
+  "expected": "No stale counters or values after the runner reset; all twenty ordered writes captured on every fresh run",
+  "requires": "W1 two-board fixture; RP2040 and RP2350 USB consoles; eight-channel analyzer subset",
+  "preset": "stimulus-c9-rp2040",
+  "target": "feasibility_c9_recovery",
+  "source_dir": "tests/feasibility/C9-recovery/src",
+  "analysis_kind": "width_control",
+  "load_mode": "flash",
+  "data_gpio": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17
+  ],
+  "strobe_gpio": 18,
+  "analyzer_channels": [
+    "D0",
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6",
+    "D7"
+  ],
+  "analyzer_signals": {
+    "as": "D0",
+    "select": "D1",
+    "rw": "D2",
+    "uds": "D3",
+    "lds": "D4",
+    "data_bits": {
+      "D0": "D5",
+      "D8": "D6",
+      "D15": "D7"
+    }
+  },
+  "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.05,
+  "pulse_us": 48,
+  "setup_us": 44,
+  "control_transactions": [
+    {
+      "id": "pressure-0",
+      "value": 4096,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-1",
+      "value": 4097,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-2",
+      "value": 4098,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-3",
+      "value": 4099,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-4",
+      "value": 4100,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-5",
+      "value": 4101,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-6",
+      "value": 4102,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-7",
+      "value": 4103,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-8",
+      "value": 4104,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-9",
+      "value": 4105,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-10",
+      "value": 4106,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-11",
+      "value": 4107,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-12",
+      "value": 4108,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-13",
+      "value": 4109,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-14",
+      "value": 4110,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "pressure-15",
+      "value": 4111,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "recovery-0",
+      "value": 53249,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0,
+      "minimum_setup_us": 800
+    },
+    {
+      "id": "recovery-1",
+      "value": 53250,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "recovery-2",
+      "value": 53251,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    },
+    {
+      "id": "recovery-3",
+      "value": 53252,
+      "accepted": true,
+      "select": 1,
+      "rw": 0,
+      "uds": 0,
+      "lds": 0
+    }
+  ],
+  "dut": {
+    "preset": "dut-c9-rp2350",
+    "target": "feasibility_dut",
+    "protocol": "capture-observer-v1",
+    "expected": {
+      "capture_count": 20,
+      "capture_irq_count": 20,
+      "raw_capture_count": 20,
+      "rejected_capture_count": 0,
+      "values": [
+        4096,
+        4097,
+        4098,
+        4099,
+        4100,
+        4101,
+        4102,
+        4103,
+        4104,
+        4105,
+        4106,
+        4107,
+        4108,
+        4109,
+        4110,
+        4111,
+        53249,
+        53250,
+        53251,
+        53252
+      ]
+    }
+  },
+  "waveform_view": {
+    "lanes": [
+      {
+        "label": "D[15:0] observed subset",
+        "role": "data",
+        "width_bits": 16,
+        "bits": [
+          {
+            "label": "D15",
+            "channel": "D7",
+            "bus_bit": 15
+          },
+          {
+            "label": "D8",
+            "channel": "D6",
+            "bus_bit": 8
+          },
+          {
+            "label": "D0",
+            "channel": "D5",
+            "bus_bit": 0
+          }
+        ]
+      },
+      {
+        "label": "/LDS",
+        "role": "control",
+        "channel": "D4",
+        "polarity": "active-low"
+      },
+      {
+        "label": "/UDS",
+        "role": "control",
+        "channel": "D3",
+        "polarity": "active-low"
+      },
+      {
+        "label": "R/W",
+        "role": "control",
+        "channel": "D2",
+        "polarity": "active-high"
+      },
+      {
+        "label": "SELECT",
+        "role": "control",
+        "channel": "D1",
+        "polarity": "active-high"
+      },
+      {
+        "label": "/AS",
+        "role": "strobe",
+        "channel": "D0",
+        "polarity": "active-low"
+      }
+    ],
+    "transactions": {
+      "boundary_label": "/AS",
+      "expected_label": "Generator assertions",
+      "report_label": "DUT captures after rearm",
+      "value_format": "hex"
+    }
+  }
 }
