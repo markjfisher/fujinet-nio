@@ -228,7 +228,7 @@ than replacing timed PIO work with CPU GPIO loops:
 
 | Gate | Required architectural evidence |
 | --- | --- |
-| C5 | **Implemented; physical W1 evidence pending.** Core2350B PIO0 SM0 uses a nine-instruction APIO capture loop over GP2–22: wait for SELECT/write/both lanes/`/AS`, `IN PINS,16`, blocking-push and PIO IRQ. ARM drains bounded records. RP2040 PIO0 SM0 uses ten APIO instructions and one DMA channel to emit 45 complete GP2–22 states; the CPU does not pace waveform edges. |
+| C5 | **Implemented; physical W1 evidence pending.** Core2350B PIO0 SM0 uses an APIO capture loop over GP2–22: begin from released `/AS`, wait for `/AS`, `IN PINS,21`, blocking-push and PIO IRQ. ARM drains bounded raw records and applies the selected-write qualifier, retaining counts for accepted and rejected observations. RP2040 PIO0 SM0 uses ten APIO instructions and one DMA channel to emit 45 complete GP2–22 states; the CPU does not pace waveform edges. |
 | C6 | Measure the PIO RX FIFO → ARM transfer under deliberate pressure. Compare the current polling baseline with an NVIC-IRQ and/or DMA drain variant, record stall/loss boundaries and select the viable bounded-transfer design. |
 | C7–C8 | Use a separately defined PIO output/turnaround path with data preloaded by ARM or DMA. ARM may arm and replenish bounded buffers; it must not toggle timing-critical response pins per access. |
 | C9 | Prove that reset/abort releases each PIO-owned output and invalidates any ARM-side records from the old run. |

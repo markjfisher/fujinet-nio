@@ -2,9 +2,10 @@
 
 C5 is the first W1 experiment. The RP2040 PIO state machine drives all 21
 contiguous W1 signals from DMA-fed words; it does not use CPU-timed GPIO. The
-Core2350B PIO state machine accepts only `SELECT=1`, `R/W=0`, `/UDS=0`,
-`/LDS=0` assertions, captures D[15:0] into its RX FIFO, and the ARM observer
-reports the drained values after the burst.
+Core2350B PIO state machine snapshots the complete 21-bit W1 input state at
+each `/AS` assertion into its RX FIFO. The ARM observer applies
+`SELECT=1`, `R/W=0`, `/UDS=0`, `/LDS=0` to those bounded raw PIO records and
+reports accepted values after the burst.
 
 The DUT `reset` command re-arms its APIO state machine at a released `/AS`
 guard before clearing the report counters. This prevents electrical/loading
@@ -16,11 +17,11 @@ At its declared 100 kHz PIO clock, the stimulus program has a measured 120 us
 the `pulse_us` and `setup_us` contract in `experiment.json`; they are fixture
 timing, not a claim about a Zorro-II timing margin.
 
-The PIO program is deliberately scoped to this declared control sequence: its
-four rejected assertions advance its qualifier waits, and the first all-qualifying
-write is therefore the first possible capture. This proves C5's fixture rule; it
-does not yet claim arbitrary control changes or FIFO-pressure behavior, which are
-later cases.
+The report retains all 22 raw PIO observations and four rejected records, as
+well as the 18 accepted captures and notifications. This proves C5's fixture
+rule while retaining diagnostic evidence for rejected transactions. It does not
+yet claim arbitrary control changes or FIFO-pressure behavior, which are later
+cases.
 
 The stimulus first issues four deliberately ignored assertions: unselected,
 read, lower-lane-only and upper-lane-only. It then issues `0x000A`, `0x00A5`,

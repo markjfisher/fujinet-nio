@@ -1,6 +1,20 @@
 #include "capture_program.h"
 #include <apio.h>
 
+bool capture_program_accepts(uint32_t raw_sample) {
+#ifdef CAPTURE_W1
+    const uint32_t required_high = 1u << CAPTURE_SELECT_BIT;
+    const uint32_t required_low = (1u << CAPTURE_RW_BIT) |
+                                  (1u << CAPTURE_UDS_BIT) |
+                                  (1u << CAPTURE_LDS_BIT);
+    return (raw_sample & required_high) == required_high &&
+           (raw_sample & required_low) == 0;
+#else
+    (void)raw_sample;
+    return true;
+#endif
+}
+
 void capture_program_init(void) {
     APIO_ENABLE_GPIOS();
     APIO_ENABLE_PIOS();
@@ -29,15 +43,15 @@ void capture_program_init(void) {
        a reset during an asserted or electrically transient bus state cannot
        turn that state into the first observed transaction. */
     APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(CAPTURE_STROBE_PIN));
-    /* W1 accepts only selected, write, both-lane assertions. These controls
-       are established before /AS and held through the low phase by C5. */
-    APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(CAPTURE_SELECT_PIN));
-    APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_RW_PIN));
-    APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_UDS_PIN));
-    APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_LDS_PIN));
 #endif
     APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_STROBE_PIN));
+    /* W1 snapshots the complete contiguous bus state at /AS. The ARM observer
+       applies the selected-write qualifier to this bounded PIO FIFO record. */
+#ifdef CAPTURE_W1
+    APIO_ADD_INSTR(APIO_IN_PINS(CAPTURE_RAW_BITS));
+#else
     APIO_ADD_INSTR(APIO_IN_PINS(CAPTURE_DATA_BITS));
+#endif
     APIO_ADD_INSTR(APIO_PUSH_BLOCK);
     APIO_ADD_INSTR(APIO_IRQ_SET(CAPTURE_IRQ));
     /* apio wrap markers precede their endpoint instruction. */

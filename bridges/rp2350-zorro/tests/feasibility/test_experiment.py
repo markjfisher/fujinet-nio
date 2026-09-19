@@ -1510,6 +1510,19 @@ class Experiments(unittest.TestCase):
         with self.assertRaises(e.Failure):
             e.dut_report(console, contract)
 
+    def test_c5_dut_reports_raw_and_rejected_pio_observations(self):
+        contract = self.c5_manifest()["dut"]
+        values = ",".join(map(str, contract["expected"]["values"]))
+        console = Mock()
+        console.line.return_value = (
+            "result protocol=capture-observer-v1 capture_count=18 "
+            "capture_irq_count=18 raw_capture_count=22 rejected_capture_count=4 values="
+            + values
+        )
+        evidence = e.dut_report(console, contract)
+        self.assertEqual(evidence["observed"]["raw_capture_count"], 22)
+        self.assertEqual(evidence["observed"]["rejected_capture_count"], 4)
+
     def test_c2_dut_requires_only_the_preasserted_value(self):
         contract = self.c2_manifest()["dut"]
         console = Mock()

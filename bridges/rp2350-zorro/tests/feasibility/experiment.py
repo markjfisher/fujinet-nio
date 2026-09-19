@@ -691,10 +691,15 @@ def dut_report(console, contract):
     line = console.line(3)
     match = re.fullmatch(
         r"result protocol=" + re.escape(protocol) +
-        r" capture_count=([0-9]+) capture_irq_count=([0-9]+) values=([0-9,]*)", line)
+        r" capture_count=([0-9]+) capture_irq_count=([0-9]+)"
+        r"(?: raw_capture_count=([0-9]+) rejected_capture_count=([0-9]+))?"
+        r" values=([0-9,]*)", line)
     require(match is not None, "Malformed DUT counter report: " + line, "transport")
     observed = dict(capture_count=int(match[1]), capture_irq_count=int(match[2]),
-                    values=[] if not match[3] else [int(value) for value in match[3].split(",")])
+                    values=[] if not match[5] else [int(value) for value in match[5].split(",")])
+    if match[3] is not None:
+        observed.update(raw_capture_count=int(match[3]),
+                        rejected_capture_count=int(match[4]))
     expected = contract["expected"]
     differences = {key: dict(expected=value, observed=observed.get(key))
                    for key, value in expected.items()
