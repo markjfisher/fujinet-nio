@@ -1,9 +1,63 @@
 {
   "id": "C5",
   "title": "Wider data and control",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
-  "stimulus": "4/8/16-bit patterns with R/W, lane strobes and SELECT",
-  "expected": "Correct selected data/lane behavior; no unselected response",
-  "requires": "Reviewed W1 wiring; wider APIO tests and firmware; channel coverage plan"
+  "status": "implemented",
+  "stage": "C5 W1 selected-write width/control capture",
+  "stimulus": "Unselected/read/single-lane controls, then 4-bit, 8-bit and 16-bit walking selected writes",
+  "expected": "Only selected write assertions with both lanes active produce 18 ordered 16-bit DUT captures",
+  "requires": "W1 two-board fixture; RP2040 and RP2350 USB consoles; eight-channel analyzer subset",
+  "preset": "stimulus-c5-rp2040",
+  "target": "feasibility_c5_width_control",
+  "source_dir": "tests/feasibility/C5-width-control/src",
+  "analysis_kind": "width_control",
+  "load_mode": "flash",
+  "data_gpio": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+  "strobe_gpio": 18,
+  "analyzer_channels": ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"],
+  "analyzer_signals": {
+    "as": "D0",
+    "select": "D1",
+    "rw": "D2",
+    "uds": "D3",
+    "lds": "D4",
+    "data_bits": {"D0": "D5", "D8": "D6", "D15": "D7"}
+  },
+  "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.05,
+  "pulse_us": 100,
+  "setup_us": 100,
+  "control_transactions": [
+    {"id": "unselected", "value": 4951, "accepted": false, "select": 0, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "read", "value": 9320, "accepted": false, "select": 1, "rw": 1, "uds": 0, "lds": 0},
+    {"id": "lower-only", "value": 13980, "accepted": false, "select": 1, "rw": 0, "uds": 1, "lds": 0},
+    {"id": "upper-only", "value": 19132, "accepted": false, "select": 1, "rw": 0, "uds": 0, "lds": 1},
+    {"id": "four-bit", "value": 10, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "eight-bit", "value": 165, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-0", "value": 1, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-1", "value": 2, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-2", "value": 4, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-3", "value": 8, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-4", "value": 16, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-5", "value": 32, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-6", "value": 64, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-7", "value": 128, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-8", "value": 256, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-9", "value": 512, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-10", "value": 1024, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-11", "value": 2048, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-12", "value": 4096, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-13", "value": 8192, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-14", "value": 16384, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0},
+    {"id": "walk-15", "value": 32768, "accepted": true, "select": 1, "rw": 0, "uds": 0, "lds": 0}
+  ],
+  "dut": {
+    "preset": "dut-c5-rp2350",
+    "target": "feasibility_dut",
+    "protocol": "capture-observer-v1",
+    "expected": {
+      "capture_count": 18,
+      "capture_irq_count": 18,
+      "values": [10, 165, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+    }
+  }
 }

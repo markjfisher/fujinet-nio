@@ -14,7 +14,7 @@ observer and proves the idle suppression baseline.
 | [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Implemented; requires physical two-board run |
 | [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Implemented; requires physical two-board run |
 | [C4-repetition](C4-repetition/README.md) | Repeated low-width/gap sweep | Implemented; requires physical two-board run |
-| [C5-width-control](C5-width-control/README.md) | Wider data, direction and selection | Planned |
+| [C5-width-control](C5-width-control/README.md) | W1 selected-write width and control | Implemented; requires physical two-board run and its documented eight-channel subset |
 | [C6-pressure](C6-pressure/README.md) | FIFO pressure and explicit loss | Planned |
 | [C7-reads](C7-reads/README.md) | Read response timing | Planned |
 | [C8-turnaround](C8-turnaround/README.md) | Direction changes/output release | Planned |
@@ -36,7 +36,7 @@ profile retains those selections. Then an implemented two-board experiment runs
 with `./run.sh all --output NEW_DIRECTORY`: it builds, loads both selected images,
 waits for your explicit Enter before generating signals, acquires, analyses,
 collects DUT evidence, and prints the saved report summary. C0 still needs
-RP2040 BOOTSEL on each RAM load; C1–C3 force-load their connected flash fixtures
+RP2040 BOOTSEL on each RAM load; C1–C5 force-load their connected flash fixtures
 without BOOTSEL.
 
 Separate `doctor`, `build`, `configure`, `configure-paths`, `load`, `run` and
@@ -46,8 +46,8 @@ experiment stage runs sudo or changes system permissions. Ctrl-C cancels the hos
 workflow; the runner attempts stop and cleans up acquisition, while firmware
 independently limits each burst.
 
-Each manifest declares its normal bounded analyser duration: the current
-generator/C0–C2 cases use 50 ms and C3 uses 250 ms at 1 MHz. Set
+Each manifest declares its normal bounded analyser duration: C0–C5 use 50 ms at
+1 MHz. Set
 `"acquisition_seconds"` when a later case needs a different normal window, or
 override one run with, for example, `./run.sh run --acquisition-seconds 1`. The
 selected duration and sample count are retained in `report.json`.
@@ -57,9 +57,9 @@ Results belong in fresh directories under the bridge's ignored `build/` tree
 raw `.sr` capture, expected/observed measurements and a machine-readable verdict.
 Failed runs remain evidence; a busy analyzer or missing capture cannot pass.
 PulseView can open saved captures once sigrok-cli releases the device.
-Idle, burst and held-active physical runs also generate `waveform.svg`: it shows
+Physical runs also generate `waveform.svg`: it shows
 the detected event's position in the complete acquisition, followed by a zoomed
-rendering of the saved D0–D3 and `/AS` analyser samples, decoded values and
+rendering of the manifest-selected analyser signals, decoded values and
 DUT-reported evidence. It is a debug aid alongside the raw `capture.sr`; it does
 not claim an unmeasured internal PIO sample-clock position.
 Build and loader command logs are retained under `build/feasibility/stage-logs/`.
@@ -130,9 +130,9 @@ no low strobe interval and completion at cycle 347. Both observe 550 cycles;
 their program words and timing expectations live beside their respective programs.
 These are generator tests: they provide no DUT capture/IRQ evidence.
 
-To implement C1 later (it is not implemented by this refactor):
+To add a later experiment:
 
-1. Supply `C1-*/src/stimulus_program.c` and `src/stimulus_expectations.c`, exporting
+1. Supply `Cx-*/src/stimulus_program.c` and `src/stimulus_expectations.c`, exporting
    `stimulus_expected` using the contract above. Keep the expectations independent
    of the program being checked.
 2. Fill in that directory's `experiment.json`, `README.md` and thin `run.sh`
@@ -145,14 +145,14 @@ To implement C1 later (it is not implemented by this refactor):
    with a separate binary directory, `STIMULUS_EXPERIMENT` directory name and
    `STIMULUS_TARGET`. No generic CMake branch or shared test edit is needed.
 5. Run the experiment's `run.sh build`: it tests both native configurations and
-   builds the RAM firmware. Then use its existing load/run/analyse stages for
+   builds the selected firmware. Then use its existing load/run/analyse stages for
    physical validation.
 
-This contract covers the current W0 fixture: four data bits, a periodic optional
-active-low strobe, seven program words and the shared 16-value console protocol.
-A later experiment needing a new behavior (such as variable-length phases or
-different pin groups) should extend that capability explicitly, not add an
-experiment-name conditional. Provenance hashes the manifest-selected source
+The contract covers W0 phase-based stimuli and C5's wider DMA-fed output stream.
+C5 adds `output_words` to the host-only oracle; the shared host test models FIFO
+service and validates complete bus-state changes without CPU-timed edges. A later
+experiment needing a new behavior should extend that capability explicitly, not
+add an experiment-name conditional. Provenance hashes the manifest-selected source
 directory (including its oracle), shared harness/contract and CMake inputs.
 
 The [Story 2.2 plan](../../docs/story-2-2-experiment-plan.md) remains authoritative

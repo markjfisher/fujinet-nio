@@ -82,8 +82,11 @@ static epio_t *waveform_init(void) {
     stimulus_registers config = stimulus_config(100000);
     CHECK(config.clkdiv == (1u << 16));
     CHECK(config.execctrl == ((STIMULUS_WORDS - 1u) << 12));
-    CHECK(config.shiftctrl == 0);
-    CHECK(config.pinctrl == (2u | (6u << 5) | (4u << 20) | (1u << 26)));
+    CHECK(config.shiftctrl == STIMULUS_SHIFTCTRL);
+    CHECK(config.pinctrl == (STIMULUS_OUTPUT_BASE |
+                             (STIMULUS_SET_BASE << 5) |
+                             (STIMULUS_OUTPUT_PINS << 20) |
+                             (STIMULUS_SET_PINS << 26)));
     CHECK(stimulus_config(125000000).clkdiv == (1250u << 16));
     CHECK(stimulus_config(125050000).clkdiv == ((1250u << 16) | (128u << 8)));
     epio_sm_reg_t r = {.clkdiv = config.clkdiv,
@@ -93,10 +96,12 @@ static epio_t *waveform_init(void) {
     epio_set_sm_reg(e, 0, 0, &r);
     for (unsigned i = 0; i < STIMULUS_WORDS; ++i)
         epio_set_instr(e, 0, i, words[i]);
-    for (unsigned p = 2; p <= 6; ++p) {
+    for (unsigned p = STIMULUS_OUTPUT_BASE;
+         p < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++p) {
         epio_set_gpio_output_control(e, p, 0);
         epio_set_gpio_output(e, p);
-        epio_set_gpio_output_level(e, p, p == 6);
+        epio_set_gpio_output_level(e, p,
+            (STIMULUS_IDLE_PIN_VALUES >> p) & 1u);
     }
     epio_enable_sm(e, 0, 0);
     return e;
@@ -160,11 +165,44 @@ static void waveform_check(epio_t *e) {
               (cycle >= x->completion_irq_cycle));
     }
 }
+#if STIMULUS_USE_DMA
+static void fill_tx_fifo(epio_t *e, size_t *next) {
+    while (*next < STIMULUS_OUTPUT_WORD_COUNT &&
+           epio_tx_fifo_depth(e, 0, 0) < 4)
+        epio_push_tx_fifo(e, 0, 0, stimulus_output_words[(*next)++]);
+}
+static uint32_t output_pins(epio_t *e) {
+    return (uint32_t)(epio_read_pin_states(e) >> STIMULUS_OUTPUT_BASE) &
+           ((1u << STIMULUS_OUTPUT_PINS) - 1u);
+}
+static void waveform_wide_check(epio_t *e) {
+    const stimulus_expectations *x = &stimulus_expected;
+    size_t fed = 0, observed = 0;
+    uint32_t prior = output_pins(e);
+    CHECK(x->output_word_count == STIMULUS_OUTPUT_WORD_COUNT);
+    CHECK(memcmp(stimulus_output_words, x->output_words,
+                 x->output_word_count * sizeof(*x->output_words)) == 0);
+    for (unsigned cycle = 0; cycle < x->observation_cycles; ++cycle) {
+        fill_tx_fifo(e, &fed); /* Models the DMA DREQ service, not CPU timing. */
+        epio_step_cycles(e, 1);
+        uint32_t current = output_pins(e);
+        if (current != prior) {
+            CHECK(observed < x->output_word_count);
+            CHECK(current == x->output_words[observed++]);
+            prior = current;
+        }
+    }
+    CHECK(fed == x->output_word_count);
+    CHECK(observed == x->output_word_count);
+    CHECK(epio_peek_block_irq_num(e, 0, 0) == 1);
+}
+#endif
 static epio_t *waveform_rearm(epio_t *e) {
     epio_disable_sm(e, 0, 0);
-    epio_set_gpio_output_level(e, 6, 1);
-    CHECK((epio_read_pin_states(e) & 0x40) != 0);
-    for (unsigned p = 2; p <= 6; ++p)
+    epio_set_gpio_output_level(e, STIMULUS_AS_PIN, 1);
+    CHECK((epio_read_pin_states(e) & (1u << STIMULUS_AS_PIN)) != 0);
+    for (unsigned p = STIMULUS_OUTPUT_BASE;
+         p < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++p)
         epio_set_gpio_input(e, p);
     epio_clear_block_irq(e, 0, 0);
     CHECK(epio_peek_block_irq_num(e, 0, 0) == 0);
@@ -178,6 +216,19 @@ static epio_t *waveform_rearm(epio_t *e) {
 }
 static void waveform_test(void) {
     const stimulus_expectations *x = &stimulus_expected;
+    if (x->output_words) {
+#if STIMULUS_USE_DMA
+        CHECK(x->output_word_count && x->output_word_count == STIMULUS_OUTPUT_WORD_COUNT);
+        epio_t *e = waveform_init();
+        waveform_wide_check(e);
+        e = waveform_rearm(e);
+        waveform_wide_check(e); /* DMA source re-arms without a CPU edge loop. */
+        epio_free(e);
+        return;
+#else
+        CHECK(0 && "wide expectation requires STIMULUS_USE_DMA");
+#endif
+    }
     if (x->phases) {
         unsigned cycles = 0;
         CHECK(x->phase_count);

@@ -119,6 +119,22 @@ class ReportSummaryTests(unittest.TestCase):
         self.assertIn("low-20: D=3 × 4; low 20 us; gap 100 us", output)
         self.assertIn("gap-20: D=5 × 4; low 100 us; gap 20 us", output)
 
+    def test_width_control_summary_describes_limited_analyzer_coverage(self):
+        output = summary.format_report({
+            "status": "passed",
+            "waveform": {"analysis_kind": "width_control", "assertions": 22,
+                         "accepted_assertions": 18, "values": [10, 165],
+                         "analyzer_signals": {"data_bits": {
+                             "D0": "D5", "D8": "D6", "D15": "D7"}},
+                         "measurements": [
+                             {"id": "unselected", "accepted": False},
+                             {"id": "read", "accepted": False},
+                         ]},
+        })
+        self.assertIn("/AS assertions: 22 (18 accepted)", output)
+        self.assertIn("Analyzer subset: /AS, SELECT, R/W, /UDS, /LDS, D0, D15, D8", output)
+        self.assertIn("Ignored controls: unselected, read", output)
+
     def test_unknown_analysis_kind_uses_generic_output(self):
         output = summary.format_report({"status": "passed", "waveform": {"analysis_kind": "future"}})
         self.assertIn("Stimulus status: passed", output)

@@ -98,6 +98,7 @@ def sequence_lines(label, numbers, per_line=14):
 
 def write_transactions_svg(report, path):
     waveform = report.get("waveform") or {}
+    kind = waveform.get("analysis_kind")
     events = transactions(waveform)
     if not events:
         raise ValueError("report has no analysed assertion events")
@@ -117,6 +118,22 @@ def write_transactions_svg(report, path):
     overview_top, overview_height = 82, 24
     detail_top, lane_height = 194, 42
     lane_names = [(3, "D3"), (2, "D2"), (1, "D1"), (0, "D0"), (7, "/AS")]
+    if kind == "width_control":
+        signals = waveform.get("analyzer_signals") or {}
+        data_bits = signals.get("data_bits") or {}
+        def mapped_bit(name):
+            match = re.fullmatch(r"D([0-7])", str(signals.get(name, "")))
+            return int(match[1]) if match else None
+        def data_bit(name):
+            match = re.fullmatch(r"D([0-7])", str(data_bits.get(name, "")))
+            return int(match[1]) if match else None
+        selected = [
+            (data_bit("D15"), "D15"), (data_bit("D8"), "D8"),
+            (data_bit("D0"), "D0"), (mapped_bit("lds"), "/LDS"),
+            (mapped_bit("uds"), "/UDS"), (mapped_bit("rw"), "R/W"),
+            (mapped_bit("select"), "SELECT"), (mapped_bit("as"), "/AS"),
+        ]
+        lane_names = [(bit, name) for bit, name in selected if bit is not None]
     detail_bottom = detail_top + lane_height * len(lane_names)
 
     def overview_x(sample):
@@ -128,9 +145,17 @@ def write_transactions_svg(report, path):
     dut = (report.get("dut_evidence") or {}).get("observed", {})
     observed = dut.get("values", []) if isinstance(dut, dict) else []
     expected = [event.get("capture_value") for event in events]
-    annotation_lines = sequence_lines("Expected at /AS falls: ", expected)
-    annotation_lines += sequence_lines("DUT reported: ", observed)
-    if waveform.get("analysis_kind") == "sampling_window":
+    if kind == "width_control":
+        accepted = [event.get("capture_value") for event in events if event.get("accepted")]
+        ignored = [event.get("id", "ignored") for event in events if not event.get("accepted")]
+        annotation_lines = sequence_lines("Expected selected writes: ", accepted)
+        annotation_lines += sequence_lines("DUT reported: ", observed)
+        annotation_lines.append("orange = ignored /AS assertion; green = selected write")
+        annotation_lines.append("Ignored controls: " + ", ".join(map(str, ignored)))
+    else:
+        annotation_lines = sequence_lines("Expected at /AS falls: ", expected)
+        annotation_lines += sequence_lines("DUT reported: ", observed)
+    if kind == "sampling_window":
         for row in waveform.get("measurements", []):
             if not isinstance(row, dict):
                 continue
@@ -140,7 +165,7 @@ def write_transactions_svg(report, path):
                     row.get("offset_us", "?"), value(row.get("captured"))
                 )
             )
-    if waveform.get("analysis_kind") == "repetition":
+    if kind == "repetition":
         for group in waveform.get("groups", []):
             if isinstance(group, dict):
                 annotation_lines.append("{}: D={} × {}; low {} us; internal gap {} us".format(
@@ -157,7 +182,7 @@ def write_transactions_svg(report, path):
         (report.get("build_identity") or {}).get("manifest", {}).get("title", "waveform evidence"))
     out = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
-        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.label{font-weight:bold}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.capture{stroke:#188038;stroke-width:2}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}</style>',
+        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.label{font-weight:bold}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.capture{stroke:#188038;stroke-width:2}.ignored{stroke:#f29900;stroke-width:2;stroke-dasharray:4 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}</style>',
         '<rect width="100%" height="100%" fill="white"/>',
         '<text x="20" y="25" class="label">{}</text>'.format(html.escape(title)),
         '<text x="20" y="48" class="small">Authoritative event boundaries and decoded values come from experiment.py. The detailed traces below are saved logic-analyser samples.</text>',
@@ -180,8 +205,8 @@ def write_transactions_svg(report, path):
         detail_x(first), detail_top - 8, max(1, detail_x(last) - detail_x(first)), lane_height * len(lane_names) + 16))
     for lane, (bit, name) in enumerate(lane_names):
         top = detail_top + lane * lane_height
-        path_class = "as" if bit == 7 else "data"
-        lane_class = "as-lane" if bit == 7 else "data-lane"
+        path_class = "as" if name == "/AS" else "data"
+        lane_class = "as-lane" if name == "/AS" else "data-lane"
         out.extend([
             '<rect class="{}" x="{}" y="{}" width="{}" height="{}"/>'.format(lane_class, left, top, plot_width, lane_height),
             '<text x="{}" y="{}" class="label" text-anchor="end">{}</text>'.format(left - 14, top + 26, name),
@@ -190,14 +215,16 @@ def write_transactions_svg(report, path):
         if trace:
             out.append('<path class="{}" d="{}"/>'.format(path_class, trace))
 
-    sampling_window = waveform.get("analysis_kind") == "sampling_window"
+    sampling_window = kind == "sampling_window"
     simple_transactions = all(len(event.get("phases") or []) == 1 for event in events)
     if sampling_window:
         out.append('<text x="20" y="{}" class="small">captured at /AS fall</text>'.format(
             detail_bottom + 37))
     for index, event in enumerate(events):
         fall, rise = event["assert_sample"], event["release_sample"]
-        out.append('<line class="capture" x1="{:.2f}" y1="{}" x2="{:.2f}" y2="{}"/>'.format(
+        boundary_class = "capture" if event.get("accepted", True) else "ignored"
+        out.append('<line class="{}" x1="{:.2f}" y1="{}" x2="{:.2f}" y2="{}"/>'.format(
+            boundary_class,
             detail_x(fall), detail_top - 14, detail_x(fall), detail_bottom + 8))
         if sampling_window:
             # C3 can change data while /AS is low. The raw phase cells would
@@ -229,7 +256,8 @@ def write_transactions_svg(report, path):
             cell_width = detail_x(end) - detail_x(fall)
             out.append('<rect class="phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(detail_x(fall), detail_bottom + 22, max(1, cell_width)))
             if cell_width >= 18:
-                out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(detail_x(fall) + 3, detail_bottom + 37, value(event.get("capture_value"))))
+                label = "ignored" if kind == "width_control" and not event.get("accepted") else value(event.get("capture_value"))
+                out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(detail_x(fall) + 3, detail_bottom + 37, label))
             continue
         for phase in event.get("phases") or []:
             start, end = phase["start_sample"], phase["end_sample"]

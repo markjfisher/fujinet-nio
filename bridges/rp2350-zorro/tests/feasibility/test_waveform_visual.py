@@ -146,6 +146,39 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn("low-20: D=3 × 4; low 20 us; internal gap 100 us", text)
         self.assertIn("gap-20: D=5 × 4; low 100 us; internal gap 20 us", text)
 
+    def test_width_control_svg_shows_control_subset_and_ignored_assertions(self):
+        report = {
+            "experiment": "C5",
+            "dut_evidence": {"observed": {"values": [10]}},
+            "waveform": {"analysis_kind": "width_control", "sample_rate": 1_000_000,
+                         "analyzer_signals": {
+                             "as": "D0", "select": "D1", "rw": "D2",
+                             "uds": "D3", "lds": "D4",
+                             "data_bits": {"D0": "D5", "D8": "D6", "D15": "D7"}},
+                         "transactions": [
+                             {"id": "unselected", "accepted": False,
+                              "assert_sample": 100, "release_sample": 200,
+                              "capture_value": 0x1357,
+                              "phases": [{"value": 0x1357, "start_sample": 100,
+                                          "end_sample": 200}]},
+                             {"id": "four-bit", "accepted": True,
+                              "assert_sample": 300, "release_sample": 400,
+                              "capture_value": 10,
+                              "phases": [{"value": 10, "start_sample": 300,
+                                          "end_sample": 400}]},
+                         ],
+                         "limits": "subset only"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "waveform.svg"
+            visual.write_svg(report, output)
+            text = output.read_text()
+        self.assertIn(">D15<", text)
+        self.assertIn(">SELECT<", text)
+        self.assertIn('class="ignored"', text)
+        self.assertIn("Expected selected writes", text)
+        self.assertIn("Ignored controls: unselected", text)
+
     def test_idle_svg_shows_data_changes_high_strobe_and_dut_counters(self):
         report = {
             "experiment": "C0",

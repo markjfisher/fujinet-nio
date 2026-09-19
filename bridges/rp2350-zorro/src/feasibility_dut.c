@@ -13,7 +13,7 @@ static unsigned capture_values[CAPTURE_VALUES_MAX];
 
 static void drain_capture(void) {
     while (!pio_sm_is_rx_fifo_empty(pio0, CAPTURE_SM)) {
-        unsigned value = pio_sm_get(pio0, CAPTURE_SM) & 0xf;
+        unsigned value = pio_sm_get(pio0, CAPTURE_SM) & CAPTURE_VALUE_MASK;
         if (capture_count < CAPTURE_VALUES_MAX)
             capture_values[capture_count] = value;
         ++capture_count;

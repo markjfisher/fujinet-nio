@@ -129,9 +129,31 @@ def repetition_lines(waveform, manifest):
     return lines
 
 
+def width_control_lines(waveform, manifest):
+    lines = []
+    if waveform.get("assertions") is not None:
+        lines.append("/AS assertions: {} ({} accepted)".format(
+            waveform["assertions"], waveform.get("accepted_assertions", "?")))
+    values = compact_values(waveform.get("values"))
+    if values:
+        lines.append("Selected-write values: " + values)
+    signals = waveform.get("analyzer_signals", {})
+    if isinstance(signals, dict):
+        data_bits = signals.get("data_bits", {})
+        observed = ["/AS", "SELECT", "R/W", "/UDS", "/LDS"]
+        if isinstance(data_bits, dict):
+            observed.extend(sorted(data_bits))
+        lines.append("Analyzer subset: " + ", ".join(observed))
+    rows = waveform.get("measurements", [])
+    ignored = [row.get("id") for row in rows if isinstance(row, dict) and not row.get("accepted")]
+    if ignored:
+        lines.append("Ignored controls: " + ", ".join(map(str, ignored)))
+    return lines
+
+
 FORMATTERS = {"idle": idle_lines, "burst": burst_lines, "pulse": burst_lines,
               "held_active": held_active_lines, "sampling_window": sampling_window_lines,
-              "repetition": repetition_lines}
+              "repetition": repetition_lines, "width_control": width_control_lines}
 
 
 def host_test_summary(report):

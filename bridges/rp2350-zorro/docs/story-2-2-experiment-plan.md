@@ -1,12 +1,13 @@
 # Story 2.2 — RP2350B Zorro-facing feasibility experiment
 
 Status: active feasibility plan, updated 2026-09-19. The reusable W0 framework,
-generator, Core2350B observer and C0–C4 are implemented. Local physical reports
+generator, Core2350B observer and C0–C5 are implemented. Local physical reports
 show passed two-board runs for C0–C4; their raw captures, console logs, firmware
 hashes and SVG evidence are retained under `build/feasibility/`. Those results
 establish the stated synthetic-fixture behavior only. They do not establish a
 Zorro-II timing margin, output safety, sustained transfer capacity, or real-bus
-compatibility. C5–C10 remain planned work in this same Story 2.2.
+compatibility. C5 awaits its first physical W1 run; C6–C10 remain planned work
+in this same Story 2.2.
 
 ## Repeatable experiment contract — user amendment, 2026-09-17
 
@@ -22,7 +23,7 @@ shared board/USB/APIO support rather than copying another project. The starter
 exposes build, load, run and analyse separately, and `all` is the visible,
 interactive build/load/run/analyse/report flow. It loads only its verified
 targets, waits for re-enumeration, explains signals and waits for the user to
-start. C0's RAM generator load requires RP2040 BOOTSEL; C1–C4 use the enrolled
+start. C0's RAM generator load requires RP2040 BOOTSEL; C1–C5 use the enrolled
 flash generator and force it into the loader without a button press. Preserve raw
 capture/logs, firmware hashes, failures and expected/observed verdicts in fresh
 output directories. Offline analysis and builds do not require connected boards.
@@ -35,10 +36,10 @@ failed analyzer acquisition or an unverified USB identity. The user permits
 replacing the RP2040 debug firmware, but RAM-only loading remains sufficient for
 the current generator check; no persistent flash change is required.
 
-C0–C4 are real two-board experiments, not placeholders. C5–C10 declare their
-missing software/hardware and refuse execution until implemented; they do not
-contain pretend test firmware. Completing W0 does not close the full E0–E7 or
-real-bus gates.
+C0–C4 are real two-board experiments, not placeholders. C5 has buildable
+two-board W1 firmware and awaits physical evidence; C6–C10 declare their missing
+software/hardware and refuse execution until implemented. Completing W0 does not
+close the full E0–E7 or real-bus gates.
 
 ## Goal and relationship to Story 2.1
 
@@ -67,7 +68,7 @@ program is laboratory equipment. Story 2.3 owns bridge-to-ESP feasibility.
 | RP2040 development board | Available: TZT Pico-style purple AliExpress board, advertised 16 MB flash, USB-C, BOOTSEL, 40 pins; independent stimulus generator |
 | Breadboard and Dupont leads | Available; short signal paths and common GND for initial 3.3 V experiments |
 | Two USB data connections | Required, one console per board; identify each by reported role and unique board ID |
-| Logic analyzer | Available: inexpensive eight-channel USB fx2lafw-compatible unit labelled CH1–CH8 plus GNC/CLK; used through sigrok-cli/PulseView at 1 MHz for W0. Its electrical limits and higher simultaneous sample-rate capability remain to be recorded before tighter claims. |
+| Logic analyzer | Available: inexpensive eight-channel USB fx2lafw-compatible unit labelled CH1–CH8 plus GND/CLK; used through sigrok-cli/PulseView at 1 MHz for W0. Its electrical limits and higher simultaneous sample-rate capability remain to be recorded before tighter claims. |
 | Oscilloscope and suitable probes | HANMATEK DOS1102 available; verify probe configuration and usable measurement capabilities. Use for timing, analog edge quality and output release |
 | Multimeter | Simple unit available; use for continuity and supply/ground checks |
 | Weak bias / series resistors, later buffers | Select and document with the output/release fixture; needed before bidirectional tests, not guessed production parts |
@@ -131,8 +132,8 @@ User-reported W0 analyzer signal wiring (2026-09-17):
 | CH4 | D3 | GP5 |
 | CH8 | /AS | GP1 |
 
-The unit is labelled CH1–CH8 plus GNC/CLK as reported by the user. CH5–CH7
-are unused. Confirm the reported GNC terminal is ground, then connect it to the
+The unit is labelled CH1–CH8 plus GND/CLK as reported by the user. CH5–CH7
+are unused. Confirm the reported GND terminal is ground, then connect it to the
 boards' common GND; ground connection and input compatibility are not yet verified.
 Leave CLK disconnected until its function/pinout is identified. Capture software
 must map its channel numbering explicitly to these physical labels, including
@@ -178,6 +179,13 @@ boards may supply a separately validated fixture extension if needed; no ESP is
 required. The real-bus wiring will have its own reviewed profile, not reuse W1
 as a connector pinout.
 
+C5 uses W1 only as a selected-write input fixture. Its eight analyzer inputs are
+`/AS`, `SELECT`, `R/W`, `/UDS`, `/LDS`, and representative D0, D8 and D15.
+The exact CH1–CH8 mapping and its scope are recorded in
+[`C5-width-control/README.md`](../tests/feasibility/C5-width-control/README.md).
+It cannot be a simultaneous 16-bit analyzer trace; the complete ordered word
+evidence comes from the DUT PIO RX FIFO drained by ARM.
+
 ## Firmware and test architecture
 
 The generator executes finite, preloaded PIO waveform sequences independently of
@@ -220,7 +228,7 @@ than replacing timed PIO work with CPU GPIO loops:
 
 | Gate | Required architectural evidence |
 | --- | --- |
-| C5 | Record PIO instruction-memory, GPIO-window and state-machine allocation for widened capture/control. PIO must still sample the selected inputs; ARM consumes bounded records. |
+| C5 | **Implemented; physical W1 evidence pending.** Core2350B PIO0 SM0 uses a nine-instruction APIO capture loop over GP2–22: wait for SELECT/write/both lanes/`/AS`, `IN PINS,16`, blocking-push and PIO IRQ. ARM drains bounded records. RP2040 PIO0 SM0 uses ten APIO instructions and one DMA channel to emit 45 complete GP2–22 states; the CPU does not pace waveform edges. |
 | C6 | Measure the PIO RX FIFO → ARM transfer under deliberate pressure. Compare the current polling baseline with an NVIC-IRQ and/or DMA drain variant, record stall/loss boundaries and select the viable bounded-transfer design. |
 | C7–C8 | Use a separately defined PIO output/turnaround path with data preloaded by ARM or DMA. ARM may arm and replenish bounded buffers; it must not toggle timing-critical response pins per access. |
 | C9 | Prove that reset/abort releases each PIO-owned output and invalidates any ARM-side records from the old run. |
@@ -271,7 +279,7 @@ First implement the named cases as deterministic tests and a physical run recipe
 | C2 held-active | Assert /AS once, hold it low while changing data | **Implemented and passed on W0:** one sample only; held duration does not create another capture |
 | C3 sampling window | Change data at swept offsets before/after assertion | **Implemented and passed on W0:** before/after values at 10 and 50 us offsets; unresolved edge timing remains unmeasured |
 | C4 repetition | Repeated assertions, decreasing high gap and low width separately | **Implemented and passed on W0:** 20 ordered captures across 100/50/20 us low and released-gap points. A failure-boundary sweep remains future work. |
-| C5 width/control | 4 -> 8 -> 16 bits; walking bits, R/W, lane strobes, SELECT | Correct data grouping; no response when unselected; selected lanes follow the recorded fixture rule |
+| C5 width/control | 4 -> 8 -> 16 bits; walking bits, R/W, lane strobes, SELECT | **Implemented; physical W1 run pending:** 22 assertions comprising four ignored controls and 18 selected writes. Analyzer checks controls plus D0/D8/D15; DUT must report the 18 full ordered words. |
 | C6 pressure | Pause/slow DUT drain until FIFO fills, then resume | Identify actual stall/loss behavior; no completion for unaccepted data; account for all losses/timeouts |
 | C7 reads | Generator releases data; DUT returns a known pattern on selected reads | Generator samples expected data; measured data-valid and /ACK timing, including unavailable data |
 | C8 turnaround | Alternate read/write and lane selection; vary release gap | Correct first value after each change; measured release, no simultaneous drive; unselected bus stays released |
@@ -318,7 +326,8 @@ Each package ends in a reviewable result; they do not add entries to stories.yam
 | [x] E1: integrated targets | `CMakeLists.txt`, `CMakePresets.json`, `cmake/host.cmake`, `scripts/bootstrap.py`, policy and tooling tests | Host Debug/Release, RP2040 stimulus and RP2350B DUT presets build independently; unsupported board/platform configurations are rejected. |
 | [x] E2: USB observability and runner | `src/feasibility_dut.c`, `lab/rp2040/main.c`, `tests/feasibility/experiment.py` and its host tests | Role-aware USB control, fresh-run evidence, bounded output release, DUT reset/report protocol and stored bench paths work through each experiment's `run.sh`. |
 | [x] E3: physical four-bit reproduction | C0–C4 directories, shared `src/capture_program.c`, EPIO capture tests and generated `report.json`/`waveform.svg` evidence | Passed local W0 two-board C0–C4 reports establish exact functional behavior at the declared conditions. The failure boundary, high-rate endurance and external timing margin remain open. |
-| [ ] E4: width/control/pressure | `src/feasibility/bus_program.{c,h}`, `tests/feasibility/test_bus_program.c`, `tests/feasibility/cases/w1.json`; extend generator and W1 wiring — C5/C6 | Test-first selectable groups and explicit pressure outcome; pin/SM/instruction budget recorded; no false acknowledgements or unreported loss |
+| [~] E4a: width/control | W1 C5 stimulus/capture sources, manifest and focused EPIO test | Implemented: PIO/DMA allocation and selected-write capture are covered by host tests; physical W1 evidence is pending. |
+| [ ] E4b: pressure | Extend the W1 capture fixture for C6 | Measure FIFO-to-ARM pressure and explicit loss/stall outcomes; no false acknowledgements or unreported loss. |
 | [ ] E5: reads/turnaround/recovery | Extend E4 APIO source/tests/cases, DUT logging and RP2040 receiver — C7–C9 | Both-side expectations, external read-valid/release measurements and local timeout/reset cleanup; bidirectional fixture reviewed before outputs enabled |
 | [ ] E6: real-bus procedure and execution | `docs/feasibility/zorro-requirements.md`, `docs/feasibility/real-bus-procedure.md`, applicable `src/feasibility/` probe and focused Amiga exerciser only if needed — C10 | Breakout/adapter, reviewed buffering/power/direction and instruments available; cited bus limits and actual captures; no uncontrolled host address writes |
 | [ ] E7: evidence and verdict | `docs/feasibility/report.md`, `docs/feasibility/results/`; workspace scope/acceptance link — audit case/requirement coverage | Software/bench/real-bus outcomes separated; reproducible evidence, measured margins and explicit proceed/hold with unresolved items |
@@ -343,8 +352,8 @@ experiment, work in its own directory. After one-time enrollment and
 `configure-paths`, the normal reproducible command is:
 
 ```sh
-cd tests/feasibility/C4-repetition
-./run.sh all --output /tmp/c4-run-001
+cd tests/feasibility/C5-width-control
+./run.sh all --output /tmp/c5-run-001
 ```
 
 `all` builds host Debug/Release tests and the selected RP2040/RP2350 firmware,
@@ -358,7 +367,7 @@ the same sequence without touching hardware.
 The RP2350B target remains `waveshare_core2350b` / `rp2350-arm-s`; the RP2040
 stimulus target is `pico` / `rp2040`. Firmware and host builds use separate build
 directories and share only the pinned dependency sources/picotool. C0 loads a
-RAM-only generator and requires BOOTSEL. C1–C4 use a flash-installed generator,
+RAM-only generator and requires BOOTSEL. C1–C5 use a flash-installed generator,
 so their normal `all` run force-reboots the known connected board into the loader
 without a button press. The runner verifies enrolled identity and local topology
 paths before it arms either board.

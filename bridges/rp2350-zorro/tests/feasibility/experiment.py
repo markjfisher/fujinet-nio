@@ -148,7 +148,7 @@ def analyse(path, manifest):
             ),
         ) from e
     kind = manifest.get("analysis_kind", "burst")
-    require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition"), "Unknown analysis_kind", "configuration")
+    require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition", "width_control"), "Unknown analysis_kind", "configuration")
     if kind == "idle":
         return analyse_idle(path, manifest, data, hz)
     if kind == "held_active":
@@ -157,6 +157,8 @@ def analyse(path, manifest):
         return analyse_sampling_window(path, manifest, data, hz)
     if kind == "repetition":
         return analyse_repetition(path, manifest, data, hz)
+    if kind == "width_control":
+        return analyse_width_control(path, manifest, data, hz)
     rows = []
     state = dict(expected=manifest["expected_values"], sample=None)
 
@@ -494,6 +496,91 @@ def analyse_repetition(path, manifest, data, hz):
                 observed_rises=rises, measurements=rows, groups=group_rows,
                 transactions=transactions,
                 limits="Only intra-group gaps are controlled. Cross-group gaps include the safe data-value transition and are diagnostic, not a timing limit.")
+
+
+def analyse_width_control(path, manifest, data, hz):
+    """Validate the explicitly observed W1 control subset at every /AS pulse."""
+    signals = manifest.get("analyzer_signals")
+    cases = manifest.get("control_transactions")
+    require(isinstance(signals, dict) and isinstance(cases, list) and cases,
+            "width_control needs analyzer_signals and control_transactions", "configuration")
+
+    def bit(name):
+        channel = signals.get(name)
+        matched = re.fullmatch(r"D([0-7])", str(channel))
+        require(matched is not None, "invalid analyzer channel for " + name, "configuration")
+        return int(matched[1])
+
+    as_bit = bit("as")
+    control_bits = {name: bit(name) for name in ("select", "rw", "uds", "lds")}
+    data_bits = signals.get("data_bits")
+    require(isinstance(data_bits, dict) and data_bits,
+            "width_control needs observed data_bits", "configuration")
+    observed_data_bits = {}
+    for name, channel in data_bits.items():
+        match = re.fullmatch(r"D([0-7])", str(channel))
+        require(match is not None and re.fullmatch(r"D(0|[1-9]|1[0-5])", str(name)),
+                "invalid observed W1 data bit", "configuration")
+        observed_data_bits[int(name[1:])] = int(match[1])
+
+    falls = [i for i in range(1, len(data))
+             if data[i - 1] & (1 << as_bit) and not data[i] & (1 << as_bit)]
+    rises = [i for i in range(1, len(data))
+             if not data[i - 1] & (1 << as_bit) and data[i] & (1 << as_bit)]
+    require(len(falls) == len(rises) == len(cases),
+            "unexpected width/control /AS edges")
+    require(data[0] & (1 << as_bit) and data[-1] & (1 << as_bit),
+            "width/control /AS must begin and end high")
+
+    rows, transactions = [], []
+    for index, (case, fall, rise) in enumerate(zip(cases, falls, rises)):
+        required = ("id", "value", "accepted", "select", "rw", "uds", "lds")
+        require(all(key in case for key in required),
+                "incomplete width/control transaction", "configuration")
+        value = case["value"]
+        require(isinstance(value, int) and 0 <= value <= 0xffff and
+                isinstance(case["accepted"], bool) and
+                all(case[name] in (0, 1) for name in ("select", "rw", "uds", "lds")),
+                "invalid width/control transaction", "configuration")
+        low_us = (rise - fall) * 1000000 / hz
+        require(abs(low_us - manifest["pulse_us"]) <= 2,
+                "width/control /AS width outside 2 us tolerance")
+        if index:
+            setup_us = (fall - rises[index - 1]) * 1000000 / hz
+            require(abs(setup_us - manifest["setup_us"]) <= 2,
+                    "width/control released setup outside 2 us tolerance")
+        else:
+            setup_us = None
+        for name, channel_bit in control_bits.items():
+            actual = 1 if data[fall] & (1 << channel_bit) else 0
+            require(actual == case[name], "width/control " + name + " differs at /AS fall")
+            require(all((sample >> channel_bit) & 1 == case[name]
+                        for sample in data[fall:rise]),
+                    "width/control " + name + " changes while /AS is low")
+        observed = {}
+        for data_bit, channel_bit in observed_data_bits.items():
+            actual = 1 if data[fall] & (1 << channel_bit) else 0
+            expected = (value >> data_bit) & 1
+            require(actual == expected and
+                    all((sample >> channel_bit) & 1 == expected for sample in data[fall:rise]),
+                    "width/control observed data bit differs while /AS is low")
+            observed["D" + str(data_bit)] = actual
+        row = dict(index=index, id=case["id"], value=value,
+                   accepted=case["accepted"], fall_sample=fall, rise_sample=rise,
+                   low_us=low_us, setup_us=setup_us, controls={
+                       name: case[name] for name in control_bits}, observed_data=observed)
+        rows.append(row)
+        transactions.append(dict(index=index, id=case["id"], accepted=case["accepted"],
+                                 assert_sample=fall, release_sample=rise,
+                                 capture_value=value, phases=[dict(value=value,
+                                 start_sample=fall, end_sample=rise, hold_us=low_us)]))
+    return dict(capture=str(path), capture_sha256=digest(path), sample_rate=hz,
+                analysis_kind="width_control", assertions=len(rows),
+                accepted_assertions=sum(row["accepted"] for row in rows),
+                values=[row["value"] for row in rows if row["accepted"]],
+                observed_falls=falls, observed_rises=rises, measurements=rows,
+                transactions=transactions, analyzer_signals=signals,
+                limits="The analyzer observes /AS, SELECT, R/W, /UDS, /LDS and D0/D8/D15 only. Full 16-bit values are independently checked by the DUT report; this trace is not a simultaneous full-bus capture.")
 
 
 def acceptance(manifest, dut_evidence=None):
@@ -1523,10 +1610,16 @@ def physical_run(m, args, artifact, dut_image=None):
         report["analyzer_version"] = command(
             ["sigrok-cli", "--version"], "environment"
         ).strip()
-        print(
-            f"Generator {session['flash_id']} on USB {d['path']}: GP2..5 = D0..3, GP6 = /AS, analyzer D0,D1,D2,D3,D7; common ground.",
-            flush=True,
-        )
+        if m.get("analysis_kind") == "width_control":
+            wiring = ("GP2..17 = D0..15, GP18 = /AS, GP19 = R/W, "
+                      "GP20 = /UDS, GP21 = /LDS, GP22 = SELECT; "
+                      "analyzer D0..D7 follows this experiment's W1 mapping; common ground.")
+            assertions = len(m["control_transactions"])
+            description = f"{assertions} /AS assertions ({len(m['expected_values'])} accepted writes)"
+        else:
+            wiring = "GP2..5 = D0..3, GP6 = /AS, analyzer D0,D1,D2,D3,D7; common ground."
+            description = f"{len(m['expected_values'])}-value burst"
+        print(f"Generator {session['flash_id']} on USB {d['path']}: {wiring}", flush=True)
         require(
             sys.stdin.isatty(),
             "Interactive terminal required for explicit Enter before outputs",
@@ -1534,7 +1627,7 @@ def physical_run(m, args, artifact, dut_image=None):
         )
         input(
             "Check wiring. Press Enter to arm acquisition and emit one "
-            f"{len(m['expected_values'])}-value burst (Ctrl-C cancels): "
+            f"{description} (Ctrl-C cancels): "
         )
         assert_profile(args, profile)
         d = validate_session(m, session, artifact, usb_devices(), profile)

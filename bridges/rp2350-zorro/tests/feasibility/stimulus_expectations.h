@@ -28,6 +28,10 @@ typedef struct {
        single held-active strobe with data transitions. */
     const stimulus_phase *phases;
     size_t phase_count;
+    /* Wide/DMA waveforms supply full relative output-pin words. This remains
+       a host-only oracle, independent from the firmware's DMA source table. */
+    const uint32_t *output_words;
+    size_t output_word_count;
 } stimulus_expectations;
 
 extern const stimulus_expectations stimulus_expected;

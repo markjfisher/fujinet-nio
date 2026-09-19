@@ -1,4 +1,5 @@
 #include "hardware/clocks.h"
+#include "hardware/dma.h"
 #include "hardware/pio.h"
 #include "hardware/sync.h"
 #include "pico/stdio_usb.h"
@@ -39,17 +40,28 @@ void tud_umount_cb(void) {
 static uint16_t words[STIMULUS_WORDS];
 static pio_sm_config config;
 static bool driving;
+#if STIMULUS_USE_DMA
+static int stimulus_dma;
+static dma_channel_config stimulus_dma_config;
+#endif
 static void release(void *unused) {
     (void)unused;
     pio_sm_set_enabled(pio0, 0, false);
-    /* SIO latch high before mux transfer; /AS deasserts before any release. */
+#if STIMULUS_USE_DMA
+    dma_channel_abort(stimulus_dma);
+#endif
+    /* Set every output to its declared idle value before making it an input. */
     if (driving) {
-        gpio_put(STIMULUS_AS_PIN, 1);
-        gpio_set_dir(STIMULUS_AS_PIN, GPIO_OUT);
-        gpio_set_function(STIMULUS_AS_PIN, GPIO_FUNC_SIO);
+        for (unsigned pin = STIMULUS_OUTPUT_BASE;
+             pin < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++pin) {
+            gpio_set_function(pin, GPIO_FUNC_SIO);
+            gpio_set_dir(pin, GPIO_OUT);
+        }
+        gpio_put_masked(STIMULUS_PIN_MASK, STIMULUS_IDLE_PIN_VALUES);
         busy_wait_us_32(10);
     }
-    for (unsigned pin = STIMULUS_DATA_BASE; pin <= STIMULUS_AS_PIN; ++pin) {
+    for (unsigned pin = STIMULUS_OUTPUT_BASE;
+         pin < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++pin) {
         gpio_set_dir(pin, GPIO_IN);
         gpio_set_function(pin, GPIO_FUNC_SIO);
         gpio_disable_pulls(pin);
@@ -64,11 +76,17 @@ static void start(void *unused) {
     driving = true;
     pio_sm_init(pio0, 0, 0, &config);
     pio_interrupt_clear(pio0, 0);
-    pio_sm_set_pins_with_mask(pio0, 0, 1u << STIMULUS_AS_PIN,
+    pio_sm_set_pins_with_mask(pio0, 0, STIMULUS_IDLE_PIN_VALUES,
                               STIMULUS_PIN_MASK);
     pio_sm_set_pindirs_with_mask(pio0, 0, STIMULUS_PIN_MASK, STIMULUS_PIN_MASK);
-    for (unsigned pin = STIMULUS_DATA_BASE; pin <= STIMULUS_AS_PIN; ++pin)
+    for (unsigned pin = STIMULUS_OUTPUT_BASE;
+         pin < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++pin)
         pio_gpio_init(pio0, pin);
+#if STIMULUS_USE_DMA
+    dma_channel_set_read_addr(stimulus_dma, stimulus_output_words, false);
+    dma_channel_set_trans_count(stimulus_dma, STIMULUS_OUTPUT_WORD_COUNT, false);
+    dma_channel_start(stimulus_dma);
+#endif
     pio_sm_set_enabled(pio0, 0, true);
 }
 /* Never let an unread USB console block the safety/control loop. Replies may
@@ -93,7 +111,8 @@ static int read_byte(void *unused) {
 }
 int main(void) {
     /* Inputs without pulls from entry, including during USB initialization. */
-    for (unsigned pin = STIMULUS_DATA_BASE; pin <= STIMULUS_AS_PIN; ++pin) {
+    for (unsigned pin = STIMULUS_OUTPUT_BASE;
+         pin < STIMULUS_OUTPUT_BASE + STIMULUS_DRIVE_PINS; ++pin) {
         gpio_init(pin);
         gpio_disable_pulls(pin);
     }
@@ -106,6 +125,16 @@ int main(void) {
                              .execctrl = shared.execctrl,
                              .shiftctrl = shared.shiftctrl,
                              .pinctrl = shared.pinctrl};
+#if STIMULUS_USE_DMA
+    stimulus_dma = dma_claim_unused_channel(true);
+    stimulus_dma_config = dma_channel_get_default_config(stimulus_dma);
+    channel_config_set_transfer_data_size(&stimulus_dma_config, DMA_SIZE_32);
+    channel_config_set_read_increment(&stimulus_dma_config, true);
+    channel_config_set_write_increment(&stimulus_dma_config, false);
+    channel_config_set_dreq(&stimulus_dma_config, pio_get_dreq(pio0, 0, true));
+    dma_channel_configure(stimulus_dma, &stimulus_dma_config, &pio0->txf[0],
+                          stimulus_output_words, STIMULUS_OUTPUT_WORD_COUNT, false);
+#endif
     stimulus_control state;
     stimulus_init(&state, start, release, NULL);
     stdio_init_all();

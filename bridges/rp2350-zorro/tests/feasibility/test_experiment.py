@@ -39,6 +39,9 @@ PATH_PROFILE = dict(
     dut_usb_path="1-3",
 )
 META = "[global]\nsigrok version=0.5.2\n[device 1]\ncapturefile=logic-1\ntotal probes=8\nsamplerate=1 MHz\nunitsize=1\nprobe1=D0\nprobe2=D1\nprobe3=D2\nprobe4=D3\nprobe8=D7\n"
+META_ALL = "[global]\nsigrok version=0.5.2\n[device 1]\ncapturefile=logic-1\ntotal probes=8\nsamplerate=1 MHz\nunitsize=1\n" + "".join(
+    "probe{}=D{}\n".format(index + 1, index) for index in range(8)
+)
 
 
 def waveform():
@@ -1201,6 +1204,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C4-repetition/experiment.json").read_text()
         )
 
+    def c5_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C5-width-control/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1338,6 +1346,40 @@ class Experiments(unittest.TestCase):
             self.write_capture(data)
             with self.subTest(mutation=mutation), self.assertRaises(e.Failure):
                 e.analyse(self.capture, self.c4_manifest())
+
+    def width_control_waveform(self):
+        def sample(case, asserted):
+            value = (asserted << 0) | (case["select"] << 1) | (case["rw"] << 2)
+            value |= (case["uds"] << 3) | (case["lds"] << 4)
+            value |= ((case["value"] >> 0) & 1) << 5
+            value |= ((case["value"] >> 8) & 1) << 6
+            value |= ((case["value"] >> 15) & 1) << 7
+            return value
+        cases = self.c5_manifest()["control_transactions"]
+        parts = [bytes([sample(cases[0], 1)]) * 200]
+        for index, case in enumerate(cases):
+            parts.append(bytes([sample(case, 0)]) * 100)
+            if index + 1 < len(cases):
+                parts.append(bytes([sample(cases[index + 1], 1)]) * 100)
+        return b"".join(parts) + b"\x1d" * 100
+
+    def test_c5_width_control_analysis_checks_controls_and_observed_bits(self):
+        self.write_capture(self.width_control_waveform(), metadata=META_ALL)
+        report = e.analyse(self.capture, self.c5_manifest())
+        self.assertEqual(report["analysis_kind"], "width_control")
+        self.assertEqual(report["assertions"], 22)
+        self.assertEqual(report["accepted_assertions"], 18)
+        self.assertEqual(report["values"], self.c5_manifest()["dut"]["expected"]["values"])
+        self.assertEqual(report["measurements"][0]["id"], "unselected")
+        self.assertEqual(report["measurements"][-1]["id"], "walk-15")
+
+    def test_c5_rejects_wrong_selected_control_or_observed_data_bit(self):
+        baseline = bytearray(self.width_control_waveform())
+        # Fifth /AS low is the first accepted write; corrupt SELECT there.
+        baseline[1000] &= ~0x02
+        self.write_capture(baseline, metadata=META_ALL)
+        with self.assertRaises(e.Failure):
+            e.analyse(self.capture, self.c5_manifest())
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):

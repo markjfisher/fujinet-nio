@@ -12,12 +12,26 @@ void capture_program_init(void) {
         APIO_GPIO_INPUT_ONLY(pin);
         APIO_GPIO_PULL_DOWN(pin);
     }
+#ifdef CAPTURE_W1
+    for (int pin = CAPTURE_RW_PIN; pin <= CAPTURE_SELECT_PIN; ++pin) {
+        APIO_GPIO_INPUT_ONLY(pin);
+        APIO_GPIO_PULL_UP(pin);
+    }
+#endif
     APIO_ASM_INIT();
     APIO_CLEAR_ALL_IRQS();
     APIO_SET_BLOCK(CAPTURE_PIO);
     APIO_GPIOBASE_0();
     APIO_SET_SM(CAPTURE_SM);
     APIO_WRAP_BOTTOM();
+#ifdef CAPTURE_W1
+    /* W1 accepts only selected, write, both-lane assertions. These controls
+       are established before /AS and held through the low phase by C5. */
+    APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(CAPTURE_SELECT_PIN));
+    APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_RW_PIN));
+    APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_UDS_PIN));
+    APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_LDS_PIN));
+#endif
     APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(CAPTURE_STROBE_PIN));
     APIO_ADD_INSTR(APIO_IN_PINS(CAPTURE_DATA_BITS));
     APIO_ADD_INSTR(APIO_PUSH_BLOCK);
