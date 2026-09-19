@@ -22,14 +22,19 @@ From the bridge directory:
    The project rules contain no username, board serial or USB port number.
 3. Wire the [W0 fixture](../tests/feasibility/generator-check/README.md#wiring-and-expected-result).
    GPIO numbers are logical chip pins; physical header positions depend on the board.
-4. Run `./tests/feasibility/generator-check/run.sh`. It builds the software and
-   checks the environment. If this bench has no selected generator, it guides you
-   into BOOTSEL, reads the RP2040 flash identity and asks you to confirm the board.
-   It saves that selection locally, then verifies it again before loading RAM.
+4. Run `./tests/feasibility/generator-check/run.sh build`, then run
+   `./tests/feasibility/generator-check/run.sh configure` with the RP2040 in
+   BOOTSEL to enroll its flash identity. Then run an implemented two-board
+   experiment's `doctor` once and copy its `configure-paths` command to record
+   the generator and DUT USB topology paths. Thereafter `run.sh all --output
+   NEW_DIRECTORY` performs the normal build/load/run/analyse/report sequence.
    A separate prompt controls when the burst starts.
 
 The board selection lives in `.bench/generator-check.json`, ignored by Git and
-outside disposable build output. A fresh checkout has no inherited board choice.
+outside disposable build output. Version 1 profiles contain the generator flash
+identity and analyzer. Version 2 profiles also contain the local generator and
+DUT USB topology paths saved by `configure-paths`. A fresh checkout has no
+inherited board choice or topology.
 Use `--bench .bench/second-generator.json` for a separate bench profile when
 running from the bridge directory. Only files under the bridge's `.bench/` are
 automatically ignored; an arbitrary `--bench PATH` needs its own Git exclusion
@@ -42,8 +47,9 @@ replacement. With multiple RP2040s in BOOTSEL, use the physical port shown by
 `doctor` as `--usb-path`; the runner refuses an ambiguous choice. That port
 selection is temporary and is not saved as the board's permanent identity.
 
-After moving ports, rebooting the host or changing boards, use `load` again (or
-run the full starter). A previous load session is deliberately not portable:
+After moving ports, run `configure-paths` again (or pass one-off `--usb-path`
+and `--dut-usb-path` values). Rebooting the host requires a new `load` through
+the full starter. A previous load session is deliberately not portable:
 it binds the loaded image to the actual device instance on that host.
 
 ## Which values vary?
@@ -55,7 +61,7 @@ it binds the loaded image to the actual device instance on that host.
 | `2e8a:0009` | SDK USB CDC identity used for other supported chips, including the RP2350. It is not a permitted generator target. |
 | Generator flash ID | Reported external-flash identity, normally different for each board. Selected during local enrollment, checked before every RAM load. A board must provide a usable identity. |
 | `EEEEEEEEEEEEEEEE` | Placeholder runtime USB serial for this RAM image. Not accepted as a unique board identity. |
-| USB bus/address, physical port, `ttyACM` number | Assigned by the host and can change on reconnection. Discovered dynamically; never copied from someone else's transcript. |
+| USB bus/address, physical port, `ttyACM` number | Bus/address and `ttyACM` are dynamic. A physical topology path is stable while cabling stays put, so `configure-paths` records it locally; never copy one from another person's transcript. |
 | Username/workspace path | Not fixed. Scripts locate their project; paths in build/session evidence describe that particular run. |
 | Analyzer driver | Currently fx2lafw only. Default `fx2lafw` assumes one matching analyzer; use `--analyzer fx2lafw:conn=BUS.ADDRESS` to select among several for that run. Addresses can change. |
 | GPIO2–5 data, GPIO6 /AS | Fixed generator firmware wiring. Different board headers are fine if they expose these GPIOs and meet the same electrical/clock assumptions. Editing a profile does not remap firmware pins. |

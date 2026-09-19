@@ -29,24 +29,28 @@ ad hoc projects and duplicated firmware support.
 
 ## Your controls
 
-Run `generator-check/run.sh --help` from any working directory. The default
-interactive flow and `all` build/check software, guide BOOTSEL identification and
-local board enrollment when needed, load the manifest-selected fixture, and wait
-for your explicit instruction before generating signals. Most current experiments
-use a RAM-loaded RP2040; C1 deliberately installs its reusable generator fixture
-in flash after one BOOTSEL install.
-Separate `doctor`, `build`, `configure`, `load`, `run` and `analyse` stages let you inspect or
-repeat individual steps. `--dry-run` previews operations without touching devices.
-Builds never generate signals. No experiment stage runs sudo or changes system
-permissions. Ctrl-C cancels the host workflow; the runner attempts stop and cleans
-up acquisition, while firmware independently limits each burst.
+Run `generator-check/run.sh --help` from any working directory. `doctor` is for
+initial setup and diagnosis. Once an RP2040 is enrolled, save its stable physical
+generator/DUT USB topology paths with `configure-paths`; the ignored local bench
+profile retains those selections. Then an implemented two-board experiment runs
+with `./run.sh all --output NEW_DIRECTORY`: it builds, loads both selected images,
+waits for your explicit Enter before generating signals, acquires, analyses,
+collects DUT evidence, and prints the saved report summary. C0 still needs
+RP2040 BOOTSEL on each RAM load; C1–C3 use their flash fixtures after the initial
+install.
 
-Implemented manifests request a 0.25-second analyser capture at 1 MHz (250,000
-samples), leaving ample lead-in for the 3–9 ms W0 bursts without a five-second
-wait or file. Set `"acquisition_seconds"` in an experiment manifest when a later
-case needs a different normal window, or override one run with, for example,
-`./run.sh run --acquisition-seconds 1`. The selected duration and sample count
-are retained in `report.json`.
+Separate `doctor`, `build`, `configure`, `configure-paths`, `load`, `run` and
+`analyse` stages remain available for inspection and recovery. `--dry-run`
+previews operations without touching devices. Builds never generate signals. No
+experiment stage runs sudo or changes system permissions. Ctrl-C cancels the host
+workflow; the runner attempts stop and cleans up acquisition, while firmware
+independently limits each burst.
+
+Each manifest declares its normal bounded analyser duration: the current
+generator/C0–C2 cases use 50 ms and C3 uses 250 ms at 1 MHz. Set
+`"acquisition_seconds"` when a later case needs a different normal window, or
+override one run with, for example, `./run.sh run --acquisition-seconds 1`. The
+selected duration and sample count are retained in `report.json`.
 
 Results belong in fresh directories under the bridge's ignored `build/` tree
 (or the explicit `--output` path): source/artifact identity, console and tool logs,

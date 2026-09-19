@@ -31,6 +31,13 @@ M = dict(
     setup_hold_us=100,
 )
 PROFILE = dict(version=1, generator_flash_id="0123456789ABCDEF", analyzer="fx2lafw")
+PATH_PROFILE = dict(
+    version=2,
+    generator_flash_id="0123456789ABCDEF",
+    analyzer="fx2lafw",
+    generator_usb_path="1-2",
+    dut_usb_path="1-3",
+)
 META = "[global]\nsigrok version=0.5.2\n[device 1]\ncapturefile=logic-1\ntotal probes=8\nsamplerate=1 MHz\nunitsize=1\nprobe1=D0\nprobe2=D1\nprobe3=D2\nprobe4=D3\nprobe8=D7\n"
 
 
@@ -241,7 +248,7 @@ class Experiments(unittest.TestCase):
             patch.object(e, "usb_devices", side_effect=AssertionError("USB")),
             contextlib.redirect_stdout(io.StringIO()),
         ):
-            for stage in ("doctor", "build", "load", "run", "analyse", "all"):
+            for stage in ("doctor", "build", "configure-paths", "load", "run", "analyse", "all"):
                 self.assertEqual(
                     e.main(["--manifest", str(manifest), stage, "--dry-run"]), 0
                 )
@@ -738,12 +745,42 @@ class Experiments(unittest.TestCase):
         args.analyzer = "fx2lafw:conn=1.99"
         with self.enrollment(args) as (usb, cmd):
             self.assertEqual(e.configure(args), usb)
-        self.assertEqual(e.read_profile(args.bench), PROFILE)
+        self.assertEqual(
+            e.read_profile(args.bench),
+            dict(PROFILE, version=2, generator_usb_path="1-2"),
+        )
         self.assertEqual(
             [c.args[0][1] for c in cmd.call_args_list],
             ["scripts/bootstrap.py", "info", "info"],
         )
-        self.assertEqual(set(json.loads(args.bench.read_text())), set(PROFILE))
+        self.assertEqual(
+            set(json.loads(args.bench.read_text())),
+            set(dict(PROFILE, version=2, generator_usb_path="1-2")),
+        )
+
+    def test_configure_paths_upgrades_legacy_profile_and_requires_distinct_ports(self):
+        _, _, _, args = self.fixture()
+        args.usb_path = "1-2.3"
+        args.dut_usb_path = "1-2.4"
+        manifest = dict(M, dut={"protocol": "capture-observer-v1"})
+        with contextlib.redirect_stdout(io.StringIO()):
+            value = e.configure_paths(manifest, args)
+        self.assertEqual(
+            value,
+            dict(PROFILE, version=2, generator_usb_path="1-2.3", dut_usb_path="1-2.4"),
+        )
+        self.assertEqual(e.read_profile(args.bench), value)
+        args.dut_usb_path = "1-2.3"
+        with self.assertRaises(e.Failure):
+            e.configure_paths(manifest, args)
+
+    def test_profile_paths_are_applied_unless_the_command_overrides_them(self):
+        args = argparse.Namespace(usb_path=None, dut_usb_path=None)
+        e.apply_profile_paths(args, PATH_PROFILE)
+        self.assertEqual((args.usb_path, args.dut_usb_path), ("1-2", "1-3"))
+        args = argparse.Namespace(usb_path="5-1", dut_usb_path=None)
+        e.apply_profile_paths(args, PATH_PROFILE)
+        self.assertEqual((args.usb_path, args.dut_usb_path), ("5-1", "1-3"))
 
     def test_configure_wrong_type_missing_and_placeholder_identity(self):
         _, _, _, args = self.fixture()
@@ -899,7 +936,10 @@ class Experiments(unittest.TestCase):
 
         def load(manifest, actual, artifact):
             order.append("load")
-            self.assertEqual(e.read_profile(actual.bench), PROFILE)
+            self.assertEqual(
+                e.read_profile(actual.bench),
+                dict(PROFILE, version=2, generator_usb_path="1-2"),
+            )
             self.assertEqual(actual.usb_path, "1-2")
             self.assertEqual(actual.analyzer, "fx2lafw:conn=1.99")
 
@@ -911,9 +951,9 @@ class Experiments(unittest.TestCase):
                 side_effect=lambda **kw: order.append("prerequisites"),
             ),
             patch.object(e, "build", side_effect=lambda m: order.append("build")),
-            patch.object(e, "doctor", side_effect=lambda *a: order.append("doctor")),
             patch.object(e, "load", side_effect=load),
             patch.object(e, "physical_run", side_effect=lambda *a: order.append("run")),
+            patch.object(e, "print_report_summary", side_effect=lambda *a: order.append("summary")),
             patch(
                 "builtins.input",
                 side_effect=lambda *a: order.append("confirm") or "yes",
@@ -933,8 +973,38 @@ class Experiments(unittest.TestCase):
                 0,
             )
         self.assertEqual(
-            order, ["prerequisites", "build", "doctor", "confirm", "load", "run"]
+            order, ["prerequisites", "build", "confirm", "load", "run", "summary"]
         )
+
+    def test_all_uses_configured_two_board_paths_without_doctor(self):
+        _, _, _, args = self.fixture()
+        e.save(args.bench, PATH_PROFILE)
+        manifest = self.directory / "experiment.json"
+        two_board = dict(M, load_mode="flash", dut={
+            "preset": "dut-c0-rp2350", "target": "feasibility_dut",
+            "protocol": "capture-observer-v1", "expected": {},
+        })
+        e.save(manifest, two_board)
+        order = []
+
+        def load(manifest, actual, artifact):
+            order.append("load")
+            self.assertEqual(actual.usb_path, "1-2")
+            self.assertEqual(actual.dut_usb_path, "1-3")
+
+        with (
+            patch.object(e, "static_prerequisites", side_effect=lambda **kw: order.append("prerequisites")),
+            patch.object(e, "build", side_effect=lambda m: order.append("build")),
+            patch.object(e, "doctor", side_effect=AssertionError("all must not run doctor")),
+            patch.object(e, "load", side_effect=load),
+            patch.object(e, "load_dut", side_effect=lambda *a: order.append("load_dut")),
+            patch.object(e, "physical_run", side_effect=lambda *a: order.append("run")),
+            patch.object(e, "print_report_summary", side_effect=lambda *a: order.append("summary")),
+        ):
+            self.assertEqual(
+                e.main(["--manifest", str(manifest), "--bench", str(args.bench)]), 0
+            )
+        self.assertEqual(order, ["prerequisites", "build", "load", "load_dut", "run", "summary"])
 
     def test_load_other_valid_identity_never_loads(self):
         artifact, usb, _, args = self.fixture()

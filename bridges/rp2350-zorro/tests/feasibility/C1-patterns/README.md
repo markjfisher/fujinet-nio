@@ -22,28 +22,28 @@ Core2350B GP1, shared ground, analyzer CH1–CH4 on D0–D3, and CH8 on `/AS`.
 Keep signals at 3.3 V. The analyzer verifies 28 low pulses and their sampled
 values; the Core's USB report independently verifies captures and IRQ counts.
 
-From this directory:
+Run `doctor` once when setting up or diagnosing the bench, then save the stable
+physical paths in the ignored local bench profile:
 
 ```sh
-./run.sh build
 ./run.sh doctor
-./run.sh load --usb-path 7-1.3.3.4.4 --dut-usb-path 7-1.3.3.4.3
-./run.sh run --output /tmp/c1-run-001
-python3 ../report_summary.py /tmp/c1-run-001/report.json
+./run.sh configure-paths --usb-path GENERATOR_PORT --dut-usb-path DUT_PORT
 ```
 
-The first C1 `load` replaces the RP2040 Debug Probe firmware with this persistent
-flash fixture, so put that RP2040 in BOOTSEL once. Give the physical path shown
-by `doctor`; for this bench it is `7-1.3.3.4.4`:
+Subsequent physical runs are one command:
 
 ```sh
-./run.sh load --usb-path 7-1.3.3.4.4 --dut-usb-path 7-1.3.3.4.3
+./run.sh all --output /tmp/c1-run-001
 ```
 
-Later C1 loads use the same command with both boards connected normally:
-picotool force-loads the RP2040 and Core2350B without BOOTSEL. `run` uses the
-bound sessions. A pass requires both waveform and DUT evidence; offline
-`analyse` remains waveform-only and incomplete.
+`all` builds, force-loads both boards using the saved paths, waits for Enter,
+captures and analyses the waveform, collects DUT counters, and prints the saved
+report summary. Repeat `configure-paths` after moving a cable; explicit paths
+remain available as a one-off override. The first C1 run replaces the RP2040
+Debug Probe firmware with this persistent flash fixture, so it needs one initial
+RP2040 BOOTSEL install. Later loads use both boards connected normally. A pass
+requires both waveform and DUT evidence; offline `analyse` remains waveform-only
+and incomplete.
 
 Each physical C1 run also writes `waveform.svg`. It first identifies the burst
 within the complete analyser acquisition, then renders the original D0–D3 and

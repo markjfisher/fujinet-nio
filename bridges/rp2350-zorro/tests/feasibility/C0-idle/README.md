@@ -26,23 +26,22 @@ From this directory:
 ```sh
 ./run.sh --help
 ./run.sh --dry-run
-./run.sh build
 ./run.sh doctor
 ./run.sh configure                  # only if the bench is not enrolled
-./run.sh load --dut-usb-path 1-2.3
-./run.sh run --output /tmp/c0-run-001
-./run.sh analyse --capture /tmp/c0-run-001/capture.sr
-python3 ../report_summary.py /tmp/c0-run-001/report.json
+./run.sh configure-paths --usb-path GENERATOR_PORT --dut-usb-path DUT_PORT
+./run.sh all --output /tmp/c0-run-001
 ```
 
-With no stage, `./run.sh --dut-usb-path ...` runs build, doctor,
-enrollment if needed, RAM-loads the RP2040 and then the Core2350B, requests an
-interactive wiring confirmation, acquires one finite run and collects both reports.
-For `load`, put the RP2040 generator in BOOTSEL when prompted. The Core2350B
-stays connected normally: picotool uses its supported forced-loader handoff.
-`--bench`, `--usb-path` and `--analyzer` have the same meanings as generator-check.
-Help, dry-run, build and offline analysis need no connected hardware. A physical
-run is always interactive; the analyzer must be acquiring before outputs run.
+`doctor` is a setup/diagnostic tool. `configure-paths` records the stable
+generator and DUT ports in the ignored local bench profile; repeat it after
+moving a cable. Then `all` builds, loads both boards, runs the acquisition and
+analysis, gathers DUT evidence, and prints the saved report summary. C0 uses a
+RAM-loaded generator, so hold RP2040 BOOTSEL when `all` asks for it on every C0
+load. The Core2350B stays connected normally: picotool uses its supported
+forced-loader handoff. `--bench`, `--usb-path` and `--analyzer` have the same
+meanings as generator-check. Help, dry-run, build and offline analysis need no
+connected hardware. A physical run is always interactive; the analyzer must be
+acquiring before outputs run.
 
 Analysis requires `/AS` high throughout the capture and exactly one complete
 0–15 data sequence. Interior data holds must be 210 µs ±2 µs; first and last

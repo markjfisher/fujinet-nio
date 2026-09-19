@@ -730,6 +730,12 @@ def preferred_serial_port(d):
 def dut_connection_hints(m, args):
     """Print copyable manifest-DUT arguments from connected RP devices; never guess roles."""
     label = m["id"] + " DUT"
+    profile = read_profile(args.bench)
+    generator_path, configured_dut_path = profile_paths(profile)
+    if generator_path:
+        print("Configured generator USB: " + generator_path)
+    if configured_dut_path:
+        print("Configured DUT USB: " + configured_dut_path)
     devices = [d for d in usb_devices() if d["vid"] == "2e8a"]
     dut_usb = [d for d in devices if d["pid"] in ("0009", "000f")]
     if len(dut_usb) == 1:
@@ -755,6 +761,17 @@ def dut_connection_hints(m, args):
                 d["path"], error))
     elif len(runtime) > 1:
         print(label + " runtime candidates: " + ", ".join(d["path"] for d in runtime))
+    if generator_path is None:
+        generators = [d for d in devices if d["pid"] in ("0003", "000a")]
+        if len(generators) == 1:
+            generator_path = generators[0]["path"]
+    if generator_path and len(dut_usb) == 1:
+        print(
+            "Save these paths: ./run.sh configure-paths --usb-path "
+            + generator_path
+            + " --dut-usb-path "
+            + dut_usb[0]["path"]
+        )
 
 
 def boot_id():
@@ -763,6 +780,36 @@ def boot_id():
 
 def configure_instruction(path):
     return f"No enrolled generator. Run {shlex.quote(str(ROOT / 'tests/feasibility/generator-check/run.sh'))} configure --bench {shlex.quote(str(path))} with your RP2040 in BOOTSEL."
+
+
+def valid_usb_path(path):
+    return isinstance(path, str) and re.fullmatch(r"[0-9]+-[0-9]+(?:\.[0-9]+)*", path)
+
+
+def profile_paths(profile):
+    """Return optional topology selections stored for this local bench."""
+    if profile is None:
+        return None, None
+    return profile.get("generator_usb_path"), profile.get("dut_usb_path")
+
+
+def apply_profile_paths(args, profile):
+    """Use stored topology only when this invocation did not override it."""
+    generator, dut = profile_paths(profile)
+    if args.usb_path is None:
+        args.usb_path = generator
+    if args.dut_usb_path is None:
+        args.dut_usb_path = dut
+
+
+def make_profile(identity, generator_usb_path=None, dut_usb_path=None):
+    """Create the smallest profile that records the known local bench setup."""
+    value = dict(version=1, generator_flash_id=identity, analyzer="fx2lafw")
+    if generator_usb_path is not None:
+        value.update(version=2, generator_usb_path=generator_usb_path)
+        if dut_usb_path is not None:
+            value["dut_usb_path"] = dut_usb_path
+    return value
 
 
 def read_profile(path, required=False):
@@ -789,14 +836,24 @@ def parse_profile(path, required=False):
         raise Failure(
             "configuration", f"Invalid bench profile {path}: {error}"
         ) from error
-    require(
-        isinstance(value, dict)
-        and set(value) == {"version", "generator_flash_id", "analyzer"}
-        and type(value["version"]) is int
-        and value["version"] == 1,
-        f"Invalid bench profile {path}: expected version 1 and only generator_flash_id, analyzer",
-        "configuration",
-    )
+    base = {"version", "generator_flash_id", "analyzer"}
+    extended = base | {"generator_usb_path", "dut_usb_path"}
+    require(isinstance(value, dict) and type(value.get("version")) is int,
+            f"Invalid bench profile {path}: missing integer version", "configuration")
+    if value["version"] == 1:
+        require(set(value) == base,
+                f"Invalid bench profile {path}: version 1 permits only generator_flash_id and analyzer",
+                "configuration")
+    elif value["version"] == 2:
+        require(set(value) in (base | {"generator_usb_path"}, extended)
+                and valid_usb_path(value.get("generator_usb_path"))
+                and ("dut_usb_path" not in value or valid_usb_path(value["dut_usb_path"])),
+                f"Invalid bench profile {path}: version 2 needs generator_usb_path and an optional dut_usb_path in USB topology form",
+                "configuration")
+        require(value.get("generator_usb_path") != value.get("dut_usb_path"),
+                "Invalid bench profile: generator and DUT USB paths must differ", "configuration")
+    else:
+        raise Failure("configuration", f"Invalid bench profile {path}: supported versions are 1 and 2")
     identity = value["generator_flash_id"]
     require(
         isinstance(identity, str)
@@ -916,11 +973,40 @@ def configure(args):
         "USB device changed during confirmation; configure again",
         "transport",
     )
-    value = dict(version=1, generator_flash_id=identity, analyzer="fx2lafw")
+    dut_path = getattr(args, "dut_usb_path", None)
+    require(dut_path is None or valid_usb_path(dut_path),
+            "--dut-usb-path must be in physical USB topology form", "configuration")
+    require(dut_path != selected["path"],
+            "Generator and DUT USB paths must differ", "configuration")
+    value = make_profile(identity, selected["path"], dut_path)
     publish_profile(args.bench, value, previous)
     print(f"Enrolled {identity} in {args.bench}")
     args.enrolled_profile = value
     return selected
+
+
+def configure_paths(m, args):
+    """Persist explicit physical ports after the board identity is enrolled."""
+    profile = read_profile(args.bench, required=True)
+    require(valid_usb_path(args.usb_path),
+            "configure-paths needs --usb-path in physical USB topology form (for example 1-2.3)",
+            "configuration")
+    if m.get("dut"):
+        require(valid_usb_path(args.dut_usb_path),
+                "This experiment needs --dut-usb-path in physical USB topology form", "configuration")
+    elif args.dut_usb_path is not None:
+        require(valid_usb_path(args.dut_usb_path),
+                "--dut-usb-path must be in physical USB topology form", "configuration")
+    require(args.usb_path != args.dut_usb_path,
+            "Generator and DUT USB paths must differ", "configuration")
+    previous = args.bench.read_bytes()
+    value = make_profile(profile["generator_flash_id"], args.usb_path, args.dut_usb_path)
+    publish_profile(args.bench, value, previous)
+    print("Saved bench USB paths in " + str(args.bench))
+    print("Generator: " + args.usb_path)
+    if args.dut_usb_path:
+        print("DUT: " + args.dut_usb_path)
+    return value
 
 
 def publish_profile(path, value, previous):
@@ -1610,23 +1696,30 @@ def doctor(m, args):
     require(not problems, "\n".join(problems), "environment")
 
 
+def print_report_summary(path):
+    """Present the already-written authoritative report without re-analysing it."""
+    import report_summary
+
+    print(report_summary.format_report(json.loads(Path(path).read_text())))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__,
-        epilog="Default all is interactive: build, doctor, enroll missing bench profile, manifest-selected generator load, Enter, acquisition, run, analyse. RAM experiments require BOOTSEL; a manifest may intentionally install a flash fixture. No sudo. Offline: build or analyse --capture FILE. Missing/stale session: load again with --usb-path to validate identity.",
+        epilog="Default all is interactive: build, load the manifest-selected generator and DUT, Enter, acquire/run/analyse, then print the saved report summary. Run configure-paths once to store stable USB topology paths locally. RAM experiments require BOOTSEL; a manifest may intentionally install a flash fixture. No sudo. Offline: build or analyse --capture FILE.",
     )
     p.add_argument(
         "stage",
         nargs="?",
         default="all",
-        choices=["doctor", "build", "configure", "load", "run", "analyse", "all"],
+        choices=["doctor", "build", "configure", "configure-paths", "load", "run", "analyse", "all"],
     )
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument(
         "--bench",
         type=Path,
         default=ROOT / ".bench/generator-check.json",
-        help="machine-local board/analyzer profile",
+        help="machine-local board/analyzer/USB topology profile",
     )
     p.add_argument(
         "--dry-run",
@@ -1648,10 +1741,10 @@ def main(argv=None):
     )
     p.add_argument(
         "--usb-path",
-        help="physical USB port (e.g. 1-2.3), shown by doctor; never bus address or EEEE serial",
+        help="physical generator USB port (e.g. 1-2.3); overrides configured bench path",
     )
     p.add_argument("--dut-port", help="Core2350B USB CDC port, preferably /dev/serial/by-id/..." )
-    p.add_argument("--dut-usb-path", help="Core2350B BOOTSEL physical USB path shown by doctor")
+    p.add_argument("--dut-usb-path", help="Core2350B physical USB path; overrides configured bench path")
     p.add_argument(
         "--analyzer",
         default=None,
@@ -1681,9 +1774,8 @@ def main(argv=None):
         )
         if args.session is None:
             args.session = ROOT / "build/feasibility" / m["id"] / "session.json"
-        profile = (
-            None if args.stage in ("build", "analyse") else read_profile(args.bench)
-        )
+        profile = None if args.stage in ("build", "analyse") else read_profile(args.bench)
+        apply_profile_paths(args, profile)
         analyzer_override = args.analyzer
         args.analyzer = args.analyzer or (profile["analyzer"] if profile else "fx2lafw")
         require(
@@ -1712,6 +1804,7 @@ def main(argv=None):
                         ),
                         analyzer=args.analyzer,
                         usb_path=args.usb_path,
+                        dut_usb_path=args.dut_usb_path,
                         manifest=str(args.manifest),
                         artifact=str(artifact),
                         dut_artifact=str(dut_image) if dut_image else None,
@@ -1723,21 +1816,25 @@ def main(argv=None):
                             "doctor": "check pinned sources, tools, USB permissions and analyzer scan",
                             "build": "bootstrap pins; configure/build/test host Debug+Release; build manifest stimulus/DUT images and pinned USB picotool",
                             "configure": "read RP2040 BOOTSEL identity; confirm enrollment; atomically save local bench profile",
+                            "configure-paths": "atomically save explicit generator/DUT USB topology paths in the local bench profile",
                             "load": "perform the manifest-selected generator load, then load the manifest DUT image and persist sessions",
                             "run": "validate sessions; reset DUT counters; explicit Enter; acquire/run/analyse; collect DUT report",
                             "analyse": "validate existing capture metadata and finite waveform",
-                            "all": "build -> doctor -> configure if missing -> load -> run -> analyse",
+                            "all": "build -> configure if missing -> load -> run/analyse -> print report summary",
                         }[args.stage],
                     ),
                     indent=2,
                 )
             )
             return 0
-        if args.stage in ("load", "run"):
+        if args.stage in ("load", "run", "configure-paths"):
             read_profile(args.bench, required=True)
-        if m.get("dut") and args.stage in ("all", "load"):
+        if m.get("dut") and args.stage == "load":
             require(args.dut_usb_path,
-                    "This experiment needs --dut-usb-path", "configuration")
+                    "This experiment needs --dut-usb-path or a configured bench DUT path", "configuration")
+        if m.get("dut") and args.stage == "all":
+            require(args.dut_usb_path,
+                    "This experiment needs --dut-usb-path or a configured bench DUT path; run configure-paths once after enrollment", "configuration")
         if args.stage in ("all", "run") and args.output is None:
             args.output = (
                 ROOT
@@ -1758,7 +1855,7 @@ def main(argv=None):
             static_prerequisites(analyzer=True)
         if args.stage in ("all", "build"):
             build(m)
-        if args.stage in ("all", "doctor"):
+        if args.stage in ("doctor",):
             doctor(m, args)
         if args.stage == "configure" or (args.stage == "all" and profile is None):
             selected = configure(args)
@@ -1767,14 +1864,21 @@ def main(argv=None):
                 profile = args.enrolled_profile
                 assert_profile(args, profile)
                 args.analyzer = analyzer_override or profile["analyzer"]
+        if args.stage == "configure-paths":
+            configure_paths(m, args)
         if args.stage in ("all", "load"):
             if profile is not None:
                 assert_profile(args, profile)
+            if m.get("dut"):
+                require(args.dut_usb_path,
+                        "This experiment needs --dut-usb-path or a configured bench DUT path", "configuration")
             load(m, args, artifact)
             load_dut(m, args, dut_image)
         if args.stage in ("all", "run"):
             assert_profile(args, profile)
             physical_run(m, args, artifact, dut_image)
+            if args.stage == "all":
+                print_report_summary(args.output / "report.json")
         if args.stage == "analyse":
             require(
                 args.capture is not None,

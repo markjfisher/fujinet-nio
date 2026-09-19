@@ -23,20 +23,37 @@ Wiring is unchanged from W0: RP2040 GP2–GP5 to Core2350B GP2–GP5, RP2040 GP6
 `/AS`. Keep every signal at 3.3 V. The waveform runs once only after the runner
 has armed the analyzer and you press Enter.
 
+## One-time local bench configuration
+
+`doctor` is a diagnostic tool, not a normal run step. After the boards are
+connected at their usual ports, run it once to discover the topology, then save
+the copyable paths it prints in the ignored local bench profile:
+
 ```sh
-./run.sh build
 ./run.sh doctor
-./run.sh load --usb-path 7-1.3.3.4.4 --dut-usb-path 7-1.3.3.4.3
-./run.sh run --output /tmp/c3-run-001
-python3 ../report_summary.py /tmp/c3-run-001/report.json
+./run.sh configure-paths --usb-path GENERATOR_PORT --dut-usb-path DUT_PORT
 ```
 
-C3 installs the reusable RP2040 fixture in flash like C1 and C2. With the
-existing flash fixture, both boards stay connected normally and `picotool`
-force-loads them; a fresh RP2040 that still runs the Debug Probe needs one
-initial BOOTSEL install. `./run.sh --dry-run` prints the selected images, the
-0.25-second / 250,000-sample default acquisition and every other planned step.
-Use `--acquisition-seconds N` only when a longer diagnostic capture is useful.
+The saved profile contains the board identity, analyzer type and these physical
+paths. It is ignored by Git and must be configured separately on another bench.
+Run `configure-paths` again after moving a cable. Explicit command-line paths
+remain available for a one-off override.
+
+## Run C3
+
+```sh
+./run.sh all --output /tmp/c3-run-001
+```
+
+`all` builds the host and both firmware targets, force-loads the C3 RP2040
+fixture and RP2350 DUT using the saved paths, waits for your Enter before it
+drives signals, acquires and analyses the waveform, collects DUT evidence, and
+prints the report summary. C3 installs the reusable RP2040 fixture in flash like
+C1 and C2. With the existing flash fixture, both boards stay connected normally;
+a fresh RP2040 that still runs the Debug Probe needs one initial BOOTSEL install.
+`./run.sh --dry-run` prints the selected images, the 0.25-second / 250,000-sample
+default acquisition and every other planned step. Use `--acquisition-seconds N`
+only when a longer diagnostic capture is useful.
 
 Each physical run preserves `capture.sr`, USB logs, `report.json` and
 `waveform.svg`. The SVG shows the full acquisition and a raw D0–D3/`/AS` zoom;

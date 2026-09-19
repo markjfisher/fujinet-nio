@@ -19,16 +19,16 @@ Wiring is unchanged: RP2040 GP2–GP5 to Core2350B GP2–GP5, RP2040 GP6 (`/AS`)
 Core2350B GP1, shared ground, analyzer CH1–CH4 on D0–D3 and CH8 on `/AS`.
 
 ```sh
-./run.sh build
 ./run.sh doctor
-./run.sh load --usb-path 7-1.3.3.4.4 --dut-usb-path 7-1.3.3.4.3
-./run.sh run --output /tmp/c2-run-001
-python3 ../report_summary.py /tmp/c2-run-001/report.json
+./run.sh configure-paths --usb-path GENERATOR_PORT --dut-usb-path DUT_PORT
+./run.sh all --output /tmp/c2-run-001
 ```
 
-The C2 fixture is flash-installed like C1. Since this bench already runs the
-C1 flash fixture, C2 loads without BOOTSEL. A fresh board still running only the
-Debug Probe needs one initial RP2040 BOOTSEL install; later loads use the same
-command with both boards connected normally. C2 uses APIO source, host EPIO
-tests and the shared DUT observer; it contains no `.pio` text source or
-production bridge ABI.
+`doctor` is only needed for initial setup or diagnosis. `configure-paths` stores
+the stable ports in the ignored local bench profile; repeat it after moving a
+cable. Later `all` runs build, load, acquire, analyse and print the report
+summary with no path arguments. The C2 fixture is flash-installed like C1. Since
+this bench already runs the C1 flash fixture, C2 loads without BOOTSEL. A fresh
+board still running only the Debug Probe needs one initial RP2040 BOOTSEL
+install. C2 uses APIO source, host EPIO tests and the shared DUT observer; it
+contains no `.pio` text source or production bridge ABI.
