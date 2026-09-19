@@ -119,8 +119,19 @@ def sampling_window_lines(waveform, manifest):
     return lines
 
 
+def repetition_lines(waveform, manifest):
+    lines = ["Pulses: " + str(waveform["assertions"])] if waveform.get("assertions") is not None else []
+    for group in waveform.get("groups", []):
+        if isinstance(group, dict):
+            lines.append("{}: D={} × {}; low {} us; gap {} us".format(
+                group.get("id", "group"), group.get("value", "?"), group.get("count", "?"),
+                group.get("pulse_us", "?"), group.get("gap_us", "?")))
+    return lines
+
+
 FORMATTERS = {"idle": idle_lines, "burst": burst_lines, "pulse": burst_lines,
-              "held_active": held_active_lines, "sampling_window": sampling_window_lines}
+              "held_active": held_active_lines, "sampling_window": sampling_window_lines,
+              "repetition": repetition_lines}
 
 
 def host_test_summary(report):

@@ -140,6 +140,12 @@ def write_transactions_svg(report, path):
                     row.get("offset_us", "?"), value(row.get("captured"))
                 )
             )
+    if waveform.get("analysis_kind") == "repetition":
+        for group in waveform.get("groups", []):
+            if isinstance(group, dict):
+                annotation_lines.append("{}: D={} × {}; low {} us; internal gap {} us".format(
+                    group.get("id", "group"), group.get("value", "?"), group.get("count", "?"),
+                    group.get("pulse_us", "?"), group.get("gap_us", "?")))
     annotation_lines.append(
         "green = /AS fall / transaction boundary; no external marker exists for the exact internal PIO sample clock"
     )

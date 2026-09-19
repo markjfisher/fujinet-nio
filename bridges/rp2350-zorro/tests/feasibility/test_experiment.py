@@ -1196,6 +1196,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C3-sampling-window/experiment.json").read_text()
         )
 
+    def c4_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C4-repetition/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1299,6 +1304,40 @@ class Experiments(unittest.TestCase):
             self.write_capture(data)
             with self.subTest(mutation=mutation), self.assertRaises(e.Failure):
                 e.analyse(self.capture, self.c3_manifest())
+
+    def repetition_waveform(self):
+        parts = [b"\x81" * 100]
+        for group_index, group in enumerate(self.c4_manifest()["repetition_groups"]):
+            value = group["value"]
+            for repeat in range(group["count"]):
+                parts.append(bytes([value]) * group["pulse_us"])
+                if repeat + 1 < group["count"]:
+                    parts.append(bytes([128 + value]) * group["gap_us"])
+            if group_index + 1 < len(self.c4_manifest()["repetition_groups"]):
+                next_value = self.c4_manifest()["repetition_groups"][group_index + 1]["value"]
+                parts.append(bytes([128 + next_value]) * 100)
+        return b"".join(parts) + b"\x85" * 100
+
+    def test_c4_repetition_analysis_separates_low_and_gap_sweeps(self):
+        self.write_capture(self.repetition_waveform())
+        report = e.analyse(self.capture, self.c4_manifest())
+        self.assertEqual(report["analysis_kind"], "repetition")
+        self.assertEqual(report["assertions"], 20)
+        self.assertEqual(report["values"], self.c4_manifest()["expected_values"])
+        self.assertEqual([group["id"] for group in report["groups"]],
+                         ["low-100", "low-50", "low-20", "gap-50", "gap-20"])
+
+    def test_c4_rejects_wrong_low_width_or_internal_gap(self):
+        baseline = bytearray(self.repetition_waveform())
+        for mutation in ("low", "gap"):
+            data = bytearray(baseline)
+            if mutation == "low":
+                del data[100:105]
+            else:
+                del data[200:205]
+            self.write_capture(data)
+            with self.subTest(mutation=mutation), self.assertRaises(e.Failure):
+                e.analyse(self.capture, self.c4_manifest())
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):

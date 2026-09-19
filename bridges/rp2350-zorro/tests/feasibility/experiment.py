@@ -148,13 +148,15 @@ def analyse(path, manifest):
             ),
         ) from e
     kind = manifest.get("analysis_kind", "burst")
-    require(kind in ("burst", "idle", "held_active", "sampling_window"), "Unknown analysis_kind", "configuration")
+    require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition"), "Unknown analysis_kind", "configuration")
     if kind == "idle":
         return analyse_idle(path, manifest, data, hz)
     if kind == "held_active":
         return analyse_held_active(path, manifest, data, hz)
     if kind == "sampling_window":
         return analyse_sampling_window(path, manifest, data, hz)
+    if kind == "repetition":
+        return analyse_repetition(path, manifest, data, hz)
     rows = []
     state = dict(expected=manifest["expected_values"], sample=None)
 
@@ -449,6 +451,49 @@ def analyse_sampling_window(path, manifest, data, hz):
                 values=[row["captured"] for row in rows], observed_falls=falls,
                 observed_rises=rises, measurements=rows, transactions=transactions,
                 limits="External offsets are 1 MHz samples (about ±1 us). W0 has no marker for the internal PIO IN PINS clock.")
+
+
+def analyse_repetition(path, manifest, data, hz):
+    """Validate repeated assertions while varying low width and released gap."""
+    groups = manifest.get("repetition_groups")
+    require(isinstance(groups, list) and groups, "repetition needs repetition_groups", "configuration")
+    falls = [i for i in range(1, len(data)) if data[i - 1] & 128 and not data[i] & 128]
+    rises = [i for i in range(1, len(data)) if not data[i - 1] & 128 and data[i] & 128]
+    count = sum(group.get("count", 0) for group in groups)
+    require(len(falls) == len(rises) == count, "unexpected repetition strobe edges")
+    require(data[0] & 128 and data[-1] & 128, "repetition strobe must begin and end high")
+    rows, transactions, group_rows, index = [], [], [], 0
+    for group in groups:
+        value, repeats = group.get("value"), group.get("count")
+        pulse_us, gap_us = group.get("pulse_us"), group.get("gap_us")
+        require(isinstance(value, int) and 0 <= value < 16 and isinstance(repeats, int) and repeats > 0,
+                "invalid repetition group value/count", "configuration")
+        require(all(isinstance(v, (int, float)) and v > 0 for v in (pulse_us, gap_us)),
+                "invalid repetition group timing", "configuration")
+        group_rows.append(dict(id=group.get("id", str(len(group_rows))), value=value,
+                               count=repeats, pulse_us=pulse_us, gap_us=gap_us))
+        for repeat in range(repeats):
+            fall, rise = falls[index], rises[index]
+            low_us = (rise - fall) * 1000000 / hz
+            require(abs(low_us - pulse_us) <= 2, "repetition low width outside 2 us tolerance")
+            require(data[fall] & 15 == value and all((sample & 15) == value for sample in data[fall:rise]),
+                    "repetition data differs while /AS is asserted")
+            row = dict(group=group_rows[-1]["id"], repeat=repeat + 1, value=value,
+                       fall_sample=fall, rise_sample=rise, low_us=low_us)
+            if repeat + 1 < repeats:
+                gap = (falls[index + 1] - rise) * 1000000 / hz
+                require(abs(gap - gap_us) <= 2, "repetition released gap outside 2 us tolerance")
+                row["gap_us"] = gap
+            rows.append(row)
+            transactions.append(dict(index=index, assert_sample=fall, release_sample=rise,
+                                     capture_value=value, phases=[dict(value=value, start_sample=fall, end_sample=rise, hold_us=low_us)]))
+            index += 1
+    return dict(capture=str(path), capture_sha256=digest(path), sample_rate=hz,
+                analysis_kind="repetition", assertions=count,
+                values=[row["value"] for row in rows], observed_falls=falls,
+                observed_rises=rises, measurements=rows, groups=group_rows,
+                transactions=transactions,
+                limits="Only intra-group gaps are controlled. Cross-group gaps include the safe data-value transition and are diagnostic, not a timing limit.")
 
 
 def acceptance(manifest, dut_evidence=None):
@@ -1553,7 +1598,7 @@ def physical_run(m, args, artifact, dut_image=None):
                 report["waveform"] = analyse(args.output / "capture.sr", m)
                 evidence = dut_report(dut_console, m["dut"]) if dut_console else None
                 report.update(acceptance(m, evidence))
-                if report["waveform"]["analysis_kind"] in ("burst", "held_active", "idle", "sampling_window"):
+                if report["waveform"]["analysis_kind"] in ("burst", "held_active", "idle", "sampling_window", "repetition"):
                     import waveform_visual
                     visual = args.output / "waveform.svg"
                     waveform_visual.write_svg(report, visual)

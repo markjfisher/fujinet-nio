@@ -1,9 +1,120 @@
 {
   "id": "C4",
-  "title": "Pulse and gap limits",
-  "status": "planned",
-  "stage": "Story 2.2 matrix experiment",
-  "stimulus": "Reduce low pulses and high gaps independently",
-  "expected": "Correct counts above observed limits; characterize failures below",
-  "requires": "C1 baseline; programmable timing, bounded capture and instrumentation"
+  "title": "Pulse and gap repetition",
+  "status": "implemented",
+  "stage": "C4 two-board repeated assertion characterization",
+  "stimulus": "Five four-pulse groups independently reduce low width and released gap",
+  "expected": "Twenty ordered captures; every declared intra-group low/gap interval holds",
+  "requires": "W0 two-board fixture; RP2040 and RP2350 USB consoles",
+  "preset": "stimulus-c4-rp2040",
+  "target": "feasibility_c4_repetition",
+  "source_dir": "tests/feasibility/C4-repetition/src",
+  "analysis_kind": "repetition",
+  "load_mode": "flash",
+  "data_gpio": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "strobe_gpio": 6,
+  "analyzer_channels": [
+    "D0",
+    "D1",
+    "D2",
+    "D3",
+    "D7"
+  ],
+  "expected_values": [
+    1,
+    1,
+    1,
+    1,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    3,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    5
+  ],
+  "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.05,
+  "repetition_groups": [
+    {
+      "id": "low-100",
+      "value": 1,
+      "count": 4,
+      "pulse_us": 100,
+      "gap_us": 100
+    },
+    {
+      "id": "low-50",
+      "value": 2,
+      "count": 4,
+      "pulse_us": 50,
+      "gap_us": 100
+    },
+    {
+      "id": "low-20",
+      "value": 3,
+      "count": 4,
+      "pulse_us": 20,
+      "gap_us": 100
+    },
+    {
+      "id": "gap-50",
+      "value": 4,
+      "count": 4,
+      "pulse_us": 100,
+      "gap_us": 50
+    },
+    {
+      "id": "gap-20",
+      "value": 5,
+      "count": 4,
+      "pulse_us": 100,
+      "gap_us": 20
+    }
+  ],
+  "dut": {
+    "preset": "dut-c0-rp2350",
+    "target": "feasibility_dut",
+    "protocol": "capture-observer-v1",
+    "expected": {
+      "capture_count": 20,
+      "capture_irq_count": 20,
+      "values": [
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3,
+        3,
+        4,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        5
+      ]
+    }
+  }
 }

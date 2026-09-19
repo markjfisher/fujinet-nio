@@ -91,6 +91,18 @@
         "STIMULUS_SAMPLE_COUNT": "4",
         "STIMULUS_STORAGE": "flash"
       }
+    },
+    {
+      "name": "stimulus-c4-rp2040",
+      "inherits": "stimulus-rp2040",
+      "binaryDir": "${sourceDir}/build/stimulus-c4-rp2040",
+      "cacheVariables": {
+        "STIMULUS_EXPERIMENT": "C4-repetition",
+        "STIMULUS_TARGET": "feasibility_c4_repetition",
+        "STIMULUS_WORDS": "32",
+        "STIMULUS_SAMPLE_COUNT": "20",
+        "STIMULUS_STORAGE": "flash"
+      }
     }
   ],
   "buildPresets": [
@@ -129,6 +141,10 @@
     {
       "name": "stimulus-c3-rp2040",
       "configurePreset": "stimulus-c3-rp2040"
+    },
+    {
+      "name": "stimulus-c4-rp2040",
+      "configurePreset": "stimulus-c4-rp2040"
     }
   ],
   "testPresets": [

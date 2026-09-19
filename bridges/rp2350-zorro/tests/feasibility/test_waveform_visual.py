@@ -118,6 +118,34 @@ class WaveformVisualTests(unittest.TestCase):
         for captured in ("0x1", "0x2", "0x5", "0x6"):
             self.assertIn(">" + captured + "<", text)
 
+    def test_repetition_svg_describes_each_declared_group(self):
+        report = {
+            "experiment": "C4",
+            "waveform": {"analysis_kind": "repetition", "sample_rate": 1_000_000,
+                         "groups": [
+                             {"id": "low-20", "value": 3, "count": 4,
+                              "pulse_us": 20, "gap_us": 100},
+                             {"id": "gap-20", "value": 5, "count": 4,
+                              "pulse_us": 100, "gap_us": 20},
+                         ],
+                         "transactions": [
+                             {"assert_sample": 100, "release_sample": 120,
+                              "capture_value": 3,
+                              "phases": [{"value": 3, "start_sample": 100,
+                                          "end_sample": 120}]},
+                             {"assert_sample": 220, "release_sample": 320,
+                              "capture_value": 5,
+                              "phases": [{"value": 5, "start_sample": 220,
+                                          "end_sample": 320}]},
+                         ]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "waveform.svg"
+            visual.write_svg(report, output)
+            text = output.read_text()
+        self.assertIn("low-20: D=3 × 4; low 20 us; internal gap 100 us", text)
+        self.assertIn("gap-20: D=5 × 4; low 100 us; internal gap 20 us", text)
+
     def test_idle_svg_shows_data_changes_high_strobe_and_dut_counters(self):
         report = {
             "experiment": "C0",

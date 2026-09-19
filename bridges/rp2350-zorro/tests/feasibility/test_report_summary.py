@@ -104,6 +104,21 @@ class ReportSummaryTests(unittest.TestCase):
         self.assertIn("pre-10: before 10 us; captured 1", output)
         self.assertIn("post-10: after 10 us; captured 2", output)
 
+    def test_repetition_summary_uses_manifest_described_groups(self):
+        output = summary.format_report({
+            "status": "passed",
+            "waveform": {"analysis_kind": "repetition", "assertions": 8,
+                         "groups": [
+                             {"id": "low-20", "value": 3, "count": 4,
+                              "pulse_us": 20, "gap_us": 100},
+                             {"id": "gap-20", "value": 5, "count": 4,
+                              "pulse_us": 100, "gap_us": 20},
+                         ]},
+        })
+        self.assertIn("Pulses: 8", output)
+        self.assertIn("low-20: D=3 × 4; low 20 us; gap 100 us", output)
+        self.assertIn("gap-20: D=5 × 4; low 100 us; gap 20 us", output)
+
     def test_unknown_analysis_kind_uses_generic_output(self):
         output = summary.format_report({"status": "passed", "waveform": {"analysis_kind": "future"}})
         self.assertIn("Stimulus status: passed", output)

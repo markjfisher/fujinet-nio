@@ -13,7 +13,7 @@ observer and proves the idle suppression baseline.
 | [C1-patterns](C1-patterns/README.md) | Exact captured patterns and counts | Implemented; requires physical two-board run |
 | [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Implemented; requires physical two-board run |
 | [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Implemented; requires physical two-board run |
-| [C4-repetition](C4-repetition/README.md) | Pulse/gap limits | Planned |
+| [C4-repetition](C4-repetition/README.md) | Repeated low-width/gap sweep | Implemented; requires physical two-board run |
 | [C5-width-control](C5-width-control/README.md) | Wider data, direction and selection | Planned |
 | [C6-pressure](C6-pressure/README.md) | FIFO pressure and explicit loss | Planned |
 | [C7-reads](C7-reads/README.md) | Read response timing | Planned |
