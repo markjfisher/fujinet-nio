@@ -58,10 +58,23 @@ raw `.sr` capture, expected/observed measurements and a machine-readable verdict
 Failed runs remain evidence; a busy analyzer or missing capture cannot pass.
 PulseView can open saved captures once sigrok-cli releases the device.
 Physical runs also generate `waveform.svg`: it shows
-the detected event's position in the complete acquisition, followed by a zoomed
-rendering of the manifest-selected analyser signals, decoded values and
-DUT-reported evidence. It is a debug aid alongside the raw `capture.sr`; it does
-not claim an unmeasured internal PIO sample-clock position.
+the detected transaction window, followed by its detailed rendering of the
+manifest-selected analyser signals, decoded values and DUT-reported evidence.
+It is a debug aid alongside the raw `capture.sr`; it does not claim an
+unmeasured internal PIO sample-clock position.
+
+Every implemented manifest carries a `waveform_view` description. Its ordered
+`lanes` contain ordinary signals (`label`, `channel`, `role`, `polarity`) and
+data buses (`bits`, each with its displayed label, analyzer `channel` and bus
+bit number). `transactions` supplies human-facing boundary, expected-value and
+classification labels. The analyser copies that description into
+`report.json` as `waveform.visualization`; the SVG renderer reads the report,
+not an experiment directory name. Channels use sigrok names such as `D0` and
+are unbounded: a later analyzer can declare `D47`, for example, when its raw
+capture uses a wider `unitsize`. Transaction records can declare
+`classification` as `accepted`, `rejected` or `uncertain`; their boundaries and
+sampled values are rendered directly. Only `idle` and semantic layouts such as
+sampling-window/repetition retain small `analysis_kind` presentation hooks.
 Build and loader command logs are retained under `build/feasibility/stage-logs/`.
 
 Summarise an existing report without rerunning its analysis or changing its verdict:
@@ -139,12 +152,16 @@ To add a later experiment:
    wrapper. Set an explicit bridge-relative `source_dir`, firmware preset/target,
    analyzer mapping and behavioral analysis fields. Reuse an existing
    `analysis_kind` when its checks describe the new waveform.
-3. Add one `add_stimulus_test(directory executable ctest_name)` registration in
+3. Add its `waveform_view` lanes and transaction labels. Declare every captured
+   bit/control signal explicitly; do not make the renderer learn the new
+   experiment ID. A subset is valid when the manifest identifies its observed
+   data bits and the analysis report records the corresponding limitation.
+4. Add one `add_stimulus_test(directory executable ctest_name)` registration in
    [stimulus_tests.cmake](../../cmake/stimulus_tests.cmake).
-4. Add configure/build presets in [CMakePresets.json](../../CMakePresets.json),
+5. Add configure/build presets in [CMakePresets.json](../../CMakePresets.json),
    with a separate binary directory, `STIMULUS_EXPERIMENT` directory name and
    `STIMULUS_TARGET`. No generic CMake branch or shared test edit is needed.
-5. Run the experiment's `run.sh build`: it tests both native configurations and
+6. Run the experiment's `run.sh build`: it tests both native configurations and
    builds the selected firmware. Then use its existing load/run/analyse stages for
    physical validation.
 

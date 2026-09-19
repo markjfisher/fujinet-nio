@@ -218,7 +218,7 @@ def format_report(report):
     if waveform.get("sample_rate") is not None:
         lines.append("Analyzer sample rate: " + format_rate(waveform["sample_rate"]))
     if report.get("waveform_visual"):
-        lines.append("Waveform map: " + str(report["waveform_visual"]))
+        lines.append("Waveform SVG: " + str(report["waveform_visual"]))
     host_tests = host_test_summary(report)
     if host_tests:
         lines.append("Host tests: " + host_tests)

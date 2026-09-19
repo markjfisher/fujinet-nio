@@ -89,7 +89,7 @@ class ReportSummaryTests(unittest.TestCase):
         })
         self.assertIn("Capture transaction value: 3", output)
         self.assertIn("Values while /AS low: 3, 10, 5, 12", output)
-        self.assertIn("Waveform map: /tmp/waveform.svg", output)
+        self.assertIn("Waveform SVG: /tmp/waveform.svg", output)
 
     def test_sampling_window_summary_shows_offsets_and_capture_side(self):
         output = summary.format_report({

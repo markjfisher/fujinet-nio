@@ -61,5 +61,68 @@
       "rejected_capture_count": 4,
       "values": [10, 165, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
     }
+  },
+  "waveform_view": {
+    "lanes": [
+      {
+        "label": "D[15:0] observed subset",
+        "role": "data",
+        "bits": [
+          {
+            "label": "D15",
+            "channel": "D7",
+            "bus_bit": 15
+          },
+          {
+            "label": "D8",
+            "channel": "D6",
+            "bus_bit": 8
+          },
+          {
+            "label": "D0",
+            "channel": "D5",
+            "bus_bit": 0
+          }
+        ]
+      },
+      {
+        "label": "/LDS",
+        "role": "control",
+        "channel": "D4",
+        "polarity": "active-low"
+      },
+      {
+        "label": "/UDS",
+        "role": "control",
+        "channel": "D3",
+        "polarity": "active-low"
+      },
+      {
+        "label": "R/W",
+        "role": "control",
+        "channel": "D2",
+        "polarity": "active-high"
+      },
+      {
+        "label": "SELECT",
+        "role": "control",
+        "channel": "D1",
+        "polarity": "active-high"
+      },
+      {
+        "label": "/AS",
+        "role": "strobe",
+        "channel": "D0",
+        "polarity": "active-low"
+      }
+    ],
+    "transactions": {
+      "boundary_label": "/AS",
+      "expected_label": "Expected selected writes",
+      "report_label": "DUT reported",
+      "rejected_summary_label": "Ignored controls",
+      "rejected_label": "ignored",
+      "uncertain_label": "uncertain"
+    }
   }
 }

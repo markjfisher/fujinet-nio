@@ -26,5 +26,47 @@
     "target": "feasibility_dut",
     "protocol": "capture-observer-v1",
     "expected": {"capture_count": 28, "capture_irq_count": 28, "values": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 10, 5, 10, 5, 10, 5, 10, 5, 6, 13, 3, 12]}
+  },
+  "waveform_view": {
+    "lanes": [
+      {
+        "label": "D[3:0]",
+        "role": "data",
+        "bits": [
+          {
+            "label": "D3",
+            "channel": "D3",
+            "bus_bit": 3
+          },
+          {
+            "label": "D2",
+            "channel": "D2",
+            "bus_bit": 2
+          },
+          {
+            "label": "D1",
+            "channel": "D1",
+            "bus_bit": 1
+          },
+          {
+            "label": "D0",
+            "channel": "D0",
+            "bus_bit": 0
+          }
+        ]
+      },
+      {
+        "label": "/AS",
+        "role": "strobe",
+        "channel": "D7",
+        "polarity": "active-low"
+      }
+    ],
+    "transactions": {
+      "boundary_label": "/AS",
+      "expected_label": "Expected at /AS falls",
+      "report_label": "DUT reported",
+      "sample_label": "captured at /AS fall"
+    }
   }
 }

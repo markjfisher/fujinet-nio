@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,8 +44,8 @@ class WaveformVisualTests(unittest.TestCase):
             visual.write_svg(report, output)
             text = output.read_text()
         self.assertIn('fill="white"', text)
-        self.assertIn("whole acquisition", text)
-        self.assertIn("event 100 us–930 us", text)
+        self.assertIn("detected transaction window", text)
+        self.assertIn("events 100 us–930 us", text)
         self.assertIn("detail: 0 us–1.000 ms", text)
         self.assertIn(">D3<", text)
         self.assertIn(">/AS<", text)
@@ -64,7 +65,7 @@ class WaveformVisualTests(unittest.TestCase):
             output = Path(directory) / "waveform.svg"
             visual.write_svg(report, output)
             text = output.read_text()
-        self.assertIn("whole acquisition", text)
+        self.assertIn("detected transaction window", text)
         self.assertNotIn('class="data" d=', text)
 
     def test_repeated_transactions_label_values_across_pulse_intervals(self):
@@ -147,14 +148,12 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn("gap-20: D=5 × 4; low 100 us; internal gap 20 us", text)
 
     def test_width_control_svg_shows_control_subset_and_ignored_assertions(self):
+        manifest = json.loads((HERE / "C5-width-control/experiment.json").read_text())
         report = {
             "experiment": "C5",
+            "build_identity": {"manifest": manifest},
             "dut_evidence": {"observed": {"values": [10]}},
             "waveform": {"analysis_kind": "width_control", "sample_rate": 1_000_000,
-                         "analyzer_signals": {
-                             "as": "D0", "select": "D1", "rw": "D2",
-                             "uds": "D3", "lds": "D4",
-                             "data_bits": {"D0": "D5", "D8": "D6", "D15": "D7"}},
                          "transactions": [
                              {"id": "unselected", "accepted": False,
                               "assert_sample": 100, "release_sample": 200,
@@ -178,6 +177,44 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn('class="ignored"', text)
         self.assertIn("Expected selected writes", text)
         self.assertIn("Ignored controls: unselected", text)
+        self.assertIn("Analyzer mapping: D15←D7, D8←D6, D0←D5", text)
+
+    def test_manifest_drives_wide_lane_mapping_and_window_scale(self):
+        report = {
+            "experiment": "wide",
+            "manifest": {"title": "Generic wide capture", "waveform_view": {
+                "lanes": [
+                    {"label": "D[47:0]", "role": "data", "bits": [
+                        {"label": "D47", "channel": "D47", "bus_bit": 47},
+                        {"label": "D23", "channel": "D23", "bus_bit": 23},
+                        {"label": "D0", "channel": "D0", "bus_bit": 0},
+                    ]},
+                    {"label": "READY", "role": "control", "channel": "D41", "polarity": "active-low"},
+                    {"label": "/AS", "role": "strobe", "channel": "D40", "polarity": "active-low"},
+                ],
+                "transactions": {"boundary_label": "/AS", "expected_label": "Expected writes"},
+            }},
+            "waveform": {"sample_rate": 1_000_000,
+                         "transactions": [{"classification": "accepted", "assert_sample": 20_000,
+                                           "release_sample": 20_100, "capture_value": 0x1234,
+                                           "phases": [{"value": 0x1234, "start_sample": 20_000,
+                                                       "end_sample": 20_100}]},
+                                          {"classification": "uncertain", "assert_sample": 20_300,
+                                           "release_sample": 20_400, "capture_value": 0x5678,
+                                           "phases": [{"value": 0x5678, "start_sample": 20_300,
+                                                       "end_sample": 20_400}]}]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "waveform.svg"
+            visual.write_svg(report, output)
+            text = output.read_text()
+        for label in ("D47", "D23", "D0", "READY", "/AS"):
+            self.assertIn(">" + label + "<", text)
+        self.assertIn('data-polarity="active-low"', text)
+        self.assertIn("Analyzer mapping: D47←D47, D23←D23, D0←D0, READY←D41, /AS←D40", text)
+        self.assertIn('class="uncertain"', text)
+        self.assertIn("20.000 ms", text)
+        self.assertNotIn("5.000 s", text)
 
     def test_idle_svg_shows_data_changes_high_strobe_and_dut_counters(self):
         report = {

@@ -186,15 +186,20 @@ def analyse(path, manifest):
     kind = manifest.get("analysis_kind", "burst")
     require(kind in ("burst", "idle", "held_active", "sampling_window", "repetition", "width_control"), "Unknown analysis_kind", "configuration")
     if kind == "idle":
-        return analyse_idle(path, manifest, data, hz)
+        result = analyse_idle(path, manifest, data, hz)
+        return attach_visualization(result, manifest)
     if kind == "held_active":
-        return analyse_held_active(path, manifest, data, hz)
+        result = analyse_held_active(path, manifest, data, hz)
+        return attach_visualization(result, manifest)
     if kind == "sampling_window":
-        return analyse_sampling_window(path, manifest, data, hz)
+        result = analyse_sampling_window(path, manifest, data, hz)
+        return attach_visualization(result, manifest)
     if kind == "repetition":
-        return analyse_repetition(path, manifest, data, hz)
+        result = analyse_repetition(path, manifest, data, hz)
+        return attach_visualization(result, manifest)
     if kind == "width_control":
-        return analyse_width_control(path, manifest, data, hz)
+        result = analyse_width_control(path, manifest, data, hz)
+        return attach_visualization(result, manifest)
     rows = []
     state = dict(expected=manifest["expected_values"], sample=None)
 
@@ -289,7 +294,7 @@ def analyse(path, manifest):
                 hold_us=(after - r) * 1000000 / hz,
             )
         )
-    return dict(
+    return attach_visualization(dict(
         analysis_kind=kind,
         capture=str(path),
         capture_sha256=digest(path),
@@ -298,7 +303,20 @@ def analyse(path, manifest):
         values=expected,
         measurements=rows,
         limits="First setup and final released data level are not independently observable.",
-    )
+    ), manifest)
+
+
+def attach_visualization(result, manifest):
+    """Keep the manifest-selected SVG lanes with the analysed evidence.
+
+    The renderer consumes this immutable-for-the-run description from
+    ``report.json``.  It never needs to infer an experiment identity from a
+    directory name, and old reports can still use its generic fallback.
+    """
+    view = manifest.get("waveform_view")
+    if isinstance(view, dict):
+        result["visualization"] = view
+    return result
 
 
 def analyse_idle(path, manifest, data, hz):

@@ -1389,6 +1389,7 @@ class Experiments(unittest.TestCase):
         self.assertEqual(report["measurements"][-1]["id"], "walk-15")
         self.assertEqual([row["low_us"] for row in report["measurements"]], [120.0] * 22)
         self.assertEqual([row["setup_us"] for row in report["measurements"][1:]], [110.0] * 21)
+        self.assertEqual(report["visualization"], self.c5_manifest()["waveform_view"])
 
     def test_c5_rejects_wrong_selected_control_or_observed_data_bit(self):
         baseline = bytearray(self.width_control_waveform())
