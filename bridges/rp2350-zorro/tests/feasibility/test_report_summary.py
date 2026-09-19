@@ -137,6 +137,15 @@ class ReportSummaryTests(unittest.TestCase):
         self.assertIn("Analyzer subset: /AS, SELECT, R/W, /UDS, /LDS, D0, D15, D8", output)
         self.assertIn("Ignored controls: unselected, read", output)
 
+    def test_pressure_accounting_is_presented_from_observed_report_fields(self):
+        output = summary.format_report({
+            "status": "passed",
+            "dut_evidence": {"status": "observed", "observed": {
+                "capture_count": 9, "pressure_pause_count": 1,
+                "pressure_pause_us": 2000, "unobserved_assertion_count": 11}},
+        })
+        self.assertIn("Pressure accounting: 1 pause; 2000 us each; 11 assertions unobserved", output)
+
     def test_unknown_analysis_kind_uses_generic_output(self):
         output = summary.format_report({"status": "passed", "waveform": {"analysis_kind": "future"}})
         self.assertIn("Stimulus status: passed", output)

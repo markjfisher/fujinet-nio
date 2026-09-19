@@ -85,9 +85,18 @@ def generated_sample_count(manifest):
         require(all(isinstance(case.get("value"), int) for case in accepted),
                 "width_control accepted transaction needs a value", "configuration")
         expected = manifest.get("dut", {}).get("expected", {}).get("values")
-        require(expected == [case["value"] for case in accepted],
-                "width_control DUT values must match accepted transactions",
-                "configuration")
+        generated = [case["value"] for case in accepted]
+        if manifest.get("dut", {}).get("allows_partial_capture"):
+            require(isinstance(expected, list) and expected,
+                    "partial width/control DUT values must be declared", "configuration")
+            iterator = iter(generated)
+            require(all(any(value == candidate for candidate in iterator) for value in expected),
+                    "partial width/control DUT values must be an ordered generated subsequence",
+                    "configuration")
+        else:
+            require(expected == generated,
+                    "width_control DUT values must match accepted transactions",
+                    "configuration")
         return len(accepted)
     expected = manifest.get("expected_values")
     require(isinstance(expected, list) and expected,
@@ -647,8 +656,18 @@ def analyse_width_control(path, manifest, data, hz):
                                observed_us=low_us, fall_sample=fall, rise_sample=rise))
         if index:
             setup_us = (fall - rises[index - 1]) * 1000000 / hz
-            require(abs(setup_us - manifest["setup_us"]) <= 2,
-                    "width/control released setup outside 2 us tolerance")
+            minimum_setup_us = case.get("minimum_setup_us")
+            if minimum_setup_us is not None:
+                require(isinstance(minimum_setup_us, (int, float)) and minimum_setup_us > 0,
+                        "invalid width/control minimum_setup_us", "configuration")
+                require(setup_us >= minimum_setup_us - 2,
+                        "width/control released setup shorter than minimum")
+            else:
+                expected_setup_us = case.get("setup_us", manifest["setup_us"])
+                require(isinstance(expected_setup_us, (int, float)) and expected_setup_us > 0,
+                        "invalid width/control setup_us", "configuration")
+                require(abs(setup_us - expected_setup_us) <= 2,
+                        "width/control released setup outside 2 us tolerance")
         else:
             setup_us = None
         for name, channel_bit in control_bits.items():
@@ -750,13 +769,20 @@ def dut_report(console, contract):
         r"result protocol=" + re.escape(protocol) +
         r" capture_count=([0-9]+) capture_irq_count=([0-9]+)"
         r"(?: raw_capture_count=([0-9]+) rejected_capture_count=([0-9]+))?"
+        r"(?: pressure_pause_count=([0-9]+) pressure_pause_us=([0-9]+)"
+        r" pressure_expected_assertions=([0-9]+) unobserved_assertion_count=([0-9]+))?"
         r" values=([0-9,]*)", line)
     require(match is not None, "Malformed DUT counter report: " + line, "transport")
     observed = dict(capture_count=int(match[1]), capture_irq_count=int(match[2]),
-                    values=[] if not match[5] else [int(value) for value in match[5].split(",")])
+                    values=[] if not match[9] else [int(value) for value in match[9].split(",")])
     if match[3] is not None:
         observed.update(raw_capture_count=int(match[3]),
                         rejected_capture_count=int(match[4]))
+    if match[5] is not None:
+        observed.update(pressure_pause_count=int(match[5]),
+                        pressure_pause_us=int(match[6]),
+                        pressure_expected_assertions=int(match[7]),
+                        unobserved_assertion_count=int(match[8]))
     expected = contract["expected"]
     differences = {key: dict(expected=value, observed=observed.get(key))
                    for key, value in expected.items()

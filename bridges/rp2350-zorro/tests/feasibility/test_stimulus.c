@@ -80,15 +80,17 @@ static epio_t *waveform_init(void) {
     epio_t *e = epio_init();
     CHECK(e);
     stimulus_registers config = stimulus_config(100000);
-    CHECK(config.clkdiv == (1u << 16));
+    CHECK(config.clkdiv == (uint32_t)(((uint64_t)100000 * 256 / STIMULUS_HZ) << 8));
     CHECK(config.execctrl == ((STIMULUS_WORDS - 1u) << 12));
     CHECK(config.shiftctrl == STIMULUS_SHIFTCTRL);
     CHECK(config.pinctrl == (STIMULUS_OUTPUT_BASE |
                              (STIMULUS_SET_BASE << 5) |
                              (STIMULUS_OUTPUT_PINS << 20) |
                              (STIMULUS_SET_PINS << 26)));
-    CHECK(stimulus_config(125000000).clkdiv == (1250u << 16));
-    CHECK(stimulus_config(125050000).clkdiv == ((1250u << 16) | (128u << 8)));
+    CHECK(stimulus_config(125000000).clkdiv ==
+          (uint32_t)(((uint64_t)125000000 * 256 / STIMULUS_HZ) << 8));
+    CHECK(stimulus_config(125050000).clkdiv ==
+          (uint32_t)(((uint64_t)125050000 * 256 / STIMULUS_HZ) << 8));
     epio_sm_reg_t r = {.clkdiv = config.clkdiv,
                        .execctrl = config.execctrl,
                        .shiftctrl = config.shiftctrl,
@@ -188,6 +190,9 @@ static void waveform_wide_check(epio_t *e) {
         uint32_t current = output_pins(e);
         if (current != prior) {
             CHECK(observed < x->output_word_count);
+            if (current != x->output_words[observed])
+                fprintf(stderr, "wide word %zu: expected 0x%x, observed 0x%x\n",
+                        observed, x->output_words[observed], current);
             CHECK(current == x->output_words[observed++]);
             prior = current;
         }

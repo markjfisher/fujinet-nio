@@ -93,6 +93,11 @@ class Experiments(unittest.TestCase):
         self.assertIn("GP2..17", wiring)
         self.assertEqual(description, "22 /AS assertions (18 accepted writes)")
 
+    def test_c6_generator_description_allows_declared_partial_dut_capture(self):
+        samples, _, description = e.generator_run_description(self.c6_manifest())
+        self.assertEqual(samples, 20)
+        self.assertEqual(description, "20 /AS assertions (20 accepted writes)")
+
     def test_recorded_final_captures(self):
         for name in ("w0-final-001.sr", "w0-final-002.sr"):
             path = e.ROOT / "docs/feasibility/results/2026-09-17-generator" / name
@@ -1223,6 +1228,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C5-width-control/experiment.json").read_text()
         )
 
+    def c6_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C6-pressure/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1361,7 +1371,7 @@ class Experiments(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(e.Failure):
                 e.analyse(self.capture, self.c4_manifest())
 
-    def width_control_waveform(self):
+    def width_control_waveform(self, manifest=None):
         def sample(case, asserted):
             value = (asserted << 0) | (case["select"] << 1) | (case["rw"] << 2)
             value |= (case["uds"] << 3) | (case["lds"] << 4)
@@ -1369,13 +1379,15 @@ class Experiments(unittest.TestCase):
             value |= ((case["value"] >> 8) & 1) << 6
             value |= ((case["value"] >> 15) & 1) << 7
             return value
-        manifest = self.c5_manifest()
+        manifest = manifest or self.c5_manifest()
         cases = manifest["control_transactions"]
         parts = [bytes([sample(cases[0], 1)]) * 200]
         for index, case in enumerate(cases):
             parts.append(bytes([sample(case, 0)]) * manifest["pulse_us"])
             if index + 1 < len(cases):
-                parts.append(bytes([sample(cases[index + 1], 1)]) * manifest["setup_us"])
+                next_case = cases[index + 1]
+                setup = next_case.get("minimum_setup_us", manifest["setup_us"])
+                parts.append(bytes([sample(next_case, 1)]) * setup)
         return b"".join(parts) + b"\x1d" * 100
 
     def test_c5_width_control_analysis_checks_controls_and_observed_bits(self):
@@ -1422,6 +1434,17 @@ class Experiments(unittest.TestCase):
             e.analyse(self.capture, self.c5_manifest())
         self.assertEqual(error.exception.details["expected_assertions"], 22)
         self.assertEqual(len(error.exception.details["observed_falls"]), 23)
+
+    def test_c6_pressure_waveform_has_released_recovery_window(self):
+        manifest = self.c6_manifest()
+        self.write_capture(self.width_control_waveform(manifest), metadata=META_ALL)
+        report = e.analyse(self.capture, manifest)
+        self.assertEqual(report["assertions"], 20)
+        self.assertEqual(report["accepted_assertions"], 20)
+        self.assertEqual(report["values"], [case["value"] for case in manifest["control_transactions"]])
+        recovery = report["measurements"][16]
+        self.assertEqual(recovery["id"], "recovery-0")
+        self.assertGreaterEqual(recovery["setup_us"], 800)
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):
@@ -1537,6 +1560,23 @@ class Experiments(unittest.TestCase):
         evidence = e.dut_report(console, contract)
         self.assertEqual(evidence["observed"]["raw_capture_count"], 22)
         self.assertEqual(evidence["observed"]["rejected_capture_count"], 4)
+
+    def test_c6_dut_reports_explicit_pressure_accounting(self):
+        contract = self.c6_manifest()["dut"]
+        values = ",".join(map(str, contract["expected"]["values"]))
+        console = Mock()
+        console.line.return_value = (
+            "result protocol=capture-observer-v1 capture_count=9 capture_irq_count=9 "
+            "raw_capture_count=9 rejected_capture_count=0 pressure_pause_count=1 "
+            "pressure_pause_us=2000 pressure_expected_assertions=20 "
+            "unobserved_assertion_count=11 values=" + values
+        )
+        evidence = e.dut_report(console, contract)
+        self.assertEqual(evidence["observed"]["unobserved_assertion_count"], 11)
+        console.line.return_value = console.line.return_value.replace(
+            "unobserved_assertion_count=11", "unobserved_assertion_count=0")
+        with self.assertRaises(e.Failure):
+            e.dut_report(console, contract)
 
     def test_c2_dut_requires_only_the_preasserted_value(self):
         contract = self.c2_manifest()["dut"]

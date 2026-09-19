@@ -40,6 +40,22 @@ def coverage_line(waveform):
     return "Analyzer coverage: " + str(coverage["summary"])
 
 
+def pressure_line(observed):
+    """Present optional bounded-drain accounting without deciding its verdict."""
+    if not isinstance(observed, dict) or "unobserved_assertion_count" not in observed:
+        return None
+    parts = []
+    if "pressure_pause_count" in observed:
+        parts.append("{} pause{}".format(
+            observed["pressure_pause_count"],
+            "" if observed["pressure_pause_count"] == 1 else "s"))
+    if "pressure_pause_us" in observed:
+        parts.append("{} us each".format(observed["pressure_pause_us"]))
+    if "unobserved_assertion_count" in observed:
+        parts.append("{} assertions unobserved".format(observed["unobserved_assertion_count"]))
+    return "Pressure accounting: " + "; ".join(parts)
+
+
 def marked_edge_artifacts(waveform):
     limits = waveform.get("limits", "").lower()
     return "first/last" in limits and ("lead-in" in limits or "release" in limits)
@@ -212,11 +228,15 @@ def format_report(report):
         if dut.get("reason"):
             lines.append("DUT reason: " + str(dut["reason"]))
         if isinstance(dut.get("observed"), dict):
+            observed = dut["observed"]
             counters = ", ".join(
-                f"{key}={value}" for key, value in dut["observed"].items()
+                f"{key}={value}" for key, value in observed.items()
                 if key != "values" or value
             )
             lines.append("DUT observed: " + counters)
+            pressure = pressure_line(observed)
+            if pressure:
+                lines.append(pressure)
     if build.get("revision"):
         lines.append("Git revision: " + str(build["revision"]))
     firmware = report.get("firmware_sha256") or build.get("firmware_sha256")

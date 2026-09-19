@@ -15,7 +15,7 @@ observer and proves the idle suppression baseline.
 | [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Implemented; requires physical two-board run |
 | [C4-repetition](C4-repetition/README.md) | Repeated low-width/gap sweep | Implemented; requires physical two-board run |
 | [C5-width-control](C5-width-control/README.md) | W1 selected-write width and control | Implemented; requires physical two-board run and its documented eight-channel subset |
-| [C6-pressure](C6-pressure/README.md) | FIFO pressure and explicit loss | Planned |
+| [C6-pressure](C6-pressure/README.md) | Bounded FIFO stall, explicit loss and recovery | Implemented; requires physical W1 run and its documented eight-channel subset |
 | [C7-reads](C7-reads/README.md) | Read response timing | Planned |
 | [C8-turnaround](C8-turnaround/README.md) | Direction changes/output release | Planned |
 | [C9-recovery](C9-recovery/README.md) | Reset, abort and recovery | Planned |
@@ -36,7 +36,7 @@ profile retains those selections. Then an implemented two-board experiment runs
 with `./run.sh all --output NEW_DIRECTORY`: it builds, loads both selected images,
 waits for your explicit Enter before generating signals, acquires, analyses,
 collects DUT evidence, and prints the saved report summary. C0 still needs
-RP2040 BOOTSEL on each RAM load; C1–C5 force-load their connected flash fixtures
+RP2040 BOOTSEL on each RAM load; C1–C6 force-load their connected flash fixtures
 without BOOTSEL.
 
 Separate `doctor`, `build`, `configure`, `configure-paths`, `load`, `run` and
@@ -46,7 +46,7 @@ experiment stage runs sudo or changes system permissions. Ctrl-C cancels the hos
 workflow; the runner attempts stop and cleans up acquisition, while firmware
 independently limits each burst.
 
-Each manifest declares its normal bounded analyser duration: C0–C5 use 50 ms at
+Each manifest declares its normal bounded analyser duration: C0–C6 use 50 ms at
 1 MHz. Set
 `"acquisition_seconds"` when a later case needs a different normal window, or
 override one run with, for example, `./run.sh run --acquisition-seconds 1`. The
@@ -66,8 +66,8 @@ unmeasured internal PIO sample-clock position.
 Every implemented manifest carries a `waveform_view` description. Its ordered
 `lanes` contain ordinary signals (`label`, `channel`, `role`, `polarity`) and
 data buses (`bits`, each with its displayed label, analyzer `channel` and bus
-bit number). `transactions` supplies human-facing boundary, expected-value and
-classification labels. The analyser copies that description into
+bit number). `transactions` supplies human-facing boundary, expected-value,
+classification and optional DUT-metric labels. The analyser copies that description into
 `report.json` as `waveform.visualization`; the SVG renderer reads the report,
 not an experiment directory name. Channels use sigrok names such as `D0` and
 are unbounded: a later analyzer can declare `D47`, for example, when its raw
@@ -78,6 +78,10 @@ sampling-window/repetition retain small `analysis_kind` presentation hooks.
 The visual mapping presents Sigrok `D0` as physical `CH1` (and so on); use an
 optional `physical_channel` lane field when another analyzer needs a different
 front-panel name.
+An intentional bounded-loss case can set `dut.allows_partial_capture`; it must
+still declare the exact DUT values as an ordered subsequence of generator
+assertions. C6 uses this only to expose `PUSH BLOCK` loss, never to waive a
+counter mismatch.
 The analyser also derives `waveform.analyzer_coverage`: each data bus records
 its width and observed bit numbers, controls record their labels/channels, and
 `summary` makes partial instrumentation explicit, for example `3/16 data bits

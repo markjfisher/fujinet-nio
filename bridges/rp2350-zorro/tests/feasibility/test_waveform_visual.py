@@ -191,6 +191,32 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn("Transaction values are hexadecimal.", text)
         self.assertIn(">A<", text)
 
+    def test_manifest_metrics_render_pressure_reconciliation(self):
+        manifest = json.loads((HERE / "C6-pressure/experiment.json").read_text())
+        report = {
+            "experiment": "C6", "build_identity": {"manifest": manifest},
+            "dut_evidence": {"observed": {
+                "values": [0x1000, 0x1001, 0xd001],
+                "pressure_pause_count": 1, "pressure_pause_us": 2000,
+                "unobserved_assertion_count": 11}},
+            "waveform": {"analysis_kind": "width_control", "sample_rate": 1_000_000,
+                         "transactions": [
+                             {"accepted": True, "assert_sample": 100, "release_sample": 150,
+                              "capture_value": 0x1000,
+                              "phases": [{"value": 0x1000, "start_sample": 100, "end_sample": 150}]},
+                             {"accepted": True, "assert_sample": 300, "release_sample": 350,
+                              "capture_value": 0xd001,
+                              "phases": [{"value": 0xd001, "start_sample": 300, "end_sample": 350}]}]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "waveform.svg"
+            visual.write_svg(report, output)
+            text = output.read_text()
+        self.assertIn(">Drain pauses:<", text)
+        self.assertIn(">Drain pause:<", text)
+        self.assertIn(">Unobserved assertions:<", text)
+        self.assertIn(">11<", text)
+
     def test_manifest_drives_wide_lane_mapping_and_window_scale(self):
         report = {
             "experiment": "wide",

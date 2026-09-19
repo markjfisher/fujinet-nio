@@ -269,7 +269,8 @@ def semantic_annotations(kind, waveform):
 
 def transaction_annotations(report, waveform, config, events):
     options = transaction_options(config)
-    observed = ((report.get("dut_evidence") or {}).get("observed") or {}).get("values", [])
+    dut_observed = ((report.get("dut_evidence") or {}).get("observed") or {})
+    observed = dut_observed.get("values", [])
     accepted = [event.get("capture_value") for event in events if event_state(event) == "accepted"]
     rejected = [event for event in events if event_state(event) == "rejected"]
     uncertain = [event for event in events if event_state(event) == "uncertain"]
@@ -293,6 +294,14 @@ def transaction_annotations(report, waveform, config, events):
     if rejected:
         summary = options.get("rejected_summary_label", "Rejected transactions")
         lines.append(summary + ": " + ", ".join(str(event.get("id", "rejected")) for event in rejected))
+    for metric in options.get("metrics", []):
+        if not isinstance(metric, dict):
+            continue
+        key = metric.get("key")
+        label = metric.get("label")
+        if isinstance(key, str) and isinstance(label, str) and key in dut_observed:
+            suffix = metric.get("suffix", "")
+            lines.append(label + ": " + str(dut_observed[key]) + str(suffix))
     lines.extend(semantic_annotations(waveform.get("analysis_kind"), waveform))
     boundary = options.get("boundary_label")
     if not boundary:

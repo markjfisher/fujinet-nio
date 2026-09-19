@@ -1,12 +1,12 @@
 # Story 2.2 — RP2350B Zorro-facing feasibility experiment
 
 Status: active feasibility plan, updated 2026-09-19. The reusable W0 framework,
-generator, Core2350B observer and C0–C5 are implemented. Local physical reports
-show passed two-board runs for C0–C4; their raw captures, console logs, firmware
+generator, Core2350B observer and C0–C6 are implemented. Local physical reports
+show passed two-board runs for C0–C5; their raw captures, console logs, firmware
 hashes and SVG evidence are retained under `build/feasibility/`. Those results
 establish the stated synthetic-fixture behavior only. They do not establish a
 Zorro-II timing margin, output safety, sustained transfer capacity, or real-bus
-compatibility. C5 awaits its first physical W1 run; C6–C10 remain planned work
+compatibility. C6 awaits its first physical W1 run; C7–C10 remain planned work
 in this same Story 2.2.
 
 ## Repeatable experiment contract — user amendment, 2026-09-17
@@ -279,8 +279,8 @@ First implement the named cases as deterministic tests and a physical run recipe
 | C2 held-active | Assert /AS once, hold it low while changing data | **Implemented and passed on W0:** one sample only; held duration does not create another capture |
 | C3 sampling window | Change data at swept offsets before/after assertion | **Implemented and passed on W0:** before/after values at 10 and 50 us offsets; unresolved edge timing remains unmeasured |
 | C4 repetition | Repeated assertions, decreasing high gap and low width separately | **Implemented and passed on W0:** 20 ordered captures across 100/50/20 us low and released-gap points. A failure-boundary sweep remains future work. |
-| C5 width/control | 4 -> 8 -> 16 bits; walking bits, R/W, lane strobes, SELECT | **Implemented; physical W1 run pending:** 22 assertions comprising four ignored controls and 18 selected writes. The current PIO fixture uses 120 us `/AS` low and 110 us released intervals. Analyzer checks controls plus D0/D8/D15; DUT must report the 18 full ordered words. |
-| C6 pressure | Pause/slow DUT drain until FIFO fills, then resume | Identify actual stall/loss behavior; no completion for unaccepted data; account for all losses/timeouts |
+| C5 width/control | 4 -> 8 -> 16 bits; walking bits, R/W, lane strobes, SELECT | **Implemented and physically passed on W1:** 22 assertions comprising four ignored controls and 18 selected writes. The current PIO fixture uses 120 us `/AS` low and 110 us released intervals. Analyzer checks controls plus D0/D8/D15; DUT reports the 18 full ordered words. |
+| C6 pressure | Pause DUT drain after first RX record until FIFO fills, then resume across a released interval | **Implemented; physical W1 run pending:** sixteen selected writes at 250 kHz PIO cadence, a PIO-only released delay, then four sentinels. `PUSH BLOCK` must retain five early records, account for eleven unobserved assertions, and capture all four recovery sentinels. |
 | C7 reads | Generator releases data; DUT returns a known pattern on selected reads | Generator samples expected data; measured data-valid and /ACK timing, including unavailable data |
 | C8 turnaround | Alternate read/write and lane selection; vary release gap | Correct first value after each change; measured release, no simultaneous drive; unselected bus stays released |
 | C9 recovery | Abort burst, soft-reset/reboot either endpoint, disconnect console | Outputs return to defined idle/released state; no old-run samples/replies; next armed run matches expected data |
@@ -326,8 +326,8 @@ Each package ends in a reviewable result; they do not add entries to stories.yam
 | [x] E1: integrated targets | `CMakeLists.txt`, `CMakePresets.json`, `cmake/host.cmake`, `scripts/bootstrap.py`, policy and tooling tests | Host Debug/Release, RP2040 stimulus and RP2350B DUT presets build independently; unsupported board/platform configurations are rejected. |
 | [x] E2: USB observability and runner | `src/feasibility_dut.c`, `lab/rp2040/main.c`, `tests/feasibility/experiment.py` and its host tests | Role-aware USB control, fresh-run evidence, bounded output release, DUT reset/report protocol and stored bench paths work through each experiment's `run.sh`. |
 | [x] E3: physical four-bit reproduction | C0–C4 directories, shared `src/capture_program.c`, EPIO capture tests and generated `report.json`/`waveform.svg` evidence | Passed local W0 two-board C0–C4 reports establish exact functional behavior at the declared conditions. The failure boundary, high-rate endurance and external timing margin remain open. |
-| [~] E4a: width/control | W1 C5 stimulus/capture sources, manifest and focused EPIO test | Implemented: PIO/DMA allocation and selected-write capture are covered by host tests; physical W1 evidence is pending. |
-| [ ] E4b: pressure | Extend the W1 capture fixture for C6 | Measure FIFO-to-ARM pressure and explicit loss/stall outcomes; no false acknowledgements or unreported loss. |
+| [x] E4a: width/control | W1 C5 stimulus/capture sources, manifest and focused EPIO test | Passed local W1 C5 report: PIO/DMA allocation and selected-write capture are covered by host and physical evidence. |
+| [~] E4b: pressure | W1 C6 stimulus/capture sources, bounded DUT drain-pause configuration and focused EPIO test | Implemented: a finite fault injects a 2 ms ARM drain pause after first FIFO data; report reconciles the 20 generator assertions with nine retained records and eleven explicitly unobserved assertions. Physical W1 evidence is pending. |
 | [ ] E5: reads/turnaround/recovery | Extend E4 APIO source/tests/cases, DUT logging and RP2040 receiver — C7–C9 | Both-side expectations, external read-valid/release measurements and local timeout/reset cleanup; bidirectional fixture reviewed before outputs enabled |
 | [ ] E6: real-bus procedure and execution | `docs/feasibility/zorro-requirements.md`, `docs/feasibility/real-bus-procedure.md`, applicable `src/feasibility/` probe and focused Amiga exerciser only if needed — C10 | Breakout/adapter, reviewed buffering/power/direction and instruments available; cited bus limits and actual captures; no uncontrolled host address writes |
 | [ ] E7: evidence and verdict | `docs/feasibility/report.md`, `docs/feasibility/results/`; workspace scope/acceptance link — audit case/requirement coverage | Software/bench/real-bus outcomes separated; reproducible evidence, measured margins and explicit proceed/hold with unresolved items |

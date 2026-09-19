@@ -1,6 +1,18 @@
 cmake_minimum_required(VERSION 3.21)
 set(BRIDGE_MODE "host" CACHE STRING "host or firmware or stimulus")
 option(DUT_CAPTURE_W1 "Build the feasibility DUT with W1 16-bit selected-write capture" OFF)
+set(DUT_DRAIN_PAUSE_US "0" CACHE STRING
+    "Pause feasibility DUT FIFO draining after its first observed record")
+set(DUT_PRESSURE_ASSERTIONS "0" CACHE STRING
+    "Declared stimulus assertions for a bounded DUT pressure run")
+if(NOT DUT_DRAIN_PAUSE_US MATCHES "^[0-9]+$" OR
+   NOT DUT_PRESSURE_ASSERTIONS MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "DUT pressure settings must be non-negative integers")
+endif()
+if((DUT_DRAIN_PAUSE_US GREATER 0 OR DUT_PRESSURE_ASSERTIONS GREATER 0) AND
+   (NOT DUT_CAPTURE_W1 OR DUT_DRAIN_PAUSE_US EQUAL 0 OR DUT_PRESSURE_ASSERTIONS EQUAL 0))
+    message(FATAL_ERROR "DUT pressure mode requires W1 plus a non-zero pause and assertion count")
+endif()
 if(NOT BRIDGE_MODE MATCHES "^(host|firmware|stimulus)$")
     message(FATAL_ERROR "BRIDGE_MODE must be host or firmware or stimulus")
 endif()
@@ -74,6 +86,11 @@ else()
         if(DUT_CAPTURE_W1)
             target_compile_definitions(bridge_capture PRIVATE CAPTURE_W1=1)
             target_compile_definitions(feasibility_dut PRIVATE CAPTURE_W1=1)
+        endif()
+        if(DUT_DRAIN_PAUSE_US GREATER 0)
+            target_compile_definitions(feasibility_dut PRIVATE
+                CAPTURE_DRAIN_PAUSE_US=${DUT_DRAIN_PAUSE_US}
+                CAPTURE_PRESSURE_ASSERTIONS=${DUT_PRESSURE_ASSERTIONS})
         endif()
         pico_enable_stdio_uart(feasibility_dut 0)
         pico_enable_stdio_usb(feasibility_dut 1)
