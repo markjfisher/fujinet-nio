@@ -25,19 +25,23 @@ plain direct bidirectional breadboard connection.
 
 ## Analyzer mapping
 
-| Analyzer | sigrok | net |
-| --- | --- | --- |
-| CH1 | D0 | /AS GP18 |
-| CH2 | D1 | SELECT GP22 |
-| CH3 | D2 | R/W GP19 |
-| CH4 | D3 | /ACK GP26 |
-| CH5 | D4 | D0 GP2 |
-| CH6 | D5 | D8 GP10 |
-| CH7 | D6 | D15 GP17 |
-| CH8 | D7 | released-bias check |
+Connect analyzer GND to common GND; leave CLK open.
 
-Analyzer GND goes to common GND and CLK remains open. The SVG marks each read
-and write boundary and limited three-bit data coverage.
+| Physical channel | sigrok | Net | GPIO |
+| --- | --- | --- | --- |
+| CH1 | D0 | /AS | GP18 |
+| CH2 | D1 | SELECT | GP22 |
+| CH3 | D2 | R/W | GP19 |
+| CH4 | D3 | /ACK | GP26 |
+| CH5 | D4 | D0 | GP2 |
+| CH6 | D5 | D8 | GP10 |
+| CH7 | D6 | D15 | GP17 |
+| CH8 | D7 | D1, including released-bias level | GP3 |
+
+The analyzer observes D0, D1, D8 and D15. CH8 must be connected to GP3: it
+shows the defined released-bias level between transfers and verifies D1 during
+each DUT response. The SVG marks each read and write boundary; the DUT report
+proves each complete response word.
 
 ## Run
 
