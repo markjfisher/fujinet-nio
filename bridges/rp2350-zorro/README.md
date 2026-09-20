@@ -120,12 +120,15 @@ belongs in ignored local configuration, not the experiment manifest.
 
 The [experiment plan](docs/story-2-2-experiment-plan.md) extends this skeleton with
 an independent RP2040 stimulus generator and USB-observable Core2350B DUT, then
-measured timing and later buffered real-bus validation. C0–C6 have a combined
-two-board runner; C6 adds an explicit bounded FIFO-pressure observation. Later
-stimulus and real-bus cases remain planned. The isolated [RP2040 W0 generator](docs/rp2040-generator.md)
-uses the `stimulus-rp2040` preset with explicit USB run/stop control.
+measured timing and later buffered real-bus validation. C0–C9 have combined
+two-board runners and passed the current synthetic W0/W1 fixture cases; the
+[evidence ledger](docs/feasibility/bench-evidence.md) records the reviewed local
+run IDs and limits. C10 remains the planned passive real-bus collector. The
+isolated [RP2040 W0 generator](docs/rp2040-generator.md) uses the
+`stimulus-rp2040` preset with explicit USB run/stop control.
 
 Start repeatable bench work with the [experiment index](tests/feasibility/README.md)
 and `tests/feasibility/generator-check/run.sh`. Inspect, build, load, run and
 analyse independently; the default flow guides you through BOOTSEL and waits
-before output. C0–C6 are implemented; C7–C10 remain explicit planned cases.
+before output. C0–C9 are implemented synthetic-bench experiments; C10 remains
+the real-bus case.

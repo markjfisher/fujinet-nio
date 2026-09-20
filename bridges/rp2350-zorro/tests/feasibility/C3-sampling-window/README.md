@@ -55,11 +55,10 @@ default acquisition and every other planned step. Use `--acquisition-seconds N`
 only when a longer diagnostic capture is useful.
 
 Each physical run preserves `capture.sr`, USB logs, `report.json` and
-`waveform.svg`. The SVG shows the full acquisition and a raw D0–D3/`/AS` zoom;
-green lines mark the four capture transaction boundaries. The value cells and
-summary map each captured value to its before/after case. These are external
-observations. They do not turn the analyser edge into an internal PIO clock
-marker.
+`waveform.svg`. The SVG renders the raw D0–D3/`/AS` detail window and labels the
+four capture transaction boundaries, values and before/after cases. These are
+external observations. They do not turn the analyser edge into an internal PIO
+clock marker.
 
 C3 uses APIO stimulus source, a separate EPIO stimulus oracle and an EPIO DUT
 test. The shared feasibility DUT observer and report protocol are unchanged; no

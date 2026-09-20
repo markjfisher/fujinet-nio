@@ -1,15 +1,14 @@
 # Story 2.2 — RP2350B Zorro-facing feasibility experiment
 
-Status: active feasibility plan, updated 2026-09-19. The reusable W0 framework,
-generator, Core2350B observer and C0–C6 are implemented. Local physical reports
-show passed two-board runs for C0–C5; their raw captures, console logs, firmware
-hashes and SVG evidence are retained under `build/feasibility/`. Those results
-establish the stated synthetic-fixture behavior only. They do not establish a
-Zorro-II timing margin, output safety, sustained transfer capacity, or real-bus
-compatibility. C6 passed on the physical W1 bench. C7–C9 now have buildable
-two-board firmware and explicit physical-fixture procedures; C10 has a passive
-real-bus evidence collector. Their physical evidence and any Zorro timing or
-electrical verdict remain open.
+Status: active feasibility plan, updated 2026-09-20. The reusable W0/W1 framework,
+generator and Core2350B observer are implemented. Local physical reports show
+passed two-board runs for C0–C9; their raw captures, console logs, firmware
+hashes and SVG evidence are retained under `build/feasibility/` and indexed in
+the [synthetic-bench evidence ledger](feasibility/bench-evidence.md). Those
+results establish the stated bounded synthetic-fixture behavior only. They do
+not establish a Zorro-II timing margin, analog output safety, sustained transfer
+capacity, or real-bus compatibility. C10 has a passive real-bus evidence
+collector; reviewed mapping, buffering and real-bus evidence remain open.
 
 ## Repeatable experiment contract — user amendment, 2026-09-17
 
@@ -25,7 +24,7 @@ shared board/USB/APIO support rather than copying another project. The starter
 exposes build, load, run and analyse separately, and `all` is the visible,
 interactive build/load/run/analyse/report flow. It loads only its verified
 targets, waits for re-enumeration, explains signals and waits for the user to
-start. C0's RAM generator load requires RP2040 BOOTSEL; C1–C5 use the enrolled
+start. C0's RAM generator load requires RP2040 BOOTSEL; C1–C9 use the enrolled
 flash generator and force it into the loader without a button press. Preserve raw
 capture/logs, firmware hashes, failures and expected/observed verdicts in fresh
 output directories. Offline analysis and builds do not require connected boards.
@@ -38,10 +37,10 @@ failed analyzer acquisition or an unverified USB identity. The user permits
 replacing the RP2040 debug firmware, but RAM-only loading remains sufficient for
 the current generator check; no persistent flash change is required.
 
-C0–C4 are real two-board experiments, not placeholders. C5 has buildable
-two-board W1 firmware and awaits physical evidence; C6–C10 declare their missing
-software/hardware and refuse execution until implemented. Completing W0 does not
-close the full E0–E7 or real-bus gates.
+C0–C9 are real two-board experiments, not placeholders, and have passing local
+physical reports at their declared W0/W1 settings. C10 is an implemented passive
+collector that remains blocked on the reviewed real-bus interface. Completing
+the synthetic bench does not close the real-bus gates.
 
 ## Goal and relationship to Story 2.1
 
@@ -230,10 +229,10 @@ than replacing timed PIO work with CPU GPIO loops:
 
 | Gate | Required architectural evidence |
 | --- | --- |
-| C5 | **Implemented; physical W1 evidence pending.** Core2350B PIO0 SM0 uses an APIO capture loop over GP2–22: begin from released `/AS`, wait for `/AS`, `IN PINS,21`, blocking-push and PIO IRQ. ARM drains bounded raw records and applies the selected-write qualifier, retaining counts for accepted and rejected observations. RP2040 PIO0 SM0 uses ten APIO instructions and one DMA channel to emit 45 complete GP2–22 states; the CPU does not pace waveform edges. |
-| C6 | Measure the PIO RX FIFO → ARM transfer under deliberate pressure. Compare the current polling baseline with an NVIC-IRQ and/or DMA drain variant, record stall/loss boundaries and select the viable bounded-transfer design. |
-| C7–C8 | Use a separately defined PIO output/turnaround path with data preloaded by ARM or DMA. ARM may arm and replenish bounded buffers; it must not toggle timing-critical response pins per access. |
-| C9 | Prove that reset/abort releases each PIO-owned output and invalidates any ARM-side records from the old run. |
+| C5 | **Physically passed on W1.** Core2350B PIO0 SM0 uses an APIO capture loop over GP2–22: begin from released `/AS`, wait for `/AS`, `IN PINS,21`, blocking-push and PIO IRQ. ARM drains bounded raw records and applies the selected-write qualifier, retaining counts for accepted and rejected observations. RP2040 PIO0 SM0 uses ten APIO instructions and one DMA channel to emit 45 complete GP2–22 states; the CPU does not pace waveform edges. |
+| C6 | **Physically passed for the declared pressure case.** The polling baseline exposes `PUSH BLOCK`: five initial records and four recovery sentinels are retained while eleven assertions are explicitly unobserved. This measures the current bounded-loss behavior; it does not select an NVIC/DMA production drain design or establish sustained capacity. |
+| C7–C8 | **Functionally passed on W1.** Separately defined PIO output/turnaround paths use ARM-preloaded response data; ARM does not toggle timing-critical response pins per access. The analyzer/DUT reports prove the declared digital sequencing, while external release quality, contention current and timing margin remain unmeasured. |
+| C9 | **Passed for fresh runner rearm.** The runner reloads both finite images and resets DUT state before collecting fresh ordered values. Systematic power-loss and USB-disconnect fault injection remain open. |
 
 No production mailbox/register ABI is implied by these gates. They establish
 whether PIO-front-end capture plus a bounded PIO-to-ARM transfer can support the
@@ -283,9 +282,9 @@ First implement the named cases as deterministic tests and a physical run recipe
 | C4 repetition | Repeated assertions, decreasing high gap and low width separately | **Implemented and passed on W0:** 20 ordered captures across 100/50/20 us low and released-gap points. A failure-boundary sweep remains future work. |
 | C5 width/control | 4 -> 8 -> 16 bits; walking bits, R/W, lane strobes, SELECT | **Implemented and physically passed on W1:** 22 assertions comprising four ignored controls and 18 selected writes. The current PIO fixture uses 120 us `/AS` low and 110 us released intervals. Analyzer checks controls plus D0/D8/D15; DUT reports the 18 full ordered words. |
 | C6 pressure | Pause DUT drain after first RX record until FIFO fills, then resume across a released interval | **Implemented and physically passed on W1:** bounded FIFO stall, explicit loss accounting and ordered recovery sentinels. |
-| C7 reads | Generator releases data; DUT returns a known pattern on selected reads | **Implemented:** DUT PIO qualifies reads, drives a preloaded response and `/ACK`, then releases. Physical fixture evidence is pending. |
-| C8 turnaround | Alternate read/write and lane selection; vary release gap | **Implemented:** PIO-owned direction changes with an R/W guard preventing a response during the write. Physical release/no-contention evidence is pending. |
-| C9 recovery | Abort burst, soft-reset/reboot either endpoint, disconnect console | **Implemented:** fresh sessions/counters and ordered sentinel capture reject stale run evidence. Physical power-cycle/disconnect evidence is pending. |
+| C7 reads | Generator releases data; DUT returns a known pattern on selected reads | **Implemented and physically passed on W1:** DUT PIO qualified one selected read, drove preloaded `0xA501` and `/ACK`, then released. The 1 MHz analyzer proves digital protocol behavior only. |
+| C8 turnaround | Alternate read/write and lane selection; vary release gap | **Implemented and physically passed on W1:** PIO-owned direction changes completed read `0xA501`, write `0x3C3C`, read `0x5A02`; the R/W guard prevented a response during the write. Electrical release/no-contention margin remains unmeasured. |
+| C9 recovery | Abort burst, soft-reset/reboot either endpoint, disconnect console | **Implemented and physically passed for fresh rearm:** fresh sessions/counters captured the ordered sentinels with no stale values. Physical power-cycle/disconnect fault injection is still pending. |
 | C10 real bus | Defined actual-host accesses through reviewed interface | **Implemented collector:** RP2040 is not connected; passive DUT/analyzer capture reports `evidence_collected`, not a real-bus verdict. Reviewed mapping/buffering and physical evidence remain required. |
 
 C6 must preserve the baseline result even if it exposes a limitation: a blocking
@@ -329,8 +328,8 @@ Each package ends in a reviewable result; they do not add entries to stories.yam
 | [x] E2: USB observability and runner | `src/feasibility_dut.c`, `lab/rp2040/main.c`, `tests/feasibility/experiment.py` and its host tests | Role-aware USB control, fresh-run evidence, bounded output release, DUT reset/report protocol and stored bench paths work through each experiment's `run.sh`. |
 | [x] E3: physical four-bit reproduction | C0–C4 directories, shared `src/capture_program.c`, EPIO capture tests and generated `report.json`/`waveform.svg` evidence | Passed local W0 two-board C0–C4 reports establish exact functional behavior at the declared conditions. The failure boundary, high-rate endurance and external timing margin remain open. |
 | [x] E4a: width/control | W1 C5 stimulus/capture sources, manifest and focused EPIO test | Passed local W1 C5 report: PIO/DMA allocation and selected-write capture are covered by host and physical evidence. |
-| [~] E4b: pressure | W1 C6 stimulus/capture sources, bounded DUT drain-pause configuration and focused EPIO test | Implemented: a finite fault injects a 2 ms ARM drain pause after first FIFO data; report reconciles the 20 generator assertions with nine retained records and eleven explicitly unobserved assertions. Physical W1 evidence is pending. |
-| [ ] E5: reads/turnaround/recovery | Extend E4 APIO source/tests/cases, DUT logging and RP2040 receiver — C7–C9 | Both-side expectations, external read-valid/release measurements and local timeout/reset cleanup; bidirectional fixture reviewed before outputs enabled |
+| [x] E4b: pressure | W1 C6 stimulus/capture sources, bounded DUT drain-pause configuration and focused EPIO test | Passed local physical W1 evidence: a finite fault injects a 2 ms ARM drain pause after first FIFO data; report reconciles 20 generator assertions with nine retained records and eleven explicitly unobserved assertions. The sustained-capacity and alternate-drain-design questions remain open. |
+| [~] E5: reads/turnaround/recovery | C7–C9 APIO source/tests/cases, DUT logging and RP2040 receiver | Passed current W1 functional runs for read response, direction sequencing and fresh rearm. External read-valid/release measurements plus power-loss/disconnect recovery and a reviewed electrical fixture remain open. |
 | [ ] E6: real-bus procedure and execution | `docs/feasibility/zorro-requirements.md`, `docs/feasibility/real-bus-procedure.md`, applicable `src/feasibility/` probe and focused Amiga exerciser only if needed — C10 | Breakout/adapter, reviewed buffering/power/direction and instruments available; cited bus limits and actual captures; no uncontrolled host address writes |
 | [ ] E7: evidence and verdict | `docs/feasibility/report.md`, `docs/feasibility/results/`; workspace scope/acceptance link — audit case/requirement coverage | Software/bench/real-bus outcomes separated; reproducible evidence, measured margins and explicit proceed/hold with unresolved items |
 
@@ -369,7 +368,7 @@ the same sequence without touching hardware.
 The RP2350B target remains `waveshare_core2350b` / `rp2350-arm-s`; the RP2040
 stimulus target is `pico` / `rp2040`. Firmware and host builds use separate build
 directories and share only the pinned dependency sources/picotool. C0 loads a
-RAM-only generator and requires BOOTSEL. C1–C5 use a flash-installed generator,
+RAM-only generator and requires BOOTSEL. C1–C9 use a flash-installed generator,
 so their normal `all` run force-reboots the known connected board into the loader
 without a button press. The runner verifies enrolled identity and local topology
 paths before it arms either board.
@@ -421,9 +420,11 @@ underrun/overflow/reset/disconnect counters; result status; raw console transcri
 analyzer/scope model/settings/channel map and raw trace files; measurement
 uncertainty, calculated margins, failure boundary and untested cases.
 
-Keep raw output in ignored `build/feasibility/<run-id>/`. Promote the reviewed
-summary and manageable traces into `docs/feasibility/results/<run-id>/`; large
-captures require a durable accessible artifact link plus hash, not a `/tmp` path.
+Keep raw output in ignored `build/feasibility/<run-id>/`. The committed
+[synthetic-bench evidence ledger](feasibility/bench-evidence.md) records reviewed
+C0–C9 run IDs and their declared limits; it is not a substitute for the raw
+artifacts. Before a real-bus verdict, place reviewed summaries and manageable
+traces in a durable accessible location with a hash, rather than a `/tmp` path.
 A missing field/capture needed for a claim is an explicit evidence gap. Preserve
 failed runs and explain exclusions; do not publish only the fastest passing run.
 

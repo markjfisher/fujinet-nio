@@ -57,9 +57,9 @@ Build artifacts are in `build/stimulus-c0-rp2040/` and `build/dut-c0-rp2350/`;
 the generator and DUT sessions are `build/feasibility/C0/session.json` and
 `dut-session.json`. Result directories retain both console logs, capture, the
 combined analysis report and `waveform.svg`. The SVG places the detected data
-transition sequence in the full acquisition, then zooms to the original D0–D3
-and `/AS` analyser traces. It shows the decoded `0..15` sequence, that `/AS`
-never fell, and the observed zero DUT capture/IRQ counters.
+transition sequence in its detail window beside the original D0–D3 and `/AS`
+analyser traces. Its manifest-owned header states the purpose; the ledger and
+observed counters show that `/AS` never fell and no DUT capture/IRQ occurred.
 
 See the [experiment index](../README.md) and
 [Story 2.2 plan](../../../docs/story-2-2-experiment-plan.md). W0 remains a

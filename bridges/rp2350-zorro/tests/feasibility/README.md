@@ -9,16 +9,16 @@ observer and proves the idle suppression baseline.
 | Folder | Purpose | Status |
 | --- | --- | --- |
 | [generator-check](generator-check/README.md) | Independent 0–15 W0 waveform | Implemented; interactive runner plus separate stages |
-| [C0-idle](C0-idle/README.md) | No capture without assertion; stimulus and DUT counters | Implemented; requires physical two-board run |
-| [C1-patterns](C1-patterns/README.md) | Exact captured patterns and counts | Implemented; requires physical two-board run |
-| [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Implemented; requires physical two-board run |
-| [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Implemented; requires physical two-board run |
-| [C4-repetition](C4-repetition/README.md) | Repeated low-width/gap sweep | Implemented; requires physical two-board run |
-| [C5-width-control](C5-width-control/README.md) | W1 selected-write width and control | Implemented; requires physical two-board run and its documented eight-channel subset |
+| [C0-idle](C0-idle/README.md) | No capture without assertion; stimulus and DUT counters | Passed current W0 bench; no `/AS` capture/IRQ while data changes |
+| [C1-patterns](C1-patterns/README.md) | Exact captured patterns and counts | Passed current W0 bench; 28 ordered captures |
+| [C2-held-active](C2-held-active/README.md) | One capture while /AS stays asserted | Passed current W0 bench; later held-active values do not recapture |
+| [C3-sampling-window](C3-sampling-window/README.md) | Data sampling transition | Passed current W0 bench at the declared 10/50 µs offsets |
+| [C4-repetition](C4-repetition/README.md) | Repeated low-width/gap sweep | Passed current W0 bench; failure-boundary sweep remains open |
+| [C5-width-control](C5-width-control/README.md) | W1 selected-write width and control | Passed current W1 bench; analyzer subset plus full DUT words |
 | [C6-pressure](C6-pressure/README.md) | Bounded FIFO stall, explicit loss and recovery | Implemented; passed on the current W1 bench |
-| [C7-reads](C7-reads/README.md) | Read response timing | Implemented; needs reviewed bidirectional W1 fixture and physical evidence |
-| [C8-turnaround](C8-turnaround/README.md) | Direction changes/output release | Implemented; needs reviewed bidirectional W1 fixture and physical evidence |
-| [C9-recovery](C9-recovery/README.md) | Reset, abort and recovery | Implemented; physical fault/reconnect evidence pending |
+| [C7-reads](C7-reads/README.md) | Read response timing | Passed current W1 functional bench; electrical/timing margin remains open |
+| [C8-turnaround](C8-turnaround/README.md) | Direction changes/output release | Passed current W1 functional bench; external release/no-contention measurement remains open |
+| [C9-recovery](C9-recovery/README.md) | Reset, abort and recovery | Passed fresh-rearm case; power-cycle/disconnect injection remains open |
 | [C10-real-bus](C10-real-bus/README.md) | Passive actual-host evidence capture | Implemented collector; reviewed real-bus mapping/buffering and hardware evidence pending |
 
 C0 is retained: idle capture suppression is a useful baseline. Planned starters
@@ -36,7 +36,7 @@ profile retains those selections. Then an implemented two-board experiment runs
 with `./run.sh all --output NEW_DIRECTORY`: it builds, loads both selected images,
 waits for your explicit Enter before generating signals, acquires, analyses,
 collects DUT evidence, and prints the saved report summary. C0 still needs
-RP2040 BOOTSEL on each RAM load; C1–C6 force-load their connected flash fixtures
+RP2040 BOOTSEL on each RAM load; C1–C9 force-load their connected flash fixtures
 without BOOTSEL.
 
 Separate `doctor`, `build`, `configure`, `configure-paths`, `load`, `run` and
@@ -57,11 +57,11 @@ Results belong in fresh directories under the bridge's ignored `build/` tree
 raw `.sr` capture, expected/observed measurements and a machine-readable verdict.
 Failed runs remain evidence; a busy analyzer or missing capture cannot pass.
 PulseView can open saved captures once sigrok-cli releases the device.
-Physical runs also generate `waveform.svg`: it shows
-the detected transaction window, followed by its detailed rendering of the
-manifest-selected analyser signals, decoded values and DUT-reported evidence.
-It is a debug aid alongside the raw `capture.sr`; it does not claim an
-unmeasured internal PIO sample-clock position.
+Physical runs also generate `waveform.svg`: its manifest-owned purpose statement,
+raw analyser lanes, classified transaction boundaries, decoded values and DUT
+evidence make the saved capture inspectable. It is a debug aid alongside the raw
+`capture.sr`; `report.json` remains the authoritative verdict and neither file
+claims an unmeasured internal PIO sample-clock position.
 
 Every implemented manifest carries a `waveform_view` description. Its ordered
 `lanes` contain ordinary signals (`label`, `channel`, `role`, `polarity`) and
@@ -87,6 +87,8 @@ its width and observed bit numbers, controls record their labels/channels, and
 `summary` makes partial instrumentation explicit, for example `3/16 data bits
 + 5 controls observed`. The terminal summary and SVG print that same statement.
 Build and loader command logs are retained under `build/feasibility/stage-logs/`.
+The [synthetic-bench evidence ledger](../../docs/feasibility/bench-evidence.md)
+records the reviewed local C0–C9 run IDs and the limits of those claims.
 
 Summarise an existing report without rerunning its analysis or changing its verdict:
 

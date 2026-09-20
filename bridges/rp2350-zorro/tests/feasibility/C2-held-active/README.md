@@ -7,13 +7,12 @@ capture and one capture IRQ, with the single value `3`. Any second capture while
 the strobe remains low fails the experiment.
 
 The saved run includes `capture.sr`, the machine-readable `report.json`, both
-USB console logs, and `waveform.svg`. The SVG begins with the whole acquisition
-and highlights the small detected event window, then shows the original saved
-logic-analyser D0–D3 and `/AS` traces around that window. It labels the decoded
-held-active phases and the DUT-reported capture. The falling `/AS` edge is the
+USB console logs, and `waveform.svg`. The SVG shows the original saved
+logic-analyser D0–D3 and `/AS` traces in the analysed detail window, decoded
+held-active phases, and the DUT-reported capture. The falling `/AS` edge is the
 capture transaction boundary. W0 has no physical pin marking the exact internal
-PIO `IN PINS` clock, so the diagram states that limitation rather than claiming a
-false nanosecond sample position; `D=3` remains stable for 210 us after assertion.
+PIO `IN PINS` clock, so the evidence does not claim a nanosecond sample position;
+`D=3` remains stable for 210 us after assertion.
 
 Wiring is unchanged: RP2040 GP2–GP5 to Core2350B GP2–GP5, RP2040 GP6 (`/AS`) to
 Core2350B GP1, shared ground, analyzer CH1–CH4 on D0–D3 and CH8 on `/AS`.
