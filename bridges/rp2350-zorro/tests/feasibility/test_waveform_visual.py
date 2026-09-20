@@ -193,6 +193,9 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">Labels<", text)
         self.assertIn("solid dark-green /AS boundary", text)
         self.assertIn(".ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}", text)
+        self.assertIn('<text x="600.0" y="477" class="small" text-anchor="middle">Detail window:', text)
+        self.assertIn('<rect class="table" x="560" y="491" width="620"', text)
+        self.assertIn('<rect class="table" x="20" y="593" width="524"', text)
 
     def test_manifest_metrics_render_pressure_reconciliation(self):
         manifest = json.loads((HERE / "C6-pressure/experiment.json").read_text())

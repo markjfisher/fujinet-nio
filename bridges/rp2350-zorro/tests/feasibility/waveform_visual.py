@@ -460,10 +460,13 @@ def write_transactions_svg(report, path):
     ledger_y = detail_bottom + 59
     labels_top = ledger_y + 14
     left_width, table_gap = 524, 16
-    right_x, right_width = 20 + left_width + table_gap, width - 20 - left_width - table_gap
+    right_x = 20 + left_width + table_gap
+    right_width = width - 20 - right_x
     labels_bottom = labels_top + table_height(labels)
-    table_top = labels_bottom + 14
-    table_bottom = table_top + max(table_height(provenance), table_height(annotations))
+    coverage_top = labels_bottom + 14
+    coverage_bottom = coverage_top + table_height(provenance)
+    evidence_bottom = labels_top + table_height(annotations)
+    table_bottom = max(coverage_bottom, evidence_bottom)
     height = table_bottom + 20
     out = svg_header(width, height, title(report))
     out.extend([
@@ -523,11 +526,12 @@ def write_transactions_svg(report, path):
             out.append('<rect class="phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(detail_x(start), detail_bottom + 22, max(1, phase_width)))
             if phase_width >= 28:
                 out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(detail_x(start) + 3, detail_bottom + 37, value(phase.get("value"))))
-    out.append('<text x="20" y="{}" class="small">Detail window: {}–{} ({} window)</text>'.format(
-        ledger_y, time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(detail_span, sample_rate)))
+    out.append('<text x="{}" y="{}" class="small" text-anchor="middle">Detail window: {}–{} ({} window)</text>'.format(
+        width / 2, ledger_y,
+        time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(detail_span, sample_rate)))
     draw_table(out, 20, labels_top, left_width, "Labels", labels)
-    draw_table(out, 20, table_top, left_width, "Observed analyzer coverage", provenance)
-    draw_table(out, right_x, table_top, right_width, "Transaction evidence", annotations)
+    draw_table(out, 20, coverage_top, left_width, "Observed analyzer coverage", provenance)
+    draw_table(out, right_x, labels_top, right_width, "Transaction evidence", annotations)
     out.append('</svg>')
     Path(path).write_text("\n".join(out) + "\n")
 
@@ -592,8 +596,8 @@ def write_idle_svg(report, path):
             out.append('<rect class="phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(x(start), detail_bottom + 22, max(1, phase_width)))
             if phase_width >= 24:
                 out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(x(start) + 3, detail_bottom + 37, value(row.get("value"))))
-    out.append('<text x="20" y="{}" class="small">Detail window: {}–{} ({} window)</text>'.format(
-        ledger_y, time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(timeline_span, sample_rate)))
+    out.append('<text x="{}" y="{}" class="small" text-anchor="middle">Detail window: {}–{} ({} window)</text>'.format(
+        width / 2, ledger_y, time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(timeline_span, sample_rate)))
     for index, line in enumerate(annotations):
         out.append('<text x="{}" y="{}" class="small">{}</text>'.format(left, annotation_top + index * 19, html.escape(line)))
     limits = waveform.get("limits")
