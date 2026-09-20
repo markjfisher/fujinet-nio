@@ -23,7 +23,9 @@ void stimulus_program(uint16_t words[STIMULUS_WORDS]) {
     words[2] = APIO_PULL_BLOCK;
     words[3] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 15);
     words[4] = APIO_PULL_BLOCK;
-    words[5] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 31);
+    /* OUT's 30-cycle delay plus the following PULL holds /AS low for the
+     * declared 320 us at this 100 kHz PIO clock. */
+    words[5] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 30);
     words[6] = APIO_PULL_BLOCK;
     words[7] = APIO_ADD_DELAY(APIO_OUT_PINS(21), 15);
     words[8] = APIO_IRQ_SET(0);

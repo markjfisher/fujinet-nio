@@ -20,7 +20,9 @@ void stimulus_program(uint16_t w[STIMULUS_WORDS]) {
  for (unsigned transaction=0; transaction<3; ++transaction) {
    w[i++]=APIO_PULL_BLOCK; w[i++]=APIO_OUT_PINDIRS(21);
    w[i++]=APIO_PULL_BLOCK; w[i++]=APIO_ADD_DELAY(APIO_OUT_PINS(21),15);
-   w[i++]=APIO_PULL_BLOCK; w[i++]=APIO_ADD_DELAY(APIO_OUT_PINS(21),31);
+   /* The following PULL is part of the asserted interval: delay 30 makes
+    * /AS low for the manifest's 320 us, rather than 330 us. */
+   w[i++]=APIO_PULL_BLOCK; w[i++]=APIO_ADD_DELAY(APIO_OUT_PINS(21),30);
    w[i++]=APIO_PULL_BLOCK; w[i++]=APIO_ADD_DELAY(APIO_OUT_PINS(21),15);
  }
  w[i++]=APIO_IRQ_SET(0); w[i]=APIO_JMP(i);

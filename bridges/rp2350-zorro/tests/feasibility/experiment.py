@@ -752,8 +752,13 @@ def analyse_read_response(path, manifest, data, hz):
     rows, transactions = [], []
     for index, (case, fall, rise) in enumerate(zip(cases, falls, rises)):
         low_us = (rise - fall) * 1000000 / hz
-        require(abs(low_us - manifest["pulse_us"]) <= 2,
-                "read-response /AS width outside 2 us tolerance")
+        if abs(low_us - manifest["pulse_us"]) > 2:
+            raise Failure(
+                "waveform",
+                "read-response /AS width outside 2 us tolerance",
+                dict(transaction=case["id"], expected_us=manifest["pulse_us"],
+                     observed_us=low_us, fall_sample=fall, rise_sample=rise),
+            )
         require(((data[fall] >> select_bit) & 1) == case["select"] and
                 ((data[fall] >> rw_bit) & 1) == case["rw"],
                 "read-response controls differ at /AS fall")

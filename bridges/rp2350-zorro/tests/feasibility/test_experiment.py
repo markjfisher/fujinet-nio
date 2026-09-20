@@ -1233,6 +1233,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C6-pressure/experiment.json").read_text()
         )
 
+    def c7_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C7-reads/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1445,6 +1450,43 @@ class Experiments(unittest.TestCase):
         recovery = report["measurements"][16]
         self.assertEqual(recovery["id"], "recovery-0")
         self.assertGreaterEqual(recovery["setup_us"], 800)
+
+    def read_response_waveform(self, manifest=None, low_us=None):
+        manifest = manifest or self.c7_manifest()
+        signals = manifest["analyzer_signals"]
+        case = manifest["read_transactions"][0]
+
+        def sample(as_active, ack_active):
+            value = 0
+            value |= (0 if as_active else 1) << int(signals["as"][1:])
+            value |= case["select"] << int(signals["select"][1:])
+            value |= case["rw"] << int(signals["rw"][1:])
+            value |= (0 if ack_active else 1) << int(signals["ack"][1:])
+            for name, channel in signals["data_bits"].items():
+                bit = int(name[1:])
+                value |= ((case["value"] >> bit) & 1) << int(channel[1:])
+            return value
+
+        low_us = manifest["pulse_us"] if low_us is None else low_us
+        return (bytes([sample(False, False)]) * 200 +
+                bytes([sample(True, True)]) * low_us +
+                bytes([sample(False, False)]) * 200)
+
+    def test_c7_read_response_uses_declared_320us_pulse_and_observed_bits(self):
+        self.write_capture(self.read_response_waveform(), metadata=META_ALL)
+        report = e.analyse(self.capture, self.c7_manifest())
+        self.assertEqual(report["measurements"][0]["low_us"], 320.0)
+        self.assertEqual(report["measurements"][0]["observed_data"],
+                         {"D0": 1, "D8": 1, "D15": 1, "D1": 0})
+
+    def test_c7_rejects_one_pio_cycle_long_read_strobe(self):
+        self.write_capture(self.read_response_waveform(low_us=330), metadata=META_ALL)
+        with self.assertRaisesRegex(e.Failure, "read-response /AS width") as error:
+            e.analyse(self.capture, self.c7_manifest())
+        self.assertEqual(error.exception.details, {
+            "transaction": "read-a501", "expected_us": 320,
+            "observed_us": 330.0, "fall_sample": 200, "rise_sample": 530,
+        })
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):
