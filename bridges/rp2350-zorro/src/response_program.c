@@ -21,11 +21,15 @@ void response_program_init(void) {
     APIO_GPIOBASE_0();
     APIO_SET_SM(RESPONSE_SM);
     APIO_WRAP_BOTTOM();
+    /* The read label is four instructions ahead: wait released, wait
+     * asserted, test R/W, then skip writes back to the released wait. */
+    APIO_LABEL_NEW_OFFSET(response_read, 4);
     APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(RESPONSE_AS_PIN));
-    /* A write may occur between reads.  Do not drive data until the fixture
-       declares a read; this guard is what makes the program safe for C8. */
-    APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(19));
     APIO_ADD_INSTR(APIO_WAIT_GPIO_LOW(RESPONSE_AS_PIN));
+    /* Test R/W after /AS falls. Testing it while /AS was released admitted
+     * C8's following write after an earlier read. */
+    APIO_ADD_INSTR(APIO_JMP_PIN(APIO_LABEL(response_read)));
+    APIO_ADD_INSTR(APIO_JMP(APIO_START_LABEL()));
     /* !NULL makes all 32 output-enable bits one; OUT PINS is configured for
        D[15:0], so the following pull supplies only the response value. */
     APIO_ADD_INSTR(APIO_MOV_PINDIRS_NOT_NULL);
@@ -36,12 +40,12 @@ void response_program_init(void) {
     APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(RESPONSE_AS_PIN));
     APIO_ADD_INSTR(APIO_MOV_PINDIRS_NULL);  /* release D[15:0]. */
     APIO_ADD_INSTR(APIO_SET_PINS(1));       /* /ACK released. */
-    /* APIO_WRAP_TOP records the preceding instruction as the loop endpoint.
-     * It must come after the release sequence: placing it above made PIO wrap
-     * immediately after IRQ_SET, leaving /ACK asserted into C8's write. */
+    /* Keep the release sequence inside the PIO loop. Placing this boundary
+     * above it made PIO wrap after IRQ_SET and left /ACK asserted into C8's
+     * write. */
     APIO_WRAP_TOP();
     APIO_SM_CLKDIV_SET(1, 0);
-    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_EXECCTRL_SET(APIO_EXECCTRL_JMP_PIN(19));
     /* The response word is stored in the low 16 bits of the TX FIFO word.
      * Shift right so OUT PINS maps bit 0 to D0 (GP2), through bit 15 to
      * D15 (GP17).  Shift-left would emit the zero-filled high half first. */

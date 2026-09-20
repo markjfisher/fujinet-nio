@@ -1238,6 +1238,11 @@ class Experiments(unittest.TestCase):
             (Path(__file__).parent / "C7-reads/experiment.json").read_text()
         )
 
+    def c8_manifest(self):
+        return json.loads(
+            (Path(__file__).parent / "C8-turnaround/experiment.json").read_text()
+        )
+
     def idle_waveform(self):
         return (
             b"\x80" * 300
@@ -1511,6 +1516,37 @@ class Experiments(unittest.TestCase):
             "transaction": "read-a501", "asserted_samples": 320,
             "fall_sample": 200, "rise_sample": 520,
         })
+
+    def c8_turnaround_waveform(self):
+        manifest = self.c8_manifest()
+        signals = manifest["analyzer_signals"]
+
+        def sample(case, asserted, ack_asserted):
+            value = 0
+            value |= (0 if asserted else 1) << int(signals["as"][1:])
+            value |= case["select"] << int(signals["select"][1:])
+            value |= case["rw"] << int(signals["rw"][1:])
+            value |= (0 if ack_asserted else 1) << int(signals["ack"][1:])
+            for name, channel in signals["data_bits"].items():
+                value |= ((case["value"] >> int(name[1:])) & 1) << int(channel[1:])
+            return value
+
+        cases = manifest["read_transactions"]
+        parts = [bytes([sample(cases[0], False, False)]) * 200]
+        for index, case in enumerate(cases):
+            parts.append(bytes([sample(case, True, case["direction"] == "read")]) *
+                         manifest["pulse_us"])
+            if index + 1 < len(cases):
+                parts.append(bytes([sample(cases[index + 1], False, False)]) * 200)
+        return b"".join(parts) + bytes([sample(cases[-1], False, False)]) * 200
+
+    def test_c8_turnaround_requires_ack_only_for_reads_and_observes_d1(self):
+        self.write_capture(self.c8_turnaround_waveform(), metadata=META_ALL)
+        report = e.analyse(self.capture, self.c8_manifest())
+        self.assertEqual(report["assertions"], 3)
+        self.assertEqual(report["values"], [0xA501, 0x3C3C, 0x5A02])
+        self.assertEqual(report["measurements"][1]["controls"]["ack"], 1)
+        self.assertEqual(report["measurements"][2]["observed_data"]["D1"], 1)
 
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):
