@@ -308,8 +308,9 @@ def transaction_annotations(report, waveform, config, events):
         strobe = next((lane["label"] for lane in lanes(config) if lane["role"] == "strobe"), "transaction")
         boundary = strobe
     return lines, [
-        "solid dark-green A = accepted {} boundary; dashed orange R = rejected; dotted yellow ? = uncertain".format(boundary),
-        "No external marker exists for the exact internal PIO sample clock.",
+        "Accepted (A): solid dark-green {} boundary".format(boundary),
+        "Rejected (R): dashed orange boundary",
+        "Uncertain (?): dotted yellow boundary",
     ]
 
 
@@ -322,10 +323,9 @@ def title(report):
 def svg_header(width, height, heading):
     return [
         '<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
-        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.tiny{font-size:10px}.label{font-weight:bold}.marker-label{font-weight:bold;fill:#202124}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.idle-window{fill:#d9f2df;fill-opacity:.55}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.control-lane{fill:#f7fbf7}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.control{stroke:#6f42c1;stroke-width:1.7;fill:none}.capture{stroke:#0b5d1e;stroke-width:2.4}.ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}.uncertain{stroke:#b8860b;stroke-width:2.4;stroke-dasharray:1 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}.table{fill:#f8f9fa;stroke:#9aa0a6}.table-head{fill:#e8eaed}.table-key{font-weight:bold}</style>',
+        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.tiny{font-size:10px}.label{font-weight:bold}.marker-label{font-weight:bold;fill:#202124}.active{fill:#fde293;fill-opacity:.48}.idle-window{fill:#d9f2df;fill-opacity:.55}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.control-lane{fill:#f7fbf7}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.control{stroke:#6f42c1;stroke-width:1.7;fill:none}.capture{stroke:#0b5d1e;stroke-width:2.4}.ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}.uncertain{stroke:#b8860b;stroke-width:2.4;stroke-dasharray:1 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}.table{fill:#f8f9fa;stroke:#9aa0a6}.table-head{fill:#e8eaed}.table-key{font-weight:bold}</style>',
         '<rect width="100%" height="100%" fill="white"/>',
         '<text x="20" y="25" class="label">{}</text>'.format(html.escape(heading)),
-        '<text x="20" y="48" class="small">Transaction boundaries, sampling values and classifications come from experiment.py. Detailed traces are saved analyzer samples.</text>',
     ]
 
 
@@ -442,17 +442,13 @@ def write_transactions_svg(report, path):
     timeline_span, detail_span = timeline_end - timeline_start, detail_end - detail_start
 
     width, left, plot_width = 1200, 100, 1080
-    overview_top, overview_height = 82, 24
-    detail_top, lane_height = 194, 42
+    detail_top, lane_height = 82, 42
     detail_bottom = detail_top + lane_height * len(all_lanes)
-
-    def overview_x(sample):
-        return left + (sample - timeline_start) * plot_width / timeline_span
 
     def detail_x(sample):
         return left + (sample - detail_start) * plot_width / detail_span
 
-    annotations, legend = transaction_annotations(report, waveform, config, events)
+    annotations, labels = transaction_annotations(report, waveform, config, events)
     provenance = []
     mapping = lane_mapping(all_lanes)
     if mapping:
@@ -461,24 +457,16 @@ def write_transactions_svg(report, path):
     if coverage:
         provenance.insert(0, coverage)
     options = transaction_options(config)
-    if options.get("value_format") == "hex":
-        legend.insert(0, "Transaction values are hexadecimal.")
-    table_top = detail_bottom + 62
+    ledger_y = detail_bottom + 59
+    labels_top = ledger_y + 14
     left_width, table_gap = 524, 16
-    right_x, right_width = left + left_width + table_gap, plot_width - left_width - table_gap
+    right_x, right_width = 20 + left_width + table_gap, width - 20 - left_width - table_gap
+    labels_bottom = labels_top + table_height(labels)
+    table_top = labels_bottom + 14
     table_bottom = table_top + max(table_height(provenance), table_height(annotations))
-    note_lines = legend + ([waveform["limits"]] if waveform.get("limits") else [])
-    note_height = 10 + 17 * sum(len(wrap_text(line, 145)) for line in note_lines)
-    height = table_bottom + 14 + note_height + 10
+    height = table_bottom + 20
     out = svg_header(width, height, title(report))
     out.extend([
-        '<text x="20" y="76" class="label">detected transaction window</text>',
-        '<rect class="overview" x="{}" y="{}" width="{}" height="{}"/>'.format(left, overview_top, plot_width, overview_height),
-        '<rect class="overview-event" x="{:.2f}" y="{}" width="{:.2f}" height="{}"/>'.format(overview_x(first), overview_top + 2, max(2, overview_x(last) - overview_x(first)), overview_height - 4),
-        '<text x="{}" y="{}" class="small">{}</text>'.format(left, overview_top + 43, time_text(timeline_start, sample_rate)),
-        '<text x="{}" y="{}" class="small" text-anchor="end">{}</text>'.format(left + plot_width, overview_top + 43, time_text(timeline_end, sample_rate)),
-        '<text x="{}" y="{}" class="small">events {}–{}</text>'.format(left, overview_top + 62, time_text(first, sample_rate), time_text(last, sample_rate)),
-        '<text x="20" y="{}" class="label">detail: {}–{} ({} window)</text>'.format(detail_top - 24, time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(detail_span, sample_rate)),
         '<rect class="active" x="{:.2f}" y="{}" width="{:.2f}" height="{}"/>'.format(detail_x(first), detail_top - 8, max(1, detail_x(last) - detail_x(first)), lane_height * len(all_lanes) + 16),
     ])
     for index, lane in enumerate(all_lanes):
@@ -535,9 +523,11 @@ def write_transactions_svg(report, path):
             out.append('<rect class="phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(detail_x(start), detail_bottom + 22, max(1, phase_width)))
             if phase_width >= 28:
                 out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(detail_x(start) + 3, detail_bottom + 37, value(phase.get("value"))))
-    draw_table(out, left, table_top, left_width, "Observed analyzer coverage", provenance)
+    out.append('<text x="20" y="{}" class="small">Detail window: {}–{} ({} window)</text>'.format(
+        ledger_y, time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(detail_span, sample_rate)))
+    draw_table(out, 20, labels_top, left_width, "Labels", labels)
+    draw_table(out, 20, table_top, left_width, "Observed analyzer coverage", provenance)
     draw_table(out, right_x, table_top, right_width, "Transaction evidence", annotations)
-    draw_note(out, 20, table_bottom + 14, 1160, note_lines)
     out.append('</svg>')
     Path(path).write_text("\n".join(out) + "\n")
 
@@ -557,9 +547,8 @@ def write_idle_svg(report, path):
     timeline_start, timeline_end = visual_window(first, last, len(samples) if samples else None)
     detail_start, detail_end = timeline_start, timeline_end
     timeline_span = timeline_end - timeline_start
-    width, left, plot_width = 1200, 150, 1000
-    overview_top, overview_height = 82, 24
-    detail_top, lane_height = 194, 42
+    width, left, plot_width = 1200, 100, 1080
+    detail_top, lane_height = 82, 42
     detail_bottom = detail_top + lane_height * len(all_lanes)
 
     def x(sample):
@@ -578,18 +567,12 @@ def write_idle_svg(report, path):
         annotations.append(coverage)
     strobe_label = next((lane["label"] for lane in all_lanes if lane["role"] == "strobe"), "strobe")
     annotations.extend(["{}: high throughout the saved capture; no active assertion was observed.".format(strobe_label), counter_text])
-    annotation_top = detail_bottom + 68
+    ledger_y = detail_bottom + 59
+    annotation_top = ledger_y + 24
     note_top = annotation_top + 19 * len(annotations) + 12
     height = note_top + (42 if waveform.get("limits") else 10)
     out = svg_header(width, height, title(report))
     out.extend([
-        '<text x="20" y="76" class="label">detected idle sequence</text>',
-        '<rect class="overview" x="{}" y="{}" width="{}" height="{}"/>'.format(left, overview_top, plot_width, overview_height),
-        '<rect class="overview-event" x="{:.2f}" y="{}" width="{:.2f}" height="{}"/>'.format(x(first), overview_top + 2, max(2, x(last) - x(first)), overview_height - 4),
-        '<text x="{}" y="{}" class="small">{}</text>'.format(left, overview_top + 43, time_text(timeline_start, sample_rate)),
-        '<text x="{}" y="{}" class="small" text-anchor="end">{}</text>'.format(left + plot_width, overview_top + 43, time_text(timeline_end, sample_rate)),
-        '<text x="{}" y="{}" class="small">data-transition sequence {}–{}; {} remains high</text>'.format(left, overview_top + 62, time_text(first, sample_rate), time_text(last, sample_rate), strobe_label),
-        '<text x="20" y="{}" class="label">detail: {}–{} ({} window)</text>'.format(detail_top - 24, time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(timeline_span, sample_rate)),
         '<rect class="idle-window" x="{:.2f}" y="{}" width="{:.2f}" height="{}"/>'.format(x(first), detail_top - 8, max(1, x(last) - x(first)), lane_height * len(all_lanes) + 16),
     ])
     for index, lane in enumerate(all_lanes):
@@ -609,6 +592,8 @@ def write_idle_svg(report, path):
             out.append('<rect class="phase" x="{:.2f}" y="{}" width="{:.2f}" height="20"/>'.format(x(start), detail_bottom + 22, max(1, phase_width)))
             if phase_width >= 24:
                 out.append('<text x="{:.2f}" y="{}" class="small">{}</text>'.format(x(start) + 3, detail_bottom + 37, value(row.get("value"))))
+    out.append('<text x="20" y="{}" class="small">Detail window: {}–{} ({} window)</text>'.format(
+        ledger_y, time_text(detail_start, sample_rate), time_text(detail_end, sample_rate), time_text(timeline_span, sample_rate)))
     for index, line in enumerate(annotations):
         out.append('<text x="{}" y="{}" class="small">{}</text>'.format(left, annotation_top + index * 19, html.escape(line)))
     limits = waveform.get("limits")

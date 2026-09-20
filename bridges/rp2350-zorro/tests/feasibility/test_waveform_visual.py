@@ -44,16 +44,15 @@ class WaveformVisualTests(unittest.TestCase):
             visual.write_svg(report, output)
             text = output.read_text()
         self.assertIn('fill="white"', text)
-        self.assertIn("detected transaction window", text)
-        self.assertIn("events 100 us–930 us", text)
-        self.assertIn("detail: 0 us–1.000 ms", text)
+        self.assertNotIn("detected transaction window", text)
+        self.assertNotIn("Transaction boundaries, sampling", text)
+        self.assertIn("Detail window: 0 us–1.000 ms (1.000 ms window)", text)
         self.assertIn(">D3<", text)
         self.assertIn(">/AS<", text)
-        self.assertIn('class="overview-event"', text)
         self.assertIn(">DUT reported:<", text)
         self.assertIn(">0x3<", text)
         self.assertIn("0xA", text)
-        self.assertIn("not externally visible", text)
+        self.assertNotIn("not externally visible", text)
 
     def test_unavailable_capture_keeps_analysed_event_map_readable(self):
         report = {
@@ -66,7 +65,7 @@ class WaveformVisualTests(unittest.TestCase):
             output = Path(directory) / "waveform.svg"
             visual.write_svg(report, output)
             text = output.read_text()
-        self.assertIn("detected transaction window", text)
+        self.assertIn("Detail window: 0 us–300 us (300 us window)", text)
         self.assertNotIn('class="data" d=', text)
 
     def test_repeated_transactions_label_values_across_pulse_intervals(self):
@@ -188,10 +187,11 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn("D15←CH8, D8←CH7, D0←CH6", text)
         self.assertIn(">Analyzer coverage:<", text)
         self.assertIn(">3/16 data bits + 5 controls observed<", text)
-        self.assertIn("Transaction values are hexadecimal.", text)
+        self.assertNotIn("Transaction values are hexadecimal.", text)
         self.assertIn(">A<", text)
         self.assertIn(">R<", text)
-        self.assertIn("solid dark-green A = accepted", text)
+        self.assertIn(">Labels<", text)
+        self.assertIn("solid dark-green /AS boundary", text)
         self.assertIn(".ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}", text)
 
     def test_manifest_metrics_render_pressure_reconciliation(self):
@@ -258,7 +258,7 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn('class="uncertain"', text)
         self.assertIn(">?<", text)
         self.assertIn(".uncertain{stroke:#b8860b;stroke-width:2.4;stroke-dasharray:1 3}", text)
-        self.assertIn("20.000 ms", text)
+        self.assertIn("Detail window: 19.900 ms–20.500 ms (600 us window)", text)
         self.assertNotIn("5.000 s", text)
 
     def test_idle_svg_shows_data_changes_high_strobe_and_dut_counters(self):
@@ -282,7 +282,8 @@ class WaveformVisualTests(unittest.TestCase):
             output = Path(directory) / "waveform.svg"
             visual.write_svg(report, output)
             text = output.read_text()
-        self.assertIn("data-transition sequence", text)
+        self.assertIn("Detail window: 0 us–400 us (400 us window)", text)
+        self.assertNotIn("detected idle sequence", text)
         self.assertIn("/AS: high throughout the saved capture", text)
         self.assertIn("capture_count=0; capture_irq_count=0", text)
         self.assertIn("Decoded data while /AS is high", text)
