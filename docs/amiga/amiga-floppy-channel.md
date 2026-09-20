@@ -1,5 +1,14 @@
 # Amiga Floppy-Port FujiNet Channel
 
+This document is not current state/plan.
+Work has instead gone towards a direct Zorro-II interface, using RP2350 bus
+to Esp32s3 fujinet.
+
+This was originally meant as an alternate interface via the floppy controller
+as another way of getting connection to the fujinet.
+
+---
+
 This document records a proposed use of the Amiga floppy connector as a
 FujiNet channel. It is a design note, not yet a hardware or wire-protocol
 contract. PaulaNET is approach-level reference material only: it demonstrates
@@ -8,12 +17,12 @@ not a source of reusable code or hardware.
 
 Related documents:
 
-- [`driver_architecture.md`](driver_architecture.md) — driver, FujiBus, SLIP,
+- [`driver_architecture.md`](../driver_architecture.md) — driver, FujiBus, SLIP,
   and channel boundaries.
-- [`disk_device_protocol.md`](disk_device_protocol.md) — generic NIO
+- [`disk_device_protocol.md`](../disk_device_protocol.md) — generic NIO
   DiskDevice commands and ADF block behavior.
-- [`architecture.md`](architecture.md) — NIO channel and transport layering.
-- [`posix_tcp_serial_channel.md`](posix_tcp_serial_channel.md) — TCP as a
+- [`architecture.md`](../architecture.md) — NIO channel and transport layering.
+- [`posix_tcp_serial_channel.md`](../posix_tcp_serial_channel.md) — TCP as a
   development/emulator channel.
 
 ## The idea in one sentence

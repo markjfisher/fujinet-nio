@@ -6,7 +6,7 @@ drivers and other FujiNet clients. It complements
 server-side block-device contract.
 
 The Amiga floppy-port/Pico channel design is described separately in
-[`amiga-floppy-channel.md`](amiga-floppy-channel.md).
+[`amiga/amiga-floppy-channel.md`](amiga/amiga-floppy-channel.md).
 
 The immediate target is an Amiga `fujinet-disk.device` client, with the
 existing MS-DOS driver as the first related implementation. The design is

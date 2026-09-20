@@ -427,7 +427,7 @@ complete FujiBus packets with channel-native boundaries, without changing
 DiskDevice commands.
 
 The proposed Amiga floppy-port/Pico channel is documented in
-[`docs/amiga-floppy-channel.md`](amiga-floppy-channel.md). It is a channel
+[`docs/amiga/amiga-floppy-channel.md`](amiga/amiga-floppy-channel.md). It is a channel
 adapter beneath the existing FujiBus/DiskDevice layers, not an Amiga-specific
 NIO device.
 

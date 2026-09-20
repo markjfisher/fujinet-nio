@@ -18,7 +18,7 @@ Principal evergreen documents include:
 | `protocol_reference.md` | FujiBus protocol reference |
 | `disk_device_protocol.md` | DiskDevice wire contract |
 | `driver_architecture.md` | Client driver, session, and channel architecture |
-| `amiga-floppy-channel.md` | Amiga floppy/Pico channel trade study |
+| `amiga/amiga-floppy-channel.md` | Amiga floppy/Pico channel trade study |
 | `testing.md` | Test strategy and commands |
 | `developer_onboarding.md` | Development environment and onboarding |
 
