@@ -1488,6 +1488,19 @@ class Experiments(unittest.TestCase):
             "observed_us": 330.0, "fall_sample": 200, "rise_sample": 530,
         })
 
+    def test_c7_read_response_reports_the_bad_observed_data_bit(self):
+        waveform = bytearray(self.read_response_waveform())
+        # D15 is observed on analyzer D6 and must be high for 0xA501.
+        waveform[200:520] = bytes(sample & ~0x40 for sample in waveform[200:520])
+        self.write_capture(waveform, metadata=META_ALL)
+        with self.assertRaisesRegex(e.Failure, "observed data bit") as error:
+            e.analyse(self.capture, self.c7_manifest())
+        self.assertEqual(error.exception.details, {
+            "transaction": "read-a501", "signal": "D15", "expected": 1,
+            "observed": 0, "sample": 360, "fall_sample": 200,
+            "rise_sample": 520,
+        })
+
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):
             data = bytearray(self.idle_waveform())

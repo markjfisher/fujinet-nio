@@ -39,7 +39,10 @@ void response_program_init(void) {
     APIO_ADD_INSTR(APIO_SET_PINS(1));       /* /ACK released. */
     APIO_SM_CLKDIV_SET(1, 0);
     APIO_SM_EXECCTRL_SET(0);
-    APIO_SM_SHIFTCTRL_SET(APIO_OUT_SHIFTDIR_L);
+    /* The response word is stored in the low 16 bits of the TX FIFO word.
+     * Shift right so OUT PINS maps bit 0 to D0 (GP2), through bit 15 to
+     * D15 (GP17).  Shift-left would emit the zero-filled high half first. */
+    APIO_SM_SHIFTCTRL_SET(APIO_OUT_SHIFTDIR_R);
     APIO_SM_PINCTRL_SET(APIO_OUT_BASE(RESPONSE_DATA_BASE) |
                        APIO_SET_BASE(RESPONSE_ACK_PIN) |
                        APIO_OUT_COUNT(RESPONSE_DATA_BITS) |

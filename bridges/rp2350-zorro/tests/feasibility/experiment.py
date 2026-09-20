@@ -774,8 +774,15 @@ def analyse_read_response(path, manifest, data, hz):
         observed = {"D" + str(bit): 1 if data[sample] & (1 << channel_bit) else 0
                     for bit, channel_bit in bits.items()}
         for bit, actual in ((bit, observed["D" + str(bit)]) for bit in bits):
-            require(actual == ((case["value"] >> bit) & 1),
-                    "read-response observed data bit differs while /ACK is asserted")
+            expected = (case["value"] >> bit) & 1
+            if actual != expected:
+                raise Failure(
+                    "waveform",
+                    "read-response observed data bit differs while /ACK is asserted",
+                    dict(transaction=case["id"], signal="D" + str(bit),
+                         expected=expected, observed=actual, sample=sample,
+                         fall_sample=fall, rise_sample=rise),
+                )
         row = dict(index=index, id=case["id"], value=case["value"], accepted=direction == "read",
                    fall_sample=fall, rise_sample=rise, sample=sample, low_us=low_us,
                    controls={"select": case["select"], "rw": case["rw"], "ack": case["ack"]},
