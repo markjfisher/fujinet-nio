@@ -1,19 +1,151 @@
 {
-  "id": "C7", "title": "Read response", "status": "implemented",
+  "id": "C7",
+  "title": "Read response",
+  "status": "implemented",
   "stage": "C7 W1 APIO PIO read response",
   "stimulus": "RP2040 PIO releases D[15:0], asserts one selected read, and releases it",
   "expected": "DUT PIO drives 0xA501 and /ACK only while /AS is low, then releases D[15:0]",
   "requires": "Reviewed W1 bidirectional fixture, data-bus series resistance/bias, and the C7 analyzer mapping",
-  "preset": "stimulus-c7-rp2040", "target": "feasibility_c7_reads",
-  "source_dir": "tests/feasibility/C7-reads/src", "analysis_kind": "read_response", "load_mode": "flash",
-  "data_gpio": [2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], "strobe_gpio": 18,
-  "analyzer_channels": ["D0","D1","D2","D3","D4","D5","D6","D7"],
-  "analyzer_signals": {"as":"D0","select":"D1","rw":"D2","ack":"D3","data_bits":{"D0":"D4","D8":"D5","D15":"D6"}},
-  "samplerate_hz": 1000000, "acquisition_seconds": 0.25, "pulse_us": 320,
-  "read_transactions": [{"id":"read-a501","value":42241,"select":1,"rw":1,"ack":0}],
-  "dut": {"preset":"dut-c7-rp2350","target":"feasibility_bidirectional","protocol":"bidirectional-observer-v1","expected":{"capture_count":0,"capture_irq_count":0,"raw_capture_count":1,"rejected_capture_count":1,"response_count":1,"response_irq_count":1,"values":[],"response_values":[42241]}},
-  "waveform_view": {"lanes":[
-    {"label":"D[15:0] observed subset","role":"data","width_bits":16,"bits":[{"label":"D15","channel":"D6","bus_bit":15},{"label":"D8","channel":"D5","bus_bit":8},{"label":"D0","channel":"D4","bus_bit":0}]},
-    {"label":"/ACK","role":"control","channel":"D3","polarity":"active-low"}, {"label":"R/W","role":"control","channel":"D2","polarity":"active-high"}, {"label":"SELECT","role":"control","channel":"D1","polarity":"active-high"}, {"label":"/AS","role":"strobe","channel":"D0","polarity":"active-low"}
-  ],"transactions":{"boundary_label":"/AS","expected_label":"Read request","report_label":"DUT responses","value_format":"hex","metrics":[{"key":"response_count","label":"PIO responses"}]}}
+  "preset": "stimulus-c7-rp2040",
+  "target": "feasibility_c7_reads",
+  "source_dir": "tests/feasibility/C7-reads/src",
+  "analysis_kind": "read_response",
+  "load_mode": "flash",
+  "data_gpio": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17
+  ],
+  "strobe_gpio": 18,
+  "analyzer_channels": [
+    "D0",
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6",
+    "D7"
+  ],
+  "analyzer_signals": {
+    "as": "D0",
+    "select": "D1",
+    "rw": "D2",
+    "ack": "D3",
+    "data_bits": {
+      "D0": "D4",
+      "D8": "D5",
+      "D15": "D6",
+      "D1": "D7"
+    }
+  },
+  "samplerate_hz": 1000000,
+  "acquisition_seconds": 0.25,
+  "pulse_us": 320,
+  "read_transactions": [
+    {
+      "id": "read-a501",
+      "value": 42241,
+      "select": 1,
+      "rw": 1,
+      "ack": 0
+    }
+  ],
+  "dut": {
+    "preset": "dut-c7-rp2350",
+    "target": "feasibility_bidirectional",
+    "protocol": "bidirectional-observer-v1",
+    "expected": {
+      "capture_count": 0,
+      "capture_irq_count": 0,
+      "raw_capture_count": 1,
+      "rejected_capture_count": 1,
+      "response_count": 1,
+      "response_irq_count": 1,
+      "values": [],
+      "response_values": [
+        42241
+      ]
+    }
+  },
+  "waveform_view": {
+    "lanes": [
+      {
+        "label": "D[15:0] observed subset",
+        "role": "data",
+        "width_bits": 16,
+        "bits": [
+          {
+            "label": "D15",
+            "channel": "D6",
+            "bus_bit": 15
+          },
+          {
+            "label": "D8",
+            "channel": "D5",
+            "bus_bit": 8
+          },
+          {
+            "label": "D0",
+            "channel": "D4",
+            "bus_bit": 0
+          },
+          {
+            "label": "D1",
+            "channel": "D7",
+            "bus_bit": 1
+          }
+        ]
+      },
+      {
+        "label": "/ACK",
+        "role": "control",
+        "channel": "D3",
+        "polarity": "active-low"
+      },
+      {
+        "label": "R/W",
+        "role": "control",
+        "channel": "D2",
+        "polarity": "active-high"
+      },
+      {
+        "label": "SELECT",
+        "role": "control",
+        "channel": "D1",
+        "polarity": "active-high"
+      },
+      {
+        "label": "/AS",
+        "role": "strobe",
+        "channel": "D0",
+        "polarity": "active-low"
+      }
+    ],
+    "transactions": {
+      "boundary_label": "/AS",
+      "expected_label": "Read request",
+      "report_label": "DUT responses",
+      "value_format": "hex",
+      "metrics": [
+        {
+          "key": "response_count",
+          "label": "PIO responses"
+        }
+      ]
+    }
+  }
 }

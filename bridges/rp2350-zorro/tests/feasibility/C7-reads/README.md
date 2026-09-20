@@ -42,10 +42,11 @@ Connect analyzer GND to common GND; leave CLK open.
 | CH5 | D4 | D0 | GP2 |
 | CH6 | D5 | D8 | GP10 |
 | CH7 | D6 | D15 | GP17 |
-| CH8 | D7 | released-bias check | — |
+| CH8 | D7 | D1, including released-bias level | GP3 |
 
-The analyzer observes three of sixteen data bits. The DUT report proves the
-complete preloaded word; the SVG records the limited coverage.
+The analyzer observes D0, D1, D8 and D15. CH8 must be connected to GP3: it
+shows the defined released-bias level before/after the read and verifies D1
+during the response. The DUT report proves the complete preloaded word.
 
 ## Run
 
