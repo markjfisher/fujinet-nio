@@ -13,29 +13,36 @@ it can arm a waveform.
 
 ## W1 mapping
 
-| Net | RP2040 | Core2350B |
-| --- | --- | --- |
-| D[15:0] | GP2–17 | GP2–17 |
-| /AS | GP18 | GP18 |
-| R/W | GP19 | GP19, low write |
-| /UDS | GP20 | GP20, low |
-| /LDS | GP21 | GP21, low |
-| SELECT | GP22 | GP22, high |
-| GND | GND | GND |
+Use separate USB power for each board; connect GND and signals only, never
+3V3/VBUS between boards.
 
-Data is generator-owned for this write-only case. Analyzer GND connects to
-common GND and CLK stays open.
+| Net | RP2040 | Core2350B | C9 owner |
+| --- | --- | --- | --- |
+| GND | GND | GND | common reference |
+| D[15:0] | GP2–17 | GP2–17 | RP2040 selected writes |
+| /AS | GP18 | GP18 | RP2040 output |
+| R/W | GP19 | GP19 | RP2040 low for write |
+| /UDS | GP20 | GP20 | RP2040 low |
+| /LDS | GP21 | GP21 | RP2040 low |
+| SELECT | GP22 | GP22 | RP2040 high |
 
-| Analyzer | sigrok | net |
-| --- | --- | --- |
-| CH1 | D0 | /AS GP18 |
-| CH2 | D1 | SELECT GP22 |
-| CH3 | D2 | R/W GP19 |
-| CH4 | D3 | /UDS GP20 |
-| CH5 | D4 | /LDS GP21 |
-| CH6 | D5 | D0 GP2 |
-| CH7 | D6 | D8 GP10 |
-| CH8 | D7 | D15 GP17 |
+## Analyzer mapping
+
+Connect analyzer GND to common GND; leave CLK open.
+
+| Physical channel | sigrok | Net | GPIO |
+| --- | --- | --- | --- |
+| CH1 | D0 | /AS | GP18 |
+| CH2 | D1 | SELECT | GP22 |
+| CH3 | D2 | R/W | GP19 |
+| CH4 | D3 | /UDS | GP20 |
+| CH5 | D4 | /LDS | GP21 |
+| CH6 | D5 | D0 | GP2 |
+| CH7 | D6 | D8 | GP10 |
+| CH8 | D7 | D15 | GP17 |
+
+The analyzer observes D0, D8 and D15 plus every W1 write qualifier. The DUT
+report proves each complete captured word.
 
 ## Run
 

@@ -22,19 +22,22 @@ Do **not** reuse W1 GPIO numbers as a Zorro connector pinout. Before C10:
 4. Use the passive input path only. No RP2040 data/control lead attaches to the
    Zorro bus for C10.
 
-The current eight-channel analyzer allocation is a review template, not an
-assumed Zorro pin map:
+## Analyzer mapping
 
-| Analyzer | sigrok | required reviewed net |
-| --- | --- | --- |
-| CH1 | D0 | /AS or chosen transaction boundary |
-| CH2 | D1 | selection/decode evidence |
-| CH3 | D2 | R/W |
-| CH4 | D3 | upper-lane strobe |
-| CH5 | D4 | lower-lane strobe |
-| CH6 | D5 | one low data bit |
-| CH7 | D6 | one middle data bit |
-| CH8 | D7 | one high data bit |
+The table is the current **provisional** C10 manifest allocation, not a Zorro
+connector pinout. Replace its Net and GPIO values with the reviewed buffered
+mapping before loading C10 on a real bus.
+
+| Physical channel | sigrok | Net | GPIO (provisional) |
+| --- | --- | --- | --- |
+| CH1 | D0 | /AS or chosen transaction boundary | GP18 |
+| CH2 | D1 | selection/decode evidence | GP22 |
+| CH3 | D2 | R/W | GP19 |
+| CH4 | D3 | /UDS or reviewed upper-lane strobe | GP20 |
+| CH5 | D4 | /LDS or reviewed lower-lane strobe | GP21 |
+| CH6 | D5 | D0 or reviewed low data bit | GP2 |
+| CH7 | D6 | D8 or reviewed middle data bit | GP10 |
+| CH8 | D7 | D15 or reviewed high data bit | GP17 |
 
 Connect analyzer GND only to the reviewed reference point; leave CLK open
 unless its manual specifies a safe use. The 8-port analyzer cannot certify a
