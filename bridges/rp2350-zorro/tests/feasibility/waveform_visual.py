@@ -308,7 +308,7 @@ def transaction_annotations(report, waveform, config, events):
         strobe = next((lane["label"] for lane in lanes(config) if lane["role"] == "strobe"), "transaction")
         boundary = strobe
     return lines, [
-        "green = accepted {} boundary; orange = rejected; yellow = uncertain".format(boundary),
+        "solid dark-green A = accepted {} boundary; dashed orange R = rejected; dotted yellow ? = uncertain".format(boundary),
         "No external marker exists for the exact internal PIO sample clock.",
     ]
 
@@ -322,7 +322,7 @@ def title(report):
 def svg_header(width, height, heading):
     return [
         '<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
-        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.tiny{font-size:10px}.label{font-weight:bold}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.idle-window{fill:#d9f2df;fill-opacity:.55}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.control-lane{fill:#f7fbf7}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.control{stroke:#6f42c1;stroke-width:1.7;fill:none}.capture{stroke:#188038;stroke-width:2}.ignored{stroke:#f29900;stroke-width:2;stroke-dasharray:4 3}.uncertain{stroke:#f9ab00;stroke-width:2;stroke-dasharray:2 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}.table{fill:#f8f9fa;stroke:#9aa0a6}.table-head{fill:#e8eaed}.table-key{font-weight:bold}</style>',
+        '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.tiny{font-size:10px}.label{font-weight:bold}.marker-label{font-weight:bold;fill:#202124}.overview{fill:#f1f3f4;stroke:#9aa0a6}.overview-event{fill:#f9ab00}.active{fill:#fde293;fill-opacity:.48}.idle-window{fill:#d9f2df;fill-opacity:.55}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.control-lane{fill:#f7fbf7}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.control{stroke:#6f42c1;stroke-width:1.7;fill:none}.capture{stroke:#0b5d1e;stroke-width:2.4}.ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}.uncertain{stroke:#b8860b;stroke-width:2.4;stroke-dasharray:1 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}.table{fill:#f8f9fa;stroke:#9aa0a6}.table-head{fill:#e8eaed}.table-key{font-weight:bold}</style>',
         '<rect width="100%" height="100%" fill="white"/>',
         '<text x="20" y="25" class="label">{}</text>'.format(html.escape(heading)),
         '<text x="20" y="48" class="small">Transaction boundaries, sampling values and classifications come from experiment.py. Detailed traces are saved analyzer samples.</text>',
@@ -501,6 +501,9 @@ def write_transactions_svg(report, path):
         state = event_state(event)
         class_name = {"accepted": "capture", "rejected": "ignored", "uncertain": "uncertain"}[state]
         out.append('<line class="{}" x1="{:.2f}" y1="{}" x2="{:.2f}" y2="{}"/>'.format(class_name, detail_x(fall), detail_top - 14, detail_x(fall), detail_bottom + 8))
+        marker = {"accepted": "A", "rejected": "R", "uncertain": "?"}[state]
+        out.append('<text x="{:.2f}" y="{}" class="tiny marker-label" text-anchor="middle">{}</text>'.format(
+            detail_x(fall), detail_top - 19, marker))
         if sampling_window:
             prior = events[index - 1]["assert_sample"] if index else detail_start
             following = events[index + 1]["assert_sample"] if index + 1 < len(events) else detail_end

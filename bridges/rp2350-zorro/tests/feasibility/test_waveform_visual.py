@@ -190,6 +190,9 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">3/16 data bits + 5 controls observed<", text)
         self.assertIn("Transaction values are hexadecimal.", text)
         self.assertIn(">A<", text)
+        self.assertIn(">R<", text)
+        self.assertIn("solid dark-green A = accepted", text)
+        self.assertIn(".ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}", text)
 
     def test_manifest_metrics_render_pressure_reconciliation(self):
         manifest = json.loads((HERE / "C6-pressure/experiment.json").read_text())
@@ -253,6 +256,8 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">D47←CH48, D23←CH24, D0←CH1,<", text)
         self.assertIn(">READY←CH42, /AS←CH41<", text)
         self.assertIn('class="uncertain"', text)
+        self.assertIn(">?<", text)
+        self.assertIn(".uncertain{stroke:#b8860b;stroke-width:2.4;stroke-dasharray:1 3}", text)
         self.assertIn("20.000 ms", text)
         self.assertNotIn("5.000 s", text)
 
