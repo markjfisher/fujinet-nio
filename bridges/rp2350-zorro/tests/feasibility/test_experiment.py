@@ -1501,6 +1501,17 @@ class Experiments(unittest.TestCase):
             "rise_sample": 520,
         })
 
+    def test_read_response_reports_ack_that_stays_asserted_during_a_write(self):
+        manifest = self.c7_manifest()
+        manifest["read_transactions"][0]["direction"] = "write"
+        self.write_capture(self.read_response_waveform(manifest), metadata=META_ALL)
+        with self.assertRaisesRegex(e.Failure, "write transaction unexpectedly") as error:
+            e.analyse(self.capture, manifest)
+        self.assertEqual(error.exception.details, {
+            "transaction": "read-a501", "asserted_samples": 320,
+            "fall_sample": 200, "rise_sample": 520,
+        })
+
     def test_c0_rejects_wrong_data_or_hold(self):
         for mutation in ("wrong", "glitch", "short", "long", "final"):
             data = bytearray(self.idle_waveform())

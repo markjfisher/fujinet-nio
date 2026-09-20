@@ -33,10 +33,13 @@ void response_program_init(void) {
     APIO_ADD_INSTR(APIO_OUT_PINS(RESPONSE_DATA_BITS));
     APIO_ADD_INSTR(APIO_SET_PINS(0));       /* /ACK asserted. */
     APIO_ADD_INSTR(APIO_IRQ_SET(RESPONSE_IRQ));
-    APIO_WRAP_TOP();
     APIO_ADD_INSTR(APIO_WAIT_GPIO_HIGH(RESPONSE_AS_PIN));
     APIO_ADD_INSTR(APIO_MOV_PINDIRS_NULL);  /* release D[15:0]. */
     APIO_ADD_INSTR(APIO_SET_PINS(1));       /* /ACK released. */
+    /* APIO_WRAP_TOP records the preceding instruction as the loop endpoint.
+     * It must come after the release sequence: placing it above made PIO wrap
+     * immediately after IRQ_SET, leaving /ACK asserted into C8's write. */
+    APIO_WRAP_TOP();
     APIO_SM_CLKDIV_SET(1, 0);
     APIO_SM_EXECCTRL_SET(0);
     /* The response word is stored in the low 16 bits of the TX FIFO word.

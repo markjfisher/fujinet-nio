@@ -769,7 +769,13 @@ def analyse_read_response(path, manifest, data, hz):
             require(ack_low, "read-response /ACK was never asserted")
             sample = ack_low[len(ack_low) // 2]
         else:
-            require(not ack_low, "write transaction unexpectedly asserted /ACK")
+            if ack_low:
+                raise Failure(
+                    "waveform",
+                    "write transaction unexpectedly asserted /ACK",
+                    dict(transaction=case["id"], asserted_samples=len(ack_low),
+                         fall_sample=fall, rise_sample=rise),
+                )
             sample = fall
         observed = {"D" + str(bit): 1 if data[sample] & (1 << channel_bit) else 0
                     for bit, channel_bit in bits.items()}
