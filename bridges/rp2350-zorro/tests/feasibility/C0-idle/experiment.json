@@ -1,6 +1,7 @@
 {
   "id": "C0",
   "title": "Idle capture suppression",
+  "waveform_summary": ["Experiment C0 shows that data may change while /AS is inactive without creating a capture.", "It proves the /AS gate suppresses both capture records and capture IRQs."],
   "status": "implemented",
   "stage": "C0 two-board capture suppression",
   "stimulus": "/AS high while data changes",

@@ -1,6 +1,7 @@
 {
   "id": "C4",
   "title": "Pulse and gap repetition",
+  "waveform_summary": ["Experiment C4 checks repeated transactions as pulse widths and released gaps shrink.", "It proves ordered captures remain stable across the declared repetition groups."],
   "status": "implemented",
   "stage": "C4 two-board repeated assertion characterization",
   "stimulus": "Five four-pulse groups independently reduce low width and released gap",

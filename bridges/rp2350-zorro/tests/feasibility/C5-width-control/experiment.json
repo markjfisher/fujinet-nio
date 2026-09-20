@@ -1,6 +1,7 @@
 {
   "id": "C5",
   "title": "Wider data and control",
+  "waveform_summary": ["Experiment C5 extends capture to 16-bit data and selected-write control qualification.", "It proves only fully qualified writes reach the DUT, in their expected order."],
   "status": "implemented",
   "stage": "C5 W1 selected-write width/control capture",
   "stimulus": "Unselected/read/single-lane controls, then 4-bit, 8-bit and 16-bit walking selected writes",

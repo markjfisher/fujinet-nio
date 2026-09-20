@@ -320,13 +320,17 @@ def title(report):
                               manifest.get("title", "waveform evidence"))
 
 
-def svg_header(width, height, heading):
-    return [
+def svg_header(width, height, heading, summary=()):
+    lines = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
         '<style>text{font-family:monospace;font-size:14px;fill:#202124}.small{font-size:12px}.tiny{font-size:10px}.label{font-weight:bold}.marker-label{font-weight:bold;fill:#202124}.active{fill:#fde293;fill-opacity:.48}.idle-window{fill:#d9f2df;fill-opacity:.55}.data-lane{fill:#f8fbff}.as-lane{fill:#fff8f8}.control-lane{fill:#f7fbf7}.data{stroke:#1967d2;stroke-width:1.7;fill:none}.as{stroke:#b00020;stroke-width:2;fill:none}.control{stroke:#6f42c1;stroke-width:1.7;fill:none}.capture{stroke:#0b5d1e;stroke-width:2.4}.ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}.uncertain{stroke:#b8860b;stroke-width:2.4;stroke-dasharray:1 3}.phase{fill:#e8f0fe;stroke:#1a73e8}.capture-phase{fill:#e6f4ea;stroke:#188038}.note{fill:#f1f3f4;stroke:#9aa0a6}.table{fill:#f8f9fa;stroke:#9aa0a6}.table-head{fill:#e8eaed}.table-key{font-weight:bold}</style>',
         '<rect width="100%" height="100%" fill="white"/>',
         '<text x="20" y="25" class="label">{}</text>'.format(html.escape(heading)),
     ]
+    for index, line in enumerate(summary):
+        lines.append('<text x="20" y="{}" class="small">{}</text>'.format(
+            46 + index * 17, html.escape(line)))
+    return lines
 
 
 def lane_classes(lane):
@@ -373,6 +377,21 @@ def wrap_text(text, columns):
     if current:
         lines.append(" ".join(current))
     return lines or [""]
+
+
+def experiment_summary(report):
+    """Return the manifest-owned purpose statement for the evidence header."""
+    manifest = report_manifest(report)
+    declared = manifest.get("waveform_summary")
+    if isinstance(declared, list):
+        lines = [str(line).strip() for line in declared if isinstance(line, str) and line.strip()]
+        if lines:
+            return [part for line in lines for part in wrap_text(line, 155)]
+    expected = manifest.get("expected")
+    experiment = report.get("experiment", manifest.get("id", "this experiment"))
+    if isinstance(expected, str) and expected.strip():
+        return wrap_text("Experiment {} shows that {}.".format(experiment, expected.rstrip(".")), 155)
+    return ["Experiment {} records the analysed feasibility evidence below.".format(experiment)]
 
 
 def table_rows(lines, value_columns=38):
@@ -441,8 +460,9 @@ def write_transactions_svg(report, path):
     detail_end = max(detail_start + 1, detail_end)
     timeline_span, detail_span = timeline_end - timeline_start, detail_end - detail_start
 
+    summary = experiment_summary(report)
     width, left, plot_width = 1200, 100, 1080
-    detail_top, lane_height = 82, 42
+    detail_top, lane_height = 64 + 17 * len(summary), 42
     detail_bottom = detail_top + lane_height * len(all_lanes)
 
     def detail_x(sample):
@@ -468,7 +488,7 @@ def write_transactions_svg(report, path):
     evidence_bottom = labels_top + table_height(annotations)
     table_bottom = max(coverage_bottom, evidence_bottom)
     height = table_bottom + 20
-    out = svg_header(width, height, title(report))
+    out = svg_header(width, height, title(report), summary)
     out.extend([
         '<rect class="active" x="{:.2f}" y="{}" width="{:.2f}" height="{}"/>'.format(detail_x(first), detail_top - 8, max(1, detail_x(last) - detail_x(first)), lane_height * len(all_lanes) + 16),
     ])
@@ -551,8 +571,9 @@ def write_idle_svg(report, path):
     timeline_start, timeline_end = visual_window(first, last, len(samples) if samples else None)
     detail_start, detail_end = timeline_start, timeline_end
     timeline_span = timeline_end - timeline_start
+    summary = experiment_summary(report)
     width, left, plot_width = 1200, 100, 1080
-    detail_top, lane_height = 82, 42
+    detail_top, lane_height = 64 + 17 * len(summary), 42
     detail_bottom = detail_top + lane_height * len(all_lanes)
 
     def x(sample):
@@ -575,7 +596,7 @@ def write_idle_svg(report, path):
     annotation_top = ledger_y + 24
     note_top = annotation_top + 19 * len(annotations) + 12
     height = note_top + (42 if waveform.get("limits") else 10)
-    out = svg_header(width, height, title(report))
+    out = svg_header(width, height, title(report), summary)
     out.extend([
         '<rect class="idle-window" x="{:.2f}" y="{}" width="{:.2f}" height="{}"/>'.format(x(first), detail_top - 8, max(1, x(last) - x(first)), lane_height * len(all_lanes) + 16),
     ])

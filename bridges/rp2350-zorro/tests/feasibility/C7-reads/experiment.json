@@ -1,6 +1,7 @@
 {
   "id": "C7",
   "title": "Read response",
+  "waveform_summary": ["Experiment C7 verifies that the DUT can answer a qualified read with data and /ACK.", "It proves the DUT drives 0xA501 only during the selected active transaction."],
   "status": "implemented",
   "stage": "C7 W1 APIO PIO read response",
   "stimulus": "RP2040 PIO releases D[15:0], asserts one selected read, and releases it",

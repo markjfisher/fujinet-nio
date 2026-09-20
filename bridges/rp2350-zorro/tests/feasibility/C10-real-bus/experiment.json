@@ -1,5 +1,5 @@
 {
-  "id":"C10", "title":"Representative real Zorro-II bus passive trace", "status":"implemented",
+  "id":"C10", "title":"Representative real Zorro-II bus passive trace","waveform_summary":["Experiment C10 records a bounded real Zorro-II access through the reviewed interface.","It provides retained passive trace evidence without asserting a timing or electrical verdict."], "status":"implemented",
   "stage":"C10 passive real-bus evidence collection", "external_stimulus":true, "evidence_only":true,
   "stimulus":"Bounded actual-host accesses performed by the operator through the reviewed breakout/interface",
   "expected":"A retained passive trace and DUT capture report; no timing or electrical feasibility verdict is inferred automatically",

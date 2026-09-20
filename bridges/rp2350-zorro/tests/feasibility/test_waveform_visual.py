@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 import zipfile
@@ -14,6 +15,15 @@ SPEC.loader.exec_module(visual)
 
 
 class WaveformVisualTests(unittest.TestCase):
+    def test_every_experiment_manifest_declares_a_two_line_waveform_purpose(self):
+        manifests = sorted(HERE.glob("*/experiment.json"))
+        self.assertEqual(len(manifests), 12)
+        for path in manifests:
+            summary = json.loads(path.read_text()).get("waveform_summary")
+            self.assertIsInstance(summary, list, path)
+            self.assertEqual(len(summary), 2, path)
+            self.assertTrue(all(isinstance(line, str) and line for line in summary), path)
+
     def test_held_active_svg_shows_acquisition_context_and_raw_traces(self):
         report = {
             "experiment": "C2",
@@ -47,6 +57,7 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertNotIn("detected transaction window", text)
         self.assertNotIn("Transaction boundaries, sampling", text)
         self.assertIn("Detail window: 0 us–1.000 ms (1.000 ms window)", text)
+        self.assertIn("Experiment C2 records the analysed feasibility evidence below.", text)
         self.assertIn(">D3<", text)
         self.assertIn(">/AS<", text)
         self.assertIn(">DUT reported:<", text)
@@ -193,9 +204,15 @@ class WaveformVisualTests(unittest.TestCase):
         self.assertIn(">Labels<", text)
         self.assertIn("solid dark-green /AS boundary", text)
         self.assertIn(".ignored{stroke:#e67300;stroke-width:2.4;stroke-dasharray:7 3}", text)
-        self.assertIn('<text x="600.0" y="477" class="small" text-anchor="middle">Detail window:', text)
-        self.assertIn('<rect class="table" x="560" y="491" width="620"', text)
-        self.assertIn('<rect class="table" x="20" y="593" width="524"', text)
+        self.assertIn("Experiment C5 extends capture to 16-bit data", text)
+        self.assertRegex(text, r'<text x="600\.0" y="\d+" class="small" text-anchor="middle">Detail window:')
+        table_positions = re.findall(r'<rect class="table" x="(\d+)" y="(\d+)" width="(\d+)"', text)
+        self.assertEqual(table_positions[0][0], "20")
+        self.assertEqual(table_positions[0][2], "524")
+        self.assertEqual(table_positions[2][0], "560")
+        self.assertEqual(table_positions[2][2], "620")
+        self.assertEqual(table_positions[0][1], table_positions[2][1])
+        self.assertGreater(int(table_positions[1][1]), int(table_positions[0][1]))
 
     def test_manifest_metrics_render_pressure_reconciliation(self):
         manifest = json.loads((HERE / "C6-pressure/experiment.json").read_text())

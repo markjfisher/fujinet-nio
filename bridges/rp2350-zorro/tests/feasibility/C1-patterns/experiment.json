@@ -1,6 +1,7 @@
 {
   "id": "C1",
   "title": "Known pattern capture",
+  "waveform_summary": ["Experiment C1 shows that a known 4-bit pattern is captured once for every /AS assertion.", "It proves ordered capture delivery across ascending, alternating, and seeded values."],
   "status": "implemented",
   "stage": "C1 two-board known pattern capture",
   "stimulus": "0..15, alternating A/5, seeded tail 6,D,3,C",

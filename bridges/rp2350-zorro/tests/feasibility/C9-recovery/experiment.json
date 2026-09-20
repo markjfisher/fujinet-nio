@@ -1,6 +1,7 @@
 {
   "id": "C9",
   "title": "Reset and recovery",
+  "waveform_summary": ["Experiment C9 verifies clean state after the generator and DUT are reset and rearmed.", "It proves fresh runs have no stale records and capture all twenty ordered writes."],
   "status": "implemented",
   "stage": "C9 W1 clean rearm and recovery",
   "stimulus": "A bounded selected-write sequence followed by four sentinels after the generator and DUT have been freshly rearmed",

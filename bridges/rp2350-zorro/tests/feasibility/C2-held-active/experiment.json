@@ -1,6 +1,7 @@
 {
   "id": "C2",
   "title": "Held-active strobe",
+  "waveform_summary": ["Experiment C2 shows that a single held-low /AS assertion causes exactly one capture.", "It proves later data changes while /AS remains active cannot retrigger the PIO."],
   "status": "implemented",
   "stage": "C2 two-board held-active capture",
   "stimulus": "Assert /AS once; hold low while data changes 3, A, 5, C",

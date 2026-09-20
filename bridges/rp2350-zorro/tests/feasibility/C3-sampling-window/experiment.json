@@ -1,6 +1,7 @@
 {
   "id": "C3",
   "title": "Capture sampling window",
+  "waveform_summary": ["Experiment C3 maps the timing around /AS at which the PIO samples bus data.", "It proves which before/after data changes are captured at the strobe boundary."],
   "status": "implemented",
   "stage": "C3 two-board sampling-window characterization",
   "stimulus": "Data changes 10 us and 50 us before/after four /AS assertions",

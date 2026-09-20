@@ -1,6 +1,7 @@
 {
   "id": "generator-check",
   "title": "Independent RP2040 W0 generator validation",
+  "waveform_summary": ["Experiment generator-check validates the independent RP2040 generator before DUT work.", "It proves the analyzer sees the intended W0 patterns and /AS timing."],
   "status": "implemented",
   "stage": "Generator bring-up; not a C1 or RP2350 result",
   "preset": "stimulus-rp2040",

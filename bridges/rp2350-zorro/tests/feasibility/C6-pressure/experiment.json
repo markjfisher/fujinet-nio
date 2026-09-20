@@ -1,6 +1,7 @@
 {
   "id": "C6",
   "title": "FIFO pressure and backpressure",
+  "waveform_summary": ["Experiment C6 applies FIFO pressure, then releases it and sends recovery sentinels.", "It proves PIO backpressure is accounted for and recovery captures remain ordered."],
   "status": "implemented",
   "stage": "C6 W1 bounded PIO RX FIFO pressure",
   "stimulus": "Sixteen selected writes while the DUT drain pauses after its first RX record, a released recovery interval, then four sentinel writes",
