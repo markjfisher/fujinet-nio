@@ -144,7 +144,7 @@ def run_l0(manifest, args):
     wait_for_path(rp_port)
     console_log = output / "console.log"
     capture = output / "capture.sr"
-    sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", "samplerate=1000000", "--channels", "D0,D1,D2,D3,D4,D5", "--samples", "250000", "--output-file", str(capture)]
+    sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", "samplerate=1000000", "--channels", "D0,D1,D2,D3,D4,D5", "--samples", "1000000", "--output-file", str(capture)]
     print("+ " + " ".join(sigrok))
     acquisition = subprocess.Popen(sigrok, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     fd = os.open(rp_port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -156,7 +156,7 @@ def run_l0(manifest, args):
         raw[2] |= termios.CLOCAL | termios.CREAD
         raw[6][termios.VMIN] = 0; raw[6][termios.VTIME] = 0
         termios.tcsetattr(fd, termios.TCSANOW, raw)
-        time.sleep(0.05)  # give the analyzer a bounded arm window
+        time.sleep(0.15)  # give the analyzer a bounded arm window
         os.write(fd, b"run 0 16 2\n")
         deadline = time.monotonic() + 5
         pending = b""
