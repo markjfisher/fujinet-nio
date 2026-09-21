@@ -16,6 +16,8 @@ The ESP32-S3 target is a dedicated PlatformIO project:
 
 ```sh
 lab/esp32-link/build.sh L0
+# With the ESP32-S3 in its bootloader, after selecting a stable serial path:
+lab/esp32-link/build.sh L0 --upload /dev/serial/by-id/ESP32-S3-PORT
 ```
 
 It uses the same ESP-IDF PlatformIO platform version as the FujiNet ESP32-S3
