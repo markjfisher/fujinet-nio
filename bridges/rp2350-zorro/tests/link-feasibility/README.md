@@ -32,9 +32,16 @@ cd tests/link-feasibility/L0-fixed-packet-bring-up
 
 Each manifest uses the same provisional W2 mapping: RP2350 GP2..7 map to ESP32-S3
 GPIO12,11,13,10,9,8 for SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE.
-The particular ESP32-S3 breakout must be checked before wiring. Save its serial
-port and the RP USB topology once in ignored `.bench/link-feasibility.json` using
-`./run.sh configure ...`; see `bench.example.json`.
+The particular ESP32-S3 breakout must be checked before wiring. Save both
+serial ports and physical USB topologies once in ignored
+`.bench/link-feasibility.json` using `./run.sh configure ...`; see
+`bench.example.json`.
+
+The observed ESP32-S3 USB device is `303a:4002` at topology `7-1.3.3.4.3`,
+with serial string `123456` and two CDC interfaces. The serial string is not a
+unique board identity. Do not enrol `ttyACM0` or `ttyACM1` by number: flash the
+lab endpoint, identify the interface that prints its `ready` line, then record
+its stable `/dev/serial/by-id/...` path as `esp_port`.
 
 The initial firmware supports a serial `run [scenario] [length] [pattern]` command
 on RP2350 USB, where patterns are zero, FF, increment, AA/55, fixed random and

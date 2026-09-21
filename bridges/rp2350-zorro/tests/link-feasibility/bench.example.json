@@ -1,5 +1,6 @@
 {
-  "rp_usb_path": "7-1.3.3.4.3",
+  "rp_usb_path": "RP2350-USB-TOPOLOGY",
   "rp_port": "/dev/serial/by-id/usb-Raspberry_Pi_Pico_<Core2350B-id>-if00",
-  "esp_port": "/dev/serial/by-id/usb-<ESP32-S3-id>"
+  "esp_usb_path": "7-1.3.3.4.3",
+  "esp_port": "/dev/serial/by-id/usb-Espressif_Systems_Espressif_Device_123456-if00"
 }

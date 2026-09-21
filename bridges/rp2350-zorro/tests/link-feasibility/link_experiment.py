@@ -58,11 +58,11 @@ def build(manifest, dry_run):
 
 def configure(args):
     current = json.loads(BENCH.read_text()) if BENCH.exists() else {}
-    for key in ("rp_usb_path", "rp_port", "esp_port"):
+    for key in ("rp_usb_path", "rp_port", "esp_usb_path", "esp_port"):
         value = getattr(args, key)
         if value:
             current[key] = value
-    missing = [key for key in ("rp_usb_path", "rp_port", "esp_port") if key not in current]
+    missing = [key for key in ("rp_usb_path", "rp_port", "esp_usb_path", "esp_port") if key not in current]
     if missing:
         raise ValueError("missing bench settings: " + ", ".join(missing))
     BENCH.parent.mkdir(parents=True, exist_ok=True)
@@ -80,6 +80,7 @@ def main():
     config = sub.add_parser("configure")
     config.add_argument("--rp-usb-path")
     config.add_argument("--rp-port")
+    config.add_argument("--esp-usb-path")
     config.add_argument("--esp-port")
     args = parser.parse_args()
     try:
