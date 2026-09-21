@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Render read-only SPI-link evidence from an L0 report and Sigrok capture.
+
+This renderer never decides whether an experiment passed.  ``link_experiment``
+owns that decision; this module only makes its captured six-channel evidence
+inspectable.
+"""
+import configparser
+import argparse
+import html
+import json
+import re
+import struct
+import zipfile
+from pathlib import Path
+
+MAGIC = 0x4C4E4B31
+SIGNALS = ("SCLK", "MOSI", "MISO", "CS", "READY", "DATA_AVAILABLE")
+
+
+def capture_words(path):
+    try:
+        with zipfile.ZipFile(path) as archive:
+            meta = configparser.ConfigParser()
+            meta.read_string(archive.read("metadata").decode())
+            unit = int(meta.get("device 1", "unitsize", fallback="1"))
+            parts = sorted((name for name in archive.namelist()
+                            if re.fullmatch(r"logic-1-\d+", name)),
+                           key=lambda name: int(name.rsplit("-", 1)[1]))
+            raw = b"".join(archive.read(name) for name in parts)
+        return [int.from_bytes(raw[index:index + unit], "little")
+                for index in range(0, len(raw), unit)]
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile, configparser.Error):
+        return []
+
+
+def frame_text(data):
+    if len(data) < 16 or struct.unpack_from("<I", data)[0] != MAGIC:
+        return "zero slot" if not any(data) else "unrecognised"
+    version, scenario, status = data[4:7]
+    sequence = struct.unpack_from("<I", data, 8)[0]
+    length, checksum = struct.unpack_from("<HH", data, 12)
+    return "L{} seq {} {} B status {} CRC {:04X}".format(
+        scenario, sequence, length, status, checksum)
+
+
+def byte_stream(words, start, end, bit):
+    rising = [sample for sample in range(start + 1, end)
+              if not (words[sample - 1] & 1) and words[sample] & 1]
+    bits = [(words[sample] >> bit) & 1 for sample in rising]
+    return bytes(sum(value << (7 - offset) for offset, value in enumerate(bits[index:index + 8]))
+                 for index in range(0, len(bits) - 7, 8))
+
+
+def transactions(words):
+    falls = [sample for sample in range(1, len(words))
+             if words[sample - 1] & (1 << 3) and not words[sample] & (1 << 3)]
+    rises = [sample for sample in range(1, len(words))
+             if not words[sample - 1] & (1 << 3) and words[sample] & (1 << 3)]
+    result = []
+    for index, (start, end) in enumerate(zip(falls, rises)):
+        mosi = byte_stream(words, start, end, 1)
+        miso = byte_stream(words, start, end, 2)
+        mosi_label, miso_label = frame_text(mosi), frame_text(miso)
+        if mosi_label.startswith("L"):
+            role = "request"
+        elif miso_label.startswith("L"):
+            role = "drain" if not any(item["role"] == "request" for item in result) else "echo"
+        else:
+            role = "zero slot"
+        result.append({"start_sample": start, "end_sample": end, "role": role,
+                       "mosi": mosi_label, "miso": miso_label})
+    return result
+
+
+def _path(words, start, end, bit, x, high, low):
+    state = bool(words[start] & (1 << bit))
+    y = high if state else low
+    pieces = ["M {:.2f} {:.2f}".format(x(start), y)]
+    last_x = None
+    for sample in range(start + 1, end):
+        next_state = bool(words[sample] & (1 << bit))
+        if next_state != state:
+            at = round(x(sample), 2)
+            if at != last_x:
+                pieces.append("H {:.2f} V {:.2f}".format(at, high if next_state else low))
+                last_x = at
+            state = next_state
+    pieces.append("H {:.2f}".format(x(end)))
+    return " ".join(pieces)
+
+
+def render(report, capture, output):
+    words = capture_words(capture)
+    if not words:
+        raise ValueError("capture has no readable logic samples")
+    rows = transactions(words)
+    if not rows:
+        raise ValueError("capture has no CS transaction windows")
+    rate = int((report.get("analyzer") or {}).get("sample_rate_hz", 1_000_000))
+    first, last = rows[0]["start_sample"], rows[-1]["end_sample"]
+    span = max(1, last - first)
+    start, end = max(0, first - span // 12), min(len(words) - 1, last + span // 12)
+    left, right = 220, 1380
+    width = right - left
+    x = lambda sample: left + (sample - start) * width / max(1, end - start)
+    lane_top, lane_height = 145, 64
+    height = 720 + len(rows) * 70
+    purpose = str(report.get("purpose") or "SPI request and echo evidence.")
+    lines = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="{}" viewBox="0 0 1440 {}">'.format(height, height),
+        '<style>text{font-family:monospace;fill:#202124}.title{font-size:18px;font-weight:bold}.small{font-size:13px}.lane{font-size:16px;font-weight:bold}.wave{fill:none;stroke:#1967d2;stroke-width:1.6}.control{fill:none;stroke:#6f42c1;stroke-width:1.6}.cs{fill:none;stroke:#b00020;stroke-width:2}.window{fill:#e8f0fe;fill-opacity:.65;stroke:#1a73e8}.box{fill:#f8f9fa;stroke:#9aa0a6}.head{fill:#e8eaed}</style>',
+        '<rect width="100%" height="100%" fill="white"/>',
+        '<text x="30" y="34" class="title">{} — {}</text>'.format(html.escape(str(report.get("experiment", "Link"))), html.escape(str(report.get("title", "SPI link evidence")))),
+        '<text x="30" y="59" class="small">{}</text>'.format(html.escape(purpose)),
+        '<text x="30" y="80" class="small">Transaction windows are decoded from the captured MOSI and MISO bits; they do not determine pass/fail.</text>',
+    ]
+    colors = {"request": "#d9f2df", "echo": "#e8f0fe", "drain": "#fff1d6", "zero slot": "#f1f3f4"}
+    for index, row in enumerate(rows):
+        begin, finish = x(row["start_sample"]), x(row["end_sample"])
+        lines.extend([
+            '<rect x="{:.2f}" y="115" width="{:.2f}" height="{}" fill="{}" fill-opacity=".48"/>'.format(begin, max(1, finish - begin), lane_height * len(SIGNALS), colors[row["role"]]),
+            '<text x="{:.2f}" y="108" class="small" text-anchor="middle">{} {}</text>'.format((begin + finish) / 2, index + 1, html.escape(row["role"])),
+        ])
+    for bit, signal in enumerate(SIGNALS):
+        top = lane_top + bit * lane_height
+        high, low = top + 13, top + 42
+        wave_class = "cs" if signal == "CS" else ("control" if signal in ("READY", "DATA_AVAILABLE") else "wave")
+        lines += [
+            '<rect x="{}" y="{}" width="{}" height="{}" fill="#fafcff"/>'.format(left, top, width, lane_height - 6),
+            '<text x="195" y="{}" class="lane" text-anchor="end">{} <tspan class="small">(CH{})</tspan></text>'.format(top + 33, signal, bit + 1),
+            '<path class="{}" d="{}"/>'.format(wave_class, _path(words, start, end, bit, x, high, low)),
+        ]
+    duration_ms = (last - first) * 1000 / rate
+    lines.append('<text x="770" y="548" class="small" text-anchor="middle">Detail window: {:.3f} ms; {} SPI transaction windows</text>'.format(duration_ms, len(rows)))
+    y = 575
+    for index, row in enumerate(rows):
+        lines += [
+            '<rect class="box" x="30" y="{}" width="1380" height="58"/>'.format(y),
+            '<rect class="head" x="30" y="{}" width="190" height="58"/>'.format(y),
+            '<text x="45" y="{}" class="small">Window {} · {}</text>'.format(y + 23, index + 1, html.escape(row["role"])),
+            '<text x="235" y="{}" class="small">MOSI: {}</text>'.format(y + 22, html.escape(row["mosi"])),
+            '<text x="235" y="{}" class="small">MISO: {}</text>'.format(y + 44, html.escape(row["miso"])),
+        ]
+        y += 70
+    lines.append('</svg>')
+    Path(output).write_text("\n".join(lines) + "\n")
+    return rows
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("report", type=Path)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    report = json.loads(args.report.read_text())
+    capture = Path(report["capture"])
+    output = args.output or args.report.with_name("waveform.svg")
+    report["waveform_svg"] = str(output)
+    report["waveform_transactions"] = render(report, capture, output)
+    args.report.write_text(json.dumps(report, indent=2) + "\n")
+    print(output)
+
+
+if __name__ == "__main__":
+    main()

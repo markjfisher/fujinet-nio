@@ -19,6 +19,8 @@ import sys
 import zipfile
 from pathlib import Path
 
+from link_waveform import render as render_waveform
+
 ROOT = Path(__file__).resolve().parents[2]
 BENCH = ROOT / ".bench" / "link-feasibility.json"
 
@@ -225,11 +227,20 @@ def run_l0(manifest, args):
     result = next((line for line in lines if line.startswith("result protocol=link-feasibility-v1")), "")
     observation = analyze_capture(capture, ("SCLK", "MOSI", "MISO", "CS", "READY", "DATA_AVAILABLE"))
     status = "passed" if "status=passed" in result and acquisition.returncode == 0 and capture.is_file() else "failed"
-    report = {"experiment": manifest["id"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels}, "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
+    report = {"experiment": manifest["id"], "title": manifest["title"], "purpose": manifest["purpose"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels}, "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
+    if capture.is_file():
+        waveform_svg = output / "waveform.svg"
+        try:
+            report["waveform_svg"] = str(waveform_svg)
+            report["waveform_transactions"] = render_waveform(report, capture, waveform_svg)
+        except ValueError as error:
+            report["waveform_svg_error"] = str(error)
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print("{}: evidence retained in {}".format(status, output))
     print(result or "no RP2350 result line")
     print(format_capture_observation(observation))
+    if report.get("waveform_svg"):
+        print("Waveform SVG: " + report["waveform_svg"])
     if status != "passed": raise ValueError("L0 run did not produce a passed RP2350 result and analyzer capture")
 
 
