@@ -30,6 +30,15 @@
       }
     },
     {
+      "name": "link-rp2350",
+      "inherits": "firmware",
+      "binaryDir": "${sourceDir}/build/link-rp2350",
+      "cacheVariables": {
+        "BRIDGE_MODE": "link",
+        "LINK_DEFAULT_SCENARIO": "0"
+      }
+    },
+    {
       "name": "stimulus-rp2040",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/stimulus-rp2040",
@@ -306,6 +315,10 @@
     {
       "name": "firmware",
       "configurePreset": "firmware"
+    },
+    {
+      "name": "link-rp2350",
+      "configurePreset": "link-rp2350"
     },
     {
       "name": "stimulus-rp2040",

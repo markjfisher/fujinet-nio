@@ -2,4 +2,9 @@
 /.deps-backups/
 /.bench/
 /build/
+/lab/esp32-link/.pio-core/
+/lab/esp32-link/.pio/
 __pycache__/
+/lab/esp32-link/CMakeLists.txt
+/lab/esp32-link/src/CMakeLists.txt
+/lab/esp32-link/sdkconfig.link-esp32s3

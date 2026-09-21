@@ -1,0 +1,47 @@
+{
+  "id": "L7",
+  "title": "ESP32 reset or disconnect",
+  "status": "implemented-infrastructure",
+  "scenario": 7,
+  "purpose": "Injects ESP32-S3 reset/disconnect during transfer and establishes the observable timeout, recovery and stale-data behavior.",
+  "rp2350": {
+    "preset": "link-rp2350",
+    "target": "link_rp2350"
+  },
+  "esp32": {
+    "project": "lab/esp32-link",
+    "environment": "link-esp32s3"
+  },
+  "wiring": {
+    "rp2350": {
+      "SCLK": 2,
+      "MOSI": 3,
+      "MISO": 4,
+      "CS": 5,
+      "READY": 6,
+      "DATA_AVAILABLE": 7
+    },
+    "esp32s3": {
+      "SCLK": 12,
+      "MOSI": 11,
+      "MISO": 13,
+      "CS": 10,
+      "READY": 9,
+      "DATA_AVAILABLE": 8
+    },
+    "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
+  },
+  "run_profile": {
+    "packets": 8,
+    "faults": [
+      "esp-reset-mid-slot",
+      "esp-disconnect"
+    ]
+  },
+  "evidence": [
+    "RP2350 USB result line",
+    "ESP32-S3 USB log",
+    "optional analyzer capture",
+    "build/link-feasibility/L7/report.json"
+  ]
+}

@@ -182,8 +182,9 @@ def main():
     commands.add_parser("test", help="build and test native Debug and Release")
     build = commands.add_parser("build", help="build firmware without loading hardware")
     build.add_argument(
-        "preset", choices=["firmware", "stimulus-rp2040"], default="firmware", nargs="?"
+        "preset", choices=["firmware", "stimulus-rp2040", "link-rp2350"], default="firmware", nargs="?"
     )
+    build.add_argument("--link-scenario", choices=[str(n) for n in range(10)])
     commands.add_parser(
         "install-toolchain", help="install pinned compiler only if none is usable"
     )
@@ -211,15 +212,16 @@ def main():
             run(["ctest", "--preset", preset])
     elif args.command == "build":
         validate_compiler_cache(ROOT / "build" / args.preset)
-        run(
-            [
-                "cmake",
-                "--preset",
-                args.preset,
-                "-DPICO_SDK_PATH=" + str(bootstrap.selected_sdk()),
-                "-DPICO_TOOLCHAIN_PATH=" + os.environ["PICO_TOOLCHAIN_PATH"],
-            ]
-        )
+        cmake_args = [
+            "cmake", "--preset", args.preset,
+            "-DPICO_SDK_PATH=" + str(bootstrap.selected_sdk()),
+            "-DPICO_TOOLCHAIN_PATH=" + os.environ["PICO_TOOLCHAIN_PATH"],
+        ]
+        if args.link_scenario is not None:
+            if args.preset != "link-rp2350":
+                parser.error("--link-scenario requires link-rp2350")
+            cmake_args.append("-DLINK_DEFAULT_SCENARIO=" + args.link_scenario)
+        run(cmake_args)
         run(["cmake", "--build", "--preset", args.preset])
 
 

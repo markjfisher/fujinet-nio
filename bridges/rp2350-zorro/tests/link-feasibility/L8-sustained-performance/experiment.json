@@ -1,0 +1,53 @@
+{
+  "id": "L8",
+  "title": "Sustained performance",
+  "status": "implemented-infrastructure",
+  "scenario": 8,
+  "purpose": "Measures successful transfer rate and latency over sustained deterministic traffic at selected SPI clock rates.",
+  "rp2350": {
+    "preset": "link-rp2350",
+    "target": "link_rp2350"
+  },
+  "esp32": {
+    "project": "lab/esp32-link",
+    "environment": "link-esp32s3"
+  },
+  "wiring": {
+    "rp2350": {
+      "SCLK": 2,
+      "MOSI": 3,
+      "MISO": 4,
+      "CS": 5,
+      "READY": 6,
+      "DATA_AVAILABLE": 7
+    },
+    "esp32s3": {
+      "SCLK": 12,
+      "MOSI": 11,
+      "MISO": 13,
+      "CS": 10,
+      "READY": 9,
+      "DATA_AVAILABLE": 8
+    },
+    "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
+  },
+  "run_profile": {
+    "packets": 1000,
+    "lengths": [
+      16,
+      64,
+      240
+    ],
+    "spi_hz": [
+      1000000,
+      4000000,
+      8000000
+    ]
+  },
+  "evidence": [
+    "RP2350 USB result line",
+    "ESP32-S3 USB log",
+    "optional analyzer capture",
+    "build/link-feasibility/L8/report.json"
+  ]
+}

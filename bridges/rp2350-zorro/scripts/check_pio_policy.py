@@ -8,13 +8,17 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_EXCLUDED = {".deps", ".deps-backups", "build", ".git"}
+GENERATED_EXCLUDED = {".pio", ".pio-core"}
 
 
 def violations(root):
     found = []
     for directory, dirs, files in os.walk(root):
-        if Path(directory) == root:
-            dirs[:] = [name for name in dirs if name not in ROOT_EXCLUDED]
+        # Generated PlatformIO products can contain .pio strings in their CMake
+        # machinery. They are neither first-party PIO programs nor source. Keep
+        # looking through a source directory named "build": policy fixtures use it.
+        excluded = ROOT_EXCLUDED if Path(directory) == root else GENERATED_EXCLUDED
+        dirs[:] = [name for name in dirs if name not in excluded]
         for name in files:
             path = Path(directory) / name
             relative = path.relative_to(root)
@@ -32,7 +36,7 @@ def violations(root):
                 )
             )
             if build_rule and re.search(
-                r"pioasm|pico_generate_pio_header|\.pio\b",
+                r"pioasm|pico_generate_pio_header|\.pio(?![-A-Za-z0-9_])",
                 path.read_text(),
                 re.IGNORECASE,
             ):

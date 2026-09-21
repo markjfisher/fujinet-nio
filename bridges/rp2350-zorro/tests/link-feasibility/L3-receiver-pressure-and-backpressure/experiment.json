@@ -1,0 +1,54 @@
+{
+  "id": "L3",
+  "title": "Receiver pressure and backpressure",
+  "status": "implemented-infrastructure",
+  "scenario": 3,
+  "purpose": "Exercises bounded receiver pause and queue pressure, recording blocked sends, occupancy and any explicit loss.",
+  "rp2350": {
+    "preset": "link-rp2350",
+    "target": "link_rp2350"
+  },
+  "esp32": {
+    "project": "lab/esp32-link",
+    "environment": "link-esp32s3"
+  },
+  "wiring": {
+    "rp2350": {
+      "SCLK": 2,
+      "MOSI": 3,
+      "MISO": 4,
+      "CS": 5,
+      "READY": 6,
+      "DATA_AVAILABLE": 7
+    },
+    "esp32s3": {
+      "SCLK": 12,
+      "MOSI": 11,
+      "MISO": 13,
+      "CS": 10,
+      "READY": 9,
+      "DATA_AVAILABLE": 8
+    },
+    "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
+  },
+  "run_profile": {
+    "packets": 128,
+    "receiver_pause_ms": [
+      0,
+      1,
+      10,
+      100
+    ],
+    "queue_depths": [
+      1,
+      2,
+      4
+    ]
+  },
+  "evidence": [
+    "RP2350 USB result line",
+    "ESP32-S3 USB log",
+    "optional analyzer capture",
+    "build/link-feasibility/L3/report.json"
+  ]
+}

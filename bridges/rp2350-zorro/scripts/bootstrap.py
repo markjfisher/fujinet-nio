@@ -225,7 +225,7 @@ def setup_sources(mode="all", check_only=False, repair=False, sdk_path=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--mode", choices=["host", "firmware", "stimulus", "all"], default="all"
+        "--mode", choices=["host", "firmware", "stimulus", "link", "all"], default="all"
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
