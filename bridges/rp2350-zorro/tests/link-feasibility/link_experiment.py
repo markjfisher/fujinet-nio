@@ -7,6 +7,7 @@ images and records the commands/settings used for a later physical run.
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -70,6 +71,31 @@ def configure(args):
     print("Saved ignored bench settings: " + str(BENCH))
 
 
+def doctor():
+    """Show candidate ports without claiming a generic USB serial is unique."""
+    by_id = Path("/dev/serial/by-id")
+    print("Link-lab serial discovery (read-only):")
+    if by_id.is_dir():
+        entries = sorted(by_id.iterdir())
+        if entries:
+            for entry in entries:
+                print(f"  {entry} -> {os.path.realpath(entry)}")
+        else:
+            print("  no /dev/serial/by-id entries")
+    else:
+        print("  /dev/serial/by-id is unavailable")
+    for port in sorted(Path("/dev").glob("ttyACM*")):
+        result = subprocess.run(
+            ["udevadm", "info", "--query=property", "--name", str(port)],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+        )
+        props = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        print("  {}: {}:{} serial={} interface={}".format(
+            port, props.get("ID_VENDOR_ID", "?"), props.get("ID_MODEL_ID", "?"),
+            props.get("ID_SERIAL_SHORT", "?"), props.get("ID_USB_INTERFACE_NUM", "?")))
+    print("Enroll only the stable /dev/serial/by-id port that prints the lab ready line.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
@@ -77,6 +103,7 @@ def main():
     sub = parser.add_subparsers(dest="stage", required=True)
     sub.add_parser("plan")
     sub.add_parser("build")
+    sub.add_parser("doctor")
     config = sub.add_parser("configure")
     config.add_argument("--rp-usb-path")
     config.add_argument("--rp-port")
@@ -90,6 +117,7 @@ def main():
         manifest = load_manifest(args.manifest)
         if args.stage == "plan": show_plan(manifest)
         if args.stage == "build": build(manifest, args.dry_run)
+        if args.stage == "doctor": doctor()
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print("link experiment: " + str(error), file=sys.stderr)
         raise SystemExit(1)

@@ -28,6 +28,7 @@ Each L0–L9 directory owns a manifest, run wrapper and hardware README. Start w
 cd tests/link-feasibility/L0-fixed-packet-bring-up
 ./run.sh plan
 ./run.sh build
+./run.sh doctor
 ```
 
 Each manifest uses the same provisional W2 mapping: RP2350 GP2..7 map to ESP32-S3
