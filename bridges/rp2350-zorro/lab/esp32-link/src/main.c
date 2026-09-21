@@ -42,13 +42,20 @@ void app_main(void) {
     ESP_LOGI(TAG, "ready protocol=link-feasibility-v1 default=L%d slot_bytes=%u", LINK_DEFAULT_SCENARIO, (unsigned)sizeof(rx_frame));
     for (;;) {
         spi_slave_transaction_t transfer = {0};
+        spi_slave_transaction_t *completed = NULL;
         memset(&rx_frame, 0, sizeof(rx_frame));
         transfer.length = sizeof(rx_frame) * 8u;
         transfer.rx_buffer = &rx_frame;
         transfer.tx_buffer = &tx_frame;
+
+        /* Queue the slot before raising either externally visible flow-control
+           signal.  spi_slave_transmit() queues internally, so announcing READY
+           first left a race where the RP2350 could clock an unqueued echo and
+           receive the pull-down/idle zeroes on MISO. */
+        ESP_ERROR_CHECK(spi_slave_queue_trans(SPI2_HOST, &transfer, portMAX_DELAY));
         gpio_set_level(LINK_ESP_READY_PIN, 1);
         gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, tx_frame.magic == LINK_TEST_MAGIC);
-        ESP_ERROR_CHECK(spi_slave_transmit(SPI2_HOST, &transfer, portMAX_DELAY));
+        ESP_ERROR_CHECK(spi_slave_get_trans_result(SPI2_HOST, &completed, portMAX_DELAY));
         gpio_set_level(LINK_ESP_READY_PIN, 0);
         enum link_test_status status = link_test_validate_frame(&rx_frame);
         if (rx_frame.magic == 0 && tx_frame.magic == LINK_TEST_MAGIC) {
