@@ -6,6 +6,12 @@ images and records the commands/settings used for a later physical run.
 """
 import argparse
 import hashlib
+import datetime
+import fcntl
+import select
+import termios
+import time
+import uuid
 import json
 import os
 import subprocess
@@ -109,6 +115,80 @@ def load_rp2350(manifest, dry_run):
     command([str(picotool), "load", "-v", "-x", "-f", str(artifact)], dry_run)
 
 
+def read_bench():
+    if not BENCH.is_file():
+        raise ValueError("configure the local bench first: ./run.sh configure --rp-usb-path ... --rp-port ... --esp-usb-path ... --esp-port ...")
+    value = json.loads(BENCH.read_text())
+    required = ("rp_usb_path", "rp_port", "esp_usb_path", "esp_port")
+    missing = [key for key in required if not isinstance(value.get(key), str) or not value[key]]
+    if missing:
+        raise ValueError("incomplete bench profile: " + ", ".join(missing))
+    return value
+
+
+def wait_for_path(path, seconds=5):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if Path(path).exists(): return
+        time.sleep(0.1)
+    raise ValueError("serial port did not appear: " + path)
+
+
+def run_l0(manifest, args):
+    if manifest["id"] != "L0":
+        raise ValueError("automated physical run is implemented for L0 only")
+    bench = read_bench()
+    output = Path(args.output) if args.output else (ROOT / "build/link-feasibility" / manifest["id"] / (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]))
+    output.mkdir(parents=True, exist_ok=False)
+    rp_port = bench["rp_port"]
+    wait_for_path(rp_port)
+    console_log = output / "console.log"
+    capture = output / "capture.sr"
+    sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", "samplerate=1000000", "--channels", "D0,D1,D2,D3,D4,D5", "--samples", "250000", "--output-file", str(capture)]
+    print("+ " + " ".join(sigrok))
+    acquisition = subprocess.Popen(sigrok, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    fd = os.open(rp_port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    lines = []
+    try:
+        old = termios.tcgetattr(fd)
+        raw = termios.tcgetattr(fd)
+        raw[0] = raw[1] = raw[3] = 0
+        raw[2] |= termios.CLOCAL | termios.CREAD
+        raw[6][termios.VMIN] = 0; raw[6][termios.VTIME] = 0
+        termios.tcsetattr(fd, termios.TCSANOW, raw)
+        time.sleep(0.05)  # give the analyzer a bounded arm window
+        os.write(fd, b"run 0 16 2\n")
+        deadline = time.monotonic() + 5
+        pending = b""
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([fd], [], [], 0.1)
+            if ready:
+                pending += os.read(fd, 4096)
+                while b"\n" in pending:
+                    item, pending = pending.split(b"\n", 1)
+                    line = item.decode(errors="replace").strip()
+                    if line:
+                        lines.append(line)
+                        if line.startswith("result protocol=link-feasibility-v1"):
+                            deadline = time.monotonic()
+                            break
+        termios.tcsetattr(fd, termios.TCSANOW, old)
+    finally:
+        os.close(fd)
+    try:
+        analyser_log, _ = acquisition.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        acquisition.terminate(); analyser_log, _ = acquisition.communicate(timeout=2)
+    console_log.write_text("\n".join(lines) + "\n")
+    result = next((line for line in lines if line.startswith("result protocol=link-feasibility-v1")), "")
+    status = "passed" if "status=passed" in result and acquisition.returncode == 0 and capture.is_file() else "failed"
+    report = {"experiment": manifest["id"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
+    (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    print("{}: evidence retained in {}".format(status, output))
+    print(result or "no RP2350 result line")
+    if status != "passed": raise ValueError("L0 run did not produce a passed RP2350 result and analyzer capture")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
@@ -118,6 +198,10 @@ def main():
     sub.add_parser("build")
     sub.add_parser("doctor")
     sub.add_parser("load-rp2350")
+    run = sub.add_parser("run")
+    run.add_argument("--output")
+    all_stage = sub.add_parser("all")
+    all_stage.add_argument("--output")
     config = sub.add_parser("configure")
     config.add_argument("--rp-usb-path")
     config.add_argument("--rp-port")
@@ -133,6 +217,13 @@ def main():
         if args.stage == "build": build(manifest, args.dry_run)
         if args.stage == "doctor": doctor()
         if args.stage == "load-rp2350": load_rp2350(manifest, args.dry_run)
+        if args.stage == "run": run_l0(manifest, args)
+        if args.stage == "all":
+            if manifest["id"] != "L0":
+                raise ValueError("automated physical run is implemented for L0 only")
+            build(manifest, args.dry_run)
+            load_rp2350(manifest, args.dry_run)
+            if not args.dry_run: run_l0(manifest, args)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print("link experiment: " + str(error), file=sys.stderr)
         raise SystemExit(1)

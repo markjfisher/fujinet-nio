@@ -26,6 +26,7 @@ The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify 
 ./run.sh plan
 ./run.sh build
 ./run.sh load-rp2350
+./run.sh all --output /tmp/l0-run-001
 ```
 
 `load-rp2350` force-reboots the single connected Core2350B into its ROM loader,
@@ -33,6 +34,12 @@ loads the no-flash lab image into SRAM and starts it. Its current flash firmware
 is not replaced. Disconnect other RP-series targets before this step.
 
 `build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
+
+`all` is the normal repeatable L0 command after the ESP32-S3 lab image has been
+uploaded once. It rebuilds both endpoint images, RAM-loads the Core2350B, records
+CH1–CH6 with sigrok, sends the fixed L0 transaction, and retains `capture.sr`,
+`console.log` and `report.json` in the selected output directory. Close
+PulseView's live capture first. The ESP32-S3 image is not reflashed by `all`.
 
 ## Profile
 
@@ -51,7 +58,7 @@ is not replaced. Disconnect other RP-series targets before this step.
 Before physical loading, create the ignored local bench profile once from any experiment: 
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-usb-path USB-TOPOLOGY --esp-port /dev/serial/by-id/ESP32
 ```
 
 The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
