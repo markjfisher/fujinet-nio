@@ -28,6 +28,7 @@
 static struct link_test_frame request_frame;
 static struct link_test_frame discard_frame;
 static struct link_test_frame response_frame;
+static struct link_test_frame zero_frame;
 
 static bool wait_for(uint pin, bool value, uint32_t timeout_ms) {
     absolute_time_t deadline = make_timeout_time_ms(timeout_ms);
@@ -44,8 +45,22 @@ static void transaction(const struct link_test_frame *tx, struct link_test_frame
     gpio_put(LINK_RP_CS_PIN, 1);
 }
 
+/* The ESP endpoint is intentionally persistent between lab runs.  A stopped
+   or failed prior run can leave its prepared response advertised.  Consume it
+   before starting a new request so DATA_AVAILABLE always describes this run. */
+static bool drain_stale_response(void) {
+    if (!gpio_get(LINK_RP_DATA_AVAILABLE_PIN)) return true;
+    if (!wait_for(LINK_RP_READY_PIN, true, 1000)) return false;
+    transaction(&zero_frame, &discard_frame);
+    return wait_for(LINK_RP_DATA_AVAILABLE_PIN, false, 1000);
+}
+
 static void run_once(unsigned scenario, size_t length, enum link_test_pattern pattern) {
     enum link_test_status status;
+    if (!drain_stale_response()) {
+        puts("result protocol=link-feasibility-v1 status=timeout_draining_stale_response");
+        return;
+    }
     link_test_make_frame(&request_frame, (uint8_t)scenario, 1, length, pattern);
     if (request_frame.status != LINK_STATUS_OK) {
         printf("result protocol=link-feasibility-v1 status=local_%s scenario=L%u length=%u\n",
