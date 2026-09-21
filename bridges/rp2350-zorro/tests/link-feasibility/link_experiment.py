@@ -96,6 +96,19 @@ def doctor():
     print("Enroll only the stable /dev/serial/by-id port that prints the lab ready line.")
 
 
+def load_rp2350(manifest, dry_run):
+    """Force-load the no-flash Core2350B image through the pinned USB picotool."""
+    artifact = ROOT / "build/link-rp2350/link_rp2350.elf"
+    picotool = ROOT / "build/picotool-usb/picotool"
+    if not artifact.is_file():
+        raise ValueError("build the link RP2350 image first: ./run.sh build")
+    if not picotool.is_file():
+        raise ValueError("build the USB picotool first: tests/feasibility/generator-check/run.sh build")
+    print("Keep only the intended Core2350B connected as an RP-series USB target.")
+    print("picotool force-reboots its compatible running firmware, loads SRAM, then starts it; flash is unchanged.")
+    command([str(picotool), "load", "-v", "-x", "-f", str(artifact)], dry_run)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
@@ -104,6 +117,7 @@ def main():
     sub.add_parser("plan")
     sub.add_parser("build")
     sub.add_parser("doctor")
+    sub.add_parser("load-rp2350")
     config = sub.add_parser("configure")
     config.add_argument("--rp-usb-path")
     config.add_argument("--rp-port")
@@ -118,6 +132,7 @@ def main():
         if args.stage == "plan": show_plan(manifest)
         if args.stage == "build": build(manifest, args.dry_run)
         if args.stage == "doctor": doctor()
+        if args.stage == "load-rp2350": load_rp2350(manifest, args.dry_run)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print("link experiment: " + str(error), file=sys.stderr)
         raise SystemExit(1)

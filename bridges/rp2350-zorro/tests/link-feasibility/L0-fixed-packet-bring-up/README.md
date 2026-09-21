@@ -11,12 +11,12 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | Signal | Core2350B RP2350 | ESP32-S3 lab default | Analyzer |
 | --- | --- | --- | --- |
 | GND | GND | GND | GND |
-| SCLK | GP2 | GPIO12 | connect |
-| MOSI | GP3 | GPIO11 | connect |
-| MISO | GP4 | GPIO13 | connect |
-| CS | GP5 | GPIO10 | connect |
-| READY | GP6 input | GPIO9 output | connect |
-| DATA_AVAILABLE | GP7 input | GPIO8 output | connect |
+| SCLK | GP2 | GPIO12 | CH1 |
+| MOSI | GP3 | GPIO11 | CH2 |
+| MISO | GP4 | GPIO13 | CH3 |
+| CS | GP5 | GPIO10 | CH4 |
+| READY | GP6 input | GPIO9 output | CH5 |
+| DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
 The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
 
@@ -25,7 +25,12 @@ The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify 
 ```sh
 ./run.sh plan
 ./run.sh build
+./run.sh load-rp2350
 ```
+
+`load-rp2350` force-reboots the single connected Core2350B into its ROM loader,
+loads the no-flash lab image into SRAM and starts it. Its current flash firmware
+is not replaced. Disconnect other RP-series targets before this step.
 
 `build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
 
