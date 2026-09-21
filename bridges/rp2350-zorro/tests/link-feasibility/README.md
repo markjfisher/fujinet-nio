@@ -46,6 +46,20 @@ unique board identity. Do not enrol `ttyACM0` or `ttyACM1` by number: flash the
 lab endpoint, identify the interface that prints its `ready` line, then record
 its stable `/dev/serial/by-id/...` path as `esp_port`.
 
+On Linux, install the shared feasibility udev rule once before the first ESP32
+upload. It grants the active local desktop user access to Espressif USB
+Serial/JTAG bootloader `303a:1001` and USB-device `303a:4002`, as well as the
+existing Raspberry Pi lab devices:
+
+```sh
+cd ../feasibility
+sudo install -m 0644 69-nio-feasibility.rules /etc/udev/rules.d/69-nio-feasibility.rules
+sudo udevadm control --reload-rules
+```
+
+Unplug and reconnect the ESP32-S3 afterwards. The rule grants port access only;
+it does not choose a board or upload an image.
+
 The initial firmware supports a serial `run [scenario] [length] [pattern]` command
 on RP2350 USB, where patterns are zero, FF, increment, AA/55, fixed random and
 SLIP-relevant bytes. The ESP32 slave validates one whole slot and returns it on the
