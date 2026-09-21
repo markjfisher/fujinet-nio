@@ -3,6 +3,8 @@
 #include "driver/gpio.h"
 #include "driver/spi_slave.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 
 #ifndef LINK_DEFAULT_SCENARIO
@@ -34,6 +36,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(gpio_set_direction(LINK_ESP_DATA_AVAILABLE_PIN, GPIO_MODE_OUTPUT));
     gpio_set_level(LINK_ESP_READY_PIN, 0); gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
     ESP_ERROR_CHECK(spi_slave_initialize(SPI2_HOST, &bus, &slave, SPI_DMA_CH_AUTO));
+    /* The native USB console disconnects across reset. Give the host a bounded
+       re-enumeration window before emitting the machine-readable readiness line. */
+    vTaskDelay(pdMS_TO_TICKS(1500));
     ESP_LOGI(TAG, "ready protocol=link-feasibility-v1 default=L%d slot_bytes=%u", LINK_DEFAULT_SCENARIO, (unsigned)sizeof(rx_frame));
     for (;;) {
         spi_slave_transaction_t transfer = {0};
