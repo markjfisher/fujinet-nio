@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -134,6 +135,42 @@ def wait_for_path(path, seconds=5):
     raise ValueError("serial port did not appear: " + path)
 
 
+def analyze_capture(path, signal_names):
+    """Describe recorded logic levels; this is diagnostic evidence, not a verdict."""
+    if not path.is_file():
+        return {"available": False}
+    try:
+        with zipfile.ZipFile(path) as archive:
+            parts = sorted(
+                (entry for entry in archive.namelist() if entry.startswith("logic-1-")),
+                key=lambda entry: int(entry.rsplit("-", 1)[1]),
+            )
+            samples = b"".join(archive.read(entry) for entry in parts)
+    except (OSError, ValueError, zipfile.BadZipFile) as error:
+        return {"available": False, "error": str(error)}
+    if not samples:
+        return {"available": False, "error": "no logic samples"}
+    signals = {}
+    for bit, name in enumerate(signal_names):
+        levels = [(sample >> bit) & 1 for sample in samples]
+        signals[name] = {
+            "levels": sorted(set(levels)), "initial": levels[0], "final": levels[-1],
+            "changes": sum(before != after for before, after in zip(levels, levels[1:])),
+        }
+    return {"available": True, "samples": len(samples), "signals": signals}
+
+
+def format_capture_observation(observation):
+    if not observation.get("available"):
+        return "Analyzer: no readable capture"
+    parts = []
+    for name, value in observation["signals"].items():
+        level = "high" if value["initial"] else "low"
+        suffix = "static" if value["changes"] == 0 else f"{value['changes']} edges"
+        parts.append(f"{name}={level}/{suffix}")
+    return "Analyzer: " + ", ".join(parts)
+
+
 def run_l0(manifest, args):
     if manifest["id"] != "L0":
         raise ValueError("automated physical run is implemented for L0 only")
@@ -181,11 +218,13 @@ def run_l0(manifest, args):
         acquisition.terminate(); analyser_log, _ = acquisition.communicate(timeout=2)
     console_log.write_text("\n".join(lines) + "\n")
     result = next((line for line in lines if line.startswith("result protocol=link-feasibility-v1")), "")
+    observation = analyze_capture(capture, ("SCLK", "MOSI", "MISO", "CS", "READY", "DATA_AVAILABLE"))
     status = "passed" if "status=passed" in result and acquisition.returncode == 0 and capture.is_file() else "failed"
-    report = {"experiment": manifest["id"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
+    report = {"experiment": manifest["id"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print("{}: evidence retained in {}".format(status, output))
     print(result or "no RP2350 result line")
+    print(format_capture_observation(observation))
     if status != "passed": raise ValueError("L0 run did not produce a passed RP2350 result and analyzer capture")
 
 
