@@ -181,7 +181,12 @@ def run_l0(manifest, args):
     wait_for_path(rp_port)
     console_log = output / "console.log"
     capture = output / "capture.sr"
-    sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", "samplerate=1000000", "--channels", "D0,D1,D2,D3,D4,D5", "--samples", "1000000", "--output-file", str(capture)]
+    analyzer = manifest["run_profile"].get("analyzer", {})
+    sample_rate = int(analyzer.get("sample_rate_hz", 1000000))
+    capture_ms = int(analyzer.get("capture_ms", 1000))
+    channels = analyzer.get("channels", ["D0", "D1", "D2", "D3", "D4", "D5"])
+    samples = sample_rate * capture_ms // 1000
+    sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", f"samplerate={sample_rate}", "--channels", ",".join(channels), "--samples", str(samples), "--output-file", str(capture)]
     print("+ " + " ".join(sigrok))
     acquisition = subprocess.Popen(sigrok, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     fd = os.open(rp_port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -220,7 +225,7 @@ def run_l0(manifest, args):
     result = next((line for line in lines if line.startswith("result protocol=link-feasibility-v1")), "")
     observation = analyze_capture(capture, ("SCLK", "MOSI", "MISO", "CS", "READY", "DATA_AVAILABLE"))
     status = "passed" if "status=passed" in result and acquisition.returncode == 0 and capture.is_file() else "failed"
-    report = {"experiment": manifest["id"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
+    report = {"experiment": manifest["id"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels}, "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print("{}: evidence retained in {}".format(status, output))
     print(result or "no RP2350 result line")

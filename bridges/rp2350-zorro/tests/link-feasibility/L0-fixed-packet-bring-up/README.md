@@ -37,7 +37,7 @@ is not replaced. Disconnect other RP-series targets before this step.
 
 `all` is the normal repeatable L0 command after the ESP32-S3 lab image has been
 uploaded once. It rebuilds both endpoint images, RAM-loads the Core2350B, records
-CH1–CH6 with sigrok, sends the fixed L0 transaction, and retains `capture.sr`,
+CH1–CH6 at 12 MHz for 250 ms with sigrok, sends the fixed L0 transaction, and retains `capture.sr`,
 `console.log` and `report.json` in the selected output directory. Close
 PulseView's live capture first. The ESP32-S3 image is not reflashed by `all`.
 

@@ -21,6 +21,7 @@ def main():
         assert (path.parent / "README.md").is_file()
         assert manifest["wiring"]["rp2350"]["SCLK"] == 2
         assert manifest["wiring"]["esp32s3"]["SCLK"] == 12
+    assert runner.load_manifest(manifests[0])["run_profile"]["analyzer"]["sample_rate_hz"] == 12000000
     runner.show_plan(runner.load_manifest(manifests[0]))
     with tempfile.TemporaryDirectory() as directory:
         capture = Path(directory) / "capture.sr"

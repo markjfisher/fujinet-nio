@@ -33,6 +33,11 @@
   },
   "run_profile": {
     "packets": 1,
+    "analyzer": {
+      "sample_rate_hz": 12000000,
+      "capture_ms": 250,
+      "channels": ["D0", "D1", "D2", "D3", "D4", "D5"]
+    },
     "lengths": [
       16
     ],
