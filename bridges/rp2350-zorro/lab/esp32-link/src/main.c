@@ -22,6 +22,19 @@
 
 static const char *TAG = "link-lab";
 
+/* READY is a level, not an edge queue. Hold it low long enough after every
+   completed slot that the RP2350 can unambiguously observe one generation
+   ending before the next begins. This is a lab transport constraint under
+   measurement, rather than a proposed production timing requirement. */
+#define LINK_READY_REARM_US 100u
+
+static void hold_ready_rearm_gap(void) {
+    int64_t deadline = esp_timer_get_time() + LINK_READY_REARM_US;
+    while (esp_timer_get_time() < deadline) {
+        ;
+    }
+}
+
 /* DMA-capable, word-aligned slots shared with the ESP SPI slave driver.  The
    next transmit slot remains valid until the queued transaction completes. */
 static struct link_test_frame rx_frame __attribute__((aligned(4)));
@@ -94,6 +107,7 @@ void app_main(void) {
                        tx_frame.magic == LINK_TEST_MAGIC);
         ESP_ERROR_CHECK(spi_slave_get_trans_result(SPI2_HOST, &completed, portMAX_DELAY));
         gpio_set_level(LINK_ESP_READY_PIN, 0);
+        hold_ready_rearm_gap();
 
         /* A zero slot while an echo was advertised consumes exactly that echo.
            This also lets the RP2350 recover cleanly after an interrupted run. */
