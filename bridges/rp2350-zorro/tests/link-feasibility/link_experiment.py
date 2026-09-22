@@ -249,6 +249,11 @@ def run_round_trip(manifest, args):
     trigger = analyzer.get("trigger")
     sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", f"samplerate={sample_rate}", "--channels", ",".join(channels)]
     if trigger:
+        pretrigger_percent = int(analyzer.get("pretrigger_percent", 0))
+        if not 0 <= pretrigger_percent <= 100:
+            raise ValueError("analyzer pretrigger_percent must be 0..100")
+        if pretrigger_percent:
+            sigrok.extend(["--config", "captureratio={}".format(pretrigger_percent)])
         sigrok.extend(["--triggers", str(trigger), "--wait-trigger"])
     sigrok.extend(["--samples", str(samples), "--output-file", str(capture)])
     print("+ " + " ".join(sigrok))

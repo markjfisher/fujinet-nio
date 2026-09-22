@@ -62,6 +62,7 @@ def transactions(words):
     """
     result = []
     start = None
+    leading_partial = not bool(words[0] & (1 << 3))
     for sample in range(1, len(words)):
         before = bool(words[sample - 1] & (1 << 3))
         current = bool(words[sample] & (1 << 3))
@@ -74,7 +75,10 @@ def transactions(words):
             if mosi_label.startswith("L"):
                 role = "request"
             elif miso_label.startswith("L"):
-                role = "drain" if not any(item["role"] == "request" for item in result) else "echo"
+                if not any(item["role"] == "request" for item in result):
+                    role = "unpaired echo" if leading_partial else "drain"
+                else:
+                    role = "echo"
             else:
                 role = "zero slot"
             result.append({"start_sample": start, "end_sample": sample, "role": role,
@@ -110,7 +114,11 @@ def render(report, capture, output):
     rate = int((report.get("analyzer") or {}).get("sample_rate_hz", 1_000_000))
     first, last = rows[0]["start_sample"], rows[-1]["end_sample"]
     span = max(1, last - first)
-    start, end = max(0, first - span // 12), min(len(words) - 1, last + span // 12)
+    leading_partial = not bool(words[0] & (1 << 3))
+    # Do not show the incomplete triggered slot as if it aligned with a decoded
+    # transaction band. Future captures retain it in the pre-trigger buffer.
+    start = first if leading_partial else max(0, first - span // 12)
+    end = min(len(words) - 1, last + span // 12)
     left, right = 220, 1380
     width = right - left
     x = lambda sample: left + (sample - start) * width / max(1, end - start)
@@ -125,10 +133,13 @@ def render(report, capture, output):
         '<text x="30" y="34" class="title">{} — {}</text>'.format(html.escape(str(report.get("experiment", "Link"))), html.escape(str(report.get("title", "SPI link evidence")))),
         '<text x="30" y="59" class="small">{}</text>'.format(html.escape(purpose)),
         '<text x="30" y="80" class="small">Transaction windows are decoded from the captured MOSI and MISO bits; they do not determine pass/fail.</text>',
-        '<text x="30" y="101" class="small">Key: D = stale-response drain; R = request; E = echoed response.</text>',
+        '<text x="30" y="101" class="small">Key: D = stale-response drain; R = request; E = echoed response; E* = response to an incomplete triggered request.</text>',
     ]
-    colors = {"request": "url(#link-request)", "echo": "url(#link-echo)", "drain": "url(#link-drain)", "zero slot": "#d5d8dc"}
-    markers = {"request": "R", "echo": "E", "drain": "D", "zero slot": "·"}
+    colors = {"request": "url(#link-request)", "echo": "url(#link-echo)",
+              "unpaired echo": "url(#link-echo)", "drain": "url(#link-drain)",
+              "zero slot": "#d5d8dc"}
+    markers = {"request": "R", "echo": "E", "unpaired echo": "E*",
+               "drain": "D", "zero slot": "·"}
     for index, row in enumerate(rows):
         begin, finish = x(row["start_sample"]), x(row["end_sample"])
         lines.extend([

@@ -78,7 +78,7 @@ def main():
         text = output.read_text()
         assert [row["role"] for row in rows] == ["request", "echo"]
         assert "DATA_AVAILABLE" in text and "MOSI: L0 seq 1 16 B status 0 CRC D0A7" in text
-        assert "Key: D = stale-response drain; R = request; E = echoed response." in text
+        assert "E* = response to an incomplete triggered request." in text
         assert 'id="link-request"' in text and 'fill="url(#link-echo)"' in text
         # A /CS trigger can begin while the first slot is already active. The
         # incomplete leading slot must be ignored, not offset every later pair.
@@ -91,7 +91,7 @@ def main():
             {"experiment": "L1", "title": "triggered", "purpose": "test",
              "analyzer": {"sample_rate_hz": 12_000_000}}, capture,
             Path(directory) / "triggered.svg")
-        assert [row["role"] for row in rows] == ["drain"]
+        assert [row["role"] for row in rows] == ["unpaired echo"]
     print("link experiment runner tests passed")
 
 

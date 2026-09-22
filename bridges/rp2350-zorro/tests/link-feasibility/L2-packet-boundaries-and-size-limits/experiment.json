@@ -106,7 +106,8 @@
         "D4",
         "D5"
       ],
-      "trigger": "D3=f"
+      "trigger": "D3=f",
+      "pretrigger_percent": 10
     },
     "lengths": [
       0,
