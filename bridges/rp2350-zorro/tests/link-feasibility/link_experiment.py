@@ -116,6 +116,22 @@ def load_esp32(manifest, dry_run):
              "--upload", bench["esp_port"]], dry_run)
 
 
+def wait_for_esp32_endpoint(manifest, dry_run):
+    """Allow the freshly flashed ESP endpoint to create its link task.
+
+    The RP2350 is loaded before the ESP32-S3 in ``all``.  That ordering matters
+    for ESP-originated frames: a freshly booted producer starts at sequence one
+    only after the RP2350's SPI pins have settled.  The delay is a manifest
+    setting because endpoint initialization time is an experiment constraint.
+    """
+    wait_ms = int(manifest.get("run_profile", {}).get("esp_startup_wait_ms", 2000))
+    if wait_ms < 0:
+        raise ValueError("esp_startup_wait_ms must not be negative")
+    print("Waiting {} ms for the ESP32-S3 link endpoint to start.".format(wait_ms))
+    if not dry_run:
+        time.sleep(wait_ms / 1000)
+
+
 def load_rp2350(manifest, dry_run):
     """Force-load the no-flash Core2350B image through the pinned USB picotool."""
     artifact = ROOT / "build/link-rp2350/link_rp2350.elf"
@@ -369,8 +385,11 @@ def main():
         if args.stage == "run": run_round_trip(manifest, args)
         if args.stage == "all":
             build(manifest, args.dry_run)
-            load_esp32(manifest, args.dry_run)
+            # Bring the SPI master up before the ESP endpoint.  This prevents
+            # RP2350 reboot pin transitions consuming ESP autonomous frames.
             load_rp2350(manifest, args.dry_run)
+            load_esp32(manifest, args.dry_run)
+            wait_for_esp32_endpoint(manifest, args.dry_run)
             if not args.dry_run: run_round_trip(manifest, args)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print("link experiment: " + str(error), file=sys.stderr)

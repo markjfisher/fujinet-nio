@@ -23,13 +23,13 @@ analyzer `D0`–`D5`.
 
 ## Run
 
-L5 needs its ESP boot queue. `all` installs that endpoint image first:
+L5 needs its ESP boot queue. `all` RAM-loads the RP2350 first, then restarts the ESP endpoint so frame 1 begins after the RP2350 SPI pins have settled:
 
 ```sh
 ./run.sh all --output /tmp/l5-run-001
 ```
 
-Each `all` run reuploads the ESP image, so its autonomous sequence begins at
-frame 1. A pass means each case validated both the ESP-originated frame and
+Each `all` run reuploads and waits for the ESP image, so its autonomous sequence
+begins at frame 1. A pass means each case validated both the ESP-originated frame and
 the RP-originated echo. The evidence directory contains `report.json`, console
 output, raw analyzer samples and `waveform.svg`.

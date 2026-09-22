@@ -117,7 +117,8 @@
       ],
       "trigger": "D3=f",
       "pretrigger_percent": 10
-    }
+    },
+    "esp_startup_wait_ms": 2000
   },
   "evidence": [
     "RP2350 USB result line",

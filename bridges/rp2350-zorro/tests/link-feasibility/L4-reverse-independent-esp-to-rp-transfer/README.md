@@ -23,12 +23,14 @@ correspond to analyzer `D0`–`D5`.
 
 ## Run
 
-L4 has an ESP-originated boot queue. `all` installs its ESP image before the run:
+L4 has an ESP-originated boot queue. `all` RAM-loads the RP2350 first, then
+restarts the ESP image. This starts the autonomous queue at frame 1 after the
+RP2350 SPI pins have settled:
 
 ```sh
 ./run.sh all --output /tmp/l4-run-001
 ```
 
-Each `all` run reuploads the ESP image, restoring its autonomous sequence at
-frame 1. `all` builds both endpoints, RAM-loads the RP2350 and
+Each `all` run reuploads and waits for the ESP image, restoring its autonomous
+sequence at frame 1. `all` builds both endpoints, RAM-loads the RP2350 and
 records the console, capture, `report.json`, and `waveform.svg`.
