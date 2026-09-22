@@ -2,7 +2,11 @@
 
 ## Status
 
-Feasibility / pre-ABI design work.
+Active feasibility / pre-ABI design work, updated after reviewed physical L0–L5 runs.
+
+The [link-feasibility evidence ledger](link-feasibility-evidence.md) indexes the
+reviewed local reports and records the constraints they contribute. L6–L9,
+throughput/latency characterization, and reset/disconnect evidence remain open.
 
 This work is independent of the real Zorro-II bus validation in Story 2.2.
 
@@ -163,7 +167,26 @@ Do not use production serialization as the only test oracle.
 
 # Experiment Matrix
 
+## Reviewed findings carried forward
+
+L0–L5 have local passing two-board reports. Their raw evidence is retained under
+`build/link-feasibility/` and indexed in the
+[link-feasibility evidence ledger](link-feasibility-evidence.md). The findings
+below update the questions that later experiments and Story 2.4 must answer;
+they do **not** freeze a production ABI.
+
+| Area | Confirmed current-fixture finding | Still open before ABI selection |
+| --- | --- | --- |
+| Framing/capacity | A 256-byte lab slot transfers payloads through 240 bytes; oversize and partial slots are explicitly rejected. | Required FujiBus capacity, production framing/checking, and incomplete-transfer disposition. |
+| ESP-originated work | ESP can originate validated frames when the run establishes a fresh producer generation. | Reset/generation semantics independent of host flashing or boot order. |
+| Readiness | The fixture uses `READY` for a queued slot and `DATA_AVAILABLE` for an advertised response. | Exact signal meanings, edge/level requirements, credit/acknowledgement or generation-token design. |
+| Re-arm race | `DATA_AVAILABLE` remaining high after consumption cannot prove that a new response is ready. L5 requires a READY low-to-high re-arm boundary and holds READY low for at least 100 us. | Whether the production design uses a measurable READY interval, explicit acknowledgement/credit, generation counter, or another mechanism; timing cost at the required rate. |
+| Bidirectionality | A declared two-slot schedule passed without corruption or misattribution. | Concurrent ownership/priority/deadlock policy and behavior under sustained load. |
+| Backpressure | Declared simulated receiver pauses and recovery passed. | Actual queue depth, occupancy, loss policy, latency and throughput under load. |
+
 ## L0 — Fixed packet bring-up
+
+Reviewed physical pass: one 16-byte request/echo at the declared fixture settings.
 
 Purpose:
 
@@ -187,6 +210,8 @@ Evidence:
 ---
 
 ## L1 — Arbitrary binary round-trip
+
+Reviewed physical pass: twelve deterministic binary cases through 240 bytes.
 
 Purpose:
 
@@ -215,6 +240,8 @@ Pass:
 
 ## L2 — Packet-boundary and size limits
 
+Reviewed physical pass: 240-byte maximum test payload, explicit oversize and partial rejection, then recovery.
+
 Purpose:
 
 Determine the real packet-delivery contract.
@@ -242,6 +269,8 @@ documented candidate packet-capacity requirement for Story 2.4.
 ---
 
 ## L3 — Receiver pressure / backpressure
+
+Reviewed physical pass for the declared simulated pause cases and recovery; this is not yet a queue-capacity measurement.
 
 Purpose:
 
@@ -281,6 +310,8 @@ evidence for whether production design needs:
 
 ## L4 — Reverse direction
 
+Reviewed physical pass: six ESP-originated frames, sequences 1–6, at lengths 1, 64 and 240 bytes.
+
 Purpose:
 
 Prove ESP32 → RP2350 delivery independently.
@@ -298,6 +329,8 @@ This is not permission for arbitrary concurrent FujiBus exchanges.
 ---
 
 ## L5 — Bidirectional scheduling
+
+Reviewed physical pass: six scheduled cases after making the READY re-arm boundary explicit and observable.
 
 Purpose:
 

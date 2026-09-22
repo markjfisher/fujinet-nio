@@ -4,11 +4,7 @@ Proves the candidate link is byte-transparent across deterministic binary payloa
 
 ## Status
 
-The shared endpoint firmware and repeatable runner are implemented. `all` executes
-the 12 manifest-declared binary cases, records the Core2350B result for each one,
-captures the shared link wiring and writes an SVG evidence view. Hardware evidence
-is pending. The `link_test_frame` is a feasibility-only SPI slot, never a
-production FujiBus ABI.
+A reviewed physical pass is recorded in [the Story 2.3 evidence ledger](../../../docs/link-feasibility-evidence.md). `all` executes the 12 manifest-declared binary cases, records the Core2350B result for each one, captures the shared link wiring and writes an SVG evidence view. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
 
 ## Wiring
 

@@ -238,6 +238,24 @@ No production mailbox/register ABI is implied by these gates. They establish
 whether PIO-front-end capture plus a bounded PIO-to-ARM transfer can support the
 eventual bridge architecture.
 
+### Confirmed Story 2.2 constraints for a later ABI
+
+The reviewed C0–C9 reports are indexed in the
+[synthetic-bench evidence ledger](feasibility/bench-evidence.md). Their useful
+constraints are deliberately narrower than a Zorro verdict:
+
+| Confirmed bench finding | ABI consequence still to be designed |
+| --- | --- |
+| The current PIO input path can qualify and order W0/W1 synthetic accesses, then hand bounded records to ARM. | Keep timing-critical capture in PIO and define a bounded PIO-to-ARM ownership/notification path; do not make a CPU GPIO loop the bus-time owner. |
+| `PUSH BLOCK` makes C6 loss visible rather than silently overwriting FIFO entries. | The bridge contract needs overload/backpressure/error semantics and a selected ARM interrupt/DMA drain strategy. It cannot promise unlimited capture from the polling baseline. |
+| PIO-preloaded output and direction sequencing produced C7/C8's declared responses. | Any response ABI must provide data before the bus deadline and define output ownership/release. It must not depend on ARM toggling pins per access. |
+| C9 rearmed fresh runner state without stale synthetic records. | The future bridge needs a reset/generation rule. C9 does not cover real power loss, disconnect, or a host reset during a bus cycle. |
+| The analyzer proves selected digital nets only; full words come from DUT evidence. | Final bus timing, electrical release, contention and Zorro margins require reviewed interface hardware and real-bus instrumentation. |
+
+These are input constraints for Story 2.4, not an authorization to choose
+registers, mailboxes, packet ownership, or Zorro output timing before C10 and
+Story 2.3 complete their applicable evidence.
+
 **APIO/RP2040 compatibility gate:** pinned apio v0.3.0 is RP2350-oriented and its
 `include/apio_reg.h` has RP2350 reset/pad/PIO register addresses. It must not perform
 hardware initialization on RP2040. The lab implementation uses a shared C

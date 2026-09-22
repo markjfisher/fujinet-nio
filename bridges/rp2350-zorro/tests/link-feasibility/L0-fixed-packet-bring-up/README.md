@@ -4,7 +4,7 @@ Proves the SPI wires and test envelope transfer one fixed opaque packet and one 
 
 ## Status
 
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+A reviewed physical pass is recorded in [the Story 2.3 evidence ledger](../../../docs/link-feasibility-evidence.md): one 16-byte deterministic request and echo completed with analyzer evidence. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
 
 ## Wiring
 
