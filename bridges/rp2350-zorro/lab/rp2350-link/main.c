@@ -525,6 +525,13 @@ static void run_soak(unsigned scenario, uint32_t first_sequence, unsigned cycles
             if (request_frame.status != LINK_STATUS_OK ||
                 !wait_for(LINK_RP_READY_PIN, true, 1000)) break;
             transaction_bytes(&request_frame, &discard_frame, 32);
+            /* The ESP validates the short slot after CS rises, then advertises
+               its explicit error frame. Wait for that generation before calling
+               exchange_quiet(): otherwise its stale-drain check can sample the
+               old DATA_AVAILABLE low level and allow the next request to clock
+               this error response instead of draining it. */
+            exchange_failure = "partial_waiting_error_response";
+            if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) break;
             ++injected_faults;
         }
         if (!exchange_quiet(scenario, first_sequence + completed, 64,
@@ -534,8 +541,8 @@ static void run_soak(unsigned scenario, uint32_t first_sequence, unsigned cycles
     elapsed_us = time_us_64() - start_us;
     if (completed != cycles) {
         printf("result protocol=link-feasibility-v1 status=soak_failed completed=%u "
-               "cycles=%u injected_faults=%u elapsed_us=%llu\n", completed, cycles,
-               injected_faults, (unsigned long long)elapsed_us);
+               "cycles=%u injected_faults=%u elapsed_us=%llu reason=%s\n", completed, cycles,
+               injected_faults, (unsigned long long)elapsed_us, exchange_failure);
         return;
     }
     printf("result protocol=link-feasibility-v1 status=soak_pass cycles=%u "
