@@ -114,13 +114,15 @@ def render(report, capture, output):
         '<text x="30" y="34" class="title">{} — {}</text>'.format(html.escape(str(report.get("experiment", "Link"))), html.escape(str(report.get("title", "SPI link evidence")))),
         '<text x="30" y="59" class="small">{}</text>'.format(html.escape(purpose)),
         '<text x="30" y="80" class="small">Transaction windows are decoded from the captured MOSI and MISO bits; they do not determine pass/fail.</text>',
+        '<text x="30" y="101" class="small">Key: D = stale-response drain; R = request; E = echoed response.</text>',
     ]
     colors = {"request": "#d9f2df", "echo": "#e8f0fe", "drain": "#fff1d6", "zero slot": "#f1f3f4"}
+    markers = {"request": "R", "echo": "E", "drain": "D", "zero slot": "·"}
     for index, row in enumerate(rows):
         begin, finish = x(row["start_sample"]), x(row["end_sample"])
         lines.extend([
             '<rect x="{:.2f}" y="115" width="{:.2f}" height="{}" fill="{}" fill-opacity=".48"/>'.format(begin, max(1, finish - begin), lane_height * len(SIGNALS), colors[row["role"]]),
-            '<text x="{:.2f}" y="108" class="small" text-anchor="middle">{} {}</text>'.format((begin + finish) / 2, index + 1, html.escape(row["role"])),
+            '<text x="{:.2f}" y="121" class="small" text-anchor="middle">{}</text>'.format((begin + finish) / 2, markers[row["role"]]),
         ])
     for bit, signal in enumerate(SIGNALS):
         top = lane_top + bit * lane_height
