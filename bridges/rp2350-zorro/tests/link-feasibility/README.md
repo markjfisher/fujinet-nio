@@ -1,5 +1,10 @@
 # Story 2.3 link feasibility experiments
 
+For the endpoint roles, build/load flow, fixed test slot, and retained evidence,
+see [the link-lab implementation guide](IMPLEMENTATION.md). The
+[Story 2.3 plan](../../docs/story-2-3-link-feasibility-plan.md) remains the
+authority for each experiment's purpose and acceptance evidence.
+
 These are isolated RP2350B ↔ ESP32-S3 laboratory targets. They use a fixed-size,
 test-only SPI slot (`link_test_frame`) with a sequence, length, payload and CRC16.
 It is a measurement envelope, not a FujiBus packet format or candidate production

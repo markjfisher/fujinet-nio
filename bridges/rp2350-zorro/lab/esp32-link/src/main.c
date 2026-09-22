@@ -20,29 +20,49 @@
 #endif
 
 static const char *TAG = "link-lab";
+
+/* DMA-capable, word-aligned slots shared with the ESP SPI slave driver.  The
+   next transmit slot remains valid until the queued transaction completes. */
 static struct link_test_frame rx_frame __attribute__((aligned(4)));
 static struct link_test_frame tx_frame __attribute__((aligned(4)));
 
 void app_main(void) {
+    /* SPI2 is the ESP endpoint's slave peripheral.  These values are build-time
+       defaults so a bench may remap them without modifying this source. */
     spi_bus_config_t bus = {
-        .mosi_io_num = LINK_ESP_MOSI_PIN, .miso_io_num = LINK_ESP_MISO_PIN,
-        .sclk_io_num = LINK_ESP_SCLK_PIN, .quadwp_io_num = -1, .quadhd_io_num = -1,
+        .mosi_io_num = LINK_ESP_MOSI_PIN,
+        .miso_io_num = LINK_ESP_MISO_PIN,
+        .sclk_io_num = LINK_ESP_SCLK_PIN,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
         .max_transfer_sz = sizeof(rx_frame),
     };
     spi_slave_interface_config_t slave = {
-        .mode = 0, .spics_io_num = LINK_ESP_CS_PIN, .queue_size = 1,
+        .mode = 0,
+        .spics_io_num = LINK_ESP_CS_PIN,
+        .queue_size = 1,
     };
+
+    /* READY means a complete slot is already queued.  DATA_AVAILABLE means
+       that slot carries an echo for the RP2350 to clock out. */
     ESP_ERROR_CHECK(gpio_set_direction(LINK_ESP_READY_PIN, GPIO_MODE_OUTPUT));
     ESP_ERROR_CHECK(gpio_set_direction(LINK_ESP_DATA_AVAILABLE_PIN, GPIO_MODE_OUTPUT));
-    gpio_set_level(LINK_ESP_READY_PIN, 0); gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
+    gpio_set_level(LINK_ESP_READY_PIN, 0);
+    gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
+
     ESP_ERROR_CHECK(spi_slave_initialize(SPI2_HOST, &bus, &slave, SPI_DMA_CH_AUTO));
     /* The native USB console disconnects across reset. Give the host a bounded
        re-enumeration window before emitting the machine-readable readiness line. */
     vTaskDelay(pdMS_TO_TICKS(1500));
-    ESP_LOGI(TAG, "ready protocol=link-feasibility-v1 default=L%d slot_bytes=%u", LINK_DEFAULT_SCENARIO, (unsigned)sizeof(rx_frame));
+    ESP_LOGI(TAG, "ready protocol=link-feasibility-v1 default=L%d slot_bytes=%u",
+             LINK_DEFAULT_SCENARIO, (unsigned)sizeof(rx_frame));
+
     for (;;) {
         spi_slave_transaction_t transfer = {0};
         spi_slave_transaction_t *completed = NULL;
+
+        /* The slot starts empty on reset, then becomes the echo prepared after
+           the preceding received request. */
         memset(&rx_frame, 0, sizeof(rx_frame));
         transfer.length = sizeof(rx_frame) * 8u;
         transfer.rx_buffer = &rx_frame;
@@ -54,19 +74,24 @@ void app_main(void) {
            receive the pull-down/idle zeroes on MISO. */
         ESP_ERROR_CHECK(spi_slave_queue_trans(SPI2_HOST, &transfer, portMAX_DELAY));
         gpio_set_level(LINK_ESP_READY_PIN, 1);
-        gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, tx_frame.magic == LINK_TEST_MAGIC);
+        gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN,
+                       tx_frame.magic == LINK_TEST_MAGIC);
         ESP_ERROR_CHECK(spi_slave_get_trans_result(SPI2_HOST, &completed, portMAX_DELAY));
         gpio_set_level(LINK_ESP_READY_PIN, 0);
+
+        /* A zero slot while an echo was advertised consumes exactly that echo.
+           This also lets the RP2350 recover cleanly after an interrupted run. */
         enum link_test_status status = link_test_validate_frame(&rx_frame);
         if (rx_frame.magic == 0 && tx_frame.magic == LINK_TEST_MAGIC) {
-            /* RP2350 clocked out the prepared echo; consume it exactly once. */
             memset(&tx_frame, 0, sizeof(tx_frame));
             gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
             continue;
         }
         link_test_make_echo(&rx_frame, &tx_frame, status);
         ESP_LOGI(TAG, "received scenario=L%u sequence=%lu length=%u status=%s",
-                 rx_frame.scenario, (unsigned long)rx_frame.sequence, rx_frame.payload_length,
+                 rx_frame.scenario,
+                 (unsigned long)rx_frame.sequence,
+                 rx_frame.payload_length,
                  link_test_status_name(status));
     }
 }

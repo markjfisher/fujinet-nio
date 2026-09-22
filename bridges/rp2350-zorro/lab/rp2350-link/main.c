@@ -25,12 +25,16 @@
 #define LINK_RP_DATA_AVAILABLE_PIN 7
 #endif
 
+/* Fixed-size buffers make the two SPI slots explicit: request, ignored first
+   response, and echoed response.  zero_frame is also used to drain stale work. */
 static struct link_test_frame request_frame;
 static struct link_test_frame discard_frame;
 static struct link_test_frame response_frame;
 static struct link_test_frame zero_frame;
 
 static bool wait_for(uint pin, bool value, uint32_t timeout_ms) {
+    /* Flow-control lines are level signals.  Keep their waits bounded so a
+       missing wire or reset peer produces a machine-readable result. */
     absolute_time_t deadline = make_timeout_time_ms(timeout_ms);
     while (gpio_get(pin) != value) {
         if (time_reached(deadline)) return false;
@@ -40,6 +44,7 @@ static bool wait_for(uint pin, bool value, uint32_t timeout_ms) {
 }
 
 static void transaction(const struct link_test_frame *tx, struct link_test_frame *rx) {
+    /* One lab transaction always clocks exactly one complete fixed-size slot. */
     gpio_put(LINK_RP_CS_PIN, 0);
     spi_write_read_blocking(spi0, (const uint8_t *)tx, (uint8_t *)rx, sizeof(*tx));
     gpio_put(LINK_RP_CS_PIN, 1);
@@ -57,6 +62,8 @@ static bool drain_stale_response(void) {
 
 static void run_once(unsigned scenario, uint32_t sequence, size_t length, enum link_test_pattern pattern) {
     enum link_test_status status;
+
+    /* Establish a known mailbox state before each independent runner case. */
     if (!drain_stale_response()) {
         puts("result protocol=link-feasibility-v1 status=timeout_draining_stale_response");
         return;
@@ -71,13 +78,14 @@ static void run_once(unsigned scenario, uint32_t sequence, size_t length, enum l
         puts("result protocol=link-feasibility-v1 status=timeout_waiting_ready");
         return;
     }
-    transaction(&request_frame, &discard_frame); /* slave validates request and prepares echo */
+    /* The slave validates this request while it shifts out an irrelevant slot. */
+    transaction(&request_frame, &discard_frame);
     if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
         puts("result protocol=link-feasibility-v1 status=timeout_waiting_response");
         return;
     }
-    memset(&discard_frame, 0, sizeof(discard_frame));
-    transaction(&discard_frame, &response_frame);
+    /* DATA_AVAILABLE now refers to this request's prepared echo. */
+    transaction(&zero_frame, &response_frame);
     status = link_test_validate_frame(&response_frame);
     if (status != LINK_STATUS_OK || response_frame.status != LINK_STATUS_OK ||
         response_frame.sequence != request_frame.sequence ||
@@ -96,19 +104,33 @@ static void run_once(unsigned scenario, uint32_t sequence, size_t length, enum l
 
 int main(void) {
     char line[64];
+
+    /* Configure the physical SPI master and two ESP-to-RP flow-control inputs. */
     stdio_init_all();
     spi_init(spi0, LINK_SPI_BAUD_HZ);
     gpio_set_function(LINK_RP_SCK_PIN, GPIO_FUNC_SPI);
     gpio_set_function(LINK_RP_MOSI_PIN, GPIO_FUNC_SPI);
     gpio_set_function(LINK_RP_MISO_PIN, GPIO_FUNC_SPI);
-    gpio_init(LINK_RP_CS_PIN); gpio_set_dir(LINK_RP_CS_PIN, GPIO_OUT); gpio_put(LINK_RP_CS_PIN, 1);
-    gpio_init(LINK_RP_READY_PIN); gpio_set_dir(LINK_RP_READY_PIN, GPIO_IN); gpio_pull_down(LINK_RP_READY_PIN);
-    gpio_init(LINK_RP_DATA_AVAILABLE_PIN); gpio_set_dir(LINK_RP_DATA_AVAILABLE_PIN, GPIO_IN); gpio_pull_down(LINK_RP_DATA_AVAILABLE_PIN);
+    gpio_init(LINK_RP_CS_PIN);
+    gpio_set_dir(LINK_RP_CS_PIN, GPIO_OUT);
+    gpio_put(LINK_RP_CS_PIN, 1);
+
+    gpio_init(LINK_RP_READY_PIN);
+    gpio_set_dir(LINK_RP_READY_PIN, GPIO_IN);
+    gpio_pull_down(LINK_RP_READY_PIN);
+
+    gpio_init(LINK_RP_DATA_AVAILABLE_PIN);
+    gpio_set_dir(LINK_RP_DATA_AVAILABLE_PIN, GPIO_IN);
+    gpio_pull_down(LINK_RP_DATA_AVAILABLE_PIN);
     sleep_ms(500);
     printf("ready protocol=link-feasibility-v1 default=L%d spi_hz=%u slot_bytes=%u\n",
            LINK_DEFAULT_SCENARIO, LINK_SPI_BAUD_HZ, (unsigned)sizeof(request_frame));
     for (;;) {
-        if (fgets(line, sizeof(line), stdin) == NULL) { sleep_ms(10); continue; }
+        /* USB CDC supplies one simple command per runner case. */
+        if (fgets(line, sizeof(line), stdin) == NULL) {
+            sleep_ms(10);
+            continue;
+        }
         if (strncmp(line, "run", 3) == 0) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned length = 16;

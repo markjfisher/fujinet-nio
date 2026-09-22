@@ -5,6 +5,8 @@
 #include <string.h>
 
 static void test_patterns(void) {
+    /* The runner and both endpoints independently generate these vectors.  They
+       must therefore be deterministic, including troublesome framing bytes. */
     uint8_t a[12], b[12];
     link_test_fill_payload(a, sizeof(a), LINK_PATTERN_SLIP_BYTES, 0);
     assert(a[0] == 0 && a[4] == 0xc0 && a[5] == 0xdb);
@@ -14,6 +16,8 @@ static void test_patterns(void) {
 }
 
 static void test_frame_and_echo(void) {
+    /* A valid request must remain valid after the ESP's byte-for-byte echo; a
+       one-bit payload corruption must be caught by the framing CRC. */
     struct link_test_frame request, response;
     link_test_make_frame(&request, 1, 7, 17, LINK_PATTERN_INCREMENT);
     assert(link_test_validate_frame(&request) == LINK_STATUS_OK);
@@ -27,6 +31,8 @@ static void test_frame_and_echo(void) {
 }
 
 static void test_bounds(void) {
+    /* The fixed 256-byte slot must reject an oversized payload before either
+       endpoint attempts an SPI transfer. */
     struct link_test_frame frame;
     link_test_make_frame(&frame, 2, 8, LINK_TEST_MAX_PAYLOAD, LINK_PATTERN_FF);
     assert(link_test_validate_frame(&frame) == LINK_STATUS_OK);
@@ -35,7 +41,9 @@ static void test_bounds(void) {
 }
 
 int main(void) {
-    test_patterns(); test_frame_and_echo(); test_bounds();
+    test_patterns();
+    test_frame_and_echo();
+    test_bounds();
     puts("link protocol tests passed");
     return 0;
 }
