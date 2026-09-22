@@ -168,6 +168,14 @@ def displayed_rows(rows, maximum=None):
 
 
 def _path(words, start, end, bit, x, high, low):
+    # A long high-rate acquisition can contain millions of transitions. At SVG
+    # scale they collapse to a solid block, so show the lane's idle state and
+    # retain individual decoded start/end windows in the compact evidence table.
+    changes = sum(bool(words[sample - 1] & (1 << bit)) != bool(words[sample] & (1 << bit))
+                  for sample in range(start + 1, end + 1))
+    if changes > 1000:
+        state = bool(words[start] & (1 << bit))
+        return "M {:.2f} {:.2f} H {:.2f}".format(x(start), high if state else low, x(end))
     state = bool(words[start] & (1 << bit))
     y = high if state else low
     pieces = ["M {:.2f} {:.2f}".format(x(start), y)]
