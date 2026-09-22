@@ -2,13 +2,12 @@
 
 ## Status
 
-Active feasibility / pre-ABI design work, updated after reviewed physical L0–L5
-runs, the L8 sustained-performance matrix/boundary run, and the L10 DMA comparison.
+Active feasibility / pre-ABI design work, updated after reviewed physical L0–L10 lab reports.
 
 The [link-feasibility evidence ledger](link-feasibility-evidence.md) indexes the
-reviewed local reports and records the constraints they contribute. L8–L10 have
-reviewed breadboard results, not production-rate conclusions; remaining L6–L7
-evidence must still be consolidated before an ABI decision.
+reviewed local reports and records the constraints they contribute. All L0–L10 have a reviewed current-fixture result. Those results, including the
+L8 breadboard-rate boundary and the controlled L6/L7 recovery cases, do not
+establish a production clock, reset contract, or ABI.
 
 This work is independent of the real Zorro-II bus validation in Story 2.2.
 
@@ -358,11 +357,19 @@ Pass:
 
 ## L6 — RP2350 reset mid-transfer
 
-Purpose:
+Reviewed physical pass: `build/link-feasibility/L6/20260922T182838Z-d2d42ff6`.
 
-Prove reset containment.
+The test sent a deliberately incomplete 32-byte request, for which the ESP32
+prepared an explicit `bad_checksum` error frame. Before that frame was consumed,
+the runner force-reloaded the RP2350 SRAM firmware. It then retired the stale
+error state and completed an exact fresh sequence-2, 64-byte round trip.
 
-Inject reset at multiple phases:
+This establishes bounded reset containment for this deliberate partial-slot plus
+RP2350 RAM-reload case: stale incomplete work was not attributed to the fresh
+transfer. It does not yet test arbitrary clock-edge reset, physical power loss,
+or every phase listed below. Those remain useful production-design questions.
+
+Future reset coverage should include:
 
 - idle
 - header/start
@@ -370,25 +377,20 @@ Inject reset at multiple phases:
 - after payload before completion
 - after completion notification
 
-Pass:
-
-- ESP32 reaches known state
-- partial packet is discarded
-- no stale completion is attributed to the next transfer
-- link can be re-established deterministically
-
 ---
 
 ## L7 — ESP32 reset/disconnect mid-transfer
 
-Mirror L6 from the opposite side.
+Reviewed physical pass: `build/link-feasibility/L7/20260922T184950Z-58413b02`.
 
-Pass:
+A feasibility-controlled ESP32 restart at a completed-slot boundary caused both
+flow-control outputs to withdraw. The RP2350 detected that unavailable peer
+state; after the endpoint restarted, a fresh sequence-2, 64-byte exchange
+passed exactly. No previously owned frame was replayed as that fresh exchange.
 
-- RP2350 detects unavailable/reset peer
-- ownership is released
-- incomplete packet cannot later appear as valid
-- restart does not replay an ambiguous packet automatically
+This is evidence for reset detection and reinitialization at a stable boundary.
+It does not establish arbitrary mid-bit reset, physical disconnect, USB loss, or
+a final production ownership rule.
 
 ---
 
