@@ -2,12 +2,13 @@
 
 ## Status
 
-Active feasibility / pre-ABI design work, updated after reviewed physical L0–L5 runs.
+Active feasibility / pre-ABI design work, updated after reviewed physical L0–L5
+runs and the L8 sustained-performance matrix/boundary run.
 
 The [link-feasibility evidence ledger](link-feasibility-evidence.md) indexes the
-reviewed local reports and records the constraints they contribute. L6–L9 now
-have automated lab procedures but have not yet been physically run; their
-reset, throughput/latency, and soak evidence remains open.
+reviewed local reports and records the constraints they contribute. L8 has a
+reviewed breadboard result, not a production-rate conclusion; remaining L6–L9
+evidence must still be consolidated before an ABI decision.
 
 This work is independent of the real Zorro-II bus validation in Story 2.2.
 
@@ -181,9 +182,10 @@ they do **not** freeze a production ABI.
 | Framing/capacity | A 256-byte lab slot transfers payloads through 240 bytes; oversize and partial slots are explicitly rejected. | Required FujiBus capacity, production framing/checking, and incomplete-transfer disposition. |
 | ESP-originated work | ESP can originate validated frames when the run establishes a fresh producer generation. | Reset/generation semantics independent of host flashing or boot order. |
 | Readiness | The fixture uses `READY` for a queued slot and `DATA_AVAILABLE` for an advertised response. | Exact signal meanings, edge/level requirements, credit/acknowledgement or generation-token design. |
-| Re-arm race | `DATA_AVAILABLE` remaining high after consumption cannot prove that a new response is ready. L5 requires a READY low-to-high re-arm boundary. L8's initial maximum-slot run showed the reviewed 100 us fixture hold was insufficient at 7.5 MHz; the implementation now tests a 500 us hold without per-slot console pacing. | Whether the production design uses a measurable READY interval, explicit acknowledgement/credit, generation counter, or another mechanism; timing cost at the required rate. |
+| Re-arm race | `DATA_AVAILABLE` remaining high after consumption cannot prove that a new response is ready. L5 requires a READY low-to-high re-arm boundary. L8 uses a 500 us hold without per-slot console pacing; its later 7.5 MHz failures are returned-frame checksum mismatches after an accepted request, not missed READY generations. | Whether the production design uses a measurable READY interval, explicit acknowledgement/credit, generation counter, or another mechanism; timing cost at the required rate. |
 | Bidirectionality | A declared two-slot schedule passed without corruption or misattribution. | Concurrent ownership/priority/deadlock policy and behavior under sustained load. |
 | Backpressure | Declared simulated receiver pauses and recovery passed. | Actual queue depth, occupancy, loss policy, latency and throughput under load. |
+| High-speed fixture boundary | L8 repeatedly passed 64- and 240-byte batches through the RP2350 actual 6.818 MHz divider rate. At actual 7.5 MHz, returned echoes intermittently had a bad checksum while the ESP reported the request valid: 1/6 64-byte and 3/6 240-byte trials failed. | Repeat with the higher-rate analyzer, short controlled wiring and actual buffered Zorro hardware before setting a production clock or assigning the limit to either endpoint. |
 
 ## L0 — Fixed packet bring-up
 
@@ -392,7 +394,13 @@ Pass:
 
 ## L8 — Sustained performance
 
-Only after correctness experiments pass.
+Reviewed current-fixture result: the 3×3 matrix and boundary sweep retained in
+`build/link-feasibility/L8/20260922T203250Z-455e33e2` passed repeated 64- and
+240-byte batches through actual 6.818 MHz. At actual 7.5 MHz, the return path
+showed intermittent checksum corruption that worsened with payload size. This
+marks a long-Dupont/breadboard fixture boundary, not a chip or Zorro conclusion.
+Revisit with the higher-rate analyzer, a controlled harness, and real buffered
+Zorro hardware.
 
 Measure:
 

@@ -20,6 +20,7 @@ proposed FujiBus packet format or production register ABI.
 | L3 | `build/link-feasibility/L3/20260922T132021Z-a6947dbb` | The fixture completed declared 0, 1, 10 and 100 ms simulated receiver-pause cases and a follow-up transfer. It demonstrates bounded waiting/recovery at this clock and wiring, not a measured production queue capacity. |
 | L4 | `build/link-feasibility/L4/20260922T165254Z-5a314722` | Six ESP-originated frames, sequences 1–6 and lengths 1/64/240, were received and validated by the RP2350 without a corresponding RP request. |
 | L5 | `build/link-feasibility/L5/20260922T170810Z-c31384ff` | Six scheduled bidirectional cases passed: each RP request shared a slot with the expected ESP frame, then its echo was received in the next re-armed slot. |
+| L8 | `build/link-feasibility/L8/20260922T203250Z-455e33e2` | The 3×3 50-transfer matrix and a 5/6/7/8 MHz boundary sweep passed repeatedly through the RP2350's actual 6.818 MHz divider rate for 64- and 240-byte payloads. At the actual 7.5 MHz rate, returned-frame checksum failures were intermittent: 1/6 64-byte and 3/6 240-byte trials failed; 16-byte trials passed 3/3. |
 
 ## Findings that constrain the ABI design
 
@@ -29,17 +30,21 @@ proposed FujiBus packet format or production register ABI.
 | A corrupt or incomplete slot must be explicit and must not become a later valid packet. | L2's 32-byte partial transfer produced an explicit peer rejection, followed by valid recovery. The ABI needs an equally explicit incomplete-transfer/reset disposition. |
 | Independent ESP-originated work needs a reset/start generation rule. | L4 was made deterministic by loading the RP2350 first and then restarting the ESP queue, yielding sequences 1–6. A production design needs a generation/initialization rule; a boot order alone is not sufficient as an ABI rule. |
 | `DATA_AVAILABLE` alone cannot identify a newly prepared response. | L5 initially saw the level remain high after the previously advertised ESP frame had been consumed. The lab fix requires a READY low-to-high re-arm boundary before the next slot is clocked. The production ABI must choose an unambiguous ownership/generation mechanism: a documented READY transition with a minimum observable interval, a generation token, an acknowledgement/credit, or an equivalent design. |
-| A level transition needs a measurable minimum duration. | L5's reviewed run held READY low for at least 100 us between slot generations. L8's first maximum-slot/7.5 MHz physical run completed 73/100 transfers after the generic re-arm fix: the ESP accepted sequence 274 but the RP missed the next READY generation. The lab default is now 500 us and suppresses per-slot USB logging during timed batches; its physical result remains pending. This is fixture evidence, not a proposed production timing value. |
+| A level transition needs a measurable minimum duration. | L5's reviewed run held READY low for at least 100 us between slot generations. L8 now uses a 500 us re-arm interval and its reviewed matrix/boundary run did not reproduce the earlier missed-generation timeout. Its 7.5 MHz failures are immediate returned-frame checksum mismatches after an accepted request, a distinct condition from re-arm timing. This is fixture evidence, not a proposed production timing value. |
 | The current passing bidirectional behavior is scheduled, not proof of arbitrary simultaneous packet ownership. | L5 validates one RP request plus one already-queued ESP frame, followed by a separate echo slot. The ABI still needs explicit concurrency, priority and deadlock rules. |
 | Receiver unavailability is observable in this fixture. | L3's declared simulated pauses held the master until the ESP endpoint became ready and then recovered. Actual queue depth, sustained pressure behavior, throughput and latency remain L6–L9 work. |
+| The current breadboard fixture has an intermittent high-speed return-path boundary. | In L8, 64- and 240-byte batches passed 3/3 at the RP2350's actual 6.818 MHz divider rate. At actual 7.5 MHz, the ESP accepted requests (`peer=ok`) but the RP2350 observed `bad_checksum` on returned echoes: 64 bytes failed 1/6 trials and 240 bytes failed 3/6. The 16-byte case passed 3/3, so that rate is not established as reliable. Treat <=6.818 MHz as the demonstrated repeated-large-payload rate on this long Dupont/breadboard fixture; re-test the boundary with a short controlled harness, the higher-rate analyzer, and actual buffered Zorro hardware. This does not set a production link-rate limit. |
 
 ## Evidence limits and follow-up
 
 The reports prove functional behavior on the declared two-board 3.3 V fixture
-and retain analyzer captures. They do not yet establish a production clock rate,
+and retain analyzer captures. They do not establish a production clock rate,
 latency bound, queue capacity, reset containment, disconnect handling, or a
-final ownership model. L6–L9 now have automated procedures, but remain required
-physical evidence before a positive Story 2.3 verdict.
+final ownership model. L8 records a fixture-specific repeated-payload boundary
+through 6.818 MHz and intermittent corruption at 7.5 MHz; its long Dupont leads
+and breadboard contacts are part of that observation. Revisit it with the
+higher-rate analyzer, a controlled harness, and actual buffered Zorro hardware
+before making an architecture or ABI decision.
 
 L6 injects a partial slot then force-reloads the RP2350 SRAM image; L7 requests
 a controlled ESP32 restart at a completed slot boundary; L8 batches declared
