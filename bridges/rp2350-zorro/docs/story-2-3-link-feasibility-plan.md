@@ -3,11 +3,11 @@
 ## Status
 
 Active feasibility / pre-ABI design work, updated after reviewed physical L0–L5
-runs and the L8 sustained-performance matrix/boundary run.
+runs, the L8 sustained-performance matrix/boundary run, and the L10 DMA comparison.
 
 The [link-feasibility evidence ledger](link-feasibility-evidence.md) indexes the
 reviewed local reports and records the constraints they contribute. L8 has a
-reviewed breadboard result, not a production-rate conclusion; remaining L6–L9
+reviewed breadboard results, not production-rate conclusions; remaining L6–L9
 evidence must still be consolidated before an ABI decision.
 
 This work is independent of the real Zorro-II bus validation in Story 2.2.
@@ -463,6 +463,14 @@ Pass:
 - the report identifies the actual SPI divisor rate and datapath;
 - phase timings show where time is spent without treating the current 500 us
   READY interval or fixed two-slot envelope as ABI requirements.
+
+Reviewed physical result: all 54 polling/DMA batches passed in
+`build/link-feasibility/L10/20260922T215630Z-6d6bc234`. At actual 6.818 MHz and
+240 bytes, polling achieved 105,655 B/s and DMA 105,646 B/s, which is within
+measurement noise. Both paths spent 357 us on each 256-byte slot; the 907 us
+ESP echo-preparation wait and 480 us READY re-arm dominate the remaining time.
+DMA therefore does not improve the present fixture's throughput, though it
+remains relevant if the final engine needs CPU concurrency or descriptor queues.
 
 This is **SPI peripheral plus DMA**, not a PIO experiment. PIO remains the
 candidate timing owner for the Zorro-facing capture/response path; any production
