@@ -42,8 +42,10 @@ def main():
     assert all(case["expect_status"] == "received" for case in l4_cases)
     # Autonomous endpoints must be restarted only after the RP2350 image is
     # live; this settle interval covers ESP task creation before the first slot.
-    assert runner.load_manifest(manifests[4])["run_profile"]["esp_startup_wait_ms"] == 2000
-    runner.wait_for_esp32_endpoint(runner.load_manifest(manifests[4]), dry_run=True)
+    l4_manifest = runner.load_manifest(manifests[4])
+    assert l4_manifest["run_profile"]["esp_startup_wait_ms"] == 2000
+    assert l4_manifest["run_profile"]["analyzer"]["arm_ms"] == 1500
+    runner.wait_for_esp32_endpoint(l4_manifest, dry_run=True)
     l5_cases = runner.round_trip_cases(runner.load_manifest(manifests[5]))
     assert all(case["operation"] == "schedule" for case in l5_cases)
     assert [case["outgoing_sequence"] for case in l5_cases] == [1, 2, 3, 4, 5, 6]

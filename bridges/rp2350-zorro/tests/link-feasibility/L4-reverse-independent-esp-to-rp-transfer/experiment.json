@@ -96,7 +96,8 @@
         "D5"
       ],
       "trigger": "D3=f",
-      "pretrigger_percent": 10
+      "pretrigger_percent": 10,
+      "arm_ms": 1500
     },
     "lengths": [
       1,

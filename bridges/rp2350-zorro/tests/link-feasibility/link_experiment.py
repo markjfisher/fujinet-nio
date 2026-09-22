@@ -274,6 +274,14 @@ def run_round_trip(manifest, args):
     sigrok.extend(["--samples", str(samples), "--output-file", str(capture)])
     print("+ " + " ".join(sigrok))
     acquisition = subprocess.Popen(sigrok, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    arm_ms = int(analyzer.get("arm_ms", 1500))
+    if arm_ms < 0:
+        raise ValueError("analyzer arm_ms must not be negative")
+    print("Waiting {} ms for the analyzer trigger capture to arm.".format(arm_ms))
+    time.sleep(arm_ms / 1000)
+    if acquisition.poll() is not None:
+        analyzer_log, _ = acquisition.communicate()
+        raise ValueError("analyzer exited before the experiment started: " + analyzer_log.strip())
     fd = os.open(rp_port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     lines = []
     try:
@@ -283,7 +291,8 @@ def run_round_trip(manifest, args):
         raw[2] |= termios.CLOCAL | termios.CREAD
         raw[6][termios.VMIN] = 0; raw[6][termios.VTIME] = 0
         termios.tcsetattr(fd, termios.TCSANOW, raw)
-        time.sleep(0.5)  # let the analyzer subscribe before the first transaction
+        # The trigger capture was armed before the serial command port opened,
+        # so the first experiment transaction cannot race analyzer startup.
         pending = b""
         case_results = []
         for case in cases:
