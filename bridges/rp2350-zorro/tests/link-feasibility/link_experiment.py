@@ -107,6 +107,15 @@ def doctor():
     print("Enroll only the stable /dev/serial/by-id port that prints the lab ready line.")
 
 
+def load_esp32(manifest, dry_run):
+    """Install the selected lab endpoint through the enrolled ESP USB port."""
+    bench = read_bench()
+    wait_for_path(bench["esp_port"])
+    print("Installing the selected ESP32-S3 lab image through the enrolled port.")
+    command([str(ROOT / "lab/esp32-link/build.sh"), "L" + str(manifest["scenario"]),
+             "--upload", bench["esp_port"]], dry_run)
+
+
 def load_rp2350(manifest, dry_run):
     """Force-load the no-flash Core2350B image through the pinned USB picotool."""
     artifact = ROOT / "build/link-rp2350/link_rp2350.elf"
@@ -331,6 +340,7 @@ def main():
     sub.add_parser("build")
     sub.add_parser("doctor")
     sub.add_parser("load-rp2350")
+    sub.add_parser("load-esp32")
     run = sub.add_parser("run")
     run.add_argument("--output")
     all_stage = sub.add_parser("all")
@@ -350,9 +360,11 @@ def main():
         if args.stage == "build": build(manifest, args.dry_run)
         if args.stage == "doctor": doctor()
         if args.stage == "load-rp2350": load_rp2350(manifest, args.dry_run)
+        if args.stage == "load-esp32": load_esp32(manifest, args.dry_run)
         if args.stage == "run": run_round_trip(manifest, args)
         if args.stage == "all":
             build(manifest, args.dry_run)
+            load_esp32(manifest, args.dry_run)
             load_rp2350(manifest, args.dry_run)
             if not args.dry_run: run_round_trip(manifest, args)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:

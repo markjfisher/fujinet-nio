@@ -23,13 +23,12 @@ correspond to analyzer `D0`–`D5`.
 
 ## Run
 
-L4 has an ESP-originated boot queue, so install its ESP image before the run:
+L4 has an ESP-originated boot queue. `all` installs its ESP image before the run:
 
 ```sh
-../../../lab/esp32-link/build.sh L4 --upload "$ESP_PORT"
 ./run.sh all --output /tmp/l4-run-001
 ```
 
-Reset or reflash the ESP32 before another L4 run to restore its autonomous
-sequence at frame 1. `all` builds both endpoints, RAM-loads the RP2350 and
+Each `all` run reuploads the ESP image, restoring its autonomous sequence at
+frame 1. `all` builds both endpoints, RAM-loads the RP2350 and
 records the console, capture, `report.json`, and `waveform.svg`.

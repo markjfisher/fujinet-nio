@@ -23,14 +23,13 @@ analyzer `D0`–`D5`.
 
 ## Run
 
-L5 needs its ESP boot queue, so upload that endpoint image first:
+L5 needs its ESP boot queue. `all` installs that endpoint image first:
 
 ```sh
-../../../lab/esp32-link/build.sh L5 --upload "$ESP_PORT"
 ./run.sh all --output /tmp/l5-run-001
 ```
 
-Reflash or reset the ESP32 before rerunning, so its autonomous sequence begins
-at frame 1. A pass means each case validated both the ESP-originated frame and
+Each `all` run reuploads the ESP image, so its autonomous sequence begins at
+frame 1. A pass means each case validated both the ESP-originated frame and
 the RP-originated echo. The evidence directory contains `report.json`, console
 output, raw analyzer samples and `waveform.svg`.
