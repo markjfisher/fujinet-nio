@@ -27,7 +27,7 @@ Configure the ignored local bench record once, as described in the parent
 [README](../README.md), then run:
 
 ```sh
-lab/esp32-link/build.sh L2 --upload "$ESP_PORT"
+../../../lab/esp32-link/build.sh L2 --upload "$ESP_PORT"
 ./run.sh all --output /tmp/l2-run-001
 ```
 

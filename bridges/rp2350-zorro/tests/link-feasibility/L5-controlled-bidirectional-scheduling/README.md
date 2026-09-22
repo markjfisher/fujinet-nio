@@ -26,7 +26,7 @@ analyzer `D0`–`D5`.
 L5 needs its ESP boot queue, so upload that endpoint image first:
 
 ```sh
-lab/esp32-link/build.sh L5 --upload "$ESP_PORT"
+../../../lab/esp32-link/build.sh L5 --upload "$ESP_PORT"
 ./run.sh all --output /tmp/l5-run-001
 ```
 

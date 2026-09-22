@@ -26,7 +26,7 @@ correspond to analyzer `D0`–`D5`.
 L4 has an ESP-originated boot queue, so install its ESP image before the run:
 
 ```sh
-lab/esp32-link/build.sh L4 --upload "$ESP_PORT"
+../../../lab/esp32-link/build.sh L4 --upload "$ESP_PORT"
 ./run.sh all --output /tmp/l4-run-001
 ```
 

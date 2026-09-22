@@ -26,7 +26,7 @@ Flash the selected L3 ESP image whenever changing experiment, then use the
 repeatable runner:
 
 ```sh
-lab/esp32-link/build.sh L3 --upload "$ESP_PORT"
+../../../lab/esp32-link/build.sh L3 --upload "$ESP_PORT"
 ./run.sh all --output /tmp/l3-run-001
 ```
 
