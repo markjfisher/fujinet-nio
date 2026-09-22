@@ -80,6 +80,18 @@ def main():
         assert "DATA_AVAILABLE" in text and "MOSI: L0 seq 1 16 B status 0 CRC D0A7" in text
         assert "Key: D = stale-response drain; R = request; E = echoed response." in text
         assert 'id="link-request"' in text and 'fill="url(#link-echo)"' in text
+        # A /CS trigger can begin while the first slot is already active. The
+        # incomplete leading slot must be ignored, not offset every later pair.
+        triggered = samples[2:]  # begins after the request's CS fall
+        capture = Path(directory) / "triggered.sr"
+        with zipfile.ZipFile(capture, "w") as archive:
+            archive.writestr("metadata", "[device 1]\nunitsize=1\n")
+            archive.writestr("logic-1-1", bytes(triggered))
+        rows = runner.render_waveform(
+            {"experiment": "L1", "title": "triggered", "purpose": "test",
+             "analyzer": {"sample_rate_hz": 12_000_000}}, capture,
+            Path(directory) / "triggered.svg")
+        assert [row["role"] for row in rows] == ["drain"]
     print("link experiment runner tests passed")
 
 

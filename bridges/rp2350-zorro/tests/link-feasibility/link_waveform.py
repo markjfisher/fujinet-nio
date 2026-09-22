@@ -53,23 +53,33 @@ def byte_stream(words, start, end, bit):
 
 
 def transactions(words):
-    falls = [sample for sample in range(1, len(words))
-             if words[sample - 1] & (1 << 3) and not words[sample] & (1 << 3)]
-    rises = [sample for sample in range(1, len(words))
-             if not words[sample - 1] & (1 << 3) and words[sample] & (1 << 3)]
+    """Return only complete active-low CS windows in capture order.
+
+    A trigger may start acquisition after CS has already fallen. That leading
+    partial transfer has no observed falling edge and must not shift all later
+    fall/rise pairs. Pair edges as a small state machine instead of zipping two
+    independently collected lists.
+    """
     result = []
-    for index, (start, end) in enumerate(zip(falls, rises)):
-        mosi = byte_stream(words, start, end, 1)
-        miso = byte_stream(words, start, end, 2)
-        mosi_label, miso_label = frame_text(mosi), frame_text(miso)
-        if mosi_label.startswith("L"):
-            role = "request"
-        elif miso_label.startswith("L"):
-            role = "drain" if not any(item["role"] == "request" for item in result) else "echo"
-        else:
-            role = "zero slot"
-        result.append({"start_sample": start, "end_sample": end, "role": role,
-                       "mosi": mosi_label, "miso": miso_label})
+    start = None
+    for sample in range(1, len(words)):
+        before = bool(words[sample - 1] & (1 << 3))
+        current = bool(words[sample] & (1 << 3))
+        if before and not current:
+            start = sample
+        elif not before and current and start is not None:
+            mosi = byte_stream(words, start, sample, 1)
+            miso = byte_stream(words, start, sample, 2)
+            mosi_label, miso_label = frame_text(mosi), frame_text(miso)
+            if mosi_label.startswith("L"):
+                role = "request"
+            elif miso_label.startswith("L"):
+                role = "drain" if not any(item["role"] == "request" for item in result) else "echo"
+            else:
+                role = "zero slot"
+            result.append({"start_sample": start, "end_sample": sample, "role": role,
+                           "mosi": mosi_label, "miso": miso_label})
+            start = None
     return result
 
 
