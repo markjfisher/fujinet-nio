@@ -3,22 +3,332 @@
   "title": "Sustained performance",
   "status": "implemented",
   "scenario": 8,
-  "purpose": "Measures RP2350-side elapsed time for repeated exact round trips at three SPI clocks and representative fixed-slot payload sizes.",
-  "rp2350": {"preset": "link-rp2350", "target": "link_rp2350"},
-  "esp32": {"project": "lab/esp32-link", "environment": "link-esp32s3"},
+  "purpose": "Characterizes repeated exact round trips across a 3-by-3 payload/clock matrix, recording per-cell throughput spread and failures without treating the analyzer trace as a performance oracle.",
+  "rp2350": {
+    "preset": "link-rp2350",
+    "target": "link_rp2350"
+  },
+  "esp32": {
+    "project": "lab/esp32-link",
+    "environment": "link-esp32s3"
+  },
   "wiring": {
-    "rp2350": {"SCLK": 2, "MOSI": 3, "MISO": 4, "CS": 5, "READY": 6, "DATA_AVAILABLE": 7},
-    "esp32s3": {"SCLK": 12, "MOSI": 11, "MISO": 13, "CS": 10, "READY": 9, "DATA_AVAILABLE": 8},
+    "rp2350": {
+      "SCLK": 2,
+      "MOSI": 3,
+      "MISO": 4,
+      "CS": 5,
+      "READY": 6,
+      "DATA_AVAILABLE": 7
+    },
+    "esp32s3": {
+      "SCLK": 12,
+      "MOSI": 11,
+      "MISO": 13,
+      "CS": 10,
+      "READY": 9,
+      "DATA_AVAILABLE": 8
+    },
     "analyzer": "CH1=SCLK, CH2=MOSI, CH3=MISO, CH4=CS, CH5=READY, CH6=DATA_AVAILABLE; connect analyzer GND to the shared ground."
   },
   "run_profile": {
     "cases": [
-      {"id": "one-mhz-small", "operation": "batch", "sequence": 1, "count": 100, "length": 16, "pattern": "increment", "spi_hz": 1000000, "expect_status": "batch_pass"},
-      {"id": "four-mhz-medium", "operation": "batch", "sequence": 101, "count": 100, "length": 64, "pattern": "fixed-random", "spi_hz": 4000000, "expect_status": "batch_pass"},
-      {"id": "eight-mhz-maximum", "operation": "batch", "sequence": 201, "count": 100, "length": 240, "pattern": "slip-bytes", "spi_hz": 8000000, "expect_status": "batch_pass"}
+      {
+        "id": "1mhz-16b-trial-1",
+        "operation": "batch",
+        "sequence": 1,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-16b-trial-2",
+        "operation": "batch",
+        "sequence": 51,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-16b-trial-3",
+        "operation": "batch",
+        "sequence": 101,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-64b-trial-1",
+        "operation": "batch",
+        "sequence": 151,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-64b-trial-2",
+        "operation": "batch",
+        "sequence": 201,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-64b-trial-3",
+        "operation": "batch",
+        "sequence": 251,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-240b-trial-1",
+        "operation": "batch",
+        "sequence": 301,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-240b-trial-2",
+        "operation": "batch",
+        "sequence": 351,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "1mhz-240b-trial-3",
+        "operation": "batch",
+        "sequence": 401,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-16b-trial-1",
+        "operation": "batch",
+        "sequence": 451,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-16b-trial-2",
+        "operation": "batch",
+        "sequence": 501,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-16b-trial-3",
+        "operation": "batch",
+        "sequence": 551,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-64b-trial-1",
+        "operation": "batch",
+        "sequence": 601,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-64b-trial-2",
+        "operation": "batch",
+        "sequence": 651,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-64b-trial-3",
+        "operation": "batch",
+        "sequence": 701,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-240b-trial-1",
+        "operation": "batch",
+        "sequence": 751,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-240b-trial-2",
+        "operation": "batch",
+        "sequence": 801,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "4mhz-240b-trial-3",
+        "operation": "batch",
+        "sequence": 851,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-16b-trial-1",
+        "operation": "batch",
+        "sequence": 901,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-16b-trial-2",
+        "operation": "batch",
+        "sequence": 951,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-16b-trial-3",
+        "operation": "batch",
+        "sequence": 1001,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-64b-trial-1",
+        "operation": "batch",
+        "sequence": 1051,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-64b-trial-2",
+        "operation": "batch",
+        "sequence": 1101,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-64b-trial-3",
+        "operation": "batch",
+        "sequence": 1151,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-240b-trial-1",
+        "operation": "batch",
+        "sequence": 1201,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-240b-trial-2",
+        "operation": "batch",
+        "sequence": 1251,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "8mhz-240b-trial-3",
+        "operation": "batch",
+        "sequence": 1301,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      }
     ],
-    "analyzer": {"sample_rate_hz": 12000000, "capture_ms": 1000, "channels": ["D0", "D1", "D2", "D3", "D4", "D5"], "trigger": "D3=f", "pretrigger_percent": 10, "arm_ms": 1500, "svg_max_transactions": 12}
+    "analyzer": {
+      "sample_rate_hz": 12000000,
+      "capture_ms": 1000,
+      "channels": [
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5"
+      ],
+      "trigger": "D3=f",
+      "pretrigger_percent": 10,
+      "arm_ms": 1500,
+      "svg_max_transactions": 12
+    }
   },
-  "evidence": ["RP2350 batch timing result lines", "ESP32-S3 transaction log", "analyzer capture", "build/link-feasibility/L8/report.json"],
-  "execution": {"kind": "round_trip", "automated": true}
+  "evidence": [
+    "RP2350 batch timing result lines",
+    "ESP32-S3 transaction log",
+    "analyzer capture",
+    "build/link-feasibility/L8/report.json"
+  ],
+  "execution": {
+    "kind": "round_trip",
+    "automated": true
+  }
 }

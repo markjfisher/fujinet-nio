@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import datetime
 import select
+import re
 import termios
 import time
 import uuid
@@ -344,6 +345,24 @@ def round_trip_cases(manifest):
         })
     return result
 
+def performance_summary(case_results):
+    """Summarize batch result lines; experiment firmware remains the authority."""
+    pattern = re.compile(r"status=batch_pass count=(?P<count>\d+) length=(?P<length>\d+) "
+                         r"payload_bytes=(?P<bytes>\d+) elapsed_us=(?P<elapsed>\d+) spi_hz=(?P<hz>\d+)")
+    groups = {}
+    for case in case_results:
+        match = pattern.search(case.get("result", ""))
+        if not match:
+            continue
+        value = {key: int(raw) for key, raw in match.groupdict().items()}
+        key = (value["hz"], value["length"])
+        groups.setdefault(key, []).append(value["bytes"] * 1_000_000 / value["elapsed"])
+    return [{"spi_hz": hz, "payload_bytes": length, "trials": len(rates),
+             "rate_bytes_per_s_min": min(rates), "rate_bytes_per_s_mean": sum(rates) / len(rates),
+             "rate_bytes_per_s_max": max(rates)}
+            for (hz, length), rates in sorted(groups.items())]
+
+
 def run_round_trip(manifest, args):
     cases = round_trip_cases(manifest)
     bench = read_bench()
@@ -484,6 +503,7 @@ def run_round_trip(manifest, args):
         "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels,
                      "svg_max_transactions": analyzer.get("svg_max_transactions")},
         "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log,
+        "performance": performance_summary(case_results),
         "analyzer_observation": observation, "bench": bench,
         "note": "Raw analyzer evidence is recorded; waveform decoding is not an independent verdict.",
     }
@@ -501,6 +521,9 @@ def run_round_trip(manifest, args):
         len(case_results)))
     print(result or "no RP2350 result line")
     print(format_capture_observation(observation))
+    for row in report["performance"]:
+        print("Performance: {spi_hz} Hz, {payload_bytes} B, {trials} trials, "
+              "{rate_bytes_per_s_mean:.0f} B/s mean ({rate_bytes_per_s_min:.0f}..{rate_bytes_per_s_max:.0f})".format(**row))
     print("RP2350 console: " + str(rp_console_log))
     print("ESP32 console: " + str(esp_console_log))
     if report.get("waveform_svg"):

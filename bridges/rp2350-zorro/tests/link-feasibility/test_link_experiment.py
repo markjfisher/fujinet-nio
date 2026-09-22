@@ -55,8 +55,13 @@ def main():
     l7_cases = runner.round_trip_cases(runner.load_manifest(manifests[7]))
     assert [case["operation"] for case in l7_cases] == ["peer_reset", "run"]
     l8_cases = runner.round_trip_cases(runner.load_manifest(manifests[8]))
-    assert [case["operation"] for case in l8_cases] == ["batch", "batch", "batch"]
-    assert [case["spi_hz"] for case in l8_cases] == [1_000_000, 4_000_000, 8_000_000]
+    assert len(l8_cases) == 27
+    assert all(case["operation"] == "batch" and case["count"] == 50 for case in l8_cases)
+    assert {(case["spi_hz"], case["length"]) for case in l8_cases} == {
+        (1_000_000, 16), (1_000_000, 64), (1_000_000, 240),
+        (4_000_000, 16), (4_000_000, 64), (4_000_000, 240),
+        (8_000_000, 16), (8_000_000, 64), (8_000_000, 240),
+    }
     l9_cases = runner.round_trip_cases(runner.load_manifest(manifests[9]))
     assert l9_cases[0]["operation"] == "soak"
     assert (l9_cases[0]["cycles"], l9_cases[0]["fault_period"]) == (100, 10)
