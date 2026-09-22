@@ -25,6 +25,20 @@ static const char *TAG = "link-lab";
    next transmit slot remains valid until the queued transaction completes. */
 static struct link_test_frame rx_frame __attribute__((aligned(4)));
 static struct link_test_frame tx_frame __attribute__((aligned(4)));
+static uint32_t autonomous_sequence = 1;
+static unsigned autonomous_remaining = (LINK_DEFAULT_SCENARIO == 4 || LINK_DEFAULT_SCENARIO == 5) ? 16 : 0;
+
+static void prepare_autonomous_frame(void) {
+    static const size_t lengths[] = {1, 64, 240};
+    enum link_test_pattern pattern;
+
+    if (autonomous_remaining == 0 || tx_frame.magic == LINK_TEST_MAGIC) return;
+    pattern = (enum link_test_pattern)((autonomous_sequence - 1u) % 6u);
+    link_test_make_frame(&tx_frame, LINK_DEFAULT_SCENARIO, autonomous_sequence,
+                         lengths[(autonomous_sequence - 1u) % 3u], pattern);
+    ++autonomous_sequence;
+    --autonomous_remaining;
+}
 
 void app_main(void) {
     /* SPI2 is the ESP endpoint's slave peripheral.  These values are build-time
@@ -57,6 +71,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "ready protocol=link-feasibility-v1 default=L%d slot_bytes=%u",
              LINK_DEFAULT_SCENARIO, (unsigned)sizeof(rx_frame));
 
+    prepare_autonomous_frame();
     for (;;) {
         spi_slave_transaction_t transfer = {0};
         spi_slave_transaction_t *completed = NULL;
@@ -85,6 +100,7 @@ void app_main(void) {
         if (rx_frame.magic == 0 && tx_frame.magic == LINK_TEST_MAGIC) {
             memset(&tx_frame, 0, sizeof(tx_frame));
             gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
+            prepare_autonomous_frame();
             continue;
         }
         /* L3 carries a bounded lab-only receiver delay in reserved bits 4..7.

@@ -113,6 +113,37 @@ static void run_once(unsigned scenario, uint32_t sequence, size_t length,
            response_frame.checksum);
 }
 
+static void run_receive(unsigned scenario, uint32_t sequence) {
+    static const size_t lengths[] = {1, 64, 240};
+    struct link_test_frame expected;
+    enum link_test_status status;
+    enum link_test_pattern pattern = (enum link_test_pattern)((sequence - 1u) % 6u);
+
+    /* L4 consumes a frame scheduled by the ESP at boot; no RP request creates it. */
+    if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=timeout_waiting_independent_data");
+        return;
+    }
+    transaction(&zero_frame, &response_frame);
+    link_test_make_frame(&expected, (uint8_t)scenario, sequence,
+                         lengths[(sequence - 1u) % 3u], pattern);
+    status = link_test_validate_frame(&response_frame);
+    if (status != LINK_STATUS_OK || response_frame.status != LINK_STATUS_OK ||
+        response_frame.sequence != expected.sequence ||
+        response_frame.payload_length != expected.payload_length ||
+        memcmp(response_frame.payload, expected.payload, expected.payload_length) != 0) {
+        printf("result protocol=link-feasibility-v1 status=independent_mismatch "
+               "scenario=L%u frame=%s sequence=%lu length=%u\n", scenario,
+               link_test_status_name(status), (unsigned long)response_frame.sequence,
+               response_frame.payload_length);
+        return;
+    }
+    printf("result protocol=link-feasibility-v1 status=received scenario=L%u "
+           "sequence=%lu length=%u checksum=%04x\n", scenario,
+           (unsigned long)response_frame.sequence, response_frame.payload_length,
+           response_frame.checksum);
+}
+
 static void run_oversize(unsigned scenario, uint32_t sequence, size_t length,
                          enum link_test_pattern pattern) {
     /* The frame contract rejects payloads larger than its fixed slot before
@@ -219,6 +250,11 @@ int main(void) {
                 run_once(scenario, sequence, length, (enum link_test_pattern)pattern,
                          (uint8_t)(queue_depth | (pause_code << 4)));
             }
+        } else if (strncmp(line, "receive", 7) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned sequence = 1;
+            (void)sscanf(line + 7, "%u %u", &scenario, &sequence);
+            run_receive(scenario, sequence);
         } else if (strncmp(line, "oversize", 8) == 0) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned length = LINK_TEST_MAX_PAYLOAD + 1u;
@@ -240,6 +276,7 @@ int main(void) {
             printf("pins sck=%d mosi=%d miso=%d cs=%d ready=%d data_available=%d\n", LINK_RP_SCK_PIN, LINK_RP_MOSI_PIN, LINK_RP_MISO_PIN, LINK_RP_CS_PIN, LINK_RP_READY_PIN, LINK_RP_DATA_AVAILABLE_PIN);
         } else if (strncmp(line, "help", 4) == 0) {
             puts("commands: run/oversize [scenario length pattern sequence], "
+                 "receive [scenario sequence], "
                  "pressure [scenario length pattern sequence queue_depth pause_ms], "
                  "partial [scenario length pattern sequence slot_bytes], pins, help");
         } else {

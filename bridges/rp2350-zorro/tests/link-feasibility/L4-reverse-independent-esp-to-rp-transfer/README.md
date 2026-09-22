@@ -1,10 +1,10 @@
 # L4 — Reverse independent ESP-to-RP transfer
 
-Proves that the ESP32-S3 can originate an independently scheduled opaque packet and the RP2350 validates it.
-
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+L4 proves that the ESP32-S3 can schedule test frames before any RP2350 request.
+After boot, the ESP prepares sixteen deterministic frames and asserts
+`DATA_AVAILABLE`; the RP2350 only clocks them out and validates their sequence,
+length, CRC, and payload. The six-case profile samples the first two cycles of
+1, 64 and 240-byte frames.
 
 ## Wiring
 
@@ -18,35 +18,18 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+W2 is unchanged. Use 3.3 V signalling with one shared ground; `CH1`–`CH6`
+correspond to analyzer `D0`–`D5`.
 
-## Build
+## Run
 
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 16,
-  "direction": "esp-to-rp",
-  "lengths": [
-    1,
-    64,
-    240
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+L4 has an ESP-originated boot queue, so install its ESP image before the run:
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+lab/esp32-link/build.sh L4 --upload "$ESP_PORT"
+./run.sh all --output /tmp/l4-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+Reset or reflash the ESP32 before another L4 run to restore its autonomous
+sequence at frame 1. `all` builds both endpoints, RAM-loads the RP2350 and
+records the console, capture, `report.json`, and `waveform.svg`.

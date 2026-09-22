@@ -189,10 +189,12 @@ def round_trip_cases(manifest):
             raise ValueError("round-trip case {} is not an object".format(index))
         operation = case.get("operation", "run")
         length, pattern = case.get("length"), case.get("pattern")
-        if operation not in {"run", "oversize", "partial", "pressure"}:
+        if operation not in {"run", "oversize", "partial", "pressure", "receive"}:
             raise ValueError("unknown round-trip operation in case {}".format(index))
         if not isinstance(length, int) or length < 0 or pattern not in PATTERN_IDS:
             raise ValueError("invalid round-trip case {}".format(index))
+        if operation == "receive" and length != 0:
+            raise ValueError("receive case {} uses length 0; its endpoint defines the payload".format(index))
         if operation == "run" and length > 240:
             raise ValueError("invalid normal-transfer length in case {}".format(index))
         if operation == "oversize" and length <= 240:
@@ -249,9 +251,12 @@ def run_round_trip(manifest, args):
         for case in cases:
             if case["delay_before_ms"]:
                 time.sleep(case["delay_before_ms"] / 1000)
-            command_line = "{} {} {} {} {}".format(
-                case["operation"], manifest["scenario"], case["length"],
-                PATTERN_IDS[case["pattern"]], case["sequence"])
+            if case["operation"] == "receive":
+                command_line = "receive {} {}".format(manifest["scenario"], case["sequence"])
+            else:
+                command_line = "{} {} {} {} {}".format(
+                    case["operation"], manifest["scenario"], case["length"],
+                    PATTERN_IDS[case["pattern"]], case["sequence"])
             if case["operation"] == "partial":
                 command_line += " {}".format(case["slot_bytes"])
             elif case["operation"] == "pressure":
