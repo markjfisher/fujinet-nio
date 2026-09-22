@@ -4,7 +4,9 @@ L8 measures the current lab fixture, not a production performance commitment.
 The RP2350 performs three 100-transfer batches without per-transfer USB output:
 16-byte payloads at 1 MHz, 64-byte payloads at 4 MHz, and 240-byte payloads at
 8 MHz. Each batch reports exact completed count, payload bytes, elapsed RP2350
-microseconds and the baud rate accepted by the SPI peripheral.
+microseconds and the baud rate accepted by the SPI peripheral. Batch frames
+suppress per-slot ESP USB logs so the measured time is not console-paced; the
+fixture holds READY low for a measured 500 us re-arm interval after each echo.
 
 ## Wiring
 

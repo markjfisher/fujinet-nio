@@ -328,6 +328,8 @@ static bool exchange_quiet(unsigned scenario, uint32_t sequence, size_t length,
        reporting until the measured group finishes so USB output cannot pace it. */
     if (!drain_stale_response()) return false;
     link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
+    /* Batch timing measures the link, not ESP USB-console backpressure. */
+    request_frame.reserved = LINK_TEST_FLAG_QUIET;
     if (request_frame.status != LINK_STATUS_OK ||
         !wait_for(LINK_RP_READY_PIN, true, 1000)) return false;
     transaction(&request_frame, &discard_frame);

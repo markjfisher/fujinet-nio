@@ -90,6 +90,7 @@ void link_test_make_echo(const struct link_test_frame *request,
     response->version = LINK_TEST_VERSION;
     response->scenario = request->scenario;
     response->status = (uint8_t)status;
+    response->reserved = request->reserved;
     response->sequence = request->sequence;
     if (status != LINK_STATUS_OK) return;
     response->payload_length = request->payload_length;

@@ -21,8 +21,10 @@ static void test_frame_and_echo(void) {
     struct link_test_frame request, response;
     link_test_make_frame(&request, 1, 7, 17, LINK_PATTERN_INCREMENT);
     assert(link_test_validate_frame(&request) == LINK_STATUS_OK);
+    request.reserved = LINK_TEST_FLAG_QUIET;
     link_test_make_echo(&request, &response, LINK_STATUS_OK);
     assert(response.status == LINK_STATUS_OK);
+    assert(response.reserved == LINK_TEST_FLAG_QUIET);
     assert(link_test_validate_frame(&response) == LINK_STATUS_OK);
     assert(response.sequence == 7 && response.payload_length == 17);
     assert(memcmp(response.payload, request.payload, 17) == 0);

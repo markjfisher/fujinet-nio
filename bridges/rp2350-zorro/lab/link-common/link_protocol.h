@@ -9,6 +9,8 @@
 #define LINK_TEST_MAGIC 0x4c4e4b31u /* "LNK1" */
 #define LINK_TEST_VERSION 1u
 #define LINK_TEST_MAX_PAYLOAD 240u
+/* Feasibility transport flag: suppress peer USB logs during timed batches. */
+#define LINK_TEST_FLAG_QUIET 0x80u
 
 enum link_test_pattern {
     LINK_PATTERN_ZERO = 0,

@@ -27,7 +27,7 @@ static const char *TAG = "link-lab";
    completed slot that the RP2350 can unambiguously observe one generation
    ending before the next begins. This is a lab transport constraint under
    measurement, rather than a proposed production timing requirement. */
-#define LINK_READY_REARM_US 100u
+#define LINK_READY_REARM_US 500u
 
 static void hold_ready_rearm_gap(void) {
     int64_t deadline = esp_timer_get_time() + LINK_READY_REARM_US;
@@ -114,9 +114,11 @@ void app_main(void) {
            This also lets the RP2350 recover cleanly after an interrupted run. */
         enum link_test_status status = link_test_validate_frame(&rx_frame);
         if (rx_frame.magic == 0 && tx_frame.magic == LINK_TEST_MAGIC) {
-            ESP_LOGI(TAG, "transmitted scenario=L%u sequence=%lu length=%u",
-                     tx_frame.scenario, (unsigned long)tx_frame.sequence,
-                     tx_frame.payload_length);
+            if (!(tx_frame.reserved & LINK_TEST_FLAG_QUIET)) {
+                ESP_LOGI(TAG, "transmitted scenario=L%u sequence=%lu length=%u",
+                         tx_frame.scenario, (unsigned long)tx_frame.sequence,
+                         tx_frame.payload_length);
+            }
             memset(&tx_frame, 0, sizeof(tx_frame));
             gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
             prepare_autonomous_frame();
@@ -152,10 +154,12 @@ void app_main(void) {
             esp_restart();
         }
         link_test_make_echo(&rx_frame, &tx_frame, status);
-        ESP_LOGI(TAG, "received scenario=L%u sequence=%lu length=%u status=%s",
-                 rx_frame.scenario,
-                 (unsigned long)rx_frame.sequence,
-                 rx_frame.payload_length,
-                 link_test_status_name(status));
+        if (!(rx_frame.reserved & LINK_TEST_FLAG_QUIET)) {
+            ESP_LOGI(TAG, "received scenario=L%u sequence=%lu length=%u status=%s",
+                     rx_frame.scenario,
+                     (unsigned long)rx_frame.sequence,
+                     rx_frame.payload_length,
+                     link_test_status_name(status));
+        }
     }
 }
