@@ -6,8 +6,8 @@ Active feasibility / pre-ABI design work, updated after reviewed physical L0–L
 runs, the L8 sustained-performance matrix/boundary run, and the L10 DMA comparison.
 
 The [link-feasibility evidence ledger](link-feasibility-evidence.md) indexes the
-reviewed local reports and records the constraints they contribute. L8 has a
-reviewed breadboard results, not production-rate conclusions; remaining L6–L9
+reviewed local reports and records the constraints they contribute. L8–L10 have
+reviewed breadboard results, not production-rate conclusions; remaining L6–L7
 evidence must still be consolidated before an ABI decision.
 
 This work is independent of the real Zorro-II bus validation in Story 2.2.
@@ -421,17 +421,19 @@ Record what the link actually achieves.
 
 ## L9 — Recovery soak / repeated faults
 
-Optional but recommended before Story 2.4.
+Reviewed physical pass: 100 exact 64-byte transfers with nine deliberately
+truncated slots. Each partial slot produced an explicit `bad_checksum` error,
+was drained, and was followed by valid traffic. The complete evidence is
+`build/link-feasibility/L9/20260922T220158Z-dff6d19f`.
 
-Repeated cycles of:
+This run also exposed and corrected a meaningful state-machine rule: an injected
+partial transfer is not retired merely because the previous data-available level
+was low. The initiator must wait until the peer advertises that partial transfer's
+error outcome, then consume/retire it before submitting new work. Otherwise the
+next request can receive the stale error response. This is input to an eventual
+error-completion/clear rule, not a production signaling choice.
 
-    send
-    reset one side
-    recover
-    send again
-
-Run enough iterations to expose stale state, counter wrap, queue leakage or
-recovery races.
+L9 does not cover arbitrary physical resets, counter wrap, or real disconnect.
 
 ---
 ## L10 — SPI-DMA datapath comparison
