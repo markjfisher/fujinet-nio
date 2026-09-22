@@ -87,6 +87,53 @@ def transactions(words):
     return result
 
 
+def ready_low_intervals(words, rate):
+    """Measure complete READY-low intervals from the captured logic stream."""
+    intervals = []
+    start = None
+    for sample in range(1, len(words)):
+        before = bool(words[sample - 1] & (1 << 4))
+        current = bool(words[sample] & (1 << 4))
+        if before and not current:
+            start = sample
+        elif not before and current and start is not None:
+            intervals.append({"start_sample": start, "end_sample": sample,
+                              "duration_ms": (sample - start) * 1000 / rate})
+            start = None
+    return intervals
+
+
+def annotate_timing(rows, report, words, rate):
+    """Attach manifest-declared pause targets to their captured request/echo.
+
+    The renderer presents these measured annotations only. Experiment pass/fail
+    remains owned by link_experiment.py.
+    """
+    cases = report.get("round_trip_cases") or []
+    requests = [row for row in rows if row["role"] == "request"]
+    intervals = ready_low_intervals(words, rate)
+    for case, request in zip(cases, requests):
+        target = case.get("pause_ms")
+        if not isinstance(target, int):
+            continue
+        request["timing_detail"] = "Case {}: requested receiver pause {} ms".format(
+            case.get("id", "unnamed"), target)
+        following = next((row for row in rows
+                          if row["role"] in {"echo", "unpaired echo"} and
+                          row["start_sample"] > request["end_sample"]), None)
+        if following is None:
+            continue
+        matching = [interval for interval in intervals
+                    if interval["start_sample"] >= request["end_sample"] and
+                    interval["end_sample"] <= following["start_sample"]]
+        if not matching:
+            continue
+        interval = max(matching, key=lambda value: value["duration_ms"])
+        following["timing_detail"] = "READY low {:.3f} ms; requested >= {} ms".format(
+            interval["duration_ms"], target)
+        following["pause_label"] = "P {:.1f} ms".format(interval["duration_ms"])
+
+
 def _path(words, start, end, bit, x, high, low):
     state = bool(words[start] & (1 << bit))
     y = high if state else low
@@ -112,6 +159,7 @@ def render(report, capture, output):
     if not rows:
         raise ValueError("capture has no CS transaction windows")
     rate = int((report.get("analyzer") or {}).get("sample_rate_hz", 1_000_000))
+    annotate_timing(rows, report, words, rate)
     first, last = rows[0]["start_sample"], rows[-1]["end_sample"]
     span = max(1, last - first)
     leading_partial = not bool(words[0] & (1 << 3))
@@ -123,7 +171,8 @@ def render(report, capture, output):
     width = right - left
     x = lambda sample: left + (sample - start) * width / max(1, end - start)
     lane_top, lane_height = 145, 64
-    height = 720 + len(rows) * 70
+    table_row_height = 78 if any("timing_detail" in row for row in rows) else 58
+    height = 720 + len(rows) * (table_row_height + 12)
     purpose = str(report.get("purpose") or "SPI request and echo evidence.")
     lines = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="{}" viewBox="0 0 1440 {}">'.format(height, height),
@@ -146,6 +195,16 @@ def render(report, capture, output):
             '<rect x="{:.2f}" y="115" width="{:.2f}" height="{}" fill="{}"/>'.format(begin, max(1, finish - begin), lane_height * len(SIGNALS), colors[row["role"]]),
             '<text x="{:.2f}" y="121" class="small" text-anchor="middle">{}</text>'.format((begin + finish) / 2, markers[row["role"]]),
         ])
+    for row in rows:
+        if "pause_label" not in row:
+            continue
+        prior = next((item for item in rows
+                      if item["role"] == "request" and
+                      item["end_sample"] < row["start_sample"]), None)
+        if prior is not None:
+            midpoint = (x(prior["end_sample"]) + x(row["start_sample"])) / 2
+            lines.append('<text x="{:.2f}" y="140" class="small" text-anchor="middle">{}</text>'.format(
+                midpoint, html.escape(row["pause_label"])))
     for bit, signal in enumerate(SIGNALS):
         top = lane_top + bit * lane_height
         high, low = top + 13, top + 42
@@ -160,13 +219,16 @@ def render(report, capture, output):
     y = 575
     for index, row in enumerate(rows):
         lines += [
-            '<rect class="box" x="30" y="{}" width="1380" height="58"/>'.format(y),
-            '<rect class="head" x="30" y="{}" width="190" height="58"/>'.format(y),
+            '<rect class="box" x="30" y="{}" width="1380" height="{}"/>'.format(y, table_row_height),
+            '<rect class="head" x="30" y="{}" width="190" height="{}"/>'.format(y, table_row_height),
             '<text x="45" y="{}" class="small">Window {} · {}</text>'.format(y + 23, index + 1, html.escape(row["role"])),
             '<text x="235" y="{}" class="small">MOSI: {}</text>'.format(y + 22, html.escape(row["mosi"])),
             '<text x="235" y="{}" class="small">MISO: {}</text>'.format(y + 44, html.escape(row["miso"])),
         ]
-        y += 70
+        if "timing_detail" in row:
+            lines.append('<text x="235" y="{}" class="small">{}</text>'.format(
+                y + 66, html.escape(row["timing_detail"])))
+        y += table_row_height + 12
     lines.append('</svg>')
     Path(output).write_text("\n".join(lines) + "\n")
     return rows

@@ -92,6 +92,18 @@ def main():
              "analyzer": {"sample_rate_hz": 12_000_000}}, capture,
             Path(directory) / "triggered.svg")
         assert [row["role"] for row in rows] == ["unpaired echo"]
+    timing_rows = [
+        {"role": "request", "start_sample": 10, "end_sample": 20},
+        {"role": "echo", "start_sample": 50, "end_sample": 60},
+    ]
+    timing_words = [0b00010000] * 80
+    timing_words[21:45] = [0] * 24
+    import link_waveform
+    link_waveform.annotate_timing(
+        timing_rows, {"round_trip_cases": [{"id": "pause", "pause_ms": 10}]},
+        timing_words, 1_000)
+    assert timing_rows[0]["timing_detail"] == "Case pause: requested receiver pause 10 ms"
+    assert "READY low 24.000 ms; requested >= 10 ms" == timing_rows[1]["timing_detail"]
     print("link experiment runner tests passed")
 
 

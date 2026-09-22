@@ -3,6 +3,7 @@
 #include "driver/gpio.h"
 #include "driver/spi_slave.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -114,10 +115,16 @@ void app_main(void) {
                 (rx_frame.reserved & 0x0fu) > 4 || pause_code >= 4) {
                 status = LINK_STATUS_UNSUPPORTED;
             } else if (pause_ms[pause_code] != 0) {
-                /* vTaskDelay() rounds to FreeRTOS ticks and may return nearly
-                   one tick early. Add one tick so each lab pause is at least
-                   its manifest duration rather than merely nominal. */
-                vTaskDelay(pdMS_TO_TICKS(pause_ms[pause_code]) + 1);
+                /* L3 models a receiver which is genuinely unavailable for a
+                   measured interval. The FreeRTOS tick is too coarse for the
+                   1 ms profile, so hold this lab task against the ESP's
+                   microsecond timer instead. This is test equipment behavior,
+                   not a production scheduling recommendation. */
+                int64_t deadline = esp_timer_get_time() +
+                                   (int64_t)pause_ms[pause_code] * 1000;
+                while (esp_timer_get_time() < deadline) {
+                    ;
+                }
             }
         }
         link_test_make_echo(&rx_frame, &tx_frame, status);
