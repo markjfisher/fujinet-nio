@@ -159,9 +159,11 @@ def _path(words, start, end, bit, x, high, low):
         next_state = bool(words[sample] & (1 << bit))
         if next_state != state:
             at = round(x(sample), 2)
-            if at != last_x:
-                pieces.append("H {:.2f} V {:.2f}".format(at, high if next_state else low))
-                last_x = at
+            # Keep every transition even when horizontal compression maps
+            # several edges to one pixel. Omitting a same-x falling edge can
+            # falsely extend the preceding high state across an idle gap.
+            pieces.append("H {:.2f} V {:.2f}".format(at, high if next_state else low))
+            last_x = at
             state = next_state
     pieces.append("H {:.2f}".format(x(end)))
     return " ".join(pieces)

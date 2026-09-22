@@ -92,6 +92,10 @@ def main():
              "analyzer": {"sample_rate_hz": 12_000_000}}, capture,
             Path(directory) / "triggered.svg")
         assert [row["role"] for row in rows] == ["unpaired echo"]
+    import link_waveform
+    compressed_path = link_waveform._path(
+        [0, 1, 0], 0, 2, 0, lambda _sample: 10, 1, 2)
+    assert compressed_path.endswith("V 2.00 H 10.00")
     timing_rows = [
         {"role": "request", "start_sample": 10, "end_sample": 20},
         {"role": "echo", "start_sample": 30, "end_sample": 40},
@@ -101,7 +105,6 @@ def main():
     timing_words = [0b00010000] * 110
     timing_words[21:25] = [0] * 4
     timing_words[61:85] = [0] * 24
-    import link_waveform
     link_waveform.annotate_timing(timing_rows, {"round_trip_cases": [
         {"id": "baseline", "pause_ms": 0}, {"id": "pause", "pause_ms": 10}
     ]}, timing_words, 1_000)
