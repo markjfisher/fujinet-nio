@@ -11,12 +11,12 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | Signal | Core2350B RP2350 | ESP32-S3 lab default | Analyzer |
 | --- | --- | --- | --- |
 | GND | GND | GND | GND |
-| SCLK | GP2 | GPIO12 | connect |
-| MOSI | GP3 | GPIO11 | connect |
-| MISO | GP4 | GPIO13 | connect |
-| CS | GP5 | GPIO10 | connect |
-| READY | GP6 input | GPIO9 output | connect |
-| DATA_AVAILABLE | GP7 input | GPIO8 output | connect |
+| SCLK | GP2 | GPIO12 | CH1 |
+| MOSI | GP3 | GPIO11 | CH2 |
+| MISO | GP4 | GPIO13 | CH3 |
+| CS | GP5 | GPIO10 | CH4 |
+| READY | GP6 input | GPIO9 output | CH5 |
+| DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
 The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
 
