@@ -34,6 +34,15 @@ def main():
     ]
     assert l2_cases[4]["expect_status"] == "oversize_rejected"
     assert l2_cases[5]["slot_bytes"] == 32
+    l3_cases = runner.round_trip_cases(runner.load_manifest(manifests[3]))
+    assert {case["operation"] for case in l3_cases} == {"pressure", "run"}
+    assert {case["pause_ms"] for case in l3_cases if case["operation"] == "pressure"} == {0, 1, 10, 100}
+    l4_cases = runner.round_trip_cases(runner.load_manifest(manifests[4]))
+    assert all(case["operation"] == "receive" for case in l4_cases)
+    assert all(case["expect_status"] == "received" for case in l4_cases)
+    l5_cases = runner.round_trip_cases(runner.load_manifest(manifests[5]))
+    assert all(case["operation"] == "schedule" for case in l5_cases)
+    assert [case["outgoing_sequence"] for case in l5_cases] == [1, 2, 3, 4, 5, 6]
     runner.show_plan(runner.load_manifest(manifests[0]))
     with tempfile.TemporaryDirectory() as directory:
         capture = Path(directory) / "capture.sr"
