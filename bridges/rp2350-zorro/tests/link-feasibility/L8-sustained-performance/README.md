@@ -30,7 +30,9 @@ it is diagnostic only at 8 MHz and does not certify edge timing.
 ./run.sh all --output /tmp/l8-run-001
 ```
 
-The report retains batch result lines, the analyzer capture, both endpoint
-consoles and image hashes. Calculate payload rate from `payload_bytes` and
+The report retains every decoded analyzer transaction, the raw capture, both
+endpoint consoles and image hashes. The SVG shows the first and last six
+captured transactions for readability; it labels how many middle windows were
+omitted from the drawing. Calculate payload rate from `payload_bytes` and
 `elapsed_us`; report that it includes the current two-slot exchange and READY
 re-arm behavior. A batch failure is evidence, not a retry condition.

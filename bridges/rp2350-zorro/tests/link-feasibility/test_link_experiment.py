@@ -126,6 +126,10 @@ def main():
             Path(directory) / "triggered.svg")
         assert [row["role"] for row in rows] == ["unpaired echo"]
     import link_waveform
+    representative, omitted = link_waveform.displayed_rows(
+        [{"role": "request"}] * 20, 12)
+    assert [index for index, _row in representative] == [1, 2, 3, 4, 5, 6, 15, 16, 17, 18, 19, 20]
+    assert omitted == 8
     compressed_path = link_waveform._path(
         [0, 1, 0], 0, 2, 0, lambda _sample: 10, 1, 2)
     assert compressed_path.endswith("V 2.00 H 10.00")

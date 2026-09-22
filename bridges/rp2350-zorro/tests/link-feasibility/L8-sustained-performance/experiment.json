@@ -17,7 +17,7 @@
       {"id": "four-mhz-medium", "operation": "batch", "sequence": 101, "count": 100, "length": 64, "pattern": "fixed-random", "spi_hz": 4000000, "expect_status": "batch_pass"},
       {"id": "eight-mhz-maximum", "operation": "batch", "sequence": 201, "count": 100, "length": 240, "pattern": "slip-bytes", "spi_hz": 8000000, "expect_status": "batch_pass"}
     ],
-    "analyzer": {"sample_rate_hz": 12000000, "capture_ms": 1000, "channels": ["D0", "D1", "D2", "D3", "D4", "D5"], "trigger": "D3=f", "pretrigger_percent": 10, "arm_ms": 1500}
+    "analyzer": {"sample_rate_hz": 12000000, "capture_ms": 1000, "channels": ["D0", "D1", "D2", "D3", "D4", "D5"], "trigger": "D3=f", "pretrigger_percent": 10, "arm_ms": 1500, "svg_max_transactions": 12}
   },
   "evidence": ["RP2350 batch timing result lines", "ESP32-S3 transaction log", "analyzer capture", "build/link-feasibility/L8/report.json"],
   "execution": {"kind": "round_trip", "automated": true}

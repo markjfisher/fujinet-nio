@@ -150,6 +150,23 @@ def annotate_timing(rows, report, words, rate):
 
 
 
+def displayed_rows(rows, maximum=None):
+    """Select bounded first/last evidence rows without discarding decoded data.
+
+    Long batch captures remain complete in ``report.json`` and the raw Sigrok
+    archive.  The SVG is a human review aid, so its table and markers show the
+    beginning and end of the captured run rather than hundreds of repetitions.
+    """
+    if not isinstance(maximum, int) or maximum <= 0 or len(rows) <= maximum:
+        return list(enumerate(rows, 1)), 0
+    first_count = maximum // 2
+    last_count = maximum - first_count
+    selected = list(enumerate(rows[:first_count], 1))
+    selected.extend((len(rows) - last_count + index + 1, row)
+                    for index, row in enumerate(rows[-last_count:]))
+    return selected, len(rows) - len(selected)
+
+
 def _path(words, start, end, bit, x, high, low):
     state = bool(words[start] & (1 << bit))
     y = high if state else low
@@ -189,8 +206,10 @@ def render(report, capture, output):
     width = right - left
     x = lambda sample: left + (sample - start) * width / max(1, end - start)
     lane_top, lane_height = 145, 64
-    table_row_height = 78 if any("timing_detail" in row for row in rows) else 58
-    height = 720 + len(rows) * (table_row_height + 12)
+    shown_rows, omitted_rows = displayed_rows(
+        rows, (report.get("analyzer") or {}).get("svg_max_transactions"))
+    table_row_height = 78 if any("timing_detail" in row for _index, row in shown_rows) else 58
+    height = 720 + len(shown_rows) * (table_row_height + 12)
     purpose = str(report.get("purpose") or "SPI request and echo evidence.")
     lines = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="{}" viewBox="0 0 1440 {}">'.format(height, height),
@@ -207,7 +226,7 @@ def render(report, capture, output):
               "zero slot": "#d5d8dc"}
     markers = {"request": "R", "echo": "E", "unpaired echo": "E*",
                "drain": "D", "zero slot": "·"}
-    for index, row in enumerate(rows):
+    for capture_index, row in shown_rows:
         begin, finish = x(row["start_sample"]), x(row["end_sample"])
         lines.extend([
             '<rect x="{:.2f}" y="115" width="{:.2f}" height="{}" fill="{}"/>'.format(begin, max(1, finish - begin), lane_height * len(SIGNALS), colors[row["role"]]),
@@ -223,13 +242,17 @@ def render(report, capture, output):
             '<path class="{}" d="{}"/>'.format(wave_class, _path(words, start, end, bit, x, high, low)),
         ]
     duration_ms = (last - first) * 1000 / rate
-    lines.append('<text x="770" y="548" class="small" text-anchor="middle">Detail window: {:.3f} ms; {} SPI transaction windows</text>'.format(duration_ms, len(rows)))
+    detail = "Detail window: {:.3f} ms; {} SPI transaction windows".format(duration_ms, len(rows))
+    if omitted_rows:
+        detail += "; SVG shows first/last {} ({} omitted; raw capture/report retain all)".format(
+            len(shown_rows), omitted_rows)
+    lines.append('<text x="770" y="548" class="small" text-anchor="middle">{}</text>'.format(html.escape(detail)))
     y = 575
-    for index, row in enumerate(rows):
+    for capture_index, row in shown_rows:
         lines += [
             '<rect class="box" x="30" y="{}" width="1380" height="{}"/>'.format(y, table_row_height),
             '<rect class="head" x="30" y="{}" width="190" height="{}"/>'.format(y, table_row_height),
-            '<text x="45" y="{}" class="small">Window {} · {}</text>'.format(y + 23, index + 1, html.escape(row["role"])),
+            '<text x="45" y="{}" class="small">Window {} · {}</text>'.format(y + 23, capture_index, html.escape(row["role"])),
             '<text x="235" y="{}" class="small">MOSI: {}</text>'.format(y + 22, html.escape(row["mosi"])),
             '<text x="235" y="{}" class="small">MISO: {}</text>'.format(y + 44, html.escape(row["miso"])),
         ]

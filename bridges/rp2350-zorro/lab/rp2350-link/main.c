@@ -31,6 +31,9 @@ static struct link_test_frame request_frame;
 static struct link_test_frame discard_frame;
 static struct link_test_frame response_frame;
 static struct link_test_frame zero_frame;
+/* Batch/soak summaries expose the first transport step that failed without
+   printing every successful transaction. */
+static const char *exchange_failure = "not_started";
 
 static bool wait_for(uint pin, bool value, uint32_t timeout_ms) {
     /* Flow-control lines are level signals.  Keep their waits bounded so a
@@ -326,21 +329,28 @@ static bool exchange_quiet(unsigned scenario, uint32_t sequence, size_t length,
                            enum link_test_pattern pattern) {
     /* Batch and soak runs use the same two-slot exchange as run_once, but defer
        reporting until the measured group finishes so USB output cannot pace it. */
+    exchange_failure = "stale_drain";
     if (!drain_stale_response()) return false;
     link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
     /* Batch timing measures the link, not ESP USB-console backpressure. */
     request_frame.reserved = LINK_TEST_FLAG_QUIET;
+    exchange_failure = "wait_ready";
     if (request_frame.status != LINK_STATUS_OK ||
         !wait_for(LINK_RP_READY_PIN, true, 1000)) return false;
     transaction(&request_frame, &discard_frame);
+    exchange_failure = "wait_response";
     if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) return false;
     transaction(&zero_frame, &response_frame);
+    exchange_failure = "echo_mismatch";
     if (!frame_matches(&response_frame, &request_frame)) return false;
     /* spi_write_read_blocking() returns when the final bit is shifted, while
        the ESP task still needs to lower READY, retire the advertised echo and
        queue the next slot.  Do not let the next batch iteration mistake the
        old READY high level for readiness of that next generation. */
-    return wait_for_next_slot() && !gpio_get(LINK_RP_DATA_AVAILABLE_PIN);
+    exchange_failure = "wait_rearm";
+    if (!wait_for_next_slot() || gpio_get(LINK_RP_DATA_AVAILABLE_PIN)) return false;
+    exchange_failure = "none";
+    return true;
 }
 
 static void run_batch(unsigned scenario, uint32_t first_sequence, unsigned count,
@@ -364,8 +374,12 @@ static void run_batch(unsigned scenario, uint32_t first_sequence, unsigned count
     elapsed_us = time_us_64() - start_us;
     if (completed != count) {
         printf("result protocol=link-feasibility-v1 status=batch_failed completed=%u "
-               "count=%u elapsed_us=%llu spi_hz=%lu\n", completed, count,
-               (unsigned long long)elapsed_us, (unsigned long)actual_hz);
+               "count=%u elapsed_us=%llu spi_hz=%lu reason=%s frame=%s peer=%s "
+               "response_sequence=%lu response_length=%u\n", completed, count,
+               (unsigned long long)elapsed_us, (unsigned long)actual_hz,
+               exchange_failure, link_test_status_name(link_test_validate_frame(&response_frame)),
+               link_test_status_name((enum link_test_status)response_frame.status),
+               (unsigned long)response_frame.sequence, response_frame.payload_length);
         return;
     }
     printf("result protocol=link-feasibility-v1 status=batch_pass count=%u length=%u "
