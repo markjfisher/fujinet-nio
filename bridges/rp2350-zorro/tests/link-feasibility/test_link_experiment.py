@@ -64,6 +64,7 @@ def main():
         assert [row["role"] for row in rows] == ["request", "echo"]
         assert "DATA_AVAILABLE" in text and "MOSI: L0 seq 1 16 B status 0 CRC D0A7" in text
         assert "Key: D = stale-response drain; R = request; E = echoed response." in text
+        assert 'id="link-request"' in text and 'fill="url(#link-echo)"' in text
     print("link experiment runner tests passed")
 
 

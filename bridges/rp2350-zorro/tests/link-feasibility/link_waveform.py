@@ -110,18 +110,19 @@ def render(report, capture, output):
     lines = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="{}" viewBox="0 0 1440 {}">'.format(height, height),
         '<style>text{font-family:monospace;fill:#202124}.title{font-size:18px;font-weight:bold}.small{font-size:13px}.lane{font-size:16px;font-weight:bold}.wave{fill:none;stroke:#1967d2;stroke-width:1.6}.control{fill:none;stroke:#6f42c1;stroke-width:1.6}.cs{fill:none;stroke:#b00020;stroke-width:2}.window{fill:#e8f0fe;fill-opacity:.65;stroke:#1a73e8}.box{fill:#f8f9fa;stroke:#9aa0a6}.head{fill:#e8eaed}</style>',
+        '<defs><pattern id="link-drain" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#fff0d0"/><path d="M 0 0 V 8" stroke="#b45309" stroke-width="2"/></pattern><pattern id="link-request" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#d9f2df"/><path d="M 3 0 V 8" stroke="#16713b" stroke-width="2"/></pattern><pattern id="link-echo" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#e0eaff"/><path d="M 0 0 L 8 8 M 8 0 L 0 8" stroke="#2457a6" stroke-width="1.3"/></pattern></defs>',
         '<rect width="100%" height="100%" fill="white"/>',
         '<text x="30" y="34" class="title">{} — {}</text>'.format(html.escape(str(report.get("experiment", "Link"))), html.escape(str(report.get("title", "SPI link evidence")))),
         '<text x="30" y="59" class="small">{}</text>'.format(html.escape(purpose)),
         '<text x="30" y="80" class="small">Transaction windows are decoded from the captured MOSI and MISO bits; they do not determine pass/fail.</text>',
         '<text x="30" y="101" class="small">Key: D = stale-response drain; R = request; E = echoed response.</text>',
     ]
-    colors = {"request": "#d9f2df", "echo": "#e8f0fe", "drain": "#fff1d6", "zero slot": "#f1f3f4"}
+    colors = {"request": "url(#link-request)", "echo": "url(#link-echo)", "drain": "url(#link-drain)", "zero slot": "#d5d8dc"}
     markers = {"request": "R", "echo": "E", "drain": "D", "zero slot": "·"}
     for index, row in enumerate(rows):
         begin, finish = x(row["start_sample"]), x(row["end_sample"])
         lines.extend([
-            '<rect x="{:.2f}" y="115" width="{:.2f}" height="{}" fill="{}" fill-opacity=".48"/>'.format(begin, max(1, finish - begin), lane_height * len(SIGNALS), colors[row["role"]]),
+            '<rect x="{:.2f}" y="115" width="{:.2f}" height="{}" fill="{}"/>'.format(begin, max(1, finish - begin), lane_height * len(SIGNALS), colors[row["role"]]),
             '<text x="{:.2f}" y="121" class="small" text-anchor="middle">{}</text>'.format((begin + finish) / 2, markers[row["role"]]),
         ])
     for bit, signal in enumerate(SIGNALS):
