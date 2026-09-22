@@ -22,8 +22,8 @@ analyzer `D0`–`D5`.
 
 ## Run
 
-Flash the L3 ESP image once after this source change, then use the repeatable
-runner:
+Flash the selected L3 ESP image whenever changing experiment, then use the
+repeatable runner:
 
 ```sh
 lab/esp32-link/build.sh L3 --upload "$ESP_PORT"

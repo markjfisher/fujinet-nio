@@ -27,13 +27,13 @@ Configure the ignored local bench record once, as described in the parent
 [README](../README.md), then run:
 
 ```sh
+lab/esp32-link/build.sh L2 --upload "$ESP_PORT"
 ./run.sh all --output /tmp/l2-run-001
 ```
 
-`all` builds both endpoint images, RAM-loads the RP2350 without altering flash,
-arms the analyzer, and runs eight manifest cases. It does not flash the ESP32;
-use `lab/esp32-link/build.sh L2 --upload "$ESP_PORT"` when its endpoint source
-has changed. The report, raw `.sr` capture, console log and `waveform.svg` are
+Flash the selected ESP image whenever changing experiment. `all` builds both
+endpoint images, RAM-loads the RP2350 without altering flash, arms the analyzer,
+and runs eight manifest cases; it deliberately does not overwrite ESP flash. The report, raw `.sr` capture, console log and `waveform.svg` are
 kept in the output directory.
 
 The expected result is eight cases meeting their declared status: six normal
