@@ -1,10 +1,15 @@
 # L9 — Recovery soak
 
-Repeats transfers with deterministic resets, pauses and reconnects to find stale-data, framing or recovery failures.
+L9 repeatedly proves recovery from a known incomplete-slot fault. It sends 100
+exact 64-byte transfers. Before every tenth transfer, the RP2350 deliberately
+clocks only 32 bytes of a test frame and leaves the resulting peer rejection
+advertised. The following normal transfer must drain that stale error, then
+complete byte-for-byte correctly. The final result reports completed cycles,
+injected fault count and RP2350 elapsed microseconds.
 
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+This is the automated **partial-transfer recovery** soak. It does not claim to
+cover physical power removal, USB unplug, or reset of either board; L6 and L7
+own those separate reset procedures.
 
 ## Wiring
 
@@ -18,35 +23,14 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+Use W2 unchanged with 3.3 V signalling and one shared ground. CH1–CH6 map to
+analyzer D0–D5.
 
-## Build
-
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 10000,
-  "cycles": 100,
-  "faults": [
-    "reset",
-    "pause",
-    "reconnect"
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+## Run
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+./run.sh all --output /tmp/l9-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+A pass is `soak_pass cycles=100 injected_faults=9`. Retain the report and both
+endpoint transcripts. Do not treat a pass as reset/disconnect evidence.

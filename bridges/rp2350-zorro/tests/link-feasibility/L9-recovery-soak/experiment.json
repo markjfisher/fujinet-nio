@@ -1,49 +1,22 @@
 {
   "id": "L9",
   "title": "Recovery soak",
-  "status": "implemented-infrastructure",
+  "status": "implemented",
   "scenario": 9,
-  "purpose": "Repeats transfers with deterministic resets, pauses and reconnects to find stale-data, framing or recovery failures.",
-  "rp2350": {
-    "preset": "link-rp2350",
-    "target": "link_rp2350"
-  },
-  "esp32": {
-    "project": "lab/esp32-link",
-    "environment": "link-esp32s3"
-  },
+  "purpose": "Repeats exact 64-byte transfers while injecting a deliberately truncated slot at a fixed interval; every following transfer must drain the stale error and recover.",
+  "rp2350": {"preset": "link-rp2350", "target": "link_rp2350"},
+  "esp32": {"project": "lab/esp32-link", "environment": "link-esp32s3"},
   "wiring": {
-    "rp2350": {
-      "SCLK": 2,
-      "MOSI": 3,
-      "MISO": 4,
-      "CS": 5,
-      "READY": 6,
-      "DATA_AVAILABLE": 7
-    },
-    "esp32s3": {
-      "SCLK": 12,
-      "MOSI": 11,
-      "MISO": 13,
-      "CS": 10,
-      "READY": 9,
-      "DATA_AVAILABLE": 8
-    },
-    "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
+    "rp2350": {"SCLK": 2, "MOSI": 3, "MISO": 4, "CS": 5, "READY": 6, "DATA_AVAILABLE": 7},
+    "esp32s3": {"SCLK": 12, "MOSI": 11, "MISO": 13, "CS": 10, "READY": 9, "DATA_AVAILABLE": 8},
+    "analyzer": "CH1=SCLK, CH2=MOSI, CH3=MISO, CH4=CS, CH5=READY, CH6=DATA_AVAILABLE; connect analyzer GND to the shared ground."
   },
   "run_profile": {
-    "packets": 10000,
-    "cycles": 100,
-    "faults": [
-      "reset",
-      "pause",
-      "reconnect"
-    ]
+    "cases": [
+      {"id": "partial-recovery-soak", "operation": "soak", "sequence": 1, "cycles": 100, "fault_period": 10, "length": 64, "pattern": "fixed-random", "expect_status": "soak_pass"}
+    ],
+    "analyzer": {"sample_rate_hz": 12000000, "capture_ms": 1000, "channels": ["D0", "D1", "D2", "D3", "D4", "D5"], "trigger": "D3=f", "pretrigger_percent": 10, "arm_ms": 1500}
   },
-  "evidence": [
-    "RP2350 USB result line",
-    "ESP32-S3 USB log",
-    "optional analyzer capture",
-    "build/link-feasibility/L9/report.json"
-  ]
+  "evidence": ["RP2350 soak counters", "ESP32-S3 transaction log", "analyzer capture", "build/link-feasibility/L9/report.json"],
+  "execution": {"kind": "round_trip", "automated": true}
 }

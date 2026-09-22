@@ -1,10 +1,14 @@
-# L6 — RP2350 reset mid-transfer
+# L6 — RP2350 reset after partial transfer
 
-Injects an RP2350 reset during a deliberately incomplete transfer and proves the next packet is fresh or explicitly rejected.
+L6 is an automated reset-containment experiment. The RP2350 clocks 32 bytes of
+a 64-byte frame and deliberately leaves the ESP32-S3 error response pending.
+The runner closes the RP console, uses picotool to force-reset and RAM-reload
+the Core2350B, then sends a fresh 64-byte frame. A pass proves the recovered
+master drains the stale rejection rather than attributing it to the new request.
 
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+This covers reset **after a partial SPI slot and before completion is consumed**.
+It does not claim to reset the RP2350 at an arbitrary clock edge; that requires
+a separate physical reset-timing fixture.
 
 ## Wiring
 
@@ -18,33 +22,17 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+Use W2 unchanged with 3.3 V signalling and one shared ground. CH1–CH6 map to
+analyzer D0–D5. Keep the intended Core2350B connected: `all` force-loads its
+SRAM image during the fault phase; it does not write flash.
 
-## Build
-
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 8,
-  "faults": [
-    "rp-reset-mid-slot",
-    "rp-reset-between-slots"
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+## Run
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+./run.sh all --output /tmp/l6-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+Expected case results are `partial_injected`, `rp_reset_reloaded`, and `passed`.
+The SVG records the physical slot activity captured during its finite acquisition
+window; the RP result lines are the authoritative evidence of the reload and
+fresh recovery exchange.

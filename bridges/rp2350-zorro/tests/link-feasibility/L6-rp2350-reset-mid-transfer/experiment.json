@@ -1,47 +1,24 @@
 {
   "id": "L6",
-  "title": "RP2350 reset mid-transfer",
-  "status": "implemented-infrastructure",
+  "title": "RP2350 reset after partial transfer",
+  "status": "implemented",
   "scenario": 6,
-  "purpose": "Injects an RP2350 reset during a deliberately incomplete transfer and proves the next packet is fresh or explicitly rejected.",
-  "rp2350": {
-    "preset": "link-rp2350",
-    "target": "link_rp2350"
-  },
-  "esp32": {
-    "project": "lab/esp32-link",
-    "environment": "link-esp32s3"
-  },
+  "purpose": "Injects an RP2350 reset after clocking 32 bytes of a 64-byte frame and before the peer error response is consumed; the reloaded master must discard that stale response and complete a fresh transfer.",
+  "rp2350": {"preset": "link-rp2350", "target": "link_rp2350"},
+  "esp32": {"project": "lab/esp32-link", "environment": "link-esp32s3"},
   "wiring": {
-    "rp2350": {
-      "SCLK": 2,
-      "MOSI": 3,
-      "MISO": 4,
-      "CS": 5,
-      "READY": 6,
-      "DATA_AVAILABLE": 7
-    },
-    "esp32s3": {
-      "SCLK": 12,
-      "MOSI": 11,
-      "MISO": 13,
-      "CS": 10,
-      "READY": 9,
-      "DATA_AVAILABLE": 8
-    },
-    "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
+    "rp2350": {"SCLK": 2, "MOSI": 3, "MISO": 4, "CS": 5, "READY": 6, "DATA_AVAILABLE": 7},
+    "esp32s3": {"SCLK": 12, "MOSI": 11, "MISO": 13, "CS": 10, "READY": 9, "DATA_AVAILABLE": 8},
+    "analyzer": "CH1=SCLK, CH2=MOSI, CH3=MISO, CH4=CS, CH5=READY, CH6=DATA_AVAILABLE; connect analyzer GND to the shared ground."
   },
   "run_profile": {
-    "packets": 8,
-    "faults": [
-      "rp-reset-mid-slot",
-      "rp-reset-between-slots"
-    ]
+    "cases": [
+      {"id": "partial-before-reset", "operation": "fault_partial", "sequence": 1, "length": 64, "pattern": "slip-bytes", "slot_bytes": 32, "expect_status": "partial_injected"},
+      {"id": "ram-reset-reload", "operation": "rp_reset", "sequence": 0, "length": 0, "pattern": "zero", "expect_status": "rp_reset_reloaded"},
+      {"id": "fresh-recovery", "operation": "run", "sequence": 2, "length": 64, "pattern": "fixed-random", "expect_status": "passed"}
+    ],
+    "analyzer": {"sample_rate_hz": 12000000, "capture_ms": 1000, "channels": ["D0", "D1", "D2", "D3", "D4", "D5"], "trigger": "D3=f", "pretrigger_percent": 10, "arm_ms": 1500}
   },
-  "evidence": [
-    "RP2350 USB result line",
-    "ESP32-S3 USB log",
-    "optional analyzer capture",
-    "build/link-feasibility/L6/report.json"
-  ]
+  "evidence": ["partial-slot/reset/reload result lines", "RP2350 and ESP32 transcripts", "analyzer capture", "build/link-feasibility/L6/report.json"],
+  "execution": {"kind": "round_trip", "automated": true}
 }

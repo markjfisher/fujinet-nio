@@ -1,53 +1,24 @@
 {
   "id": "L8",
   "title": "Sustained performance",
-  "status": "implemented-infrastructure",
+  "status": "implemented",
   "scenario": 8,
-  "purpose": "Measures successful transfer rate and latency over sustained deterministic traffic at selected SPI clock rates.",
-  "rp2350": {
-    "preset": "link-rp2350",
-    "target": "link_rp2350"
-  },
-  "esp32": {
-    "project": "lab/esp32-link",
-    "environment": "link-esp32s3"
-  },
+  "purpose": "Measures RP2350-side elapsed time for repeated exact round trips at three SPI clocks and representative fixed-slot payload sizes.",
+  "rp2350": {"preset": "link-rp2350", "target": "link_rp2350"},
+  "esp32": {"project": "lab/esp32-link", "environment": "link-esp32s3"},
   "wiring": {
-    "rp2350": {
-      "SCLK": 2,
-      "MOSI": 3,
-      "MISO": 4,
-      "CS": 5,
-      "READY": 6,
-      "DATA_AVAILABLE": 7
-    },
-    "esp32s3": {
-      "SCLK": 12,
-      "MOSI": 11,
-      "MISO": 13,
-      "CS": 10,
-      "READY": 9,
-      "DATA_AVAILABLE": 8
-    },
-    "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
+    "rp2350": {"SCLK": 2, "MOSI": 3, "MISO": 4, "CS": 5, "READY": 6, "DATA_AVAILABLE": 7},
+    "esp32s3": {"SCLK": 12, "MOSI": 11, "MISO": 13, "CS": 10, "READY": 9, "DATA_AVAILABLE": 8},
+    "analyzer": "CH1=SCLK, CH2=MOSI, CH3=MISO, CH4=CS, CH5=READY, CH6=DATA_AVAILABLE; connect analyzer GND to the shared ground."
   },
   "run_profile": {
-    "packets": 1000,
-    "lengths": [
-      16,
-      64,
-      240
+    "cases": [
+      {"id": "one-mhz-small", "operation": "batch", "sequence": 1, "count": 100, "length": 16, "pattern": "increment", "spi_hz": 1000000, "expect_status": "batch_pass"},
+      {"id": "four-mhz-medium", "operation": "batch", "sequence": 101, "count": 100, "length": 64, "pattern": "fixed-random", "spi_hz": 4000000, "expect_status": "batch_pass"},
+      {"id": "eight-mhz-maximum", "operation": "batch", "sequence": 201, "count": 100, "length": 240, "pattern": "slip-bytes", "spi_hz": 8000000, "expect_status": "batch_pass"}
     ],
-    "spi_hz": [
-      1000000,
-      4000000,
-      8000000
-    ]
+    "analyzer": {"sample_rate_hz": 12000000, "capture_ms": 1000, "channels": ["D0", "D1", "D2", "D3", "D4", "D5"], "trigger": "D3=f", "pretrigger_percent": 10, "arm_ms": 1500}
   },
-  "evidence": [
-    "RP2350 USB result line",
-    "ESP32-S3 USB log",
-    "optional analyzer capture",
-    "build/link-feasibility/L8/report.json"
-  ]
+  "evidence": ["RP2350 batch timing result lines", "ESP32-S3 transaction log", "analyzer capture", "build/link-feasibility/L8/report.json"],
+  "execution": {"kind": "round_trip", "automated": true}
 }

@@ -1,47 +1,24 @@
 {
   "id": "L7",
-  "title": "ESP32 reset or disconnect",
-  "status": "implemented-infrastructure",
+  "title": "ESP32 reset and recovery",
+  "status": "implemented",
   "scenario": 7,
-  "purpose": "Injects ESP32-S3 reset/disconnect during transfer and establishes the observable timeout, recovery and stale-data behavior.",
-  "rp2350": {
-    "preset": "link-rp2350",
-    "target": "link_rp2350"
-  },
-  "esp32": {
-    "project": "lab/esp32-link",
-    "environment": "link-esp32s3"
-  },
+  "purpose": "Requests a feasibility-only ESP32 reset at a completed control-slot boundary, verifies withdrawal of READY and DATA_AVAILABLE, then proves a fresh RP2350 request succeeds after USB and link re-enumeration.",
+  "rp2350": {"preset": "link-rp2350", "target": "link_rp2350"},
+  "esp32": {"project": "lab/esp32-link", "environment": "link-esp32s3"},
   "wiring": {
-    "rp2350": {
-      "SCLK": 2,
-      "MOSI": 3,
-      "MISO": 4,
-      "CS": 5,
-      "READY": 6,
-      "DATA_AVAILABLE": 7
-    },
-    "esp32s3": {
-      "SCLK": 12,
-      "MOSI": 11,
-      "MISO": 13,
-      "CS": 10,
-      "READY": 9,
-      "DATA_AVAILABLE": 8
-    },
-    "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
+    "rp2350": {"SCLK": 2, "MOSI": 3, "MISO": 4, "CS": 5, "READY": 6, "DATA_AVAILABLE": 7},
+    "esp32s3": {"SCLK": 12, "MOSI": 11, "MISO": 13, "CS": 10, "READY": 9, "DATA_AVAILABLE": 8},
+    "analyzer": "CH1=SCLK, CH2=MOSI, CH3=MISO, CH4=CS, CH5=READY, CH6=DATA_AVAILABLE; connect analyzer GND to the shared ground."
   },
   "run_profile": {
-    "packets": 8,
-    "faults": [
-      "esp-reset-mid-slot",
-      "esp-disconnect"
-    ]
+    "cases": [
+      {"id": "request-peer-reset", "operation": "peer_reset", "sequence": 1, "length": 1, "pattern": "fixed-random", "reboot_wait_ms": 2200, "expect_status": "peer_reset_detected"},
+      {"id": "fresh-after-peer-reset", "operation": "run", "sequence": 2, "length": 64, "pattern": "slip-bytes", "expect_status": "passed"}
+    ],
+    "analyzer": {"sample_rate_hz": 12000000, "capture_ms": 1000, "channels": ["D0", "D1", "D2", "D3", "D4", "D5"], "trigger": "D3=f", "pretrigger_percent": 10, "arm_ms": 1500},
+    "esp_startup_wait_ms": 2000
   },
-  "evidence": [
-    "RP2350 USB result line",
-    "ESP32-S3 USB log",
-    "optional analyzer capture",
-    "build/link-feasibility/L7/report.json"
-  ]
+  "evidence": ["reset-detected and recovery result lines", "RP2350 and ESP32 transcripts", "analyzer capture", "build/link-feasibility/L7/report.json"],
+  "execution": {"kind": "round_trip", "automated": true}
 }

@@ -220,8 +220,16 @@ def open_raw_console(path):
 
 
 def read_console_lines(fd, pending, lines):
-    """Drain complete console lines while preserving an incomplete tail."""
-    pending += os.read(fd, 4096)
+    """Drain complete console lines while preserving an incomplete tail.
+
+    ESP native USB disconnects during L7's intentional restart.  Its previous
+    file descriptor can become readable with an I/O error before the runner
+    closes it, which is evidence of that reset rather than a runner failure.
+    """
+    try:
+        pending += os.read(fd, 4096)
+    except OSError:
+        return pending
     while b"\n" in pending:
         item, pending = pending.split(b"\n", 1)
         line = item.decode(errors="replace").strip()
@@ -285,7 +293,7 @@ def round_trip_cases(manifest):
             raise ValueError("round-trip case {} is not an object".format(index))
         operation = case.get("operation", "run")
         length, pattern = case.get("length"), case.get("pattern")
-        if operation not in {"run", "oversize", "partial", "pressure", "receive", "schedule"}:
+        if operation not in {"run", "oversize", "partial", "fault_partial", "pressure", "receive", "schedule", "batch", "soak", "rp_reset", "peer_reset"}:
             raise ValueError("unknown round-trip operation in case {}".format(index))
         if not isinstance(length, int) or length < 0 or pattern not in PATTERN_IDS:
             raise ValueError("invalid round-trip case {}".format(index))
@@ -302,8 +310,22 @@ def round_trip_cases(manifest):
         if operation == "pressure":
             if case.get("queue_depth") not in {1, 2, 3, 4} or case.get("pause_ms") not in {0, 1, 10, 100}:
                 raise ValueError("pressure case {} needs queue_depth 1..4 and pause_ms 0/1/10/100".format(index))
-        if operation == "partial" and (not isinstance(slot_bytes, int) or not 0 < slot_bytes < 256):
+        if operation in {"partial", "fault_partial"} and (not isinstance(slot_bytes, int) or not 0 < slot_bytes < 256):
             raise ValueError("partial case {} needs slot_bytes in 1..255".format(index))
+        if operation == "rp_reset" and length != 0:
+            raise ValueError("rp_reset case {} uses length 0".format(index))
+        if operation == "peer_reset" and int(case.get("reboot_wait_ms", 2200)) < 0:
+            raise ValueError("peer_reset case {} needs non-negative reboot_wait_ms".format(index))
+        if operation == "batch":
+            if not isinstance(case.get("count"), int) or not 0 < case["count"] <= 1000:
+                raise ValueError("batch case {} needs count in 1..1000".format(index))
+            if not isinstance(case.get("spi_hz"), int) or case["spi_hz"] <= 0:
+                raise ValueError("batch case {} needs positive spi_hz".format(index))
+        if operation == "soak":
+            if not isinstance(case.get("cycles"), int) or not 0 < case["cycles"] <= 1000:
+                raise ValueError("soak case {} needs cycles in 1..1000".format(index))
+            if not isinstance(case.get("fault_period"), int) or case["fault_period"] <= 0:
+                raise ValueError("soak case {} needs positive fault_period".format(index))
         result.append({
             "id": str(case.get("id", "case-{}".format(index))),
             "operation": operation,
@@ -316,6 +338,9 @@ def round_trip_cases(manifest):
             "queue_depth": case.get("queue_depth"),
             "pause_ms": case.get("pause_ms"),
             "outgoing_sequence": case.get("outgoing_sequence"),
+            "count": case.get("count"), "spi_hz": case.get("spi_hz"),
+            "cycles": case.get("cycles"), "fault_period": case.get("fault_period"),
+            "reboot_wait_ms": int(case.get("reboot_wait_ms", 2200)),
         })
     return result
 
@@ -369,17 +394,38 @@ def run_round_trip(manifest, args):
         for case in cases:
             if case["delay_before_ms"]:
                 time.sleep(case["delay_before_ms"] / 1000)
+            if case["operation"] == "rp_reset":
+                # L6 resets the RAM-loaded master after a partial slot. Close
+                # its CDC endpoint before picotool forces the reset and reload.
+                restore_console(rp_fd, rp_original)
+                rp_fd = None
+                load_rp2350(manifest, False)
+                wait_for_path(rp_port, seconds=10)
+                time.sleep(0.5)
+                rp_fd, rp_original = open_raw_console(rp_port)
+                case_results.append(dict(case, result="result protocol=link-feasibility-v1 status=rp_reset_reloaded"))
+                continue
             if case["operation"] == "receive":
                 command_line = "receive {} {}".format(manifest["scenario"], case["sequence"])
             elif case["operation"] == "schedule":
                 command_line = "schedule {} {} {} {} {}".format(
                     manifest["scenario"], case["outgoing_sequence"], case["sequence"],
                     case["length"], PATTERN_IDS[case["pattern"]])
+            elif case["operation"] == "batch":
+                command_line = "batch {} {} {} {} {} {}".format(
+                    manifest["scenario"], case["sequence"], case["count"], case["length"],
+                    PATTERN_IDS[case["pattern"]], case["spi_hz"])
+            elif case["operation"] == "soak":
+                command_line = "soak {} {} {} {}".format(
+                    manifest["scenario"], case["sequence"], case["cycles"],
+                    case["fault_period"])
+            elif case["operation"] == "peer_reset":
+                command_line = "peer_reset {} {}".format(manifest["scenario"], case["sequence"])
             else:
                 command_line = "{} {} {} {} {}".format(
                     case["operation"], manifest["scenario"], case["length"],
                     PATTERN_IDS[case["pattern"]], case["sequence"])
-            if case["operation"] == "partial":
+            if case["operation"] in {"partial", "fault_partial"}:
                 command_line += " {}".format(case["slot_bytes"])
             elif case["operation"] == "pressure":
                 command_line += " {} {}".format(case["queue_depth"], case["pause_ms"])
@@ -396,6 +442,14 @@ def run_round_trip(manifest, args):
                     result = next((line for line in reversed(rp_lines[result_start:])
                                    if line.startswith("result protocol=link-feasibility-v1")), "")
             case_results.append(dict(case, result=result or "missing"))
+            if case["operation"] == "peer_reset":
+                # ESP reset disconnects its native USB console. Reopen it after
+                # its documented boot interval so the recovery case is logged.
+                restore_console(esp_fd, esp_original)
+                esp_fd = None
+                time.sleep(case["reboot_wait_ms"] / 1000)
+                wait_for_path(esp_port, seconds=10)
+                esp_fd, esp_original = open_raw_console(esp_port)
 
         # Give the ESP task a short opportunity to emit the peer-side outcome
         # for the last completed transfer before serial evidence is closed.

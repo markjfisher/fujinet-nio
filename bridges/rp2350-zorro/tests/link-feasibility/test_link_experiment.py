@@ -50,6 +50,16 @@ def main():
     l5_cases = runner.round_trip_cases(runner.load_manifest(manifests[5]))
     assert all(case["operation"] == "schedule" for case in l5_cases)
     assert [case["outgoing_sequence"] for case in l5_cases] == [1, 2, 3, 4, 5, 6]
+    l6_cases = runner.round_trip_cases(runner.load_manifest(manifests[6]))
+    assert [case["operation"] for case in l6_cases] == ["fault_partial", "rp_reset", "run"]
+    l7_cases = runner.round_trip_cases(runner.load_manifest(manifests[7]))
+    assert [case["operation"] for case in l7_cases] == ["peer_reset", "run"]
+    l8_cases = runner.round_trip_cases(runner.load_manifest(manifests[8]))
+    assert [case["operation"] for case in l8_cases] == ["batch", "batch", "batch"]
+    assert [case["spi_hz"] for case in l8_cases] == [1_000_000, 4_000_000, 8_000_000]
+    l9_cases = runner.round_trip_cases(runner.load_manifest(manifests[9]))
+    assert l9_cases[0]["operation"] == "soak"
+    assert (l9_cases[0]["cycles"], l9_cases[0]["fault_period"]) == (100, 10)
     runner.show_plan(runner.load_manifest(manifests[0]))
     with tempfile.TemporaryDirectory() as directory:
         artifact = Path(directory) / "firmware.elf"

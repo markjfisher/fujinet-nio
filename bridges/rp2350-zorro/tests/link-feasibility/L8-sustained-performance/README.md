@@ -1,10 +1,10 @@
 # L8 — Sustained performance
 
-Measures successful transfer rate and latency over sustained deterministic traffic at selected SPI clock rates.
-
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+L8 measures the current lab fixture, not a production performance commitment.
+The RP2350 performs three 100-transfer batches without per-transfer USB output:
+16-byte payloads at 1 MHz, 64-byte payloads at 4 MHz, and 240-byte payloads at
+8 MHz. Each batch reports exact completed count, payload bytes, elapsed RP2350
+microseconds and the baud rate accepted by the SPI peripheral.
 
 ## Wiring
 
@@ -18,39 +18,17 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+Use the unchanged W2 fixture with 3.3 V signalling and common ground. CH1–CH6
+map to analyzer D0–D5. The 12 MHz analyzer is suitable for the 1/4 MHz traces;
+it is diagnostic only at 8 MHz and does not certify edge timing.
 
-## Build
-
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 1000,
-  "lengths": [
-    16,
-    64,
-    240
-  ],
-  "spi_hz": [
-    1000000,
-    4000000,
-    8000000
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+## Run
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+./run.sh all --output /tmp/l8-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+The report retains batch result lines, the analyzer capture, both endpoint
+consoles and image hashes. Calculate payload rate from `payload_bytes` and
+`elapsed_us`; report that it includes the current two-slot exchange and READY
+re-arm behavior. A batch failure is evidence, not a retry condition.

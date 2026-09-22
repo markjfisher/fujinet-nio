@@ -5,8 +5,9 @@
 Active feasibility / pre-ABI design work, updated after reviewed physical L0–L5 runs.
 
 The [link-feasibility evidence ledger](link-feasibility-evidence.md) indexes the
-reviewed local reports and records the constraints they contribute. L6–L9,
-throughput/latency characterization, and reset/disconnect evidence remain open.
+reviewed local reports and records the constraints they contribute. L6–L9 now
+have automated lab procedures but have not yet been physically run; their
+reset, throughput/latency, and soak evidence remains open.
 
 This work is independent of the real Zorro-II bus validation in Story 2.2.
 

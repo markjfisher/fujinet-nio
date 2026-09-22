@@ -221,6 +221,51 @@ static void run_receive(unsigned scenario, uint32_t sequence) {
            response_frame.checksum);
 }
 
+static void run_fault_partial(unsigned scenario, uint32_t sequence, size_t length,
+                              enum link_test_pattern pattern, size_t slot_bytes) {
+    /* Leave the peer's explicit error response advertised. L6 resets the RP
+       before it can consume it; the recovered image must discard it as stale. */
+    if (slot_bytes == 0 || slot_bytes >= sizeof(request_frame) ||
+        !drain_stale_response()) {
+        puts("result protocol=link-feasibility-v1 status=fault_partial_setup_failed");
+        return;
+    }
+    link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
+    if (request_frame.status != LINK_STATUS_OK ||
+        !wait_for(LINK_RP_READY_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=fault_partial_waiting_ready");
+        return;
+    }
+    transaction_bytes(&request_frame, &discard_frame, slot_bytes);
+    printf("result protocol=link-feasibility-v1 status=partial_injected "
+           "scenario=L%u sequence=%lu slot_bytes=%u\n", scenario,
+           (unsigned long)sequence, (unsigned)slot_bytes);
+}
+
+static void run_peer_reset(unsigned scenario, uint32_t sequence) {
+    /* L7 requests a feasibility-only ESP reboot at a completed slot boundary.
+       The RP then proves both flow-control outputs withdrew before recovery. */
+    if (!drain_stale_response()) {
+        puts("result protocol=link-feasibility-v1 status=peer_reset_setup_failed");
+        return;
+    }
+    link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, 1,
+                         LINK_PATTERN_FIXED_RANDOM);
+    request_frame.reserved = 0x7fu;
+    if (!wait_for(LINK_RP_READY_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=peer_reset_waiting_ready");
+        return;
+    }
+    transaction(&request_frame, &discard_frame);
+    if (wait_for(LINK_RP_READY_PIN, false, 1000) &&
+        wait_for(LINK_RP_DATA_AVAILABLE_PIN, false, 1000)) {
+        printf("result protocol=link-feasibility-v1 status=peer_reset_detected "
+               "scenario=L%u sequence=%lu\n", scenario, (unsigned long)sequence);
+    } else {
+        puts("result protocol=link-feasibility-v1 status=peer_reset_not_detected");
+    }
+}
+
 static void run_oversize(unsigned scenario, uint32_t sequence, size_t length,
                          enum link_test_pattern pattern) {
     /* The frame contract rejects payloads larger than its fixed slot before
@@ -273,6 +318,92 @@ static void run_partial(unsigned scenario, uint32_t sequence, size_t length,
            "frame=%s peer=%s\n",
            link_test_status_name(frame_status),
            link_test_status_name((enum link_test_status)response_frame.status));
+}
+
+static bool exchange_quiet(unsigned scenario, uint32_t sequence, size_t length,
+                           enum link_test_pattern pattern) {
+    /* Batch and soak runs use the same two-slot exchange as run_once, but defer
+       reporting until the measured group finishes so USB output cannot pace it. */
+    if (!drain_stale_response()) return false;
+    link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
+    if (request_frame.status != LINK_STATUS_OK ||
+        !wait_for(LINK_RP_READY_PIN, true, 1000)) return false;
+    transaction(&request_frame, &discard_frame);
+    if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) return false;
+    transaction(&zero_frame, &response_frame);
+    return frame_matches(&response_frame, &request_frame);
+}
+
+static void run_batch(unsigned scenario, uint32_t first_sequence, unsigned count,
+                      size_t length, enum link_test_pattern pattern,
+                      uint32_t requested_hz) {
+    unsigned completed = 0;
+    uint64_t start_us;
+    uint64_t elapsed_us;
+    uint32_t actual_hz;
+
+    if (count == 0 || count > 1000 || requested_hz == 0) {
+        puts("result protocol=link-feasibility-v1 status=batch_invalid_configuration");
+        return;
+    }
+    actual_hz = spi_set_baudrate(spi0, requested_hz);
+    start_us = time_us_64();
+    while (completed < count &&
+           exchange_quiet(scenario, first_sequence + completed, length, pattern)) {
+        ++completed;
+    }
+    elapsed_us = time_us_64() - start_us;
+    if (completed != count) {
+        printf("result protocol=link-feasibility-v1 status=batch_failed completed=%u "
+               "count=%u elapsed_us=%llu spi_hz=%lu\n", completed, count,
+               (unsigned long long)elapsed_us, (unsigned long)actual_hz);
+        return;
+    }
+    printf("result protocol=link-feasibility-v1 status=batch_pass count=%u length=%u "
+           "payload_bytes=%lu elapsed_us=%llu spi_hz=%lu\n", count, (unsigned)length,
+           (unsigned long)(count * length), (unsigned long long)elapsed_us,
+           (unsigned long)actual_hz);
+}
+
+static void run_soak(unsigned scenario, uint32_t first_sequence, unsigned cycles,
+                     unsigned fault_period) {
+    unsigned completed = 0;
+    unsigned injected_faults = 0;
+    uint64_t start_us;
+    uint64_t elapsed_us;
+
+    if (cycles == 0 || cycles > 1000 || fault_period == 0) {
+        puts("result protocol=link-feasibility-v1 status=soak_invalid_configuration");
+        return;
+    }
+    start_us = time_us_64();
+    while (completed < cycles) {
+        /* A truncated slot is the repeatable recovery fault currently available
+           without a human-operated power/reset fixture. Do not consume its
+           error response; the following exchange must drain it as stale state. */
+        if (completed != 0 && completed % fault_period == 0) {
+            link_test_make_frame(&request_frame, (uint8_t)scenario,
+                                 first_sequence + completed, 64,
+                                 LINK_PATTERN_SLIP_BYTES);
+            if (request_frame.status != LINK_STATUS_OK ||
+                !wait_for(LINK_RP_READY_PIN, true, 1000)) break;
+            transaction_bytes(&request_frame, &discard_frame, 32);
+            ++injected_faults;
+        }
+        if (!exchange_quiet(scenario, first_sequence + completed, 64,
+                            LINK_PATTERN_FIXED_RANDOM)) break;
+        ++completed;
+    }
+    elapsed_us = time_us_64() - start_us;
+    if (completed != cycles) {
+        printf("result protocol=link-feasibility-v1 status=soak_failed completed=%u "
+               "cycles=%u injected_faults=%u elapsed_us=%llu\n", completed, cycles,
+               injected_faults, (unsigned long long)elapsed_us);
+        return;
+    }
+    printf("result protocol=link-feasibility-v1 status=soak_pass cycles=%u "
+           "injected_faults=%u elapsed_us=%llu\n", cycles, injected_faults,
+           (unsigned long long)elapsed_us);
 }
 
 int main(void) {
@@ -345,6 +476,21 @@ int main(void) {
             unsigned sequence = 1;
             (void)sscanf(line + 7, "%u %u", &scenario, &sequence);
             run_receive(scenario, sequence);
+        } else if (strncmp(line, "fault_partial", 13) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned length = 64;
+            unsigned pattern = LINK_PATTERN_INCREMENT;
+            unsigned sequence = 1;
+            unsigned slot_bytes = 32;
+            (void)sscanf(line + 13, "%u %u %u %u %u", &scenario, &length,
+                         &pattern, &sequence, &slot_bytes);
+            run_fault_partial(scenario, sequence, length,
+                              (enum link_test_pattern)pattern, slot_bytes);
+        } else if (strncmp(line, "peer_reset", 10) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned sequence = 1;
+            (void)sscanf(line + 10, "%u %u", &scenario, &sequence);
+            run_peer_reset(scenario, sequence);
         } else if (strncmp(line, "oversize", 8) == 0) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned length = LINK_TEST_MAX_PAYLOAD + 1u;
@@ -362,6 +508,25 @@ int main(void) {
                          &pattern, &sequence, &slot_bytes);
             run_partial(scenario, sequence, length, (enum link_test_pattern)pattern,
                         slot_bytes);
+        } else if (strncmp(line, "batch", 5) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned first_sequence = 1;
+            unsigned count = 1;
+            unsigned length = 64;
+            unsigned pattern = LINK_PATTERN_INCREMENT;
+            unsigned requested_hz = LINK_SPI_BAUD_HZ;
+            (void)sscanf(line + 5, "%u %u %u %u %u %u", &scenario, &first_sequence,
+                         &count, &length, &pattern, &requested_hz);
+            run_batch(scenario, first_sequence, count, length,
+                      (enum link_test_pattern)pattern, requested_hz);
+        } else if (strncmp(line, "soak", 4) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned first_sequence = 1;
+            unsigned cycles = 100;
+            unsigned fault_period = 10;
+            (void)sscanf(line + 4, "%u %u %u %u", &scenario, &first_sequence,
+                         &cycles, &fault_period);
+            run_soak(scenario, first_sequence, cycles, fault_period);
         } else if (strncmp(line, "pins", 4) == 0) {
             printf("pins sck=%d mosi=%d miso=%d cs=%d ready=%d data_available=%d\n", LINK_RP_SCK_PIN, LINK_RP_MOSI_PIN, LINK_RP_MISO_PIN, LINK_RP_CS_PIN, LINK_RP_READY_PIN, LINK_RP_DATA_AVAILABLE_PIN);
         } else if (strncmp(line, "help", 4) == 0) {
@@ -369,7 +534,9 @@ int main(void) {
                  "receive [scenario sequence], "
                  "schedule [scenario outgoing_sequence request_sequence length pattern], "
                  "pressure [scenario length pattern sequence queue_depth pause_ms], "
-                 "partial [scenario length pattern sequence slot_bytes], pins, help");
+                 "partial/fault_partial [scenario length pattern sequence slot_bytes], "
+                 "peer_reset [scenario sequence], batch [scenario first count length pattern spi_hz], "
+                 "soak [scenario first cycles fault_period], pins, help");
         } else {
             puts("error protocol=link-feasibility-v1 command");
         }

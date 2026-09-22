@@ -38,7 +38,14 @@ proposed FujiBus packet format or production register ABI.
 The reports prove functional behavior on the declared two-board 3.3 V fixture
 and retain analyzer captures. They do not yet establish a production clock rate,
 latency bound, queue capacity, reset containment, disconnect handling, or a
-final ownership model. L6–L9 remain required before a positive Story 2.3 verdict.
+final ownership model. L6–L9 now have automated procedures, but remain required
+physical evidence before a positive Story 2.3 verdict.
+
+L6 injects a partial slot then force-reloads the RP2350 SRAM image; L7 requests
+a controlled ESP32 restart at a completed slot boundary; L8 batches declared
+payload sizes/clocks without USB pacing; L9 repeatedly injects and recovers from
+partial slots. These procedures deliberately do not claim arbitrary clock-edge
+reset or physical disconnect evidence.
 
 Each new `all` link report records SHA-256 and byte size for the RP2350 ELF and ESP32
 ELF/bin, the repository revision and dirty-file list, and separate RP2350 and

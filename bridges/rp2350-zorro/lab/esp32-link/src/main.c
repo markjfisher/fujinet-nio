@@ -4,6 +4,7 @@
 #include "driver/spi_slave.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -143,6 +144,12 @@ void app_main(void) {
                     ;
                 }
             }
+        }
+        if (status == LINK_STATUS_OK && rx_frame.scenario == 7 &&
+            rx_frame.reserved == 0x7fu) {
+            ESP_LOGW(TAG, "reset requested scenario=L7 sequence=%lu",
+                     (unsigned long)rx_frame.sequence);
+            esp_restart();
         }
         link_test_make_echo(&rx_frame, &tx_frame, status);
         ESP_LOGI(TAG, "received scenario=L%u sequence=%lu length=%u status=%s",

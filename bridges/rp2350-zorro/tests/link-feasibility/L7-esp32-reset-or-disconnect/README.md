@@ -1,10 +1,14 @@
-# L7 — ESP32 reset or disconnect
+# L7 — ESP32 reset and recovery
 
-Injects ESP32-S3 reset/disconnect during transfer and establishes the observable timeout, recovery and stale-data behavior.
+L7 requests a feasibility-only ESP32-S3 restart after a completed control slot.
+The RP2350 must observe both `READY` and `DATA_AVAILABLE` withdraw, while the
+runner waits for the ESP USB console to re-enumerate. It then sends a fresh
+64-byte request which must complete without replaying the pre-reset control
+frame.
 
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+The reset is deliberately at a slot boundary, where the experiment can make an
+unambiguous oracle. It is not a test of an arbitrary power cut or disconnect in
+the middle of SCLK; those physical fault phases remain follow-up work.
 
 ## Wiring
 
@@ -18,33 +22,15 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+Use W2 unchanged with common ground and 3.3 V signalling. CH1–CH6 map to
+analyzer D0–D5. The ESP reset drops its USB serial interface briefly; do not
+hold another terminal open on the enrolled ESP port while running the test.
 
-## Build
-
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 8,
-  "faults": [
-    "esp-reset-mid-slot",
-    "esp-disconnect"
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+## Run
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+./run.sh all --output /tmp/l7-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+Expected results are `peer_reset_detected` followed by `passed`. `all` uploads
+the L7 ESP image before the run, so its restart returns to the same lab image.
