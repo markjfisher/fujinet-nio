@@ -1,7 +1,7 @@
 {
   "id": "L3",
   "title": "Receiver pressure and backpressure",
-  "status": "implemented-infrastructure",
+  "status": "implemented",
   "scenario": 3,
   "purpose": "Exercises bounded receiver pause and queue pressure, recording blocked sends, occupancy and any explicit loss.",
   "rp2350": {
@@ -32,7 +32,64 @@
     "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
   },
   "run_profile": {
-    "packets": 128,
+    "packets": 6,
+    "cases": [
+      {
+        "id": "depth-1-no-pause",
+        "operation": "pressure",
+        "length": 64,
+        "pattern": "increment",
+        "sequence": 1,
+        "queue_depth": 1,
+        "pause_ms": 0
+      },
+      {
+        "id": "depth-2-one-ms",
+        "operation": "pressure",
+        "length": 64,
+        "pattern": "alternating",
+        "sequence": 2,
+        "queue_depth": 2,
+        "pause_ms": 1
+      },
+      {
+        "id": "depth-4-ten-ms",
+        "operation": "pressure",
+        "length": 64,
+        "pattern": "fixed-random",
+        "sequence": 3,
+        "queue_depth": 4,
+        "pause_ms": 10
+      },
+      {
+        "id": "depth-1-hundred-ms",
+        "operation": "pressure",
+        "length": 16,
+        "pattern": "slip-bytes",
+        "sequence": 4,
+        "queue_depth": 1,
+        "pause_ms": 100
+      },
+      {
+        "id": "recovery-after-pause",
+        "operation": "run",
+        "length": 16,
+        "pattern": "increment",
+        "sequence": 5
+      }
+    ],
+    "analyzer": {
+      "sample_rate_hz": 12000000,
+      "capture_ms": 750,
+      "channels": [
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5"
+      ]
+    },
     "receiver_pause_ms": [
       0,
       1,
@@ -50,5 +107,9 @@
     "ESP32-S3 USB log",
     "optional analyzer capture",
     "build/link-feasibility/L3/report.json"
-  ]
+  ],
+  "execution": {
+    "kind": "round_trip",
+    "automated": true
+  }
 }

@@ -69,7 +69,8 @@ static bool drain_stale_response(void) {
     return wait_for(LINK_RP_DATA_AVAILABLE_PIN, false, 1000);
 }
 
-static void run_once(unsigned scenario, uint32_t sequence, size_t length, enum link_test_pattern pattern) {
+static void run_once(unsigned scenario, uint32_t sequence, size_t length,
+                     enum link_test_pattern pattern, uint8_t control) {
     enum link_test_status status;
 
     /* Establish a known mailbox state before each independent runner case. */
@@ -78,6 +79,7 @@ static void run_once(unsigned scenario, uint32_t sequence, size_t length, enum l
         return;
     }
     link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
+    request_frame.reserved = control;
     if (request_frame.status != LINK_STATUS_OK) {
         printf("result protocol=link-feasibility-v1 status=local_%s scenario=L%u length=%u\n",
                link_test_status_name((enum link_test_status)request_frame.status), scenario, (unsigned)length);
@@ -197,7 +199,26 @@ int main(void) {
             unsigned pattern = LINK_PATTERN_INCREMENT;
             unsigned sequence = 1;
             (void)sscanf(line + 3, "%u %u %u %u", &scenario, &length, &pattern, &sequence);
-            run_once(scenario, sequence, length, (enum link_test_pattern)pattern);
+            run_once(scenario, sequence, length, (enum link_test_pattern)pattern, 0);
+        } else if (strncmp(line, "pressure", 8) == 0) {
+            unsigned scenario = 3;
+            unsigned length = 64;
+            unsigned pattern = LINK_PATTERN_INCREMENT;
+            unsigned sequence = 1;
+            unsigned queue_depth = 1;
+            unsigned pause_ms = 0;
+            (void)sscanf(line + 8, "%u %u %u %u %u %u", &scenario, &length,
+                         &pattern, &sequence, &queue_depth, &pause_ms);
+            /* L3 stores a bounded queue depth and pause selector in the
+               feasibility-only reserved byte. */
+            unsigned pause_code = pause_ms == 0 ? 0 : pause_ms == 1 ? 1 :
+                                  pause_ms == 10 ? 2 : pause_ms == 100 ? 3 : 255;
+            if (queue_depth < 1 || queue_depth > 4 || pause_code == 255) {
+                puts("result protocol=link-feasibility-v1 status=pressure_invalid_configuration");
+            } else {
+                run_once(scenario, sequence, length, (enum link_test_pattern)pattern,
+                         (uint8_t)(queue_depth | (pause_code << 4)));
+            }
         } else if (strncmp(line, "oversize", 8) == 0) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned length = LINK_TEST_MAX_PAYLOAD + 1u;
@@ -219,6 +240,7 @@ int main(void) {
             printf("pins sck=%d mosi=%d miso=%d cs=%d ready=%d data_available=%d\n", LINK_RP_SCK_PIN, LINK_RP_MOSI_PIN, LINK_RP_MISO_PIN, LINK_RP_CS_PIN, LINK_RP_READY_PIN, LINK_RP_DATA_AVAILABLE_PIN);
         } else if (strncmp(line, "help", 4) == 0) {
             puts("commands: run/oversize [scenario length pattern sequence], "
+                 "pressure [scenario length pattern sequence queue_depth pause_ms], "
                  "partial [scenario length pattern sequence slot_bytes], pins, help");
         } else {
             puts("error protocol=link-feasibility-v1 command");

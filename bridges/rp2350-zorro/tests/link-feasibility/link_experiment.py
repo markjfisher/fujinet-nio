@@ -189,7 +189,7 @@ def round_trip_cases(manifest):
             raise ValueError("round-trip case {} is not an object".format(index))
         operation = case.get("operation", "run")
         length, pattern = case.get("length"), case.get("pattern")
-        if operation not in {"run", "oversize", "partial"}:
+        if operation not in {"run", "oversize", "partial", "pressure"}:
             raise ValueError("unknown round-trip operation in case {}".format(index))
         if not isinstance(length, int) or length < 0 or pattern not in PATTERN_IDS:
             raise ValueError("invalid round-trip case {}".format(index))
@@ -198,6 +198,9 @@ def round_trip_cases(manifest):
         if operation == "oversize" and length <= 240:
             raise ValueError("oversize case {} must exceed 240 bytes".format(index))
         slot_bytes = case.get("slot_bytes")
+        if operation == "pressure":
+            if case.get("queue_depth") not in {1, 2, 3, 4} or case.get("pause_ms") not in {0, 1, 10, 100}:
+                raise ValueError("pressure case {} needs queue_depth 1..4 and pause_ms 0/1/10/100".format(index))
         if operation == "partial" and (not isinstance(slot_bytes, int) or not 0 < slot_bytes < 256):
             raise ValueError("partial case {} needs slot_bytes in 1..255".format(index))
         result.append({
@@ -209,6 +212,8 @@ def round_trip_cases(manifest):
             "slot_bytes": slot_bytes,
             "delay_before_ms": int(case.get("delay_before_ms", 0)),
             "expect_status": str(case.get("expect_status", "passed")),
+            "queue_depth": case.get("queue_depth"),
+            "pause_ms": case.get("pause_ms"),
         })
     return result
 
@@ -249,6 +254,8 @@ def run_round_trip(manifest, args):
                 PATTERN_IDS[case["pattern"]], case["sequence"])
             if case["operation"] == "partial":
                 command_line += " {}".format(case["slot_bytes"])
+            elif case["operation"] == "pressure":
+                command_line += " {} {}".format(case["queue_depth"], case["pause_ms"])
             os.write(fd, (command_line + "\n").encode())
             deadline = time.monotonic() + 5
             result = ""

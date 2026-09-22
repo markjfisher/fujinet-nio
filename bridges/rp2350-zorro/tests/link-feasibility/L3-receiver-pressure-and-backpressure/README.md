@@ -1,10 +1,9 @@
 # L3 — Receiver pressure and backpressure
 
-Exercises bounded receiver pause and queue pressure, recording blocked sends, occupancy and any explicit loss.
-
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+L3 proves that the `READY` line holds the RP2350 until the ESP32 endpoint has
+finished bounded simulated receiver work. It runs fixed payloads through
+0, 1, 10 and 100 ms pauses, with declared queue-depth settings, then verifies
+a normal transfer still works after the longest pause.
 
 ## Wiring
 
@@ -18,40 +17,20 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+Use the unchanged W2 wiring and 3.3 V logic levels. `CH1`–`CH6` map to
+analyzer `D0`–`D5`.
 
-## Build
+## Run
 
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 128,
-  "receiver_pause_ms": [
-    0,
-    1,
-    10,
-    100
-  ],
-  "queue_depths": [
-    1,
-    2,
-    4
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+Flash the L3 ESP image once after this source change, then use the repeatable
+runner:
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+lab/esp32-link/build.sh L3 --upload "$ESP_PORT"
+./run.sh all --output /tmp/l3-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+The output directory contains the endpoint console, analyzer capture,
+`report.json`, and `waveform.svg`. A pass means every pause profile produced
+its expected echo and the final recovery case passed. The queue-depth field is
+explicit lab control data, not a production protocol field.

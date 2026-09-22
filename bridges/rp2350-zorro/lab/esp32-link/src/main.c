@@ -87,6 +87,19 @@ void app_main(void) {
             gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
             continue;
         }
+        /* L3 carries a bounded lab-only receiver delay in reserved bits 4..7.
+           READY stays low while this endpoint simulates work, making the
+           flow-control margin visible to the analyzer. */
+        if (status == LINK_STATUS_OK && rx_frame.scenario == 3) {
+            static const unsigned pause_ms[] = {0, 1, 10, 100};
+            unsigned pause_code = rx_frame.reserved >> 4;
+            if ((rx_frame.reserved & 0x0fu) < 1 ||
+                (rx_frame.reserved & 0x0fu) > 4 || pause_code >= 4) {
+                status = LINK_STATUS_UNSUPPORTED;
+            } else if (pause_ms[pause_code] != 0) {
+                vTaskDelay(pdMS_TO_TICKS(pause_ms[pause_code]));
+            }
+        }
         link_test_make_echo(&rx_frame, &tx_frame, status);
         ESP_LOGI(TAG, "received scenario=L%u sequence=%lu length=%u status=%s",
                  rx_frame.scenario,
