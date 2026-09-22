@@ -75,7 +75,9 @@ static bool drain_stale_response(void) {
     if (!gpio_get(LINK_RP_DATA_AVAILABLE_PIN)) return true;
     if (!wait_for(LINK_RP_READY_PIN, true, 1000)) return false;
     transaction(&zero_frame, &discard_frame);
-    return wait_for(LINK_RP_DATA_AVAILABLE_PIN, false, 1000);
+    /* Consuming a stale frame also retires a slot generation.  Wait through
+       its READY low-to-high transition before a caller submits fresh work. */
+    return wait_for_next_slot() && !gpio_get(LINK_RP_DATA_AVAILABLE_PIN);
 }
 
 static void run_once(unsigned scenario, uint32_t sequence, size_t length,
@@ -331,7 +333,12 @@ static bool exchange_quiet(unsigned scenario, uint32_t sequence, size_t length,
     transaction(&request_frame, &discard_frame);
     if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) return false;
     transaction(&zero_frame, &response_frame);
-    return frame_matches(&response_frame, &request_frame);
+    if (!frame_matches(&response_frame, &request_frame)) return false;
+    /* spi_write_read_blocking() returns when the final bit is shifted, while
+       the ESP task still needs to lower READY, retire the advertised echo and
+       queue the next slot.  Do not let the next batch iteration mistake the
+       old READY high level for readiness of that next generation. */
+    return wait_for_next_slot() && !gpio_get(LINK_RP_DATA_AVAILABLE_PIN);
 }
 
 static void run_batch(unsigned scenario, uint32_t first_sequence, unsigned count,
