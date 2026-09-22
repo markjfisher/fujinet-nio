@@ -2,7 +2,9 @@
 
 L8 measures the current lab fixture, not a production performance commitment.
 The RP2350 performs a 3-by-3 payload/clock matrix, with three 50-transfer trials
-per cell: 16, 64 and 240-byte payloads at requested 1, 4 and 8 MHz clocks. Each batch reports exact completed count, payload bytes, elapsed RP2350
+per cell: 16, 64 and 240-byte payloads at requested 1, 4 and 8 MHz clocks. It then sweeps
+requested 5, 6, 7 and 8 MHz at 64 and 240 bytes, again with three trials per cell,
+to bound the observed high-speed reliability transition. Each batch reports exact completed count, payload bytes, elapsed RP2350
 microseconds and the baud rate accepted by the SPI peripheral. Batch frames
 suppress per-slot ESP USB logs so the measured time is not console-paced; the
 fixture holds READY low for a measured 500 us re-arm interval after each echo.

@@ -3,7 +3,7 @@
   "title": "Sustained performance",
   "status": "implemented",
   "scenario": 8,
-  "purpose": "Characterizes repeated exact round trips across a 3-by-3 payload/clock matrix, recording per-cell throughput spread and failures without treating the analyzer trace as a performance oracle.",
+  "purpose": "Characterizes repeated exact round trips across a payload/clock matrix, including a 5..7.5 MHz boundary sweep at 64 and 240 bytes, recording throughput spread and failures without treating the analyzer trace as a performance oracle.",
   "rp2350": {
     "preset": "link-rp2350",
     "target": "link_rp2350"
@@ -297,6 +297,246 @@
         "id": "8mhz-240b-trial-3",
         "operation": "batch",
         "sequence": 1301,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-5mhz-64b-trial-1",
+        "operation": "batch",
+        "sequence": 1351,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 5000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-5mhz-64b-trial-2",
+        "operation": "batch",
+        "sequence": 1401,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 5000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-5mhz-64b-trial-3",
+        "operation": "batch",
+        "sequence": 1451,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 5000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-5mhz-240b-trial-1",
+        "operation": "batch",
+        "sequence": 1501,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 5000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-5mhz-240b-trial-2",
+        "operation": "batch",
+        "sequence": 1551,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 5000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-5mhz-240b-trial-3",
+        "operation": "batch",
+        "sequence": 1601,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 5000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-6mhz-64b-trial-1",
+        "operation": "batch",
+        "sequence": 1651,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 6000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-6mhz-64b-trial-2",
+        "operation": "batch",
+        "sequence": 1701,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 6000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-6mhz-64b-trial-3",
+        "operation": "batch",
+        "sequence": 1751,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 6000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-6mhz-240b-trial-1",
+        "operation": "batch",
+        "sequence": 1801,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 6000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-6mhz-240b-trial-2",
+        "operation": "batch",
+        "sequence": 1851,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 6000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-6mhz-240b-trial-3",
+        "operation": "batch",
+        "sequence": 1901,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 6000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-7mhz-64b-trial-1",
+        "operation": "batch",
+        "sequence": 1951,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-7mhz-64b-trial-2",
+        "operation": "batch",
+        "sequence": 2001,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-7mhz-64b-trial-3",
+        "operation": "batch",
+        "sequence": 2051,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-7mhz-240b-trial-1",
+        "operation": "batch",
+        "sequence": 2101,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-7mhz-240b-trial-2",
+        "operation": "batch",
+        "sequence": 2151,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-7mhz-240b-trial-3",
+        "operation": "batch",
+        "sequence": 2201,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-8mhz-64b-trial-1",
+        "operation": "batch",
+        "sequence": 2251,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-8mhz-64b-trial-2",
+        "operation": "batch",
+        "sequence": 2301,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-8mhz-64b-trial-3",
+        "operation": "batch",
+        "sequence": 2351,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-8mhz-240b-trial-1",
+        "operation": "batch",
+        "sequence": 2401,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-8mhz-240b-trial-2",
+        "operation": "batch",
+        "sequence": 2451,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 8000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "boundary-8mhz-240b-trial-3",
+        "operation": "batch",
+        "sequence": 2501,
         "count": 50,
         "length": 240,
         "pattern": "slip-bytes",
