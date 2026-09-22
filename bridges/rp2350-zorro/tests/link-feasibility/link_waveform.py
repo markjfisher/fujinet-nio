@@ -155,7 +155,7 @@ def _path(words, start, end, bit, x, high, low):
     y = high if state else low
     pieces = ["M {:.2f} {:.2f}".format(x(start), y)]
     last_x = None
-    for sample in range(start + 1, end):
+    for sample in range(start + 1, end + 1):
         next_state = bool(words[sample] & (1 << bit))
         if next_state != state:
             at = round(x(sample), 2)
