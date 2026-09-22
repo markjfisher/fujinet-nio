@@ -113,6 +113,9 @@ void app_main(void) {
            This also lets the RP2350 recover cleanly after an interrupted run. */
         enum link_test_status status = link_test_validate_frame(&rx_frame);
         if (rx_frame.magic == 0 && tx_frame.magic == LINK_TEST_MAGIC) {
+            ESP_LOGI(TAG, "transmitted scenario=L%u sequence=%lu length=%u",
+                     tx_frame.scenario, (unsigned long)tx_frame.sequence,
+                     tx_frame.payload_length);
             memset(&tx_frame, 0, sizeof(tx_frame));
             gpio_set_level(LINK_ESP_DATA_AVAILABLE_PIN, 0);
             prepare_autonomous_frame();

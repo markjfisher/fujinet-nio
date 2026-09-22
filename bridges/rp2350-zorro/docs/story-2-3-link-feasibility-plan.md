@@ -476,7 +476,9 @@ Each physical run should retain:
 
 - experiment manifest
 - exact firmware/build identity for both endpoints
-- endpoint console logs
+- separate RP2350 and ESP32 endpoint console logs
+- SHA-256 identities and byte sizes for both endpoint images
+- source revision and dirty-file state
 - analyzer capture where relevant
 - report.json
 - concise summary output

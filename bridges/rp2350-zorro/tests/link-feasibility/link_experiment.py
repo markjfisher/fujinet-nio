@@ -7,7 +7,6 @@ images and records the commands/settings used for a later physical run.
 import argparse
 import hashlib
 import datetime
-import fcntl
 import select
 import termios
 import time
@@ -59,6 +58,8 @@ def build(manifest, dry_run):
         "experiment": manifest["id"], "scenario": manifest["scenario"],
         "rp2350_elf": str(ROOT / "build/link-rp2350/link_rp2350.elf"),
         "esp32_build": str(ROOT / "lab/esp32-link/.pio/build/link-esp32s3"),
+        "firmware": firmware_evidence(),
+        "source": source_evidence(),
         "manifest_sha256": hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest(),
         "status": "built",
     }
@@ -164,6 +165,76 @@ def wait_for_path(path, seconds=5):
     raise ValueError("serial port did not appear: " + path)
 
 
+def sha256_file(path):
+    """Return the content identity of a built image without loading it."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def file_evidence(path):
+    """Describe an artifact even when a standalone run lacks a fresh build."""
+    path = Path(path)
+    result = {"path": str(path), "available": path.is_file()}
+    if path.is_file():
+        result.update({"bytes": path.stat().st_size, "sha256": sha256_file(path)})
+    return result
+
+
+def firmware_evidence():
+    """Identify selected images; ``all`` builds and loads these before its run."""
+    return {
+        "rp2350_elf": file_evidence(ROOT / "build/link-rp2350/link_rp2350.elf"),
+        "esp32_elf": file_evidence(ROOT / "lab/esp32-link/.pio/build/link-esp32s3/firmware.elf"),
+        "esp32_bin": file_evidence(ROOT / "lab/esp32-link/.pio/build/link-esp32s3/firmware.bin"),
+    }
+
+
+def source_evidence():
+    """Record repository revision and local dirty state without changing it."""
+    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              check=False)
+    status = subprocess.run(["git", "status", "--short"], cwd=ROOT, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            check=False)
+    return {
+        "git_revision": revision.stdout.strip() if revision.returncode == 0 else None,
+        "dirty_files": status.stdout.splitlines() if status.returncode == 0 else [],
+    }
+
+
+def open_raw_console(path):
+    """Open an endpoint console as non-blocking raw bytes for evidence capture."""
+    fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    original = termios.tcgetattr(fd)
+    raw = termios.tcgetattr(fd)
+    raw[0] = raw[1] = raw[3] = 0
+    raw[2] |= termios.CLOCAL | termios.CREAD
+    raw[6][termios.VMIN] = 0
+    raw[6][termios.VTIME] = 0
+    termios.tcsetattr(fd, termios.TCSANOW, raw)
+    return fd, original
+
+
+def read_console_lines(fd, pending, lines):
+    """Drain complete console lines while preserving an incomplete tail."""
+    pending += os.read(fd, 4096)
+    while b"\n" in pending:
+        item, pending = pending.split(b"\n", 1)
+        line = item.decode(errors="replace").strip()
+        if line:
+            lines.append(line)
+    return pending
+
+
+def restore_console(fd, original):
+    termios.tcsetattr(fd, termios.TCSANOW, original)
+    os.close(fd)
+
+
 def analyze_capture(path, signal_names):
     """Describe recorded logic levels; this is diagnostic evidence, not a verdict."""
     if not path.is_file():
@@ -253,9 +324,11 @@ def run_round_trip(manifest, args):
     bench = read_bench()
     output = Path(args.output) if args.output else (ROOT / "build/link-feasibility" / manifest["id"] / (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]))
     output.mkdir(parents=True, exist_ok=False)
-    rp_port = bench["rp_port"]
+    rp_port, esp_port = bench["rp_port"], bench["esp_port"]
     wait_for_path(rp_port)
-    console_log = output / "console.log"
+    wait_for_path(esp_port)
+    rp_console_log = output / "console.log"
+    esp_console_log = output / "esp32-console.log"
     capture = output / "capture.sr"
     analyzer = manifest["run_profile"].get("analyzer", {})
     sample_rate = int(analyzer.get("sample_rate_hz", 1000000))
@@ -282,19 +355,17 @@ def run_round_trip(manifest, args):
     if acquisition.poll() is not None:
         analyzer_log, _ = acquisition.communicate()
         raise ValueError("analyzer exited before the experiment started: " + analyzer_log.strip())
-    fd = os.open(rp_port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    lines = []
+
+    rp_fd = esp_fd = None
+    rp_original = esp_original = None
+    rp_lines, esp_lines = [], []
+    case_results = []
     try:
-        old = termios.tcgetattr(fd)
-        raw = termios.tcgetattr(fd)
-        raw[0] = raw[1] = raw[3] = 0
-        raw[2] |= termios.CLOCAL | termios.CREAD
-        raw[6][termios.VMIN] = 0; raw[6][termios.VTIME] = 0
-        termios.tcsetattr(fd, termios.TCSANOW, raw)
-        # The trigger capture was armed before the serial command port opened,
-        # so the first experiment transaction cannot race analyzer startup.
-        pending = b""
-        case_results = []
+        # Open both consoles before issuing the first command. RP output decides
+        # the verdict; ESP output independently records the peer's slot work.
+        rp_fd, rp_original = open_raw_console(rp_port)
+        esp_fd, esp_original = open_raw_console(esp_port)
+        rp_pending = esp_pending = b""
         for case in cases:
             if case["delay_before_ms"]:
                 time.sleep(case["delay_before_ms"] / 1000)
@@ -312,36 +383,55 @@ def run_round_trip(manifest, args):
                 command_line += " {}".format(case["slot_bytes"])
             elif case["operation"] == "pressure":
                 command_line += " {} {}".format(case["queue_depth"], case["pause_ms"])
-            os.write(fd, (command_line + "\n").encode())
+            result_start = len(rp_lines)
+            os.write(rp_fd, (command_line + "\n").encode())
             deadline = time.monotonic() + 5
             result = ""
             while time.monotonic() < deadline and not result:
-                ready, _, _ = select.select([fd], [], [], 0.1)
-                if ready:
-                    pending += os.read(fd, 4096)
-                    while b"\n" in pending:
-                        item, pending = pending.split(b"\n", 1)
-                        line = item.decode(errors="replace").strip()
-                        if line:
-                            lines.append(line)
-                            if line.startswith("result protocol=link-feasibility-v1"):
-                                result = line
-                                break
+                ready, _, _ = select.select([rp_fd, esp_fd], [], [], 0.1)
+                if esp_fd in ready:
+                    esp_pending = read_console_lines(esp_fd, esp_pending, esp_lines)
+                if rp_fd in ready:
+                    rp_pending = read_console_lines(rp_fd, rp_pending, rp_lines)
+                    result = next((line for line in reversed(rp_lines[result_start:])
+                                   if line.startswith("result protocol=link-feasibility-v1")), "")
             case_results.append(dict(case, result=result or "missing"))
-        termios.tcsetattr(fd, termios.TCSANOW, old)
+
+        # Give the ESP task a short opportunity to emit the peer-side outcome
+        # for the last completed transfer before serial evidence is closed.
+        deadline = time.monotonic() + 0.25
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([esp_fd], [], [], 0.05)
+            if esp_fd in ready:
+                esp_pending = read_console_lines(esp_fd, esp_pending, esp_lines)
     finally:
-        os.close(fd)
+        if rp_fd is not None:
+            restore_console(rp_fd, rp_original)
+        if esp_fd is not None:
+            restore_console(esp_fd, esp_original)
+
     try:
         analyser_log, _ = acquisition.communicate(timeout=5)
     except subprocess.TimeoutExpired:
-        acquisition.terminate(); analyser_log, _ = acquisition.communicate(timeout=2)
-    console_log.write_text("\n".join(lines) + "\n")
+        acquisition.terminate()
+        analyser_log, _ = acquisition.communicate(timeout=2)
+    rp_console_log.write_text("\n".join(rp_lines) + "\n")
+    esp_console_log.write_text("\n".join(esp_lines) + "\n")
     result = case_results[-1]["result"] if case_results else "missing"
     observation = analyze_capture(capture, ("SCLK", "MOSI", "MISO", "CS", "READY", "DATA_AVAILABLE"))
     passed_cases = all("status={}".format(case["expect_status"]) in case["result"]
                        for case in case_results)
     status = "passed" if passed_cases and acquisition.returncode == 0 and capture.is_file() else "failed"
-    report = {"experiment": manifest["id"], "title": manifest["title"], "purpose": manifest["purpose"], "status": status, "rp2350_result": result, "round_trip_cases": case_results, "rp_console": str(console_log), "capture": str(capture), "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels}, "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
+    report = {
+        "experiment": manifest["id"], "title": manifest["title"], "purpose": manifest["purpose"],
+        "status": status, "rp2350_result": result, "round_trip_cases": case_results,
+        "rp_console": str(rp_console_log), "esp32_console": str(esp_console_log),
+        "capture": str(capture), "firmware": firmware_evidence(), "source": source_evidence(),
+        "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels},
+        "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log,
+        "analyzer_observation": observation, "bench": bench,
+        "note": "Raw analyzer evidence is recorded; waveform decoding is not an independent verdict.",
+    }
     if capture.is_file():
         waveform_svg = output / "waveform.svg"
         try:
@@ -356,9 +446,12 @@ def run_round_trip(manifest, args):
         len(case_results)))
     print(result or "no RP2350 result line")
     print(format_capture_observation(observation))
+    print("RP2350 console: " + str(rp_console_log))
+    print("ESP32 console: " + str(esp_console_log))
     if report.get("waveform_svg"):
         print("Waveform SVG: " + report["waveform_svg"])
-    if status != "passed": raise ValueError("round-trip run did not produce passed RP2350 results and analyzer capture")
+    if status != "passed":
+        raise ValueError("round-trip run did not produce passed RP2350 results and analyzer capture")
 
 
 def main():

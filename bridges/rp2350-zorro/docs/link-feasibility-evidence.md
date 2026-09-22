@@ -40,8 +40,8 @@ and retain analyzer captures. They do not yet establish a production clock rate,
 latency bound, queue capacity, reset containment, disconnect handling, or a
 final ownership model. L6–L9 remain required before a positive Story 2.3 verdict.
 
-The present link reports index their evidence directories and command results,
-but do not yet embed complete endpoint firmware hashes or ESP console transcripts
-in every `report.json`. Preserve the relevant local output directories while the
-runner is extended to make those fields first-class evidence. Do not rely on the
-ledger alone for a release or ABI decision.
+Each new `all` link report records SHA-256 and byte size for the RP2350 ELF and ESP32
+ELF/bin, the repository revision and dirty-file list, and separate RP2350 and
+ESP32 console transcripts. Preserve the relevant local output directories: those
+fields identify the run, while the raw capture and waveform explain its physical
+behavior. Do not rely on the ledger alone for a release or ABI decision.

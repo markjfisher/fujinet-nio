@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cheap manifest and dry-run checks for the Story 2.3 lab runner."""
 import importlib.util
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -50,6 +51,22 @@ def main():
     assert all(case["operation"] == "schedule" for case in l5_cases)
     assert [case["outgoing_sequence"] for case in l5_cases] == [1, 2, 3, 4, 5, 6]
     runner.show_plan(runner.load_manifest(manifests[0]))
+    with tempfile.TemporaryDirectory() as directory:
+        artifact = Path(directory) / "firmware.elf"
+        artifact.write_bytes(b"link-lab-artifact")
+        identity = runner.file_evidence(artifact)
+        assert identity["available"] and identity["bytes"] == len(b"link-lab-artifact")
+        assert identity["sha256"] == __import__("hashlib").sha256(b"link-lab-artifact").hexdigest()
+        assert not runner.file_evidence(Path(directory) / "missing.bin")["available"]
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"first\nsecond\npartial")
+        lines = []
+        pending = runner.read_console_lines(read_fd, b"", lines)
+        assert lines == ["first", "second"] and pending == b"partial"
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
     with tempfile.TemporaryDirectory() as directory:
         capture = Path(directory) / "capture.sr"
         with zipfile.ZipFile(capture, "w") as archive:
