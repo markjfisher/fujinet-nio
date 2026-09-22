@@ -1,10 +1,10 @@
 # L5 — Controlled bidirectional scheduling
 
-Exercises declared alternation and simultaneous-ready scheduling rules without inventing production ownership semantics.
-
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+L5 proves a declared full-duplex lab schedule. For each case, the ESP32-S3 has
+already queued one autonomous frame. The RP2350 sends its request while
+validating that ESP frame on MISO in the same slot, then clocks a second slot
+to validate the request echo. The named schedules document the intended order
+of work; they do not define a production ownership policy.
 
 ## Wiring
 
@@ -18,38 +18,19 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+Use W2 unchanged, with common ground and 3.3 V signalling. `CH1`–`CH6` map to
+analyzer `D0`–`D5`.
 
-## Build
+## Run
 
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 64,
-  "directions": [
-    "rp-to-esp",
-    "esp-to-rp"
-  ],
-  "schedules": [
-    "alternating",
-    "rp-priority",
-    "esp-priority"
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+L5 needs its ESP boot queue, so upload that endpoint image first:
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+lab/esp32-link/build.sh L5 --upload "$ESP_PORT"
+./run.sh all --output /tmp/l5-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+Reflash or reset the ESP32 before rerunning, so its autonomous sequence begins
+at frame 1. A pass means each case validated both the ESP-originated frame and
+the RP-originated echo. The evidence directory contains `report.json`, console
+output, raw analyzer samples and `waveform.svg`.

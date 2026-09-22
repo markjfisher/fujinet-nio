@@ -113,6 +113,57 @@ static void run_once(unsigned scenario, uint32_t sequence, size_t length,
            response_frame.checksum);
 }
 
+static bool frame_matches(const struct link_test_frame *actual,
+                          const struct link_test_frame *expected) {
+    return link_test_validate_frame(actual) == LINK_STATUS_OK &&
+           actual->status == LINK_STATUS_OK &&
+           actual->sequence == expected->sequence &&
+           actual->payload_length == expected->payload_length &&
+           memcmp(actual->payload, expected->payload, expected->payload_length) == 0;
+}
+
+static void run_scheduled(unsigned scenario, uint32_t outgoing_sequence,
+                          uint32_t request_sequence, size_t request_length,
+                          enum link_test_pattern request_pattern) {
+    static const size_t outgoing_lengths[] = {1, 64, 240};
+    struct link_test_frame expected_outgoing;
+    enum link_test_pattern outgoing_pattern;
+
+    /* L5 deliberately uses SPI full-duplex: the first request clock both sends
+       RP work and receives an ESP-originated frame.  The following zero slot
+       drains only the request's echo. */
+    outgoing_pattern = (enum link_test_pattern)((outgoing_sequence - 1u) % 6u);
+    link_test_make_frame(&expected_outgoing, (uint8_t)scenario, outgoing_sequence,
+                         outgoing_lengths[(outgoing_sequence - 1u) % 3u],
+                         outgoing_pattern);
+    link_test_make_frame(&request_frame, (uint8_t)scenario, request_sequence,
+                         request_length, request_pattern);
+    if (request_frame.status != LINK_STATUS_OK ||
+        !wait_for(LINK_RP_READY_PIN, true, 1000) ||
+        !wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=schedule_waiting_peer");
+        return;
+    }
+    transaction(&request_frame, &response_frame);
+    if (!frame_matches(&response_frame, &expected_outgoing)) {
+        puts("result protocol=link-feasibility-v1 status=schedule_outgoing_mismatch");
+        return;
+    }
+    if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=schedule_waiting_echo");
+        return;
+    }
+    transaction(&zero_frame, &response_frame);
+    if (!frame_matches(&response_frame, &request_frame)) {
+        puts("result protocol=link-feasibility-v1 status=schedule_echo_mismatch");
+        return;
+    }
+    printf("result protocol=link-feasibility-v1 status=scheduled scenario=L%u "
+           "outgoing_sequence=%lu request_sequence=%lu length=%u\n", scenario,
+           (unsigned long)outgoing_sequence, (unsigned long)request_sequence,
+           (unsigned)request_length);
+}
+
 static void run_receive(unsigned scenario, uint32_t sequence) {
     static const size_t lengths[] = {1, 64, 240};
     struct link_test_frame expected;
@@ -250,6 +301,16 @@ int main(void) {
                 run_once(scenario, sequence, length, (enum link_test_pattern)pattern,
                          (uint8_t)(queue_depth | (pause_code << 4)));
             }
+        } else if (strncmp(line, "schedule", 8) == 0) {
+            unsigned scenario = 5;
+            unsigned outgoing_sequence = 1;
+            unsigned request_sequence = 101;
+            unsigned length = 64;
+            unsigned pattern = LINK_PATTERN_INCREMENT;
+            (void)sscanf(line + 8, "%u %u %u %u %u", &scenario,
+                         &outgoing_sequence, &request_sequence, &length, &pattern);
+            run_scheduled(scenario, outgoing_sequence, request_sequence, length,
+                          (enum link_test_pattern)pattern);
         } else if (strncmp(line, "receive", 7) == 0) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned sequence = 1;
@@ -277,6 +338,7 @@ int main(void) {
         } else if (strncmp(line, "help", 4) == 0) {
             puts("commands: run/oversize [scenario length pattern sequence], "
                  "receive [scenario sequence], "
+                 "schedule [scenario outgoing_sequence request_sequence length pattern], "
                  "pressure [scenario length pattern sequence queue_depth pause_ms], "
                  "partial [scenario length pattern sequence slot_bytes], pins, help");
         } else {

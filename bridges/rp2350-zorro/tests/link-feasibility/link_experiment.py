@@ -189,10 +189,13 @@ def round_trip_cases(manifest):
             raise ValueError("round-trip case {} is not an object".format(index))
         operation = case.get("operation", "run")
         length, pattern = case.get("length"), case.get("pattern")
-        if operation not in {"run", "oversize", "partial", "pressure", "receive"}:
+        if operation not in {"run", "oversize", "partial", "pressure", "receive", "schedule"}:
             raise ValueError("unknown round-trip operation in case {}".format(index))
         if not isinstance(length, int) or length < 0 or pattern not in PATTERN_IDS:
             raise ValueError("invalid round-trip case {}".format(index))
+        if operation == "schedule":
+            if not isinstance(case.get("outgoing_sequence"), int) or case["outgoing_sequence"] < 1:
+                raise ValueError("schedule case {} needs outgoing_sequence".format(index))
         if operation == "receive" and length != 0:
             raise ValueError("receive case {} uses length 0; its endpoint defines the payload".format(index))
         if operation == "run" and length > 240:
@@ -216,6 +219,7 @@ def round_trip_cases(manifest):
             "expect_status": str(case.get("expect_status", "passed")),
             "queue_depth": case.get("queue_depth"),
             "pause_ms": case.get("pause_ms"),
+            "outgoing_sequence": case.get("outgoing_sequence"),
         })
     return result
 
@@ -253,6 +257,10 @@ def run_round_trip(manifest, args):
                 time.sleep(case["delay_before_ms"] / 1000)
             if case["operation"] == "receive":
                 command_line = "receive {} {}".format(manifest["scenario"], case["sequence"])
+            elif case["operation"] == "schedule":
+                command_line = "schedule {} {} {} {} {}".format(
+                    manifest["scenario"], case["outgoing_sequence"], case["sequence"],
+                    case["length"], PATTERN_IDS[case["pattern"]])
             else:
                 command_line = "{} {} {} {} {}".format(
                     case["operation"], manifest["scenario"], case["length"],

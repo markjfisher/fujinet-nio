@@ -1,7 +1,7 @@
 {
   "id": "L5",
   "title": "Controlled bidirectional scheduling",
-  "status": "implemented-infrastructure",
+  "status": "implemented",
   "scenario": 5,
   "purpose": "Exercises declared alternation and simultaneous-ready scheduling rules without inventing production ownership semantics.",
   "rp2350": {
@@ -32,7 +32,7 @@
     "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
   },
   "run_profile": {
-    "packets": 64,
+    "packets": 6,
     "directions": [
       "rp-to-esp",
       "esp-to-rp"
@@ -41,12 +41,90 @@
       "alternating",
       "rp-priority",
       "esp-priority"
-    ]
+    ],
+    "cases": [
+      {
+        "id": "alternating-1",
+        "operation": "schedule",
+        "outgoing_sequence": 1,
+        "length": 16,
+        "pattern": "increment",
+        "sequence": 101,
+        "expect_status": "scheduled",
+        "schedule": "alternating"
+      },
+      {
+        "id": "alternating-2",
+        "operation": "schedule",
+        "outgoing_sequence": 2,
+        "length": 64,
+        "pattern": "alternating",
+        "sequence": 102,
+        "expect_status": "scheduled",
+        "schedule": "alternating"
+      },
+      {
+        "id": "rp-priority",
+        "operation": "schedule",
+        "outgoing_sequence": 3,
+        "length": 240,
+        "pattern": "fixed-random",
+        "sequence": 103,
+        "expect_status": "scheduled",
+        "schedule": "rp-priority"
+      },
+      {
+        "id": "esp-priority",
+        "operation": "schedule",
+        "outgoing_sequence": 4,
+        "length": 1,
+        "pattern": "ff",
+        "sequence": 104,
+        "expect_status": "scheduled",
+        "schedule": "esp-priority"
+      },
+      {
+        "id": "alternating-3",
+        "operation": "schedule",
+        "outgoing_sequence": 5,
+        "length": 64,
+        "pattern": "slip-bytes",
+        "sequence": 105,
+        "expect_status": "scheduled",
+        "schedule": "alternating"
+      },
+      {
+        "id": "alternating-4",
+        "operation": "schedule",
+        "outgoing_sequence": 6,
+        "length": 16,
+        "pattern": "zero",
+        "sequence": 106,
+        "expect_status": "scheduled",
+        "schedule": "alternating"
+      }
+    ],
+    "analyzer": {
+      "sample_rate_hz": 12000000,
+      "capture_ms": 750,
+      "channels": [
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5"
+      ]
+    }
   },
   "evidence": [
     "RP2350 USB result line",
     "ESP32-S3 USB log",
     "optional analyzer capture",
     "build/link-feasibility/L5/report.json"
-  ]
+  ],
+  "execution": {
+    "kind": "round_trip",
+    "automated": true
+  }
 }
