@@ -107,17 +107,17 @@ def annotate_timing(rows, report, words, rate):
     """Attach manifest-declared pause targets to their captured request/echo.
 
     The renderer presents these measured annotations only. Experiment pass/fail
-    remains owned by link_experiment.py.
+    remains owned by link_experiment.py. ``READY`` also covers fixed endpoint
+    processing, so injected pause is shown relative to the zero-pause baseline.
     """
     cases = report.get("round_trip_cases") or []
     requests = [row for row in rows if row["role"] == "request"]
     intervals = ready_low_intervals(words, rate)
+    measurements = []
     for case, request in zip(cases, requests):
         target = case.get("pause_ms")
         if not isinstance(target, int):
             continue
-        request["timing_detail"] = "Case {}: requested receiver pause {} ms".format(
-            case.get("id", "unnamed"), target)
         following = next((row for row in rows
                           if row["role"] in {"echo", "unpaired echo"} and
                           row["start_sample"] > request["end_sample"]), None)
@@ -128,10 +128,26 @@ def annotate_timing(rows, report, words, rate):
                     interval["end_sample"] <= following["start_sample"]]
         if not matching:
             continue
-        interval = max(matching, key=lambda value: value["duration_ms"])
-        following["timing_detail"] = "READY low {:.3f} ms; requested >= {} ms".format(
-            interval["duration_ms"], target)
-        following["pause_label"] = "P {:.1f} ms".format(interval["duration_ms"])
+        measurements.append((case, request, following,
+                             max(matching, key=lambda value: value["duration_ms"])))
+    baseline = next((interval["duration_ms"] for case, _request, _echo, interval
+                     in measurements if case["pause_ms"] == 0), None)
+    for case, request, following, interval in measurements:
+        target = case["pause_ms"]
+        request["timing_detail"] = "Case {}: requested receiver pause {} ms".format(
+            case.get("id", "unnamed"), target)
+        total = interval["duration_ms"]
+        if target == 0:
+            following["timing_detail"] = "READY low {:.3f} ms (baseline endpoint overhead)".format(total)
+        elif baseline is None:
+            following["timing_detail"] = "READY low {:.3f} ms; requested {} ms".format(total, target)
+        else:
+            injected = total - baseline
+            following["timing_detail"] = (
+                "READY low {:.3f} ms = {:.3f} ms baseline + {:.3f} ms injected; requested {} ms"
+                .format(total, baseline, injected, target))
+
+
 
 
 def _path(words, start, end, bit, x, high, low):
@@ -195,16 +211,6 @@ def render(report, capture, output):
             '<rect x="{:.2f}" y="115" width="{:.2f}" height="{}" fill="{}"/>'.format(begin, max(1, finish - begin), lane_height * len(SIGNALS), colors[row["role"]]),
             '<text x="{:.2f}" y="121" class="small" text-anchor="middle">{}</text>'.format((begin + finish) / 2, markers[row["role"]]),
         ])
-    for row in rows:
-        if "pause_label" not in row:
-            continue
-        prior = next((item for item in rows
-                      if item["role"] == "request" and
-                      item["end_sample"] < row["start_sample"]), None)
-        if prior is not None:
-            midpoint = (x(prior["end_sample"]) + x(row["start_sample"])) / 2
-            lines.append('<text x="{:.2f}" y="140" class="small" text-anchor="middle">{}</text>'.format(
-                midpoint, html.escape(row["pause_label"])))
     for bit, signal in enumerate(SIGNALS):
         top = lane_top + bit * lane_height
         high, low = top + 13, top + 42
