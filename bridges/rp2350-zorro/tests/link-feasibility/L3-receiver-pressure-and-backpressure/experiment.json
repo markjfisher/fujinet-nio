@@ -88,7 +88,8 @@
         "D3",
         "D4",
         "D5"
-      ]
+      ],
+      "trigger": "D3=f"
     },
     "receiver_pause_ms": [
       0,

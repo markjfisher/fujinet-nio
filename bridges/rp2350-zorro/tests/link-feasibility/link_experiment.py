@@ -237,7 +237,11 @@ def run_round_trip(manifest, args):
     capture_ms = int(analyzer.get("capture_ms", 1000))
     channels = analyzer.get("channels", ["D0", "D1", "D2", "D3", "D4", "D5"])
     samples = sample_rate * capture_ms // 1000
-    sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", f"samplerate={sample_rate}", "--channels", ",".join(channels), "--samples", str(samples), "--output-file", str(capture)]
+    trigger = analyzer.get("trigger")
+    sigrok = ["sigrok-cli", "--driver", "fx2lafw", "--config", f"samplerate={sample_rate}", "--channels", ",".join(channels)]
+    if trigger:
+        sigrok.extend(["--triggers", str(trigger), "--wait-trigger"])
+    sigrok.extend(["--samples", str(samples), "--output-file", str(capture)])
     print("+ " + " ".join(sigrok))
     acquisition = subprocess.Popen(sigrok, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     fd = os.open(rp_port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -249,7 +253,7 @@ def run_round_trip(manifest, args):
         raw[2] |= termios.CLOCAL | termios.CREAD
         raw[6][termios.VMIN] = 0; raw[6][termios.VTIME] = 0
         termios.tcsetattr(fd, termios.TCSANOW, raw)
-        time.sleep(0.15)  # give the analyzer a bounded arm window
+        time.sleep(0.5)  # let the analyzer subscribe before the first transaction
         pending = b""
         case_results = []
         for case in cases:

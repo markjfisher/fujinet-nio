@@ -233,7 +233,10 @@ static void run_partial(unsigned scenario, uint32_t sequence, size_t length,
     }
     transaction(&zero_frame, &response_frame);
     frame_status = link_test_validate_frame(&response_frame);
-    if (frame_status == LINK_STATUS_OK &&
+    /* An error response intentionally has no payload, therefore no payload CRC
+       to validate. Its framing and explicit peer status are the evidence. */
+    if (response_frame.magic == LINK_TEST_MAGIC &&
+        response_frame.version == LINK_TEST_VERSION &&
         response_frame.status == LINK_STATUS_BAD_CHECKSUM) {
         printf("result protocol=link-feasibility-v1 status=partial_rejected "
                "scenario=L%u sequence=%lu slot_bytes=%u peer=bad_checksum\n",
