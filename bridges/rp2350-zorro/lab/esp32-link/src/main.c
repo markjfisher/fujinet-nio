@@ -106,7 +106,8 @@ void app_main(void) {
         /* L3 carries a bounded lab-only receiver delay in reserved bits 4..7.
            READY stays low while this endpoint simulates work, making the
            flow-control margin visible to the analyzer. */
-        if (status == LINK_STATUS_OK && rx_frame.scenario == 3) {
+        if (status == LINK_STATUS_OK && rx_frame.scenario == 3 &&
+            rx_frame.reserved != 0) {
             static const unsigned pause_ms[] = {0, 1, 10, 100};
             unsigned pause_code = rx_frame.reserved >> 4;
             if ((rx_frame.reserved & 0x0fu) < 1 ||
