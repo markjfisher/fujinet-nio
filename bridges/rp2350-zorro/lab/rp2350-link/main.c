@@ -59,6 +59,15 @@ static void transaction_bytes(const struct link_test_frame *tx,
     gpio_put(LINK_RP_CS_PIN, 1);
 }
 
+static bool wait_for_next_slot(void) {
+    /* READY is a slot generation boundary. After a completed transaction the
+       ESP drops it while it validates the received bytes and queues the next
+       transmit slot. Waiting for low then high prevents a stale high level
+       from being mistaken for readiness of the new slot. */
+    return wait_for(LINK_RP_READY_PIN, false, 1000) &&
+           wait_for(LINK_RP_READY_PIN, true, 1000);
+}
+
 /* The ESP endpoint is intentionally persistent between lab runs.  A stopped
    or failed prior run can leave its prepared response advertised.  Consume it
    before starting a new request so DATA_AVAILABLE always describes this run. */
@@ -146,16 +155,33 @@ static void run_scheduled(unsigned scenario, uint32_t outgoing_sequence,
     }
     transaction(&request_frame, &response_frame);
     if (!frame_matches(&response_frame, &expected_outgoing)) {
-        puts("result protocol=link-feasibility-v1 status=schedule_outgoing_mismatch");
+        printf("result protocol=link-feasibility-v1 status=schedule_outgoing_mismatch "
+               "frame=%s peer=%s sequence=%lu length=%u\n",
+               link_test_status_name(link_test_validate_frame(&response_frame)),
+               link_test_status_name((enum link_test_status)response_frame.status),
+               (unsigned long)response_frame.sequence, response_frame.payload_length);
         return;
     }
-    if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
+    /* DATA_AVAILABLE was already high for the just-consumed ESP frame. Wait
+       for READY's low-to-high re-arm boundary; only then does it describe the
+       echo prepared from this RP request. */
+    if (!wait_for_next_slot() || !wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
         puts("result protocol=link-feasibility-v1 status=schedule_waiting_echo");
         return;
     }
     transaction(&zero_frame, &response_frame);
     if (!frame_matches(&response_frame, &request_frame)) {
-        puts("result protocol=link-feasibility-v1 status=schedule_echo_mismatch");
+        printf("result protocol=link-feasibility-v1 status=schedule_echo_mismatch "
+               "frame=%s peer=%s sequence=%lu length=%u\n",
+               link_test_status_name(link_test_validate_frame(&response_frame)),
+               link_test_status_name((enum link_test_status)response_frame.status),
+               (unsigned long)response_frame.sequence, response_frame.payload_length);
+        return;
+    }
+    /* Consuming the echo causes the ESP to queue the next autonomous frame.
+       Do not let the following host command observe the old READY high level. */
+    if (!wait_for_next_slot() || !wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=schedule_waiting_next_outgoing");
         return;
     }
     printf("result protocol=link-feasibility-v1 status=scheduled scenario=L%u "

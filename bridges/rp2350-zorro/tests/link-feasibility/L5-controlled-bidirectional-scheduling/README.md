@@ -2,9 +2,11 @@
 
 L5 proves a declared full-duplex lab schedule. For each case, the ESP32-S3 has
 already queued one autonomous frame. The RP2350 sends its request while
-validating that ESP frame on MISO in the same slot, then clocks a second slot
-to validate the request echo. The named schedules document the intended order
-of work; they do not define a production ownership policy.
+validating that ESP frame on MISO in the same slot. It then observes READY fall
+and reassert before clocking a second slot for the request echo; the boundary
+prevents the already-high `DATA_AVAILABLE` level from being attributed to the
+new echo. The named schedules document the intended order of work; they do not
+define a production ownership policy.
 
 ## Wiring
 
