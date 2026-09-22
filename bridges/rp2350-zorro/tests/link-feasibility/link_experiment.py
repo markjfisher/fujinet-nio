@@ -176,6 +176,7 @@ def format_capture_observation(observation):
 
 
 def round_trip_cases(manifest):
+    """Validate the small manifest command contract shared by L0 onward."""
     execution = manifest.get("execution") or {}
     if execution.get("kind") != "round_trip" or execution.get("automated") is not True:
         raise ValueError("this experiment does not yet declare an automated round-trip run")
@@ -186,13 +187,30 @@ def round_trip_cases(manifest):
     for index, case in enumerate(cases, 1):
         if not isinstance(case, dict):
             raise ValueError("round-trip case {} is not an object".format(index))
+        operation = case.get("operation", "run")
         length, pattern = case.get("length"), case.get("pattern")
-        if not isinstance(length, int) or not 0 <= length <= 240 or pattern not in PATTERN_IDS:
+        if operation not in {"run", "oversize", "partial"}:
+            raise ValueError("unknown round-trip operation in case {}".format(index))
+        if not isinstance(length, int) or length < 0 or pattern not in PATTERN_IDS:
             raise ValueError("invalid round-trip case {}".format(index))
-        result.append({"id": str(case.get("id", "case-{}".format(index))), "length": length,
-                       "pattern": pattern, "sequence": int(case.get("sequence", index))})
+        if operation == "run" and length > 240:
+            raise ValueError("invalid normal-transfer length in case {}".format(index))
+        if operation == "oversize" and length <= 240:
+            raise ValueError("oversize case {} must exceed 240 bytes".format(index))
+        slot_bytes = case.get("slot_bytes")
+        if operation == "partial" and (not isinstance(slot_bytes, int) or not 0 < slot_bytes < 256):
+            raise ValueError("partial case {} needs slot_bytes in 1..255".format(index))
+        result.append({
+            "id": str(case.get("id", "case-{}".format(index))),
+            "operation": operation,
+            "length": length,
+            "pattern": pattern,
+            "sequence": int(case.get("sequence", index)),
+            "slot_bytes": slot_bytes,
+            "delay_before_ms": int(case.get("delay_before_ms", 0)),
+            "expect_status": str(case.get("expect_status", "passed")),
+        })
     return result
-
 
 def run_round_trip(manifest, args):
     cases = round_trip_cases(manifest)
@@ -224,9 +242,14 @@ def run_round_trip(manifest, args):
         pending = b""
         case_results = []
         for case in cases:
-            command_line = "run {} {} {} {}\n".format(manifest["scenario"], case["length"],
-                                                        PATTERN_IDS[case["pattern"]], case["sequence"])
-            os.write(fd, command_line.encode())
+            if case["delay_before_ms"]:
+                time.sleep(case["delay_before_ms"] / 1000)
+            command_line = "{} {} {} {} {}".format(
+                case["operation"], manifest["scenario"], case["length"],
+                PATTERN_IDS[case["pattern"]], case["sequence"])
+            if case["operation"] == "partial":
+                command_line += " {}".format(case["slot_bytes"])
+            os.write(fd, (command_line + "\n").encode())
             deadline = time.monotonic() + 5
             result = ""
             while time.monotonic() < deadline and not result:
@@ -252,7 +275,8 @@ def run_round_trip(manifest, args):
     console_log.write_text("\n".join(lines) + "\n")
     result = case_results[-1]["result"] if case_results else "missing"
     observation = analyze_capture(capture, ("SCLK", "MOSI", "MISO", "CS", "READY", "DATA_AVAILABLE"))
-    passed_cases = all("status=passed" in case["result"] for case in case_results)
+    passed_cases = all("status={}".format(case["expect_status"]) in case["result"]
+                       for case in case_results)
     status = "passed" if passed_cases and acquisition.returncode == 0 and capture.is_file() else "failed"
     report = {"experiment": manifest["id"], "title": manifest["title"], "purpose": manifest["purpose"], "status": status, "rp2350_result": result, "round_trip_cases": case_results, "rp_console": str(console_log), "capture": str(capture), "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels}, "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
     if capture.is_file():
@@ -264,7 +288,9 @@ def run_round_trip(manifest, args):
             report["waveform_svg_error"] = str(error)
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print("{}: evidence retained in {}".format(status, output))
-    print("Round-trip cases: {}/{} passed".format(sum("status=passed" in case["result"] for case in case_results), len(case_results)))
+    print("Round-trip cases: {}/{} met expected status".format(
+        sum("status={}".format(case["expect_status"]) in case["result"] for case in case_results),
+        len(case_results)))
     print(result or "no RP2350 result line")
     print(format_capture_observation(observation))
     if report.get("waveform_svg"):

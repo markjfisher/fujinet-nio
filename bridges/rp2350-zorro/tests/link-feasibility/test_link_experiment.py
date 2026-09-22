@@ -28,6 +28,12 @@ def main():
     assert len(l0_cases) == 1
     assert len(l1_cases) == 12
     assert l1_cases[0]["length"] == 0 and l1_cases[-1]["length"] == 240
+    l2_cases = runner.round_trip_cases(runner.load_manifest(manifests[2]))
+    assert [case["operation"] for case in l2_cases] == [
+        "run", "run", "run", "run", "oversize", "partial", "run", "run"
+    ]
+    assert l2_cases[4]["expect_status"] == "oversize_rejected"
+    assert l2_cases[5]["slot_bytes"] == 32
     runner.show_plan(runner.load_manifest(manifests[0]))
     with tempfile.TemporaryDirectory() as directory:
         capture = Path(directory) / "capture.sr"

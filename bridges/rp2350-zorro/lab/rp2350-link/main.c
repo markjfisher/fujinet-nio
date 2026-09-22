@@ -50,6 +50,15 @@ static void transaction(const struct link_test_frame *tx, struct link_test_frame
     gpio_put(LINK_RP_CS_PIN, 1);
 }
 
+static void transaction_bytes(const struct link_test_frame *tx,
+                              struct link_test_frame *rx,
+                              size_t byte_count) {
+    /* L2 intentionally releases CS before a complete slot has been clocked. */
+    gpio_put(LINK_RP_CS_PIN, 0);
+    spi_write_read_blocking(spi0, (const uint8_t *)tx, (uint8_t *)rx, byte_count);
+    gpio_put(LINK_RP_CS_PIN, 1);
+}
+
 /* The ESP endpoint is intentionally persistent between lab runs.  A stopped
    or failed prior run can leave its prepared response advertised.  Consume it
    before starting a new request so DATA_AVAILABLE always describes this run. */
@@ -102,6 +111,57 @@ static void run_once(unsigned scenario, uint32_t sequence, size_t length, enum l
            response_frame.checksum);
 }
 
+static void run_oversize(unsigned scenario, uint32_t sequence, size_t length,
+                         enum link_test_pattern pattern) {
+    /* The frame contract rejects payloads larger than its fixed slot before
+       they can become a malformed physical transfer. */
+    link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
+    if (request_frame.status == LINK_STATUS_BAD_LENGTH) {
+        printf("result protocol=link-feasibility-v1 status=oversize_rejected "
+               "scenario=L%u sequence=%lu length=%u\n",
+               scenario, (unsigned long)sequence, (unsigned)length);
+        return;
+    }
+    puts("result protocol=link-feasibility-v1 status=oversize_unexpected_accept");
+}
+
+static void run_partial(unsigned scenario, uint32_t sequence, size_t length,
+                        enum link_test_pattern pattern, size_t slot_bytes) {
+    enum link_test_status frame_status;
+
+    if (slot_bytes == 0 || slot_bytes >= sizeof(request_frame) ||
+        !drain_stale_response()) {
+        puts("result protocol=link-feasibility-v1 status=partial_setup_failed");
+        return;
+    }
+    link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
+    if (request_frame.status != LINK_STATUS_OK ||
+        !wait_for(LINK_RP_READY_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=partial_waiting_ready");
+        return;
+    }
+
+    memset(&discard_frame, 0, sizeof(discard_frame));
+    transaction_bytes(&request_frame, &discard_frame, slot_bytes);
+    if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) {
+        puts("result protocol=link-feasibility-v1 status=partial_timeout_waiting_response");
+        return;
+    }
+    transaction(&zero_frame, &response_frame);
+    frame_status = link_test_validate_frame(&response_frame);
+    if (frame_status == LINK_STATUS_OK &&
+        response_frame.status == LINK_STATUS_BAD_CHECKSUM) {
+        printf("result protocol=link-feasibility-v1 status=partial_rejected "
+               "scenario=L%u sequence=%lu slot_bytes=%u peer=bad_checksum\n",
+               scenario, (unsigned long)sequence, (unsigned)slot_bytes);
+        return;
+    }
+    printf("result protocol=link-feasibility-v1 status=partial_unexpected_response "
+           "frame=%s peer=%s\n",
+           link_test_status_name(frame_status),
+           link_test_status_name((enum link_test_status)response_frame.status));
+}
+
 int main(void) {
     char line[64];
 
@@ -138,10 +198,28 @@ int main(void) {
             unsigned sequence = 1;
             (void)sscanf(line + 3, "%u %u %u %u", &scenario, &length, &pattern, &sequence);
             run_once(scenario, sequence, length, (enum link_test_pattern)pattern);
+        } else if (strncmp(line, "oversize", 8) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned length = LINK_TEST_MAX_PAYLOAD + 1u;
+            unsigned pattern = LINK_PATTERN_ZERO;
+            unsigned sequence = 1;
+            (void)sscanf(line + 8, "%u %u %u %u", &scenario, &length, &pattern, &sequence);
+            run_oversize(scenario, sequence, length, (enum link_test_pattern)pattern);
+        } else if (strncmp(line, "partial", 7) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned length = 64;
+            unsigned pattern = LINK_PATTERN_INCREMENT;
+            unsigned sequence = 1;
+            unsigned slot_bytes = 32;
+            (void)sscanf(line + 7, "%u %u %u %u %u", &scenario, &length,
+                         &pattern, &sequence, &slot_bytes);
+            run_partial(scenario, sequence, length, (enum link_test_pattern)pattern,
+                        slot_bytes);
         } else if (strncmp(line, "pins", 4) == 0) {
             printf("pins sck=%d mosi=%d miso=%d cs=%d ready=%d data_available=%d\n", LINK_RP_SCK_PIN, LINK_RP_MOSI_PIN, LINK_RP_MISO_PIN, LINK_RP_CS_PIN, LINK_RP_READY_PIN, LINK_RP_DATA_AVAILABLE_PIN);
         } else if (strncmp(line, "help", 4) == 0) {
-            puts("commands: run [scenario 0..9] [length 0..240] [pattern 0..5] [sequence], pins, help");
+            puts("commands: run/oversize [scenario length pattern sequence], "
+                 "partial [scenario length pattern sequence slot_bytes], pins, help");
         } else {
             puts("error protocol=link-feasibility-v1 command");
         }

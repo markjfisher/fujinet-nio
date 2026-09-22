@@ -1,7 +1,7 @@
 {
   "id": "L2",
   "title": "Packet boundaries and size limits",
-  "status": "implemented-infrastructure",
+  "status": "implemented",
   "scenario": 2,
   "purpose": "Measures the feasibility envelope boundary: back-to-back slots, declared maximum capacity, oversize rejection and truncated-slot handling.",
   "rp2350": {
@@ -33,9 +33,85 @@
   },
   "run_profile": {
     "packets": 8,
+    "cases": [
+      {
+        "id": "empty",
+        "operation": "run",
+        "length": 0,
+        "pattern": "zero",
+        "sequence": 1
+      },
+      {
+        "id": "one-byte",
+        "operation": "run",
+        "length": 1,
+        "pattern": "ff",
+        "sequence": 2
+      },
+      {
+        "id": "near-maximum",
+        "operation": "run",
+        "length": 239,
+        "pattern": "fixed-random",
+        "sequence": 3
+      },
+      {
+        "id": "maximum",
+        "operation": "run",
+        "length": 240,
+        "pattern": "slip-bytes",
+        "sequence": 4
+      },
+      {
+        "id": "oversize",
+        "operation": "oversize",
+        "length": 241,
+        "pattern": "zero",
+        "sequence": 5,
+        "expect_status": "oversize_rejected"
+      },
+      {
+        "id": "truncated-slot",
+        "operation": "partial",
+        "length": 64,
+        "pattern": "increment",
+        "sequence": 6,
+        "slot_bytes": 32,
+        "expect_status": "partial_rejected"
+      },
+      {
+        "id": "delayed-second",
+        "operation": "run",
+        "length": 16,
+        "pattern": "alternating",
+        "sequence": 7,
+        "delay_before_ms": 25
+      },
+      {
+        "id": "follow-up",
+        "operation": "run",
+        "length": 16,
+        "pattern": "increment",
+        "sequence": 8
+      }
+    ],
+    "analyzer": {
+      "sample_rate_hz": 12000000,
+      "capture_ms": 500,
+      "channels": [
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5"
+      ]
+    },
     "lengths": [
       0,
       1,
+      16,
+      64,
       239,
       240,
       241
@@ -51,5 +127,9 @@
     "ESP32-S3 USB log",
     "optional analyzer capture",
     "build/link-feasibility/L2/report.json"
-  ]
+  ],
+  "execution": {
+    "kind": "round_trip",
+    "automated": true
+  }
 }

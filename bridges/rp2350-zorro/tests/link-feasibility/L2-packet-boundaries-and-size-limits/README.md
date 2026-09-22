@@ -1,10 +1,10 @@
 # L2 — Packet boundaries and size limits
 
-Measures the feasibility envelope boundary: back-to-back slots, declared maximum capacity, oversize rejection and truncated-slot handling.
-
-## Status
-
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+L2 proves the limits of the 256-byte feasibility slot. It transfers empty,
+minimal, near-maximum and maximum payloads, then verifies that an oversize
+request is rejected locally and a deliberately truncated SPI slot is rejected
+by the ESP endpoint. A delayed follow-up confirms recovery after the negative
+case.
 
 ## Wiring
 
@@ -18,41 +18,23 @@ The shared endpoint firmware and build runner are implemented. Hardware executio
 | READY | GP6 input | GPIO9 output | CH5 |
 | DATA_AVAILABLE | GP7 input | GPIO8 output | CH6 |
 
-The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify that they are safe on the actual breakout before wiring. Both boards use 3.3 V signaling and share ground.
+Both boards use 3.3 V signalling and share ground. This uses the unchanged W2
+wiring from L0/L1. `CH1`–`CH6` correspond to analyzer `D0`–`D5`.
 
-## Build
+## Run
 
-```sh
-./run.sh plan
-./run.sh build
-```
-
-`build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
-
-## Profile
-
-```json
-{
-  "packets": 8,
-  "lengths": [
-    0,
-    1,
-    239,
-    240,
-    241
-  ],
-  "faults": [
-    "oversize",
-    "truncated",
-    "delayed-second-packet"
-  ]
-}
-```
-
-Before physical loading, create the ignored local bench profile once from any experiment: 
+Configure the ignored local bench record once, as described in the parent
+[README](../README.md), then run:
 
 ```sh
-./run.sh configure --rp-usb-path USB-TOPOLOGY --rp-port /dev/serial/by-id/RP2350 --esp-port /dev/serial/by-id/ESP32
+./run.sh all --output /tmp/l2-run-001
 ```
 
-The eventual physical runner will use that one local profile; no USB path belongs in this committed manifest.
+`all` builds both endpoint images, RAM-loads the RP2350 without altering flash,
+arms the analyzer, and runs eight manifest cases. It does not flash the ESP32;
+use `lab/esp32-link/build.sh L2 --upload "$ESP_PORT"` when its endpoint source
+has changed. The report, raw `.sr` capture, console log and `waveform.svg` are
+kept in the output directory.
+
+The expected result is eight cases meeting their declared status: six normal
+echoes, `oversize_rejected`, and `partial_rejected`.
