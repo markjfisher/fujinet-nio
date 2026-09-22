@@ -4,7 +4,11 @@ Proves the candidate link is byte-transparent across deterministic binary payloa
 
 ## Status
 
-The shared endpoint firmware and build runner are implemented. Hardware execution remains pending: this experiment must record endpoint console output and an analyzer capture before it can claim a pass. The `link_test_frame` is a feasibility-only SPI slot, never a production FujiBus ABI.
+The shared endpoint firmware and repeatable runner are implemented. `all` executes
+the 12 manifest-declared binary cases, records the Core2350B result for each one,
+captures the shared link wiring and writes an SVG evidence view. Hardware evidence
+is pending. The `link_test_frame` is a feasibility-only SPI slot, never a
+production FujiBus ABI.
 
 ## Wiring
 
@@ -25,9 +29,15 @@ The ESP32-S3 GPIO numbers are the lab defaults for `esp32-s3-devkitc-1`; verify 
 ```sh
 ./run.sh plan
 ./run.sh build
+./run.sh all --output /tmp/l1-run-001
 ```
 
 `build` configures and builds `link_rp2350` through the bridge CMake preset and builds the isolated ESP32-S3 PlatformIO project. It does not alter the product root `build.sh`, root PlatformIO configuration, or product firmware sources.
+
+After the ESP32-S3 lab firmware has been uploaded once, `all` rebuilds both
+targets, RAM-loads the Core2350B, runs the 12 cases and retains `capture.sr`,
+`console.log`, `report.json` and `waveform.svg`. It uses the existing six-wire
+connection; no wiring change from L0 is required.
 
 ## Profile
 

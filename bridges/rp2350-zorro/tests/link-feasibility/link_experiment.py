@@ -23,6 +23,8 @@ from link_waveform import render as render_waveform
 
 ROOT = Path(__file__).resolve().parents[2]
 BENCH = ROOT / ".bench" / "link-feasibility.json"
+PATTERN_IDS = {"zero": 0, "ff": 1, "increment": 2, "alternating": 3,
+               "fixed-random": 4, "slip-bytes": 5}
 
 
 def load_manifest(path):
@@ -173,9 +175,27 @@ def format_capture_observation(observation):
     return "Analyzer: " + ", ".join(parts)
 
 
-def run_l0(manifest, args):
-    if manifest["id"] != "L0":
-        raise ValueError("automated physical run is implemented for L0 only")
+def round_trip_cases(manifest):
+    execution = manifest.get("execution") or {}
+    if execution.get("kind") != "round_trip" or execution.get("automated") is not True:
+        raise ValueError("this experiment does not yet declare an automated round-trip run")
+    cases = manifest.get("run_profile", {}).get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("automated round-trip run requires one or more manifest cases")
+    result = []
+    for index, case in enumerate(cases, 1):
+        if not isinstance(case, dict):
+            raise ValueError("round-trip case {} is not an object".format(index))
+        length, pattern = case.get("length"), case.get("pattern")
+        if not isinstance(length, int) or not 0 <= length <= 240 or pattern not in PATTERN_IDS:
+            raise ValueError("invalid round-trip case {}".format(index))
+        result.append({"id": str(case.get("id", "case-{}".format(index))), "length": length,
+                       "pattern": pattern, "sequence": int(case.get("sequence", index))})
+    return result
+
+
+def run_round_trip(manifest, args):
+    cases = round_trip_cases(manifest)
     bench = read_bench()
     output = Path(args.output) if args.output else (ROOT / "build/link-feasibility" / manifest["id"] / (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]))
     output.mkdir(parents=True, exist_ok=False)
@@ -201,21 +221,27 @@ def run_l0(manifest, args):
         raw[6][termios.VMIN] = 0; raw[6][termios.VTIME] = 0
         termios.tcsetattr(fd, termios.TCSANOW, raw)
         time.sleep(0.15)  # give the analyzer a bounded arm window
-        os.write(fd, b"run 0 16 2\n")
-        deadline = time.monotonic() + 5
         pending = b""
-        while time.monotonic() < deadline:
-            ready, _, _ = select.select([fd], [], [], 0.1)
-            if ready:
-                pending += os.read(fd, 4096)
-                while b"\n" in pending:
-                    item, pending = pending.split(b"\n", 1)
-                    line = item.decode(errors="replace").strip()
-                    if line:
-                        lines.append(line)
-                        if line.startswith("result protocol=link-feasibility-v1"):
-                            deadline = time.monotonic()
-                            break
+        case_results = []
+        for case in cases:
+            command_line = "run {} {} {} {}\n".format(manifest["scenario"], case["length"],
+                                                        PATTERN_IDS[case["pattern"]], case["sequence"])
+            os.write(fd, command_line.encode())
+            deadline = time.monotonic() + 5
+            result = ""
+            while time.monotonic() < deadline and not result:
+                ready, _, _ = select.select([fd], [], [], 0.1)
+                if ready:
+                    pending += os.read(fd, 4096)
+                    while b"\n" in pending:
+                        item, pending = pending.split(b"\n", 1)
+                        line = item.decode(errors="replace").strip()
+                        if line:
+                            lines.append(line)
+                            if line.startswith("result protocol=link-feasibility-v1"):
+                                result = line
+                                break
+            case_results.append(dict(case, result=result or "missing"))
         termios.tcsetattr(fd, termios.TCSANOW, old)
     finally:
         os.close(fd)
@@ -224,10 +250,11 @@ def run_l0(manifest, args):
     except subprocess.TimeoutExpired:
         acquisition.terminate(); analyser_log, _ = acquisition.communicate(timeout=2)
     console_log.write_text("\n".join(lines) + "\n")
-    result = next((line for line in lines if line.startswith("result protocol=link-feasibility-v1")), "")
+    result = case_results[-1]["result"] if case_results else "missing"
     observation = analyze_capture(capture, ("SCLK", "MOSI", "MISO", "CS", "READY", "DATA_AVAILABLE"))
-    status = "passed" if "status=passed" in result and acquisition.returncode == 0 and capture.is_file() else "failed"
-    report = {"experiment": manifest["id"], "title": manifest["title"], "purpose": manifest["purpose"], "status": status, "rp2350_result": result or "missing", "rp_console": str(console_log), "capture": str(capture), "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels}, "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
+    passed_cases = all("status=passed" in case["result"] for case in case_results)
+    status = "passed" if passed_cases and acquisition.returncode == 0 and capture.is_file() else "failed"
+    report = {"experiment": manifest["id"], "title": manifest["title"], "purpose": manifest["purpose"], "status": status, "rp2350_result": result, "round_trip_cases": case_results, "rp_console": str(console_log), "capture": str(capture), "analyzer": {"sample_rate_hz": sample_rate, "capture_ms": capture_ms, "channels": channels}, "analyzer_exit": acquisition.returncode, "analyzer_log": analyser_log, "analyzer_observation": observation, "bench": bench, "note": "Raw analyzer evidence is recorded; L0 waveform decoding is not an independent verdict."}
     if capture.is_file():
         waveform_svg = output / "waveform.svg"
         try:
@@ -237,11 +264,12 @@ def run_l0(manifest, args):
             report["waveform_svg_error"] = str(error)
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print("{}: evidence retained in {}".format(status, output))
+    print("Round-trip cases: {}/{} passed".format(sum("status=passed" in case["result"] for case in case_results), len(case_results)))
     print(result or "no RP2350 result line")
     print(format_capture_observation(observation))
     if report.get("waveform_svg"):
         print("Waveform SVG: " + report["waveform_svg"])
-    if status != "passed": raise ValueError("L0 run did not produce a passed RP2350 result and analyzer capture")
+    if status != "passed": raise ValueError("round-trip run did not produce passed RP2350 results and analyzer capture")
 
 
 def main():
@@ -272,13 +300,11 @@ def main():
         if args.stage == "build": build(manifest, args.dry_run)
         if args.stage == "doctor": doctor()
         if args.stage == "load-rp2350": load_rp2350(manifest, args.dry_run)
-        if args.stage == "run": run_l0(manifest, args)
+        if args.stage == "run": run_round_trip(manifest, args)
         if args.stage == "all":
-            if manifest["id"] != "L0":
-                raise ValueError("automated physical run is implemented for L0 only")
             build(manifest, args.dry_run)
             load_rp2350(manifest, args.dry_run)
-            if not args.dry_run: run_l0(manifest, args)
+            if not args.dry_run: run_round_trip(manifest, args)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print("link experiment: " + str(error), file=sys.stderr)
         raise SystemExit(1)

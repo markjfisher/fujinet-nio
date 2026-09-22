@@ -55,13 +55,13 @@ static bool drain_stale_response(void) {
     return wait_for(LINK_RP_DATA_AVAILABLE_PIN, false, 1000);
 }
 
-static void run_once(unsigned scenario, size_t length, enum link_test_pattern pattern) {
+static void run_once(unsigned scenario, uint32_t sequence, size_t length, enum link_test_pattern pattern) {
     enum link_test_status status;
     if (!drain_stale_response()) {
         puts("result protocol=link-feasibility-v1 status=timeout_draining_stale_response");
         return;
     }
-    link_test_make_frame(&request_frame, (uint8_t)scenario, 1, length, pattern);
+    link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
     if (request_frame.status != LINK_STATUS_OK) {
         printf("result protocol=link-feasibility-v1 status=local_%s scenario=L%u length=%u\n",
                link_test_status_name((enum link_test_status)request_frame.status), scenario, (unsigned)length);
@@ -113,12 +113,13 @@ int main(void) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned length = 16;
             unsigned pattern = LINK_PATTERN_INCREMENT;
-            (void)sscanf(line + 3, "%u %u %u", &scenario, &length, &pattern);
-            run_once(scenario, length, (enum link_test_pattern)pattern);
+            unsigned sequence = 1;
+            (void)sscanf(line + 3, "%u %u %u %u", &scenario, &length, &pattern, &sequence);
+            run_once(scenario, sequence, length, (enum link_test_pattern)pattern);
         } else if (strncmp(line, "pins", 4) == 0) {
             printf("pins sck=%d mosi=%d miso=%d cs=%d ready=%d data_available=%d\n", LINK_RP_SCK_PIN, LINK_RP_MOSI_PIN, LINK_RP_MISO_PIN, LINK_RP_CS_PIN, LINK_RP_READY_PIN, LINK_RP_DATA_AVAILABLE_PIN);
         } else if (strncmp(line, "help", 4) == 0) {
-            puts("commands: run [scenario 0..9] [length 0..240] [pattern 0..5], pins, help");
+            puts("commands: run [scenario 0..9] [length 0..240] [pattern 0..5] [sequence], pins, help");
         } else {
             puts("error protocol=link-feasibility-v1 command");
         }

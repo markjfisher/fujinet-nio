@@ -3,6 +3,10 @@
   "title": "Fixed packet bring-up",
   "status": "implemented-infrastructure",
   "scenario": 0,
+  "execution": {
+    "kind": "round_trip",
+    "automated": true
+  },
   "purpose": "Proves the SPI wires and test envelope transfer one fixed opaque packet and one echo without framing ambiguity.",
   "rp2350": {
     "preset": "link-rp2350",
@@ -32,6 +36,14 @@
     "analyzer": "Connect GND plus SCLK, MOSI, MISO, CS, READY and DATA_AVAILABLE to six analyzer channels; select channels in the local bench record."
   },
   "run_profile": {
+    "cases": [
+      {
+        "id": "fixed-increment-16",
+        "length": 16,
+        "pattern": "increment",
+        "sequence": 1
+      }
+    ],
     "packets": 1,
     "analyzer": {
       "sample_rate_hz": 12000000,

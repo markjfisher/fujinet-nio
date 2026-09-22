@@ -23,6 +23,11 @@ def main():
         assert manifest["wiring"]["rp2350"]["SCLK"] == 2
         assert manifest["wiring"]["esp32s3"]["SCLK"] == 12
     assert runner.load_manifest(manifests[0])["run_profile"]["analyzer"]["sample_rate_hz"] == 12000000
+    l0_cases = runner.round_trip_cases(runner.load_manifest(manifests[0]))
+    l1_cases = runner.round_trip_cases(runner.load_manifest(manifests[1]))
+    assert len(l0_cases) == 1
+    assert len(l1_cases) == 12
+    assert l1_cases[0]["length"] == 0 and l1_cases[-1]["length"] == 240
     runner.show_plan(runner.load_manifest(manifests[0]))
     with tempfile.TemporaryDirectory() as directory:
         capture = Path(directory) / "capture.sr"
