@@ -29,7 +29,7 @@ It uses the same ESP-IDF PlatformIO platform version as the FujiNet ESP32-S3
 build but never invokes or modifies the root product `build.sh`, root
 `platformio.ini`, `platformio.local.ini`, or product sources.
 
-Each L0–L9 directory owns a manifest, run wrapper and hardware README. Start with:
+Each L0–L10 directory owns a manifest, run wrapper and hardware README. Start with:
 
 ```sh
 cd tests/link-feasibility/L0-fixed-packet-bring-up
@@ -68,7 +68,7 @@ it does not choose a board or upload an image.
 The initial firmware supports a serial `run [scenario] [length] [pattern]` command
 on RP2350 USB, where patterns are zero, FF, increment, AA/55, fixed random and
 SLIP-relevant bytes. The ESP32 slave validates one whole slot and returns it on the
-next slot. This proves only the initial L0 link mechanism; L1–L9 manifests define
+next slot. This proves only the initial L0 link mechanism; L1–L10 manifests define
 the sequences, fault injections and evidence each later physical runner must
 record. Reset and disconnect injections remain manual lab actions until those
 individual runners are implemented and validated on the actual boards.

@@ -71,7 +71,7 @@ Out of scope:
 - AutoConfig
 - ESP32 application/service changes unrelated to the link
 - network/storage behavior
-- DMA
+- production DMA architecture or allocation decisions
 - automatic retries after ambiguous completion
 
 ---
@@ -432,6 +432,41 @@ Repeated cycles of:
 
 Run enough iterations to expose stale state, counter wrap, queue leakage or
 recovery races.
+
+---
+## L10 — SPI-DMA datapath comparison
+
+Purpose:
+
+Separate RP2350 master-side SPI FIFO servicing cost from the existing test-slot,
+request/echo and readiness costs before attributing the current L8 throughput to
+the physical link.
+
+Compare the existing CPU-driven SPI transfer with SPI DREQ DMA at the same W2
+wiring, fixed slot, ESP endpoint and ownership behavior. Use 16, 64 and 240-byte
+payloads at requested 1, 4 and 7 MHz. The 7 MHz request selects the demonstrated
+actual 6.818 MHz RP2350 divider rate; do not use the intermittent 7.5 MHz
+breadboard boundary as a DMA performance target.
+
+Record per-exchange means for:
+
+- waiting for READY;
+- request-slot transfer;
+- waiting for the response;
+- response-slot transfer;
+- READY re-arm;
+- total payload rate.
+
+Pass:
+
+- both polling and DMA preserve exact frames for all declared cases;
+- the report identifies the actual SPI divisor rate and datapath;
+- phase timings show where time is spent without treating the current 500 us
+  READY interval or fixed two-slot envelope as ABI requirements.
+
+This is **SPI peripheral plus DMA**, not a PIO experiment. PIO remains the
+candidate timing owner for the Zorro-facing capture/response path; any production
+DMA/descriptor design remains a Story 3.2 decision after ABI approval.
 
 ---
 

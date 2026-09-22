@@ -31,8 +31,8 @@ def load_manifest(path):
     manifest = json.loads(Path(path).read_text())
     required = ("id", "title", "scenario", "purpose", "rp2350", "esp32", "wiring")
     missing = [key for key in required if key not in manifest]
-    if missing or manifest["scenario"] not in range(10):
-        raise ValueError("invalid link manifest: " + ", ".join(missing or ["scenario must be 0..9"]))
+    if missing or manifest["scenario"] not in range(11):
+        raise ValueError("invalid link manifest: " + ", ".join(missing or ["scenario must be 0..10"]))
     return manifest
 
 
@@ -294,7 +294,7 @@ def round_trip_cases(manifest):
             raise ValueError("round-trip case {} is not an object".format(index))
         operation = case.get("operation", "run")
         length, pattern = case.get("length"), case.get("pattern")
-        if operation not in {"run", "oversize", "partial", "fault_partial", "pressure", "receive", "schedule", "batch", "soak", "rp_reset", "peer_reset"}:
+        if operation not in {"run", "oversize", "partial", "fault_partial", "pressure", "receive", "schedule", "batch", "batch_profile", "soak", "rp_reset", "peer_reset"}:
             raise ValueError("unknown round-trip operation in case {}".format(index))
         if not isinstance(length, int) or length < 0 or pattern not in PATTERN_IDS:
             raise ValueError("invalid round-trip case {}".format(index))
@@ -317,11 +317,13 @@ def round_trip_cases(manifest):
             raise ValueError("rp_reset case {} uses length 0".format(index))
         if operation == "peer_reset" and int(case.get("reboot_wait_ms", 2200)) < 0:
             raise ValueError("peer_reset case {} needs non-negative reboot_wait_ms".format(index))
-        if operation == "batch":
+        if operation in {"batch", "batch_profile"}:
             if not isinstance(case.get("count"), int) or not 0 < case["count"] <= 1000:
                 raise ValueError("batch case {} needs count in 1..1000".format(index))
             if not isinstance(case.get("spi_hz"), int) or case["spi_hz"] <= 0:
                 raise ValueError("batch case {} needs positive spi_hz".format(index))
+            if operation == "batch_profile" and case.get("datapath") not in {"polling", "dma"}:
+                raise ValueError("profile case {} needs datapath polling or dma".format(index))
         if operation == "soak":
             if not isinstance(case.get("cycles"), int) or not 0 < case["cycles"] <= 1000:
                 raise ValueError("soak case {} needs cycles in 1..1000".format(index))
@@ -340,27 +342,49 @@ def round_trip_cases(manifest):
             "pause_ms": case.get("pause_ms"),
             "outgoing_sequence": case.get("outgoing_sequence"),
             "count": case.get("count"), "spi_hz": case.get("spi_hz"),
+            "datapath": str(case.get("datapath", "polling")),
             "cycles": case.get("cycles"), "fault_period": case.get("fault_period"),
             "reboot_wait_ms": int(case.get("reboot_wait_ms", 2200)),
         })
     return result
 
 def performance_summary(case_results):
-    """Summarize batch result lines; experiment firmware remains the authority."""
-    pattern = re.compile(r"status=batch_pass count=(?P<count>\d+) length=(?P<length>\d+) "
-                         r"payload_bytes=(?P<bytes>\d+) elapsed_us=(?P<elapsed>\d+) spi_hz=(?P<hz>\d+)")
+    """Summarize successful batch lines; firmware remains the authority.
+
+    Profiled L10 batches add a datapath and per-exchange phase means. Older
+    L8 lines remain valid and are recorded as the polling baseline.
+    """
+    pattern = re.compile(
+        r"status=batch_pass(?: datapath=(?P<datapath>\w+))? count=(?P<count>\d+) "
+        r"length=(?P<length>\d+) payload_bytes=(?P<bytes>\d+) "
+        r"elapsed_us=(?P<elapsed>\d+) spi_hz=(?P<hz>\d+)(?P<metrics>.*)"
+    )
     groups = {}
     for case in case_results:
         match = pattern.search(case.get("result", ""))
         if not match:
             continue
-        value = {key: int(raw) for key, raw in match.groupdict().items()}
-        key = (value["hz"], value["length"])
-        groups.setdefault(key, []).append(value["bytes"] * 1_000_000 / value["elapsed"])
-    return [{"spi_hz": hz, "payload_bytes": length, "trials": len(rates),
-             "rate_bytes_per_s_min": min(rates), "rate_bytes_per_s_mean": sum(rates) / len(rates),
-             "rate_bytes_per_s_max": max(rates)}
-            for (hz, length), rates in sorted(groups.items())]
+        value = {key: int(raw) for key, raw in match.groupdict().items()
+                 if key in {"count", "length", "bytes", "elapsed", "hz"}}
+        datapath = match.group("datapath") or "polling"
+        metric_values = {
+            key: int(raw) for key, raw in re.findall(r"(\w+_us_mean)=(\d+)", match.group("metrics"))
+        }
+        key = (datapath, value["hz"], value["length"])
+        groups.setdefault(key, []).append((value["bytes"] * 1_000_000 / value["elapsed"], metric_values))
+    rows = []
+    for (datapath, hz, length), observations in sorted(groups.items()):
+        rates = [rate for rate, _metrics in observations]
+        row = {"datapath": datapath, "spi_hz": hz, "payload_bytes": length,
+               "trials": len(rates), "rate_bytes_per_s_min": min(rates),
+               "rate_bytes_per_s_mean": sum(rates) / len(rates),
+               "rate_bytes_per_s_max": max(rates)}
+        metric_keys = set().union(*(metrics for _rate, metrics in observations))
+        for metric in metric_keys:
+            values = [metrics[metric] for _rate, metrics in observations if metric in metrics]
+            row[metric] = sum(values) / len(values)
+        rows.append(row)
+    return rows
 
 
 def run_round_trip(manifest, args):
@@ -431,9 +455,14 @@ def run_round_trip(manifest, args):
                     manifest["scenario"], case["outgoing_sequence"], case["sequence"],
                     case["length"], PATTERN_IDS[case["pattern"]])
             elif case["operation"] == "batch":
+                # Keep L8's established command and output path unchanged.
                 command_line = "batch {} {} {} {} {} {}".format(
                     manifest["scenario"], case["sequence"], case["count"], case["length"],
                     PATTERN_IDS[case["pattern"]], case["spi_hz"])
+            elif case["operation"] == "batch_profile":
+                command_line = "batch_profile {} {} {} {} {} {} {}".format(
+                    manifest["scenario"], case["sequence"], case["count"], case["length"],
+                    PATTERN_IDS[case["pattern"]], case["spi_hz"], case["datapath"])
             elif case["operation"] == "soak":
                 command_line = "soak {} {} {} {}".format(
                     manifest["scenario"], case["sequence"], case["cycles"],
@@ -522,8 +551,16 @@ def run_round_trip(manifest, args):
     print(result or "no RP2350 result line")
     print(format_capture_observation(observation))
     for row in report["performance"]:
-        print("Performance: {spi_hz} Hz, {payload_bytes} B, {trials} trials, "
-              "{rate_bytes_per_s_mean:.0f} B/s mean ({rate_bytes_per_s_min:.0f}..{rate_bytes_per_s_max:.0f})".format(**row))
+        detail = ""
+        if "request_transfer_us_mean" in row:
+            detail = ("; phases mean: ready={ready_wait_us_mean:.0f} us, "
+                      "request={request_transfer_us_mean:.0f} us, "
+                      "response-wait={response_wait_us_mean:.0f} us, "
+                      "response={response_transfer_us_mean:.0f} us, "
+                      "rearm={rearm_us_mean:.0f} us").format(**row)
+        print("Performance: {datapath}, {spi_hz} Hz, {payload_bytes} B, {trials} trials, "
+              "{rate_bytes_per_s_mean:.0f} B/s mean ({rate_bytes_per_s_min:.0f}..{rate_bytes_per_s_max:.0f}){detail}".format(
+                  detail=detail, **row))
     print("RP2350 console: " + str(rp_console_log))
     print("ESP32 console: " + str(esp_console_log))
     if report.get("waveform_svg"):

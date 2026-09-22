@@ -1,5 +1,6 @@
 #include "link_protocol.h"
 
+#include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
@@ -35,6 +36,33 @@ static struct link_test_frame zero_frame;
    printing every successful transaction. */
 static const char *exchange_failure = "not_started";
 
+enum link_datapath {
+    LINK_DATAPATH_POLLING,
+    LINK_DATAPATH_DMA,
+};
+
+/* These phase timings measure the RP2350 master side of the existing lab
+   envelope. They make the cost of ownership waits visible without claiming
+   that the test-only fixed slot or READY interval is a production contract. */
+struct exchange_timing {
+    uint64_t wait_ready_us;
+    uint64_t request_transfer_us;
+    uint64_t wait_response_us;
+    uint64_t response_transfer_us;
+    uint64_t rearm_us;
+};
+
+struct timing_totals {
+    uint64_t wait_ready_us;
+    uint64_t request_transfer_us;
+    uint64_t wait_response_us;
+    uint64_t response_transfer_us;
+    uint64_t rearm_us;
+};
+
+static int dma_tx_channel = -1;
+static int dma_rx_channel = -1;
+
 static bool wait_for(uint pin, bool value, uint32_t timeout_ms) {
     /* Flow-control lines are level signals.  Keep their waits bounded so a
        missing wire or reset peer produces a machine-readable result. */
@@ -60,6 +88,47 @@ static void transaction_bytes(const struct link_test_frame *tx,
     gpio_put(LINK_RP_CS_PIN, 0);
     spi_write_read_blocking(spi0, (const uint8_t *)tx, (uint8_t *)rx, byte_count);
     gpio_put(LINK_RP_CS_PIN, 1);
+}
+
+static void transaction_dma(const struct link_test_frame *tx,
+                            struct link_test_frame *rx) {
+    dma_channel_config rx_config;
+    dma_channel_config tx_config;
+
+    /* The SPI peripheral remains the wire owner. DMA only moves one complete
+       fixed slot to and from its FIFOs while ARM retains CS and GPIO ownership. */
+    rx_config = dma_channel_get_default_config((uint)dma_rx_channel);
+    channel_config_set_transfer_data_size(&rx_config, DMA_SIZE_8);
+    channel_config_set_read_increment(&rx_config, false);
+    channel_config_set_write_increment(&rx_config, true);
+    channel_config_set_dreq(&rx_config, spi_get_dreq(spi0, false));
+    tx_config = dma_channel_get_default_config((uint)dma_tx_channel);
+    channel_config_set_transfer_data_size(&tx_config, DMA_SIZE_8);
+    channel_config_set_read_increment(&tx_config, true);
+    channel_config_set_write_increment(&tx_config, false);
+    channel_config_set_dreq(&tx_config, spi_get_dreq(spi0, true));
+
+    /* Arm RX first so no received byte can be lost while TX starts the clock. */
+    dma_channel_configure((uint)dma_rx_channel, &rx_config, rx,
+                          &spi_get_hw(spi0)->dr, sizeof(*rx), false);
+    dma_channel_configure((uint)dma_tx_channel, &tx_config, &spi_get_hw(spi0)->dr,
+                          tx, sizeof(*tx), false);
+    gpio_put(LINK_RP_CS_PIN, 0);
+    dma_start_channel_mask((1u << (uint)dma_rx_channel) |
+                           (1u << (uint)dma_tx_channel));
+    dma_channel_wait_for_finish_blocking((uint)dma_tx_channel);
+    dma_channel_wait_for_finish_blocking((uint)dma_rx_channel);
+    gpio_put(LINK_RP_CS_PIN, 1);
+}
+
+static void transaction_for_datapath(enum link_datapath datapath,
+                                     const struct link_test_frame *tx,
+                                     struct link_test_frame *rx) {
+    if (datapath == LINK_DATAPATH_DMA) {
+        transaction_dma(tx, rx);
+    } else {
+        transaction(tx, rx);
+    }
 }
 
 static bool wait_for_next_slot(void) {
@@ -326,40 +395,69 @@ static void run_partial(unsigned scenario, uint32_t sequence, size_t length,
 }
 
 static bool exchange_quiet(unsigned scenario, uint32_t sequence, size_t length,
-                           enum link_test_pattern pattern) {
+                           enum link_test_pattern pattern,
+                           enum link_datapath datapath,
+                           struct exchange_timing *timing) {
+    uint64_t started_us;
+
     /* Batch and soak runs use the same two-slot exchange as run_once, but defer
        reporting until the measured group finishes so USB output cannot pace it. */
+    memset(timing, 0, sizeof(*timing));
     exchange_failure = "stale_drain";
     if (!drain_stale_response()) return false;
     link_test_make_frame(&request_frame, (uint8_t)scenario, sequence, length, pattern);
     /* Batch timing measures the link, not ESP USB-console backpressure. */
     request_frame.reserved = LINK_TEST_FLAG_QUIET;
     exchange_failure = "wait_ready";
+    started_us = time_us_64();
     if (request_frame.status != LINK_STATUS_OK ||
         !wait_for(LINK_RP_READY_PIN, true, 1000)) return false;
-    transaction(&request_frame, &discard_frame);
+    timing->wait_ready_us = time_us_64() - started_us;
+    started_us = time_us_64();
+    transaction_for_datapath(datapath, &request_frame, &discard_frame);
+    timing->request_transfer_us = time_us_64() - started_us;
     exchange_failure = "wait_response";
+    started_us = time_us_64();
     if (!wait_for(LINK_RP_DATA_AVAILABLE_PIN, true, 1000)) return false;
-    transaction(&zero_frame, &response_frame);
+    timing->wait_response_us = time_us_64() - started_us;
+    started_us = time_us_64();
+    transaction_for_datapath(datapath, &zero_frame, &response_frame);
+    timing->response_transfer_us = time_us_64() - started_us;
     exchange_failure = "echo_mismatch";
     if (!frame_matches(&response_frame, &request_frame)) return false;
-    /* spi_write_read_blocking() returns when the final bit is shifted, while
-       the ESP task still needs to lower READY, retire the advertised echo and
-       queue the next slot.  Do not let the next batch iteration mistake the
-       old READY high level for readiness of that next generation. */
+    /* spi_write_read_blocking() and DMA both return after the final bit is
+       shifted. The ESP still needs to retire the echo and queue the next slot. */
     exchange_failure = "wait_rearm";
+    started_us = time_us_64();
     if (!wait_for_next_slot() || gpio_get(LINK_RP_DATA_AVAILABLE_PIN)) return false;
+    timing->rearm_us = time_us_64() - started_us;
     exchange_failure = "none";
     return true;
 }
 
+static void add_timing(struct timing_totals *totals,
+                       const struct exchange_timing *timing) {
+    totals->wait_ready_us += timing->wait_ready_us;
+    totals->request_transfer_us += timing->request_transfer_us;
+    totals->wait_response_us += timing->wait_response_us;
+    totals->response_transfer_us += timing->response_transfer_us;
+    totals->rearm_us += timing->rearm_us;
+}
+
+static const char *datapath_name(enum link_datapath datapath) {
+    return datapath == LINK_DATAPATH_DMA ? "dma" : "polling";
+}
+
 static void run_batch(unsigned scenario, uint32_t first_sequence, unsigned count,
                       size_t length, enum link_test_pattern pattern,
-                      uint32_t requested_hz) {
+                      uint32_t requested_hz, enum link_datapath datapath,
+                      bool profile) {
     unsigned completed = 0;
     uint64_t start_us;
     uint64_t elapsed_us;
     uint32_t actual_hz;
+    struct timing_totals totals = {0};
+    struct exchange_timing timing;
 
     if (count == 0 || count > 1000 || requested_hz == 0) {
         puts("result protocol=link-feasibility-v1 status=batch_invalid_configuration");
@@ -368,24 +466,40 @@ static void run_batch(unsigned scenario, uint32_t first_sequence, unsigned count
     actual_hz = spi_set_baudrate(spi0, requested_hz);
     start_us = time_us_64();
     while (completed < count &&
-           exchange_quiet(scenario, first_sequence + completed, length, pattern)) {
+           exchange_quiet(scenario, first_sequence + completed, length, pattern,
+                          datapath, &timing)) {
+        add_timing(&totals, &timing);
         ++completed;
     }
     elapsed_us = time_us_64() - start_us;
     if (completed != count) {
-        printf("result protocol=link-feasibility-v1 status=batch_failed completed=%u "
+        printf("result protocol=link-feasibility-v1 status=batch_failed datapath=%s completed=%u "
                "count=%u elapsed_us=%llu spi_hz=%lu reason=%s frame=%s peer=%s "
-               "response_sequence=%lu response_length=%u\n", completed, count,
-               (unsigned long long)elapsed_us, (unsigned long)actual_hz,
+               "response_sequence=%lu response_length=%u\n", datapath_name(datapath),
+               completed, count, (unsigned long long)elapsed_us, (unsigned long)actual_hz,
                exchange_failure, link_test_status_name(link_test_validate_frame(&response_frame)),
                link_test_status_name((enum link_test_status)response_frame.status),
                (unsigned long)response_frame.sequence, response_frame.payload_length);
         return;
     }
-    printf("result protocol=link-feasibility-v1 status=batch_pass count=%u length=%u "
-           "payload_bytes=%lu elapsed_us=%llu spi_hz=%lu\n", count, (unsigned)length,
-           (unsigned long)(count * length), (unsigned long long)elapsed_us,
-           (unsigned long)actual_hz);
+    if (!profile) {
+        printf("result protocol=link-feasibility-v1 status=batch_pass count=%u length=%u "
+               "payload_bytes=%lu elapsed_us=%llu spi_hz=%lu\n", count, (unsigned)length,
+               (unsigned long)(count * length), (unsigned long long)elapsed_us,
+               (unsigned long)actual_hz);
+        return;
+    }
+    printf("result protocol=link-feasibility-v1 status=batch_pass datapath=%s count=%u length=%u "
+           "payload_bytes=%lu elapsed_us=%llu spi_hz=%lu ready_wait_us_mean=%llu "
+           "request_transfer_us_mean=%llu response_wait_us_mean=%llu "
+           "response_transfer_us_mean=%llu rearm_us_mean=%llu\n", datapath_name(datapath),
+           count, (unsigned)length, (unsigned long)(count * length),
+           (unsigned long long)elapsed_us, (unsigned long)actual_hz,
+           (unsigned long long)(totals.wait_ready_us / count),
+           (unsigned long long)(totals.request_transfer_us / count),
+           (unsigned long long)(totals.wait_response_us / count),
+           (unsigned long long)(totals.response_transfer_us / count),
+           (unsigned long long)(totals.rearm_us / count));
 }
 
 static void run_soak(unsigned scenario, uint32_t first_sequence, unsigned cycles,
@@ -414,7 +528,7 @@ static void run_soak(unsigned scenario, uint32_t first_sequence, unsigned cycles
             ++injected_faults;
         }
         if (!exchange_quiet(scenario, first_sequence + completed, 64,
-                            LINK_PATTERN_FIXED_RANDOM)) break;
+                            LINK_PATTERN_FIXED_RANDOM, LINK_DATAPATH_POLLING, &(struct exchange_timing){0})) break;
         ++completed;
     }
     elapsed_us = time_us_64() - start_us;
@@ -435,6 +549,8 @@ int main(void) {
     /* Configure the physical SPI master and two ESP-to-RP flow-control inputs. */
     stdio_init_all();
     spi_init(spi0, LINK_SPI_BAUD_HZ);
+    dma_tx_channel = dma_claim_unused_channel(true);
+    dma_rx_channel = dma_claim_unused_channel(true);
     gpio_set_function(LINK_RP_SCK_PIN, GPIO_FUNC_SPI);
     gpio_set_function(LINK_RP_MOSI_PIN, GPIO_FUNC_SPI);
     gpio_set_function(LINK_RP_MISO_PIN, GPIO_FUNC_SPI);
@@ -531,6 +647,28 @@ int main(void) {
                          &pattern, &sequence, &slot_bytes);
             run_partial(scenario, sequence, length, (enum link_test_pattern)pattern,
                         slot_bytes);
+        } else if (strncmp(line, "batch_profile", 13) == 0) {
+            unsigned scenario = LINK_DEFAULT_SCENARIO;
+            unsigned first_sequence = 1;
+            unsigned count = 1;
+            unsigned length = 64;
+            unsigned pattern = LINK_PATTERN_INCREMENT;
+            unsigned requested_hz = LINK_SPI_BAUD_HZ;
+            char datapath[16] = "polling";
+            (void)sscanf(line + 13, "%u %u %u %u %u %u %15s", &scenario,
+                         &first_sequence, &count, &length, &pattern, &requested_hz,
+                         datapath);
+            if (strcmp(datapath, "polling") == 0) {
+                run_batch(scenario, first_sequence, count, length,
+                          (enum link_test_pattern)pattern, requested_hz,
+                          LINK_DATAPATH_POLLING, true);
+            } else if (strcmp(datapath, "dma") == 0) {
+                run_batch(scenario, first_sequence, count, length,
+                          (enum link_test_pattern)pattern, requested_hz,
+                          LINK_DATAPATH_DMA, true);
+            } else {
+                puts("result protocol=link-feasibility-v1 status=batch_invalid_datapath");
+            }
         } else if (strncmp(line, "batch", 5) == 0) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned first_sequence = 1;
@@ -541,7 +679,8 @@ int main(void) {
             (void)sscanf(line + 5, "%u %u %u %u %u %u", &scenario, &first_sequence,
                          &count, &length, &pattern, &requested_hz);
             run_batch(scenario, first_sequence, count, length,
-                      (enum link_test_pattern)pattern, requested_hz);
+                      (enum link_test_pattern)pattern, requested_hz,
+                      LINK_DATAPATH_POLLING, false);
         } else if (strncmp(line, "soak", 4) == 0) {
             unsigned scenario = LINK_DEFAULT_SCENARIO;
             unsigned first_sequence = 1;
@@ -558,7 +697,7 @@ int main(void) {
                  "schedule [scenario outgoing_sequence request_sequence length pattern], "
                  "pressure [scenario length pattern sequence queue_depth pause_ms], "
                  "partial/fault_partial [scenario length pattern sequence slot_bytes], "
-                 "peer_reset [scenario sequence], batch [scenario first count length pattern spi_hz], "
+                 "peer_reset [scenario sequence], batch [scenario first count length pattern spi_hz], batch_profile [scenario first count length pattern spi_hz polling|dma], "
                  "soak [scenario first cycles fault_period], pins, help");
         } else {
             puts("error protocol=link-feasibility-v1 command");

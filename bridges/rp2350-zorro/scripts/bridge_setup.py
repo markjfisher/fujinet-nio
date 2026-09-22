@@ -184,7 +184,7 @@ def main():
     build.add_argument(
         "preset", choices=["firmware", "stimulus-rp2040", "link-rp2350"], default="firmware", nargs="?"
     )
-    build.add_argument("--link-scenario", choices=[str(n) for n in range(10)])
+    build.add_argument("--link-scenario", choices=[str(n) for n in range(11)])
     commands.add_parser(
         "install-toolchain", help="install pinned compiler only if none is usable"
     )

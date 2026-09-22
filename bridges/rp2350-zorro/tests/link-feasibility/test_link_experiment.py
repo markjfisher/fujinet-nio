@@ -14,8 +14,8 @@ spec.loader.exec_module(runner)
 
 
 def main():
-    manifests = sorted(HERE.glob("L*/experiment.json"))
-    assert len(manifests) == 10
+    manifests = sorted(HERE.glob("L*/experiment.json"), key=lambda path: int(__import__("json").loads(path.read_text())["scenario"]))
+    assert len(manifests) == 11
     for expected, path in enumerate(manifests):
         manifest = runner.load_manifest(path)
         assert manifest["scenario"] == expected
@@ -64,6 +64,16 @@ def main():
     l9_cases = runner.round_trip_cases(runner.load_manifest(manifests[9]))
     assert l9_cases[0]["operation"] == "soak"
     assert (l9_cases[0]["cycles"], l9_cases[0]["fault_period"]) == (100, 10)
+    l10_cases = runner.round_trip_cases(runner.load_manifest(manifests[10]))
+    assert len(l10_cases) == 54
+    assert {case["datapath"] for case in l10_cases} == {"polling", "dma"}
+    assert {case["spi_hz"] for case in l10_cases} == {1_000_000, 4_000_000, 7_000_000}
+    profile = runner.performance_summary([
+        {"result": "result protocol=link-feasibility-v1 status=batch_pass datapath=dma count=50 length=240 payload_bytes=12000 elapsed_us=100000 spi_hz=6818181 ready_wait_us_mean=1 request_transfer_us_mean=301 response_wait_us_mean=2 response_transfer_us_mean=301 rearm_us_mean=501"}
+    ])
+    assert profile[0]["datapath"] == "dma"
+    assert profile[0]["rate_bytes_per_s_mean"] == 120000
+    assert profile[0]["rearm_us_mean"] == 501
     runner.show_plan(runner.load_manifest(manifests[0]))
     with tempfile.TemporaryDirectory() as directory:
         artifact = Path(directory) / "firmware.elf"

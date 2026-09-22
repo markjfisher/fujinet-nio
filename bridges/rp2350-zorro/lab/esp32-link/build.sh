@@ -8,12 +8,12 @@ scenario="${1:-L0}"
 shift || true
 
 usage() {
-    echo "usage: $0 L0..L9 [--upload /dev/serial/by-id/PORT]" >&2
+    echo "usage: $0 L0..L10 [--upload /dev/serial/by-id/PORT]" >&2
     exit 2
 }
 
 case "$scenario" in
-    L[0-9]) ;;
+    L[0-9]|L10) ;;
     *) usage ;;
 esac
 

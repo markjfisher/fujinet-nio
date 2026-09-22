@@ -1,0 +1,658 @@
+{
+  "id": "L10",
+  "title": "SPI DMA datapath comparison",
+  "status": "implemented",
+  "scenario": 10,
+  "purpose": "Compares the existing RP2350 CPU-driven SPI slot transfer with SPI-DREQ DMA using the unchanged fixed-slot envelope, ownership signals and ESP endpoint. It measures RP-side phase means without claiming a production ABI or extrapolating beyond the W2 breadboard fixture.",
+  "rp2350": {
+    "preset": "link-rp2350",
+    "target": "link_rp2350"
+  },
+  "esp32": {
+    "project": "lab/esp32-link",
+    "environment": "link-esp32s3"
+  },
+  "wiring": {
+    "rp2350": {
+      "SCLK": 2,
+      "MOSI": 3,
+      "MISO": 4,
+      "CS": 5,
+      "READY": 6,
+      "DATA_AVAILABLE": 7
+    },
+    "esp32s3": {
+      "SCLK": 12,
+      "MOSI": 11,
+      "MISO": 13,
+      "CS": 10,
+      "READY": 9,
+      "DATA_AVAILABLE": 8
+    },
+    "analyzer": "CH1=SCLK, CH2=MOSI, CH3=MISO, CH4=CS, CH5=READY, CH6=DATA_AVAILABLE; connect analyzer GND to the shared ground."
+  },
+  "run_profile": {
+    "cases": [
+      {
+        "id": "polling-1mhz-16b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-16b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 51,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-16b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 101,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-64b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 151,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-64b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 201,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-64b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 251,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-240b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 301,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-240b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 351,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-1mhz-240b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 401,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-16b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 451,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-16b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 501,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-16b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 551,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-64b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 601,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-64b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 651,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-64b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 701,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-240b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 751,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-240b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 801,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-4mhz-240b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 851,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-16b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 901,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-16b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 951,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-16b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1001,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-64b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1051,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-64b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1101,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-64b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1151,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-240b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1201,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-240b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1251,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "polling-7mhz-240b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "polling",
+        "sequence": 1301,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-16b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1351,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-16b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1401,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-16b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1451,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-64b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1501,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-64b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1551,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-64b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1601,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-240b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1651,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-240b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1701,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-1mhz-240b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1751,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 1000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-16b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1801,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-16b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1851,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-16b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1901,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-64b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 1951,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-64b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2001,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-64b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2051,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-240b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2101,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-240b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2151,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-4mhz-240b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2201,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 4000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-16b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2251,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-16b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2301,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-16b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2351,
+        "count": 50,
+        "length": 16,
+        "pattern": "increment",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-64b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2401,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-64b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2451,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-64b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2501,
+        "count": 50,
+        "length": 64,
+        "pattern": "fixed-random",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-240b-trial-1",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2551,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-240b-trial-2",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2601,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      },
+      {
+        "id": "dma-7mhz-240b-trial-3",
+        "operation": "batch_profile",
+        "datapath": "dma",
+        "sequence": 2651,
+        "count": 50,
+        "length": 240,
+        "pattern": "slip-bytes",
+        "spi_hz": 7000000,
+        "expect_status": "batch_pass"
+      }
+    ],
+    "analyzer": {
+      "sample_rate_hz": 12000000,
+      "capture_ms": 1000,
+      "channels": [
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5"
+      ],
+      "trigger": "D3=f",
+      "pretrigger_percent": 10,
+      "arm_ms": 1500,
+      "svg_max_transactions": 12
+    }
+  },
+  "evidence": [
+    "RP2350 polling and DMA phase-timing result lines",
+    "ESP32-S3 transaction log",
+    "analyzer capture",
+    "build/link-feasibility/L10/report.json"
+  ],
+  "execution": {
+    "kind": "round_trip",
+    "automated": true
+  }
+}

@@ -2,7 +2,7 @@
 # variables make it possible to reproduce a lab experiment without changing
 # the production bridge configuration.
 set(LINK_DEFAULT_SCENARIO "0" CACHE STRING
-    "Story 2.3 lab scenario number (0 through 9)")
+    "Story 2.3 lab scenario number (0 through 10)")
 set(LINK_SPI_BAUD_HZ "1000000" CACHE STRING
     "SPI clock for the Story 2.3 lab")
 
@@ -12,9 +12,9 @@ foreach(pin SCK MOSI MISO CS READY DATA_AVAILABLE)
         "Override RP2350 ${pin} pin for link lab")
 endforeach()
 
-if(NOT LINK_DEFAULT_SCENARIO MATCHES "^[0-9]$" OR
+if(NOT LINK_DEFAULT_SCENARIO MATCHES "^(10|[0-9])$" OR
         NOT LINK_SPI_BAUD_HZ MATCHES "^[1-9][0-9]*$")
-    message(FATAL_ERROR "Link scenario must be 0..9 and SPI baud must be positive")
+    message(FATAL_ERROR "Link scenario must be 0..10 and SPI baud must be positive")
 endif()
 
 add_executable(link_rp2350
@@ -24,7 +24,7 @@ add_executable(link_rp2350
 
 add_dependencies(link_rp2350 bridge_validate)
 target_include_directories(link_rp2350 PRIVATE lab/link-common)
-target_link_libraries(link_rp2350 PRIVATE pico_stdlib hardware_spi hardware_gpio)
+target_link_libraries(link_rp2350 PRIVATE pico_stdlib hardware_dma hardware_spi hardware_gpio)
 target_compile_options(link_rp2350 PRIVATE -Wall -Wextra -Werror)
 target_compile_definitions(link_rp2350 PRIVATE
     LINK_DEFAULT_SCENARIO=${LINK_DEFAULT_SCENARIO}

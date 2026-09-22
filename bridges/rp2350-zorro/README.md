@@ -131,12 +131,12 @@ Start repeatable bench work with the [experiment index](tests/feasibility/README
 and `tests/feasibility/generator-check/run.sh`. Inspect, build, load, run and
 analyse independently; the default flow guides you through BOOTSEL and waits
 before output. C0–C9 are implemented synthetic-bench experiments; C10 remains
-the real-bus case.
+the real-bus case. Link experiments L0–L10 include the SPI-DMA comparison.
 
 ## Story 2.3 link lab
 
 The separate [link feasibility lab](tests/link-feasibility/README.md) builds a
-Core2350B SPI-master target and an ESP32-S3 SPI-slave target for L0–L9. It uses
+Core2350B SPI-master target and an ESP32-S3 SPI-slave target for L0–L10. It uses
 the root project's installed ESP32 PlatformIO toolchain, but is an isolated
 project: it does not modify or invoke the product `build.sh` or its PlatformIO
 configuration. The lab slot is explicitly test-only and is not a FujiBus ABI.
