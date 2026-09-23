@@ -11,6 +11,32 @@ The resulting report has `experiment_status: evidence_collected`, never
 ledger. A reviewer must add the actual timing source, measurement uncertainty,
 buffer/OE information and pass/fail assessment separately.
 
+## What generates the bus traffic
+
+C10 has **no Amiga traffic generator**. The RP2350 and analyzer only observe
+the bus; `run.sh all` does not and must not cause an Amiga bus cycle. The
+operator must supply the workload after acquisition is armed.
+
+There are two useful capture modes:
+
+- **Boot/AutoConfig observation:** booting an Amiga with a correctly designed
+  prototype board can show the system's AutoConfig enumeration accesses. This
+  is useful passive evidence that the adapter is electrically quiet and that
+  its configuration response appears where expected. It is not a repeatable
+  packet/mailbox test and must not be the only C10 evidence.
+- **Controlled access observation:** a small Amiga diagnostic program performs
+  a fixed, documented sequence of volatile reads and writes through the
+  prototype board's assigned Zorro aperture. This is the intended source for
+  bounded C10 traces. It must use the board's reviewed AutoConfig identity and
+  mapped base address; it should record every access and pattern it issues.
+
+A production `fujinet-nio.device` driver is neither required nor appropriate
+for C10: Story 3.1 depends on the ABI this evidence will help approve. The
+controlled diagnostic is a separate, minimal test artifact and cannot be
+implemented until the prototype board's AutoConfig and register/aperture design
+is available. If the arriving prototype does not yet decode a safe aperture,
+C10 is limited to boot/AutoConfig passive captures.
+
 ## Required hardware and mapping
 
 Do **not** reuse W1 GPIO numbers as a Zorro connector pinout. Before C10:
