@@ -205,3 +205,20 @@ class TestPlatformIOBoardConfig(unittest.TestCase):
         for source_list in ("CMakeLists_posix.cmake", "src/CMakeLists.txt"):
             with self.subTest(source_list=source_list):
                 self.assertNotIn("atari_sio_fujibus", (REPO_ROOT / source_list).read_text())
+
+    def test_fujimac_board_runs_the_packet_link_profile(self) -> None:
+        name = "fujibus-link-uart-log-fujimac-rev0"
+        config = _read_ini(PLATFORM_DIR / f"platformio-{name}.ini")
+        section = f"env:{name}"
+
+        self.assertEqual(config.get(section, "board"), "fujimac-rev0-8mb")
+        flags = config.get(section, "build_flags")
+        self.assertIn("-DFN_BUILD_ESP32_FUJIBUS_LINK_UART", flags)
+        self.assertIn("-DFN_PINMAP_DEFAULT=FN_PINMAP_FUJIMAC_REV0", flags)
+
+        board = (BOARDS_DIR / "fujimac-rev0-8mb.json").read_text()
+        self.assertIn('"mcu": "esp32"', board)
+
+        sdkconfig_map = _read_sdkconfig_map()
+        self.assertIn("uart-iram", sdkconfig_map[name])
+        self.assertNotIn("spiram-oct80", sdkconfig_map[name])

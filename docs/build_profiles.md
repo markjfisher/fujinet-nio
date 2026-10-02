@@ -141,7 +141,7 @@ BuildProfile current_build_profile()
 
 ### ESP32 variant — `src/platform/esp32/build_profile.cpp`
 
-ESP-IDF compiles all sources in a component together, so the ESP32 file retains `#ifdef` to select among its variants (`FN_BUILD_ESP32_USB_CDC`, `FN_BUILD_ATARI_SIO`, `FN_BUILD_ATARI_FUJIBUS_SIO`, etc.). This file lives in `platform/esp32/` alongside other ESP32-specific platform code.
+ESP-IDF compiles all sources in a component together, so the ESP32 file retains `#ifdef` to select among its variants (`FN_BUILD_ESP32_USB_CDC`, `FN_BUILD_ATARI_SIO`, `FN_BUILD_ATARI_FUJIBUS_SIO`, `FN_BUILD_ESP32_FUJIBUS_LINK_UART`, etc.). This file lives in `platform/esp32/` alongside other ESP32-specific platform code.
 
 📌 **Build macros are only read in these build-profile files.** Everything else works with enums.
 
@@ -490,6 +490,26 @@ that configuration (or regenerate it from the updated defaults).
     UART adapter. The port is set as for `FN_BUILD_AMIGA_RS232`
     (`channel.serial_port`, or `FN_SERIAL_PORT`).
   - CMake preset: `fujibus-link-serial-debug`
+
+- `FN_BUILD_ESP32_FUJIBUS_LINK_UART`
+  - `machine          = Machine::FujiNetESP32`
+  - `primaryTransport = TransportKind::FujiBusNative`
+  - `primaryChannel   = ChannelKind::UartGpio`, `packetLink = true`
+  - ESP32 build for boards where a microcontroller is the packet-link
+    controller on the primary UART, such as the FujiNet Mac board, whose RP2040
+    serves the Mac's floppy port.
+  - PlatformIO environment: `fujibus-link-uart-log-fujimac-rev0`
+    (pinmap `FN_PINMAP_FUJIMAC_REV0`, UART interrupt in IRAM).
+  - The link runs at the controller's rate and needs no pacing, so the board's
+    `fujinet.yaml` sets:
+
+    ```yaml
+    channel:
+      uart:
+        baud_rate: 2000000
+        tx_chunk_size: 0
+        tx_chunk_gap_us: 0
+    ```
 
 A profile carries `FujiBusNative` over a byte-stream channel by setting
 `packetLink = true`; the channel factory then wraps the stream in

@@ -10,6 +10,7 @@ namespace fujinet::platform::esp32 {
 #define FN_PINMAP_ATARIV1           4
 #define FN_PINMAP_RS232             5
 #define FN_PINMAP_RS232_REV0        6
+#define FN_PINMAP_FUJIMAC_REV0      7
 // Add more here as they are used. These ensure we don't get weird macro expansions.
 
 // Ensure at least one of FN_PINMAP or FN_PINMAP_DEFAULT is defined
@@ -125,6 +126,31 @@ static constexpr PinMap BOARD_PINMAP{
         .a       = 0,   // GPIO_NUM_0 (PIN_BUTTON_A)
         .b       = -1,  // No Button B on RS232 board
         .c       = 39,  // GPIO_NUM_39 (PIN_BUTTON_C - Safe Reset)
+    },
+};
+
+#elif FN_PINMAP == FN_PINMAP_FUJIMAC_REV0
+// FujiNet Mac board rev0: an ESP32-WROVER-E beside an RP2040 on the Mac's
+// floppy port. The primary UART is the link to the RP2040.
+static constexpr PinMap BOARD_PINMAP{
+    .sd = SdSpiPins{
+        .mosi    = 23,
+        .miso    = 19,
+        .sck     = 18,
+        .cs      =  5,
+    },
+    .sio = {},
+    .rs232 = Rs232Pins{
+        .uart = UartPins{ .rx = 33, .tx = 26 },
+    },
+    .led = LedPins{
+        .wifi    =  2,
+        .bus     = 12,
+    },
+    .button = ButtonPins{
+        .a       = 0,
+        .b       = -1,
+        .c       = -1,  // GPIO 14 belongs to the floppy side on this board
     },
 };
 

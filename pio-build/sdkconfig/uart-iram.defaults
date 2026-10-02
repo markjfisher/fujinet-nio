@@ -1,0 +1,6 @@
+###########################################################################
+# UART interrupt in IRAM, so it still runs while flash writes disable the
+# cache: at high baud rates the RX FIFO otherwise overflows.
+###########################################################################
+
+CONFIG_UART_ISR_IN_IRAM=y

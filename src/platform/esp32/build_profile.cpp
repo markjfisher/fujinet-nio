@@ -65,6 +65,15 @@ BuildProfile current_build_profile()
         .name             = "S3 + FujiBus over GPIO (e.g. RS232)",
         .hw               = {},
     };
+#elif defined(FN_BUILD_ESP32_FUJIBUS_LINK_UART)
+    profile = BuildProfile{
+        .machine          = Machine::FujiNetESP32,
+        .primaryTransport = TransportKind::FujiBusNative,
+        .primaryChannel   = ChannelKind::UartGpio,
+        .packetLink       = true,
+        .name             = "ESP32 + FujiBus over a packet link on UART",
+        .hw               = {},
+    };
 #else
     // Default ESP32 fallback
     profile = BuildProfile{
