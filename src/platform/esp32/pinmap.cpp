@@ -38,9 +38,8 @@ static constexpr PinMap BOARD_PINMAP{
 };
 
 #elif FN_PINMAP == FN_PINMAP_ATARIV1
-// FujiNet v1 (ESP32) pin mapping for Atari SIO
-// Based on atari-common.h: INT=26, PROC=22, CKO=32, CKI=27, MTR=36, CMD=39
-// UART2 pins: RX=33, TX=21 (from common.h)
+// Official Atari FujiNet v1.6 and later (ESP32).
+// Based on atariv1.h, atari-common.h, and common.h in fujinet-firmware.
 static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 23, .miso = 19, .sck = 18, .cs = 5 },
     .sio = SioPins{
@@ -51,6 +50,16 @@ static constexpr PinMap BOARD_PINMAP{
         .cki = 27,      // GPIO_NUM_27 (CKI line)
         .cko = 32,      // GPIO_NUM_32 (CKO line)
         .uart = UartPins{ .rx = 33, .tx = 21 },  // UART2 for SIO data
+    },
+    .rs232 = {},
+    .led = LedPins{
+        .wifi = 2,     // PIN_LED_WIFI
+        .bus = 4,      // PIN_LED_BUS (Atari override)
+    },
+    .button = ButtonPins{
+        .a = 0,        // PIN_BUTTON_A
+        .b = 34,       // PIN_BUTTON_B (external pull-up; input-only GPIO)
+        .c = 14,       // PIN_BUTTON_C (safe reset)
     },
 };
 

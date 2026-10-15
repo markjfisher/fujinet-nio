@@ -5,6 +5,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
+#include "sdkconfig.h"
 
 namespace fujinet::platform {
 
@@ -12,6 +13,14 @@ namespace {
 
 // All byte-addressable heap: internal RAM and PSRAM together.
 constexpr uint32_t kHeapCaps = MALLOC_CAP_8BIT;
+
+// The original ESP32 has additional ROM/cache restrictions on external stacks.
+// Keep its worker stack internal even when PSRAM is available for heap data.
+#if CONFIG_IDF_TARGET_ESP32 || !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+constexpr uint32_t kStackCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+#else
+constexpr uint32_t kStackCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+#endif
 
 struct Job {
     void (*fn)(void*);
@@ -24,17 +33,16 @@ void run_job(void* arg)
     auto* job = static_cast<Job*>(arg);
     job->fn(job->ctx);
     xSemaphoreGive(job->done);
-    // The caller deletes this task (vTaskDeleteWithCaps frees the PSRAM
-    // stack, which a task cannot do for itself). Wait here until it does.
+    // The caller deletes this task and frees its stack with vTaskDeleteWithCaps.
+    // Wait here until it does.
     vTaskSuspend(nullptr);
 }
 
 } // namespace
 
-// A temporary task whose stack is in PSRAM (CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM,
-// on by default for an S3 with PSRAM), so the large stack costs no internal
-// RAM and only exists for this call. Without PSRAM the task cannot be made
-// and this returns false.
+// A temporary task with an internal stack on original ESP32, or an external
+// stack on targets that permit it (such as S3 with PSRAM). The allocation
+// only exists for this call; returns false if the selected heap cannot fit it.
 // The caller blocks until it finishes, so the work stays synchronous.
 // The work must not write flash: a task with an external stack cannot run
 // while the flash cache is disabled.
@@ -61,7 +69,7 @@ bool run_with_large_stack(std::size_t stackBytes,
                                                    &job,
                                                    uxTaskPriorityGet(nullptr),
                                                    &task,
-                                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                                                   kStackCaps);
     if (created != pdPASS) {
         if (monitoring) {
             heap_caps_monitor_local_minimum_free_size_stop();

@@ -47,6 +47,12 @@ Install prerquisites from packages:
 
 ### esp32 initial setup
 
+Fetch the pinned dependencies, including LittleFS's nested submodule:
+
+```bash
+git submodule update --init --recursive
+```
+
 You need an appropriate `sdkconfig.defaults` and `platformio.ini` file for your board type.
 This is done by the `./build.sh` script, and should not be done manually as it will be overwritten on each build.
 
@@ -64,6 +70,31 @@ fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8
 # and should only be done once unless you want to reset the build environment
 $ ./build.sh -s fujibus-usbcdc-consolecdc-s3-wroom-1-n16r8
 ```
+
+For official Atari FujiNet hardware (ESP32, 16 MB flash), select
+`atari-nio-fujibus-sio-gpio-fujinet-v1-16mb` instead:
+
+```bash
+./build.sh -s atari-nio-fujibus-sio-gpio-fujinet-v1-16mb
+./build.sh -b
+```
+
+The `fujinet-v1-8mb` profiles remain available for custom 8 MB builds.
+The 16 MB layout has two 6 MB firmware slots and moves LittleFS storage from
+`0x410000` to `0xC10000`. When migrating an existing 8 MB layout, back up its
+configuration and files before flashing, and restore them to the new filesystem.
+
+All Atari v1 profiles enable quad PSRAM at 40 MHz, including a startup memory
+test. Large heap allocations can use PSRAM; task stacks on the original ESP32
+stay internal. These profiles require a module with working PSRAM. The
+diagnostic console's `core.mem` command reports the internal and PSRAM heaps.
+The optional WiFi IRAM speed optimization is disabled to leave room for the
+original ESP32 PSRAM cache workaround, which can reduce WiFi throughput.
+
+This profile runs NIO/FujiBus over the SIO connector and needs compatible
+Atari host software. The separate `atari-legacy-sio-gpio-fujinet-v1-16mb`
+profile selects the legacy SIO transport; it is not a complete replacement
+for the original FujiNet firmware.
 
 ### local configuration files
 

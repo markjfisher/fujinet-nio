@@ -1,0 +1,4 @@
+# Custom 8 MB FujiNet flash size and matching PlatformIO partition table.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="pio-build/partitions/partitions_8MB.csv"
