@@ -3,7 +3,7 @@ name: Build boot disks
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
   workflow_dispatch: {}
 
@@ -21,6 +21,7 @@ jobs:
       - name: Checkout workspace
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/fujinet-nio-workspace
           path: ${{ env.WORKSPACE_DIR }}
           submodules: false
@@ -30,6 +31,7 @@ jobs:
       - name: Checkout build fujinet-nio revision
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           path: ${{ env.WORKSPACE_DIR }}/repos/fujinet-nio
           submodules: recursive
           fetch-depth: 0
@@ -37,6 +39,7 @@ jobs:
       - name: Checkout fujinet-nio-lib
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/fujinet-nio-lib
           path: ${{ env.WORKSPACE_DIR }}/repos/fujinet-nio-lib
           fetch-depth: 0
@@ -45,6 +48,7 @@ jobs:
       - name: Checkout nio-apps
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/nio-apps
           path: ${{ env.WORKSPACE_DIR }}/repos/nio-apps
           fetch-depth: 0
@@ -55,6 +59,7 @@ jobs:
       - name: Checkout nio-core-apps
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/nio-core-apps
           path: ${{ env.WORKSPACE_DIR }}/repos/nio-core-apps
           fetch-depth: 0
@@ -63,6 +68,7 @@ jobs:
       - name: Checkout nio-config
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/nio-config
           path: ${{ env.WORKSPACE_DIR }}/repos/nio-config
           fetch-depth: 0
@@ -71,6 +77,7 @@ jobs:
       - name: Checkout fn-rom
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/fn-rom
           path: ${{ env.WORKSPACE_DIR }}/repos/fn-rom
           fetch-depth: 0
@@ -79,6 +86,7 @@ jobs:
       - name: Checkout cc65
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/cc65
           ref: bbc-clib
           path: ${{ env.WORKSPACE_DIR }}/repos/cc65
@@ -94,6 +102,7 @@ jobs:
       - name: Checkout MyPicoDOS
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/MyPicoDOS
           ref: ${{ steps.mypicodos.outputs.sha }}
           path: ${{ env.WORKSPACE_DIR }}/repos/MyPicoDOS
@@ -104,6 +113,7 @@ jobs:
       - name: Checkout fujinet-nio-driver
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           repository: markjfisher/fujinet-nio-driver
           path: ${{ env.WORKSPACE_DIR }}/repos/fujinet-nio-driver
           fetch-depth: 0
@@ -134,8 +144,11 @@ jobs:
       # with upstream heads.
       - name: Build atasm
         run: |
-          git -c advice.detachedHead=false clone --depth 1 -b V1.30 \
-            https://github.com/CycoPH/atasm.git /tmp/atasm
+          # V1.30
+          git init -q /tmp/atasm
+          git -C /tmp/atasm fetch -q --depth 1 https://github.com/CycoPH/atasm.git \
+            46be895a4312205dbcc4cf7a4a6721d72219d711
+          git -C /tmp/atasm -c advice.detachedHead=false checkout -q FETCH_HEAD
           make -C /tmp/atasm/src prog
           echo "/tmp/atasm/src" >> "$GITHUB_PATH"
 
