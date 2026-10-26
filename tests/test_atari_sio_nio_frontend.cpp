@@ -38,8 +38,7 @@ std::vector<std::uint8_t> hex_bytes(const char* text)
 
 Scenario fixture(const char* id)
 {
-    const auto workspace = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
-    std::ifstream input(workspace / "integration-tests/atari-sio/fixtures/nio_v1.json");
+    std::ifstream input(std::filesystem::path(FN_ATARI_SIO_FIXTURE_DIR) / "nio_v1.json");
     REQUIRE(input.good());
     const std::string json((std::istreambuf_iterator<char>(input)), {});
     cJSON* root = cJSON_Parse(json.c_str());

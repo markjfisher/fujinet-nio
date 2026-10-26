@@ -1,0 +1,1135 @@
+{
+  "checksum": "atari-end-around-carry",
+  "devices": {
+    "0x31": 0,
+    "0x32": 1,
+    "0x33": 2,
+    "0x34": 3,
+    "0x35": 4,
+    "0x36": 5,
+    "0x37": 6,
+    "0x38": 7
+  },
+  "error_mapping": {
+    "BadImage": [
+      "E",
+      "04 5f 0f 00"
+    ],
+    "FileNotFound": [
+      "E",
+      "04 5f 0f 00"
+    ],
+    "GeometryRequired": [
+      "E",
+      "04 5f 0f 00"
+    ],
+    "InternalError": [
+      "E",
+      "04 db 0f 00"
+    ],
+    "InvalidGeometry": [
+      "E",
+      "04 cf 0f 00"
+    ],
+    "InvalidRequest": [
+      "E",
+      "04 cf 0f 00"
+    ],
+    "InvalidSlot": [
+      "E",
+      "04 cf 0f 00"
+    ],
+    "IoError": [
+      "E",
+      "04 db 0f 00"
+    ],
+    "NoSuchFileSystem": [
+      "E",
+      "04 5f 0f 00"
+    ],
+    "NotMounted": [
+      "E",
+      "04 5f 0f 00"
+    ],
+    "OpenFailed": [
+      "E",
+      "04 5f 0f 00"
+    ],
+    "OutOfRange": [
+      "E",
+      "04 cf 0f 00"
+    ],
+    "ReadOnly": [
+      "E",
+      "0c 9f 0f 00"
+    ]
+  },
+  "format": "atari-disk-sio-v1",
+  "supported_commands": [
+    "0x50",
+    "0x52",
+    "0x53",
+    "0x57"
+  ],
+  "geometries": [
+    {
+      "accepted": true,
+      "id": "geo-128",
+      "payload_bytes": 1024,
+      "sector_4_offset": 384,
+      "sector_bytes": 128,
+      "sector_count": 8
+    },
+    {
+      "accepted": true,
+      "id": "geo-classic-256",
+      "payload_bytes": 896,
+      "sector_1_bytes": 128,
+      "sector_4_bytes": 256,
+      "sector_4_offset": 384,
+      "sector_bytes": 256,
+      "sector_count": 5
+    },
+    {
+      "accepted": false,
+      "id": "geo-malformed-128",
+      "payload_bytes": 1025,
+      "sector_bytes": 128
+    },
+    {
+      "accepted": false,
+      "id": "geo-malformed-small-256",
+      "payload_bytes": 512,
+      "sector_bytes": 256
+    },
+    {
+      "accepted": false,
+      "id": "geo-ordinary-512",
+      "payload_bytes": 1024,
+      "sector_bytes": 512
+    }
+  ],
+  "scenarios": [
+    {
+      "command": "31 52 01 00 84",
+      "data": "00 03 00 08 3d 09 a2 7d ad 00 08 d0 08 8d 08 03 ee 09 03 a2 fd 86 48 a2 00 8e 04 03 e8 8e 0b 03 a9 07 8d 05 03 a9 69 8d 0a 03 a9 40 8d 03 03 20 59 e4 ad 00 07 29 04 f0 05 a9 ff 8d 2b 09 a4 48 ad 03 07 99 01 07 ad 04 07 99 00 07 a9 3d 8d e2 02 a9 09 8d e3 02 20 3e 09 a2 02 20 32 09 85 44 8d e0 02 20 32 09 85 45 8d e1 02 20 32 09 38 e5 44 85 46 08 20 32 09 28 e5 45 85 47 e6 46 e6 47",
+      "device": "0x31",
+      "geometry": "geo-classic-256",
+      "id": "boot-config-read-sector-1",
+      "label": "config D1 boot sector 1",
+      "lba": 0,
+      "mode": "config",
+      "offset": 0,
+      "phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:94"
+      ],
+      "sector": 1,
+      "selection": "boot.config_uri only",
+      "slot": 0,
+      "source_image_sector": 1,
+      "initial_state": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "command": "31 52 02 00 85",
+      "data": "a0 00 e4 43 d0 5c 20 3e 09 a5 47 c9 02 90 53 a5 43 c5 48 d0 4d 98 18 65 44 85 44 90 02 e6 45 a4 48 88 b9 00 07 91 44 88 b9 00 07 91 44 88 b9 00 07 91 44 88 b9 00 07 91 44 88 d0 e6 b9 00 07 91 44 18 a5 44 65 48 85 44 90 02 e6 45 38 a5 46 d0 02 e6 47 e5 48 85 46 d0 02 c6 47 b0 02 c6 47 4c 86 08 bd 00 07 e8 91 44 c6 46 d0 04 c6 47 f0 07 c8 d0 8f e6 45 d0 8b ad e3 02 c9 09 f0 18 8e 29",
+      "device": "0x31",
+      "geometry": "geo-classic-256",
+      "id": "boot-config-read-sector-2",
+      "label": "config D1 boot sector 2",
+      "lba": 1,
+      "mode": "config",
+      "offset": 128,
+      "phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:4a"
+      ],
+      "sector": 2,
+      "selection": "boot.config_uri only",
+      "slot": 0,
+      "source_image_sector": 2,
+      "initial_state": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "command": "31 52 03 00 86",
+      "data": "09 20 2c 09 ad 0b d4 d0 fb ae 29 09 a9 3d 8d e2 02 a9 09 8d e3 02 20 32 09 85 44 20 32 09 85 45 25 44 c9 ff f0 f0 4c 6b 08 00 00 03 6c e2 02 6c e0 02 e4 43 d0 03 20 3e 09 bd 00 07 e8 60 8c 2a 09 a4 48 b9 00 07 2d 2b 09 8d 0b 03 b9 01 07 8d 0a 03 0d 0b 03 f0 19 a9 40 8d 03 03 20 59 e4 30 f6 a4 48 b9 02 07 85 43 f0 d4 a2 00 ac 2a 09 60 68 68 a9 01 85 09 20 2c 09 20 2f 09 6c 0a 00 00",
+      "device": "0x31",
+      "geometry": "geo-classic-256",
+      "id": "boot-config-read-sector-3",
+      "label": "config D1 boot sector 3",
+      "lba": 2,
+      "mode": "config",
+      "offset": 256,
+      "phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:8c"
+      ],
+      "sector": 3,
+      "selection": "boot.config_uri only",
+      "slot": 0,
+      "source_image_sector": 3,
+      "initial_state": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "command": "31 52 04 00 87",
+      "data": "ff ff 00 24 c4 83 60 20 2e 7f ba 8e 2a 99 a5 0e a6 0f 8d 2d 99 8e 2e 99 38 ad e5 02 e9 00 85 0e 85 82 ad e6 02 e9 00 85 0f 85 83 a5 52 8d 2c 99 a0 00 84 52 ae be 02 8e 2b 99 8c be 02 88 8c fc 02 20 63 24 20 2c 75 ae 2a 99 9a 20 4f 75 ad 2c 99 85 52 ad 2b 99 8d be 02 ad 2d 99 ae 2e 99 85 0e 86 0f a2 00 8e f0 02 60 a0 04 f0 07 a9 5a a2 25 4c 67 83 60 ad 00 07 c9 53 f0 24 c9 4d f0 34 c9 58 f0 36 c9 52 f0 2f a9 4c a0 00 d1 0a d0 2f a0 03 d1 0a d0 29 a0 06 d1 0a f0 23 a9 03 d0 1c ad 03 07 c9 42 d0 0a ad 04 07 c9 57 d0 03 a9 02 2c a9 00 2c a9 06 2c a9 01 2c a9 04 8d 8c 83 60 60 ad 8c 83 c9 05 b0 f8 a0 9b 8c 27 84 c9 04 d0 0a a9 80 85 8a a9 08 85 8b d0 0d a5 0a 18 69 3f 85 8a a5 0b 69 00 85 8b a0 00 b1 8a 99 e7 83 c8 c9 9b f0 04 c0 40 d0 f2 a9 00 99 e7 83 00 05 fd",
+      "device": "0x31",
+      "geometry": "geo-classic-256",
+      "id": "boot-config-read-sector-4",
+      "label": "config D1 first 256-byte sector",
+      "lba": 3,
+      "mode": "config",
+      "offset": 384,
+      "phases": [
+        "A",
+        "C",
+        "data:256",
+        "sum:e6"
+      ],
+      "sector": 4,
+      "selection": "boot.config_uri only",
+      "slot": 0,
+      "source_image_sector": 4,
+      "initial_state": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "command": "32 50 04 00 86",
+      "device": "0x32",
+      "geometry": "geo-128",
+      "id": "normal-restored-put",
+      "label": "normal restored D2 PUT",
+      "lba": 3,
+      "mode": "normal",
+      "offset": 384,
+      "phases": [
+        "A",
+        "host-data:128",
+        "A",
+        "C"
+      ],
+      "postimage": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "sector": 4,
+      "selection": "restored slots",
+      "slot": 1,
+      "status_after": "00 df 0f 00",
+      "write_data": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "write_length": 128,
+      "write_sum": "00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "postimage-declared",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "33 57 04 00 8e",
+      "device": "0x33",
+      "geometry": "geo-classic-256",
+      "id": "normal-restored-write-verify",
+      "label": "normal restored D3 WRITE WITH VERIFY",
+      "lba": 3,
+      "mode": "normal",
+      "offset": 384,
+      "phases": [
+        "A",
+        "host-data:256",
+        "A",
+        "C"
+      ],
+      "postimage": "01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80",
+      "sector": 4,
+      "selection": "restored slots",
+      "slot": 2,
+      "status_after": "20 df 0f 00",
+      "write_data": "01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80",
+      "write_length": 256,
+      "write_sum": "c0",
+      "initial_image": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "restored-slot",
+        "media": "writable",
+        "sector_4": "nonzero"
+      },
+      "effects": {
+        "mount": "already-mounted",
+        "mutation": "sector-4-replaced",
+        "outcome": "write-verify-success"
+      }
+    },
+    {
+      "command": "32 53 00 00 85",
+      "device": "0x32",
+      "ensure_mounted": false,
+      "id": "pending-status-nonblocking",
+      "label": "pending normal slot STATUS does not mount",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "selection": "restored slots pending",
+      "slot": 1,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "32 52 01 00 85",
+      "device": "0x32",
+      "error": "OpenFailed",
+      "id": "pending-mount-failure",
+      "label": "pending D2 read maps mount failure",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "E"
+      ],
+      "sector": 1,
+      "selection": "restored slots pending",
+      "slot": 1,
+      "status_after": "04 5f 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "unavailable"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "32 52 01 00 85",
+      "data": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "device": "0x32",
+      "ensure_mounted": true,
+      "geometry": "geo-128",
+      "id": "pending-mount-success",
+      "label": "pending D2 read mounts lazily",
+      "lba": 0,
+      "mode": "normal",
+      "offset": 0,
+      "phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:00"
+      ],
+      "sector": 1,
+      "selection": "restored slots pending",
+      "slot": 1,
+      "status_after": "00 df 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "31 52 01 00 00",
+      "device": "0x31",
+      "disk_service": false,
+      "id": "malformed-command",
+      "label": "bad command checksum rejects before DiskService",
+      "malformed": "checksum",
+      "mode": "normal",
+      "phases": [
+        "N"
+      ],
+      "slot": 0,
+      "status_after": "01 df 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "command": "31 54 00 00 85",
+      "device": "0x31",
+      "disk_service": false,
+      "id": "unsupported-command",
+      "label": "well-formed unsupported command rejects",
+      "mode": "normal",
+      "phases": [
+        "N"
+      ],
+      "slot": 0,
+      "unsupported": true,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "command": "31 50 04 00 85",
+      "device": "0x31",
+      "disk_service": false,
+      "geometry": "geo-128",
+      "id": "bad-put-data-checksum",
+      "label": "PUT data checksum rejects without mutation",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "host-data:128",
+        "N"
+      ],
+      "postimage": null,
+      "sector": 4,
+      "slot": 0,
+      "status_after": "02 df 0f 00",
+      "write_data": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "write_length": 128,
+      "write_sum": "01",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "command": "31 52 00 00 83",
+      "device": "0x31",
+      "error": "InvalidRequest",
+      "id": "zero-sector-execution-failure",
+      "label": "zero sector is valid command then execution failure",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "E"
+      ],
+      "sector": 0,
+      "slot": 0,
+      "status_after": "04 cf 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "31 53 00 00 84",
+      "device": "0x31",
+      "id": "status-retains-error",
+      "label": "STATUS retains prior invalid-sector result",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:04 cf 0f 00",
+        "sum:e2"
+      ],
+      "predecessor": "zero-sector-execution-failure",
+      "slot": 0,
+      "status_after": "04 cf 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "31 53 00 00 84",
+      "device": "0x31",
+      "id": "status-retains-error-again",
+      "label": "second STATUS retains prior invalid-sector result",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:04 cf 0f 00",
+        "sum:e2"
+      ],
+      "predecessor": "status-retains-error",
+      "slot": 0,
+      "status_after": "04 cf 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "31 52 01 00 84",
+      "data": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "device": "0x31",
+      "geometry": "geo-128",
+      "id": "successful-read-clears-error",
+      "label": "successful read clears transient error",
+      "lba": 0,
+      "mode": "normal",
+      "offset": 0,
+      "phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:00"
+      ],
+      "sector": 1,
+      "slot": 0,
+      "status_after": "00 df 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      },
+      "predecessor": "status-retains-error-again"
+    },
+    {
+      "command": "31 50 04 00 85",
+      "device": "0x31",
+      "error": "ReadOnly",
+      "geometry": "geo-128",
+      "id": "readonly-put-rejected",
+      "label": "read-only PUT has no postimage",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "host-data:128",
+        "A",
+        "E"
+      ],
+      "postimage": null,
+      "sector": 4,
+      "slot": 0,
+      "status_after": "0c 9f 0f 00",
+      "write_data": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "write_length": 128,
+      "write_sum": "00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "31 52 05 00 88",
+      "device": "0x31",
+      "error": "IoError",
+      "id": "io-error-read",
+      "label": "I/O failed read maps lost-data",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "E"
+      ],
+      "sector": 5,
+      "slot": 0,
+      "status_after": "04 db 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "34 53 00 00 87",
+      "device": "0x34",
+      "ensure_mounted": false,
+      "id": "routing-status-d4",
+      "label": "normal D4 maps to restored slot 3",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "selection": "restored slots",
+      "slot": 3,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "35 53 00 00 88",
+      "device": "0x35",
+      "ensure_mounted": false,
+      "id": "routing-status-d5",
+      "label": "normal D5 maps to restored slot 4",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "selection": "restored slots",
+      "slot": 4,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "36 53 00 00 89",
+      "device": "0x36",
+      "ensure_mounted": false,
+      "id": "routing-status-d6",
+      "label": "normal D6 maps to restored slot 5",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "selection": "restored slots",
+      "slot": 5,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "37 53 00 00 8a",
+      "device": "0x37",
+      "ensure_mounted": false,
+      "id": "routing-status-d7",
+      "label": "normal D7 maps to restored slot 6",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "selection": "restored slots",
+      "slot": 6,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "38 53 00 00 8b",
+      "device": "0x38",
+      "ensure_mounted": false,
+      "id": "routing-status-d8",
+      "label": "normal D8 maps to restored slot 7",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "selection": "restored slots",
+      "slot": 7,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "31 52 02 00 85",
+      "data": "01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80",
+      "device": "0x31",
+      "geometry": "geo-128",
+      "id": "normal-read-nonzero-data",
+      "label": "normal D1 read has a nonzero literal checksum vector",
+      "lba": 1,
+      "mode": "normal",
+      "offset": 128,
+      "phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:60"
+      ],
+      "sector": 2,
+      "slot": 0,
+      "status_after": "00 df 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "31 52 01 00",
+      "device": "0x31",
+      "disk_service": false,
+      "id": "malformed-command-length",
+      "label": "short command frame rejects before DiskService",
+      "malformed": "length",
+      "mode": "normal",
+      "phases": [
+        "N"
+      ],
+      "slot": 0,
+      "status_after": "01 df 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "command": "31 52 09 00 8c",
+      "device": "0x31",
+      "error": "OutOfRange",
+      "geometry": "geo-128",
+      "id": "out-of-range-sector",
+      "label": "valid command with out-of-range sector fails in execution",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "E"
+      ],
+      "sector": 9,
+      "slot": 0,
+      "status_after": "04 cf 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "31 52 01 00 84",
+      "device": "0x31",
+      "error": "InvalidGeometry",
+      "geometry": "geo-malformed-128",
+      "id": "malformed-128-geometry",
+      "label": "nonintegral 128-byte ATR payload rejects before sector execution",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "E"
+      ],
+      "sector": 1,
+      "slot": 0,
+      "status_after": "04 cf 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "31 52 01 00 84",
+      "device": "0x31",
+      "error": "InvalidGeometry",
+      "geometry": "geo-malformed-small-256",
+      "id": "malformed-small-256-geometry",
+      "label": "malformed small classic-256 ATR rejects before sector execution",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "E"
+      ],
+      "sector": 1,
+      "slot": 0,
+      "status_after": "04 cf 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "31 52 01 00 84",
+      "device": "0x31",
+      "error": "InvalidGeometry",
+      "geometry": "geo-ordinary-512",
+      "id": "ordinary-512-geometry",
+      "label": "ordinary 512-byte ATR rejects before sector execution",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "E"
+      ],
+      "sector": 1,
+      "slot": 0,
+      "status_after": "04 cf 0f 00",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "31 57 04 00 8c",
+      "device": "0x31",
+      "error": "IoError",
+      "geometry": "geo-128",
+      "id": "write-verify-readback-failure",
+      "label": "accepted WRITE WITH VERIFY retains its written postimage on readback mismatch",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "host-data:128",
+        "A",
+        "E"
+      ],
+      "postimage": "01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80",
+      "sector": 4,
+      "slot": 0,
+      "status_after": "04 db 0f 00",
+      "verify": "readback-mismatch",
+      "write_data": "01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80",
+      "write_length": 128,
+      "write_sum": "60",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "postimage-declared",
+        "outcome": "failure"
+      }
+    },
+    {
+      "command": "31 53 00 00 84",
+      "device": "0x31",
+      "ensure_mounted": false,
+      "id": "status-after-successful-read",
+      "label": "STATUS proves a successful read cleared transient state",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:00 df 0f 00",
+        "sum:ee"
+      ],
+      "predecessor": "successful-read-clears-error",
+      "slot": 0,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "31 53 00 00 84",
+      "device": "0x31",
+      "ensure_mounted": false,
+      "id": "status-after-bad-put-checksum",
+      "label": "STATUS proves bad incoming data checksum is retained",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:02 df 0f 00",
+        "sum:f0"
+      ],
+      "predecessor": "bad-put-data-checksum",
+      "slot": 0,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "31 53 00 00 84",
+      "device": "0x31",
+      "ensure_mounted": false,
+      "id": "status-after-malformed-command",
+      "label": "STATUS proves a malformed command error is retained",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:01 df 0f 00",
+        "sum:ef"
+      ],
+      "predecessor": "malformed-command",
+      "slot": 0,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "command": "33 53 00 00 86",
+      "device": "0x33",
+      "ensure_mounted": false,
+      "id": "status-after-classic-256-write",
+      "label": "STATUS proves classic 256-byte density after a successful write",
+      "mode": "normal",
+      "phases": [
+        "A",
+        "C",
+        "status:20 df 0f 00",
+        "sum:0f"
+      ],
+      "predecessor": "normal-restored-write-verify",
+      "slot": 2,
+      "initial_state": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "normal-restored-write-verify-readback",
+      "label": "successor READ returns nonzero verified sector 4",
+      "command": "33 52 04 00 89",
+      "device": "0x33",
+      "slot": 2,
+      "mode": "normal",
+      "selection": "restored slots",
+      "geometry": "geo-classic-256",
+      "sector": 4,
+      "lba": 3,
+      "offset": 384,
+      "data": "01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5b 5c 5d 5e 5f 60 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 78 79 7a 7b 7c 7d 7e 7f 80",
+      "phases": [
+        "A",
+        "C",
+        "data:256",
+        "sum:c0"
+      ],
+      "predecessor": "normal-restored-write-verify",
+      "initial_state": {
+        "mode": "normal",
+        "mount": "restored-slot",
+        "media": "writable",
+        "sector_4": "post-write"
+      },
+      "effects": {
+        "mount": "already-mounted",
+        "outcome": "readback-success",
+        "observes": "normal-restored-write-verify.postimage"
+      },
+      "status_after": "20 df 0f 00"
+    }
+  ],
+  "scope": "virtual protocol evidence only; no physical timing or electrical claim",
+  "source_image": {
+    "path": "repos/nio-core-apps/build/atari/disk/boot/autorun.atr",
+    "sha256": "69f2e196924026b23f2a72b33156e65389d7c66fbc579be2b31063e4c3dafb22",
+    "atr_header": "96 02 e8 2c 00 01 00 00 00 00 00 00 00 00 00 00",
+    "atr_header_bytes": 16,
+    "geometry": "classic-256",
+    "sectors": {
+      "1": {
+        "atr_offset": 16,
+        "bytes": 128,
+        "data": "00 03 00 08 3d 09 a2 7d ad 00 08 d0 08 8d 08 03 ee 09 03 a2 fd 86 48 a2 00 8e 04 03 e8 8e 0b 03 a9 07 8d 05 03 a9 69 8d 0a 03 a9 40 8d 03 03 20 59 e4 ad 00 07 29 04 f0 05 a9 ff 8d 2b 09 a4 48 ad 03 07 99 01 07 ad 04 07 99 00 07 a9 3d 8d e2 02 a9 09 8d e3 02 20 3e 09 a2 02 20 32 09 85 44 8d e0 02 20 32 09 85 45 8d e1 02 20 32 09 38 e5 44 85 46 08 20 32 09 28 e5 45 85 47 e6 46 e6 47",
+        "checksum": "94",
+        "sha256": "0b936197213ee819713e34458f5382e687fc350324d6005bb66d5dd5bc1a419d"
+      },
+      "2": {
+        "atr_offset": 144,
+        "bytes": 128,
+        "data": "a0 00 e4 43 d0 5c 20 3e 09 a5 47 c9 02 90 53 a5 43 c5 48 d0 4d 98 18 65 44 85 44 90 02 e6 45 a4 48 88 b9 00 07 91 44 88 b9 00 07 91 44 88 b9 00 07 91 44 88 b9 00 07 91 44 88 d0 e6 b9 00 07 91 44 18 a5 44 65 48 85 44 90 02 e6 45 38 a5 46 d0 02 e6 47 e5 48 85 46 d0 02 c6 47 b0 02 c6 47 4c 86 08 bd 00 07 e8 91 44 c6 46 d0 04 c6 47 f0 07 c8 d0 8f e6 45 d0 8b ad e3 02 c9 09 f0 18 8e 29",
+        "checksum": "4a",
+        "sha256": "7a19bab71994d89bcae988fa1f7365b31ea3ae58e85d8bf775f0e8b2c8d2ebc0"
+      },
+      "3": {
+        "atr_offset": 272,
+        "bytes": 128,
+        "data": "09 20 2c 09 ad 0b d4 d0 fb ae 29 09 a9 3d 8d e2 02 a9 09 8d e3 02 20 32 09 85 44 20 32 09 85 45 25 44 c9 ff f0 f0 4c 6b 08 00 00 03 6c e2 02 6c e0 02 e4 43 d0 03 20 3e 09 bd 00 07 e8 60 8c 2a 09 a4 48 b9 00 07 2d 2b 09 8d 0b 03 b9 01 07 8d 0a 03 0d 0b 03 f0 19 a9 40 8d 03 03 20 59 e4 30 f6 a4 48 b9 02 07 85 43 f0 d4 a2 00 ac 2a 09 60 68 68 a9 01 85 09 20 2c 09 20 2f 09 6c 0a 00 00",
+        "checksum": "8c",
+        "sha256": "a1f6d8afe88da338110d427f2e023c9f567f864d5f688b9f94eb60ee6b40ae3b"
+      },
+      "4": {
+        "atr_offset": 400,
+        "bytes": 256,
+      "data": "ff ff 00 24 c4 83 60 20 2e 7f ba 8e 2a 99 a5 0e a6 0f 8d 2d 99 8e 2e 99 38 ad e5 02 e9 00 85 0e 85 82 ad e6 02 e9 00 85 0f 85 83 a5 52 8d 2c 99 a0 00 84 52 ae be 02 8e 2b 99 8c be 02 88 8c fc 02 20 63 24 20 2c 75 ae 2a 99 9a 20 4f 75 ad 2c 99 85 52 ad 2b 99 8d be 02 ad 2d 99 ae 2e 99 85 0e 86 0f a2 00 8e f0 02 60 a0 04 f0 07 a9 5a a2 25 4c 67 83 60 ad 00 07 c9 53 f0 24 c9 4d f0 34 c9 58 f0 36 c9 52 f0 2f a9 4c a0 00 d1 0a d0 2f a0 03 d1 0a d0 29 a0 06 d1 0a f0 23 a9 03 d0 1c ad 03 07 c9 42 d0 0a ad 04 07 c9 57 d0 03 a9 02 2c a9 00 2c a9 06 2c a9 01 2c a9 04 8d 8c 83 60 60 ad 8c 83 c9 05 b0 f8 a0 9b 8c 27 84 c9 04 d0 0a a9 80 85 8a a9 08 85 8b d0 0d a5 0a 18 69 3f 85 8a a5 0b 69 00 85 8b a0 00 b1 8a 99 e7 83 c8 c9 9b f0 04 c0 40 d0 f2 a9 00 99 e7 83 00 05 fd",
+      "checksum": "e6",
+      "sha256": "8a306e273228694543959ea18c04c5a8890db02088d0c966c21e490001a72d7f"
+      }
+    }
+  }
+}

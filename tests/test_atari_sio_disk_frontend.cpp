@@ -55,8 +55,7 @@ std::vector<std::uint8_t> hex_bytes(const char* text)
 
 FixtureScenario fixture(const char* id)
 {
-    const auto workspace = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
-    const auto path = workspace / "integration-tests/atari-sio/fixtures/disk_v1.json";
+    const auto path = std::filesystem::path(FN_ATARI_SIO_FIXTURE_DIR) / "disk_v1.json";
     std::ifstream input(path);
     REQUIRE_MESSAGE(input.good(), "fixture path: " << path);
     const std::string json((std::istreambuf_iterator<char>(input)), {});

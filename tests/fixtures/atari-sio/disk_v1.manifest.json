@@ -1,0 +1,698 @@
+{
+  "format": "atari-disk-sio-v1-projection",
+  "projections": [
+    {
+      "id": "boot-config-read-sector-1",
+      "input_state": "config boot.config_uri -> D1 slot 0",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:94"
+      ],
+      "preconditions": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "id": "boot-config-read-sector-2",
+      "input_state": "config boot.config_uri -> D1 slot 0",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:4a"
+      ],
+      "preconditions": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "id": "boot-config-read-sector-3",
+      "input_state": "config boot.config_uri -> D1 slot 0",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:8c"
+      ],
+      "preconditions": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "id": "boot-config-read-sector-4",
+      "input_state": "config boot.config_uri -> D1 slot 0",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:256",
+        "sum:e6"
+      ],
+      "preconditions": {
+        "mode": "config",
+        "mount": "boot.config_uri",
+        "media": "pinned-autorun-atr",
+        "slot": 0
+      },
+      "effects": {
+        "mount": "select-config-uri",
+        "outcome": "read-success",
+        "image": "unchanged"
+      }
+    },
+    {
+      "id": "normal-restored-put",
+      "input_state": "normal restored D2 slot 1 writable",
+      "ordered_phases": [
+        "A",
+        "host-data:128",
+        "A",
+        "C"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "postimage-declared",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "normal-restored-write-verify",
+      "input_state": "normal restored D3 slot 2 writable",
+      "ordered_phases": [
+        "A",
+        "host-data:256",
+        "A",
+        "C"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "restored-slot",
+        "media": "writable",
+        "sector_4": "nonzero"
+      },
+      "effects": {
+        "mount": "already-mounted",
+        "mutation": "sector-4-replaced",
+        "outcome": "write-verify-success"
+      }
+    },
+    {
+      "id": "pending-status-nonblocking",
+      "input_state": "normal D2 pending",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "pending-mount-failure",
+      "input_state": "normal D2 pending OpenFailed",
+      "ordered_phases": [
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "unavailable"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "pending-mount-success",
+      "input_state": "normal D2 pending success",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:00"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "malformed-command",
+      "input_state": "bad command checksum",
+      "ordered_phases": [
+        "N"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "id": "unsupported-command",
+      "input_state": "unsupported command",
+      "ordered_phases": [
+        "N"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "id": "bad-put-data-checksum",
+      "input_state": "bad incoming write checksum",
+      "ordered_phases": [
+        "A",
+        "host-data:128",
+        "N"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "id": "zero-sector-execution-failure",
+      "input_state": "sector zero",
+      "ordered_phases": [
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "status-retains-error",
+      "input_state": "after invalid sector",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:04 cf 0f 00",
+        "sum:e2"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "status-retains-error-again",
+      "input_state": "after retained status",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:04 cf 0f 00",
+        "sum:e2"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "successful-read-clears-error",
+      "input_state": "after invalid sector",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:00"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "readonly-put-rejected",
+      "input_state": "write-protected D1",
+      "ordered_phases": [
+        "A",
+        "host-data:128",
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "io-error-read",
+      "input_state": "I/O failure",
+      "ordered_phases": [
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "routing-status-d4",
+      "input_state": "normal D4 restored slot 3 pending",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "routing-status-d5",
+      "input_state": "normal D5 restored slot 4 pending",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "routing-status-d6",
+      "input_state": "normal D6 restored slot 5 pending",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "routing-status-d7",
+      "input_state": "normal D7 restored slot 6 pending",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "routing-status-d8",
+      "input_state": "normal D8 restored slot 7 pending",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:00 5f 0f 00",
+        "sum:6e"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "normal-read-nonzero-data",
+      "input_state": "normal restored D1 slot 0 128-byte ATR",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:128",
+        "sum:60"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "malformed-command-length",
+      "input_state": "short command frame",
+      "ordered_phases": [
+        "N"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "rejected"
+      }
+    },
+    {
+      "id": "out-of-range-sector",
+      "input_state": "normal D1 128-byte ATR with sector 9 beyond image",
+      "ordered_phases": [
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "malformed-128-geometry",
+      "input_state": "normal D1 malformed nonintegral 128-byte ATR",
+      "ordered_phases": [
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "malformed-small-256-geometry",
+      "input_state": "normal D1 malformed small classic-256 ATR",
+      "ordered_phases": [
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "ordinary-512-geometry",
+      "input_state": "normal D1 ordinary 512-byte ATR",
+      "ordered_phases": [
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "write-verify-readback-failure",
+      "input_state": "normal writable D1 with readback mismatch after accepted data",
+      "ordered_phases": [
+        "A",
+        "host-data:128",
+        "A",
+        "E"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "postimage-declared",
+        "outcome": "failure"
+      }
+    },
+    {
+      "id": "status-after-successful-read",
+      "input_state": "after successful-read-clears-error",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:00 df 0f 00",
+        "sum:ee"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "selected",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "as-declared",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "status-after-bad-put-checksum",
+      "input_state": "after bad-put-data-checksum",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:02 df 0f 00",
+        "sum:f0"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "status-after-malformed-command",
+      "input_state": "after malformed-command",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:01 df 0f 00",
+        "sum:ef"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "status-after-classic-256-write",
+      "input_state": "after normal-restored-write-verify",
+      "ordered_phases": [
+        "A",
+        "C",
+        "status:20 df 0f 00",
+        "sum:0f"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "pending",
+        "media": "declared"
+      },
+      "effects": {
+        "mount": "unchanged",
+        "mutation": "none",
+        "outcome": "success"
+      }
+    },
+    {
+      "id": "normal-restored-write-verify-readback",
+      "input_state": "normal restored D3 sector 4 after successful WRITE WITH VERIFY",
+      "ordered_phases": [
+        "A",
+        "C",
+        "data:256",
+        "sum:c0"
+      ],
+      "preconditions": {
+        "mode": "normal",
+        "mount": "restored-slot",
+        "media": "writable",
+        "sector_4": "post-write"
+      },
+      "effects": {
+        "mount": "already-mounted",
+        "outcome": "readback-success",
+        "observes": "normal-restored-write-verify.postimage"
+      }
+    }
+  ],
+  "scope": "virtual protocol/scheduling evidence only; not physical SIO proof",
+  "source": "disk_v1.json",
+  "source_image": {
+    "sha256": "a4bec3fa87bb0355815d66bb28356222bf0001e4212441e7b5b2eb128a986a20",
+    "sectors": [
+      1,
+      2,
+      3,
+      4
+    ]
+  }
+}

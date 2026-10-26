@@ -1,0 +1,115 @@
+{
+  "format": "atari-native-nio-v1-virtual-projection",
+  "scope": "virtual protocol/scheduling evidence only; no physical SIO timing claim",
+  "fixture_authority": "nio_v1.json",
+  "native_v1_only": true,
+  "adapters": ["netsio", "altirra-embedded"],
+  "forbidden_paths": ["legacy-$71", "slip", "padded-read", "stream-chunking"],
+  "projections": [
+    {
+      "id": "native-q-capability",
+      "operations": [
+        {"fixture": "q-idle", "observe": ["command", "response", "state"]}
+      ]
+    },
+    {
+      "id": "native-q-invalid-client-contract",
+      "coverage": "client-contract",
+      "operations": [
+        {"fixture": "q-invalid-revision", "observe": ["command", "response", "client-outcome"]},
+        {"fixture": "q-invalid-capacity", "observe": ["command", "response", "client-outcome"]},
+        {"fixture": "q-siov-error", "observe": ["command", "transport-error", "client-outcome"]}
+      ]
+    },
+    {
+      "id": "native-core-dispatch",
+      "operations": [
+        {"fixture": "w-core-dispatch", "observe": ["command", "data", "response"]},
+        {"fixture": "p-core-dispatch-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "r-core-dispatch", "observe": ["command", "response", "state"]}
+      ]
+    },
+    {
+      "id": "native-rejected-w",
+      "operations": [
+        {"fixture": "w-idle", "observe": ["command", "data", "response"]},
+        {"fixture": "p-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "w-rejected-busy", "observe": ["command", "response", "state"]},
+        {"fixture": "r-ready", "observe": ["command", "response", "state"]}
+      ]
+    },
+    {
+      "id": "native-wrong-r-retention",
+      "operations": [
+        {"fixture": "w-core-dispatch", "observe": ["command", "data", "response"]},
+        {"fixture": "p-core-dispatch-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "r-wrong-length-retains", "observe": ["command", "response", "state"]},
+        {"fixture": "p-core-dispatch-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "r-core-dispatch", "observe": ["command", "response", "state"]}
+      ]
+    },
+    {
+      "id": "native-interrupted-r-recovery",
+      "operations": [
+        {"fixture": "w-core-dispatch", "observe": ["command", "data", "response"]},
+        {"fixture": "p-core-dispatch-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "r-core-dispatch-interrupted-consumes", "observe": ["command", "response", "transport-error"]},
+        {"fixture": "p-idle-after-consumed-r", "observe": ["command", "response", "state"]},
+        {"fixture": "w-core-dispatch-after-interrupted-r", "observe": ["command", "data", "response"]},
+        {"fixture": "p-core-dispatch-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "r-core-dispatch-after-interrupted-r", "observe": ["command", "response", "state"]}
+      ]
+    },
+    {
+      "id": "native-reset-to-idle",
+      "operations": [
+        {"fixture": "w-core-dispatch", "observe": ["command", "data", "response"]},
+        {"fixture": "p-core-dispatch-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "reset-clears", "observe": ["command", "response", "state"]},
+        {"fixture": "w-core-dispatch-after-reset", "observe": ["command", "data", "response"]},
+        {"fixture": "p-core-dispatch-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "r-core-dispatch-after-reset", "observe": ["command", "response", "state"]}
+      ]
+    },
+    {
+      "id": "native-pending-recovery-client-contract",
+      "coverage": "client-contract",
+      "operations": [
+        {"fixture": "w-idle", "observe": ["command", "data", "response"]},
+        {"fixture": "timeout-retains", "observe": ["command", "response", "client-outcome"]},
+        {"fixture": "p-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "r-ready", "observe": ["command", "response", "state"]},
+        {"fixture": "w-idle", "observe": ["command", "data", "response"]}
+      ]
+    },
+    {
+      "id": "native-capacity-bounds",
+      "operations": [
+        {"fixture": "w-511", "observe": ["command", "data", "response"]},
+        {"fixture": "p-ready-7", "observe": ["command", "response", "state"]},
+        {"fixture": "r-ready-7", "observe": ["command", "response", "state"]},
+        {"fixture": "w-512", "observe": ["command", "data", "response"]},
+        {"fixture": "p-ready-512", "observe": ["command", "response", "state"]},
+        {"fixture": "r-ready-512", "observe": ["command", "response", "state"]},
+        {"fixture": "p-idle-after-consumed-r", "observe": ["command", "response", "state"]},
+        {"fixture": "w-513-rejected", "observe": ["command", "response", "client-outcome"]},
+        {"fixture": "w-oversize-response", "observe": ["command", "data", "response"]},
+        {"fixture": "p-ready-7", "observe": ["command", "response", "state"]},
+        {"fixture": "r-bounded-error-response", "observe": ["command", "response", "state"]}
+      ]
+    }
+  ],
+  "boot_projections": [
+    {
+      "id": "boot-page6-config",
+      "fixture_authority": "disk_v1.json",
+      "scenario_ids": [
+        "boot-config-read-sector-1",
+        "boot-config-read-sector-2",
+        "boot-config-read-sector-3",
+        "boot-config-read-sector-4"
+      ],
+      "observe": ["command", "response", "page-6-signature"]
+    }
+  ]
+}

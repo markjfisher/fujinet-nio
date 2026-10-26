@@ -59,6 +59,14 @@ add_executable(fujinet-nio-tests
     ${CMAKE_SOURCE_DIR}/src/app/console_engine.cpp
 )
 
+# Wire-level golden vectors for the Atari SIO/NIO frontends. They are owned by
+# this repository (the firmware defines the protocol); the workspace and
+# emulator tests read them from here.
+target_compile_definitions(fujinet-nio-tests
+    PRIVATE
+        FN_ATARI_SIO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/atari-sio"
+)
+
 # Compile the platform clock again only for the unit-test executable. These
 # definitions satisfy its clock references before the production static archive
 # is searched; the archive/app/native runner retain the normal system clock.
