@@ -340,6 +340,11 @@ and hardware flow control when available, and exposes it through the common
 for manual hardware testing. FujiBus/SLIP framing remains entirely in
 `FujiBusTransport`.
 
+The `fujibus-link-serial-debug` preset uses the same channel with
+`TransportKind::FujiBusNative` and a [packet link](packet_link.md): the factory
+wraps the serial channel in `io::PacketLinkChannel`, so a bridge
+microcontroller on the port exchanges raw FujiBus packets instead of SLIP.
+
 ---
 
 ## **2. Transport (framing + protocol layer)**

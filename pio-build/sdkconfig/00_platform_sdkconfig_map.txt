@@ -7,6 +7,7 @@
 
 fujibus-usbcdc-nosd-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2
 fujibus-usbcdc-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2
+fujibus-link-usbcdc-freenove-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,tinyusb-cdc2
 atari-legacy-sio-gpio-fujinet-v1-8mb=common,wifi,fatfs,fs-littlefs,flash-8mb,spiram-quad40
 atari-nio-fujibus-sio-gpio-fujinet-v1-8mb=common,wifi,fatfs,fs-littlefs,flash-8mb,spiram-quad40,fujibus-gpio
 atari-legacy-sio-gpio-fujinet-v1-16mb=common,wifi,fatfs,fs-littlefs,flash-16mb,spiram-quad40

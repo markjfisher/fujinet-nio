@@ -112,6 +112,7 @@ CMake (`CMakeLists_posix.cmake`) selects one file via an `if/elseif/else` block:
 | `atari_netsio.cpp` | `FN_BUILD_ATARI_NETSIO` | `SIO` | `UdpSocket` |
 | `atari_fujibus_netsio.cpp` | `FN_BUILD_ATARI_FUJIBUS_NETSIO` | `FujiBusSlip` | `UdpSocket` |
 | `fujibus_link_tcp.cpp` | `FN_BUILD_FUJIBUS_LINK_TCP` | `FujiBusNative` | `TcpSocket` (packet link) |
+| `fujibus_link_serial.cpp` | `FN_BUILD_FUJIBUS_LINK_SERIAL` | `FujiBusNative` | `SerialPort` (packet link) |
 | `zorro.cpp` | `FN_BUILD_ZORRO` | `FujiBusNative` | `Pty` (stub) |
 | `default.cpp` | *(none)* | `FujiBusSlip` | `Pty` |
 
@@ -269,7 +270,7 @@ create_channel_for_profile(const BuildProfile& profile, const FujiConfig& config
 }
 ```
 
-The POSIX serial profile reads `channel.serial_port` and the `channel.uart`
+The POSIX serial profiles read `channel.serial_port` and the `channel.uart`
 settings from `fujinet.yaml` (`baud_rate`, `data_bits`, `parity`, `stop_bits`,
 `flow_control`, `tx_gap_us`, `tx_byte_gap_us`, `tx_chunk_size`, and
 `tx_chunk_gap_us`). `FN_SERIAL_PORT` and `FN_SERIAL_BAUD` remain available as
@@ -428,6 +429,16 @@ Currently supported profiles:
   - `primaryTransport = TransportKind::FujiBusSlip`  
   - `primaryChannel   = ChannelKind::UsbCdcDevice`  
   - Used by the ESP32-S3 build via PlatformIO.
+  - Used by the ESP32-S3 build via PlatformIO.
+
+- `FN_BUILD_ESP32_USB_CDC_LINK`
+  - `machine          = Machine::FujiNetESP32`
+  - `primaryTransport = TransportKind::FujiBusNative`
+  - `primaryChannel   = ChannelKind::UsbCdcDevice`
+  - The ESP32-S3 USB CDC device carries raw FujiBus packets over a
+    [packet link](packet_link.md), for a bridge microcontroller that is the USB
+    host.
+  - PlatformIO environment: `fujibus-link-usbcdc-freenove-s3-wroom-1-n16r8`
 
 - `FN_BUILD_FUJIBUS_PTY`  
   - `machine          = Machine::Generic`  
@@ -464,6 +475,16 @@ Currently supported profiles:
   - POSIX build that carries raw FujiBus packets over a [packet link](packet_link.md)
     on TCP, for emulators and tools that play the part of a bridge microcontroller.
   - CMake preset: `fujibus-link-tcp-debug`
+
+- `FN_BUILD_FUJIBUS_LINK_SERIAL`
+  - `machine          = Machine::Generic`
+  - `primaryTransport = TransportKind::FujiBusNative`
+  - `primaryChannel   = ChannelKind::SerialPort`
+  - POSIX build that carries raw FujiBus packets over a [packet link](packet_link.md)
+    on a serial port, for a bridge microcontroller attached by a USB CDC or
+    UART adapter. The port is set as for `FN_BUILD_AMIGA_RS232`
+    (`channel.serial_port`, or `FN_SERIAL_PORT`).
+  - CMake preset: `fujibus-link-serial-debug`
 
 A profile carries `FujiBusNative` over a byte-stream channel by setting
 `packetLink = true`; the channel factory then wraps the stream in

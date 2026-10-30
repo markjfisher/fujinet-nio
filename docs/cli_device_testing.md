@@ -35,6 +35,15 @@ also takes a pyserial URL such as `socket://127.0.0.1:65504`; prefix it with
 `--port link:socket://127.0.0.1:65504` against the `fujibus-link-tcp-debug`
 build.
 
+The `fujibus-link-serial-debug` build opens a serial port instead, so it can be
+tried without hardware on a pair of linked ptys:
+
+```
+socat -d -d pty,raw,echo=0 pty,raw,echo=0     # prints the two device names
+FN_SERIAL_PORT=<first pty> ./build/fujibus-link-serial-debug/fujinet-nio
+./scripts/fujinet --port link:<second pty> ...
+```
+
 ---
 
 ## 2. Starting local test services (HTTP + TCP)

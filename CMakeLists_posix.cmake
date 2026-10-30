@@ -44,6 +44,7 @@ option (FN_BUILD_ATARI_FUJIBUS_NETSIO "Build for Atari NIO FujiBus over NetSIO/U
 option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 option (FN_BUILD_FUJIBUS_TCP  "Build for FUJIBUS TCP serial profile"  OFF)
 option (FN_BUILD_FUJIBUS_LINK_TCP "Build for FujiBus packets over a packet link on TCP" OFF)
+option (FN_BUILD_FUJIBUS_LINK_SERIAL "Build for FujiBus packets over a packet link on a serial port" OFF)
 option (FN_BUILD_AMIGA_RS232  "Build for FujiBus over RS-232 (Amiga prototype)" OFF)
 option (FN_BUILD_EMBEDDED_LIB "Build reduced POSIX library surface for embedders" OFF)
 
@@ -111,6 +112,7 @@ target_compile_definitions(fujinet-nio
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
         $<$<BOOL:${FN_BUILD_FUJIBUS_TCP}>:FN_BUILD_FUJIBUS_TCP>
         $<$<BOOL:${FN_BUILD_FUJIBUS_LINK_TCP}>:FN_BUILD_FUJIBUS_LINK_TCP>
+        $<$<BOOL:${FN_BUILD_FUJIBUS_LINK_SERIAL}>:FN_BUILD_FUJIBUS_LINK_SERIAL>
         $<$<BOOL:${FN_BUILD_AMIGA_RS232}>:FN_BUILD_AMIGA_RS232>
         # ADD MORE BUILD OPTIONS AS WE DEVELOP THEM HERE
 )
@@ -276,6 +278,8 @@ elseif(FN_BUILD_ATARI_FUJIBUS_NETSIO)
     list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/atari_fujibus_netsio.cpp)
 elseif(FN_BUILD_FUJIBUS_LINK_TCP)
     list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/fujibus_link_tcp.cpp)
+elseif(FN_BUILD_FUJIBUS_LINK_SERIAL)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/fujibus_link_serial.cpp)
 elseif(FN_BUILD_ZORRO)
     list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/zorro.cpp)
 else()

@@ -60,8 +60,11 @@ std::chrono::milliseconds posix_idle_delay(const build::BuildProfile& profile)
      * A 1 ms yield keeps the cooperative device/background polling contract
      * intact without changing physical-channel profiles.  The environment
      * override above remains available for diagnostics and tuning.
+     *
+     * A packet link over a serial port is in the same position: SerialChannel
+     * has no readiness wait, and its controller would wait 50 ms per request.
      */
-    if (profile.primaryChannel == build::ChannelKind::TcpSocket) {
+    if (profile.primaryChannel == build::ChannelKind::TcpSocket || profile.packetLink) {
         return std::chrono::milliseconds(1);
     }
 

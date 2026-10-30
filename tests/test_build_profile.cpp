@@ -55,3 +55,16 @@ TEST_CASE("current build profile maps the packet-link TCP preset to FujiBusNativ
     CHECK(true);
 #endif
 }
+
+TEST_CASE("current build profile maps the packet-link serial preset to FujiBusNative over SerialPort")
+{
+#if defined(FN_BUILD_FUJIBUS_LINK_SERIAL)
+    const auto profile = build::current_build_profile();
+    CHECK(profile.machine == build::Machine::Generic);
+    CHECK(profile.primaryTransport == build::TransportKind::FujiBusNative);
+    CHECK(profile.primaryChannel == build::ChannelKind::SerialPort);
+    CHECK(profile.packetLink);
+#else
+    CHECK(true);
+#endif
+}
