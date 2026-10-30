@@ -1,0 +1,6 @@
+{
+  "apio": {"url": "https://github.com/piersfinlayson/apio.git", "version": "v0.3.0", "revision": "1023d866849694417ced497e17e98a2cd2bd026e"},
+  "epio": {"url": "https://github.com/piersfinlayson/epio.git", "version": "v0.2.1", "revision": "bf49b19a534befb69bd518ee463365a1a5d73a65"},
+  "pico-sdk": {"url": "https://github.com/raspberrypi/pico-sdk.git", "version": "2.3.1", "revision": "079c6f39023649b154152db30f1d781e884879bc", "submodules": ["lib/tinyusb"]},
+  "picotool": {"url": "https://github.com/raspberrypi/picotool.git", "version": "2.3.1", "revision": "2041936441b48a3cc53ae3da9e805229fe8f4e18"}
+}

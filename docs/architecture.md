@@ -11,6 +11,9 @@ interaction.
 
 The isolated [RP2350 Zorro bridge skeleton](../bridges/rp2350-zorro/README.md)
 provides native PIO behavior tests and an RP2350B firmware build for later feasibility work.
+The isolated [RP2350 Springboard bridge](../bridges/rp2350-springboard/README.md)
+serves a Handspring Visor Springboard module and carries its FujiBus packets to
+NIO over a [packet link](packet_link.md).
 
 ## **Table of Contents**
 1. [Overview](#overview)  

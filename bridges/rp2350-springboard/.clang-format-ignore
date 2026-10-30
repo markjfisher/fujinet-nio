@@ -1,0 +1,9 @@
+# Vendored sources must remain byte-for-byte at their dependency pins.
+.deps/**
+.deps-backups/**
+build/**
+# mozzwald's read engine stays as in his fork, so it can be compared with it.
+src/pio_rearm_program.c
+src/pio_rearm_program.h
+src/persistent_reply.h
+src/cpu_reply.h
