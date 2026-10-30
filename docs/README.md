@@ -19,6 +19,7 @@ Principal evergreen documents include:
 | `disk_device_protocol.md` | DiskDevice wire contract |
 | `driver_architecture.md` | Client driver, session, and channel architecture |
 | `packet_link.md` | FujiBus packets over a byte stream (UART, TCP) from a bridge microcontroller |
+| `hotsync.md` | Palm HotSync service (NetSync), its settings, files and protocol stack |
 | `amiga/amiga-floppy-channel.md` | Amiga floppy/Pico channel trade study |
 | `atari/hsio.md` | Atari high-speed SIO: legacy behaviour and plan |
 | `atari/sio-bringup-findings.md` | Atari SIO hardware measurements, healthy timings and design rules |

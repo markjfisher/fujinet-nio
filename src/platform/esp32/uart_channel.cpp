@@ -514,6 +514,16 @@ uint32_t UartChannel::getBaudrate()
     return baud;
 }
 
+bool UartChannel::set_baud_rate(std::uint32_t baud)
+{
+    if (!_initialized || baud == 0) {
+        return false;
+    }
+    flushOutput();
+    setBaudrate(baud);
+    return true;
+}
+
 void UartChannel::setBaudrate(uint32_t baud)
 {
     if (!_initialized) {

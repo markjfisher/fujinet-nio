@@ -150,6 +150,29 @@ A quick reading: `cmd_edges: 0` means the CMD pin never changes (the Atari is no
 sending, or CMD is wired to a different pin than `pinmap.cpp` says); edges but
 `rx_bytes: 0` points at the data-in pin; bytes but `frames: 0` points at the aborts.
 Pair it with `disk.stats` to see whether sector requests reach the disk.
+### Provider: `hotsync`
+
+Registered by `fujinet::hotsync::start_hotsync()` in builds with HotSync
+(`FN_WITH_HOTSYNC`; see [`hotsync.md`](hotsync.md)), on POSIX and ESP32,
+whether or not `hotsync.enabled` is on. It exposes:
+
+- `hotsync.status` — whether NetSync is listening, the cradle's state and
+  counters, the settings, sync counts, and the source, user, time and result
+  of the last sync
+- `hotsync.get` — the stored `hotsync:` settings
+- `hotsync.set <enabled|port|cradle|root|user_name|backup> <value...>` —
+  change a stored setting (`enabled` and `cradle` are `0` or `1`; `port` 0
+  turns NetSync off; `backup` is `none`, `flagged` or `all`; `user_name` may
+  contain spaces, up to 40 characters)
+- `hotsync.save` — write the `hotsync:` settings into `fujinet.yaml`
+- `hotsync.fetch <http://host[:port]/file.prc> [name] [sha256=<hex>]` —
+  download a `.prc`, `.pdb` or `.pqa` over plain HTTP into `install/` for the
+  next sync (needs HotSync on); with `sha256=` it is queued only if its
+  SHA-256 matches
+
+`get`, `set` and `save` need the FujiDevice. The service reads its settings at
+start-up, so a change takes effect after `hotsync.save` and a restart. See
+[`hotsync.md`](hotsync.md).
 
 ### Provider: `net`
 

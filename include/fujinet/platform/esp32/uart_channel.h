@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fujinet/config/fuji_config.h"
+#include "fujinet/io/core/baud_control.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/platform/esp32/pinmap.h"
 
@@ -22,7 +23,7 @@ namespace fujinet::platform::esp32 {
 /// This implementation uses an event queue and internal FIFO to ensure
 /// reliable data reception even when the polling interval is longer than
 /// the time between incoming bytes.
-class UartChannel : public fujinet::io::Channel {
+class UartChannel : public fujinet::io::Channel, public fujinet::io::BaudControl {
 public:
     /// Host-facing UART from `channel.uart` in FujiConfig (baud, framing, optional RTS/CTS).
     explicit UartChannel(const config::UartConfig& uart_cfg = {});
@@ -54,6 +55,11 @@ public:
 
     /// Set baud rate (updates hardware and stored `UartConfig`).
     void setBaudrate(uint32_t baud);
+
+    /// io::BaudControl, for a Palm cradle sharing the line: waits for pending
+    /// output to leave, then switches.
+    std::uint32_t baud_rate() const override { return _uart_cfg.baudRate; }
+    bool set_baud_rate(std::uint32_t baud) override;
 
     /// Last applied settings (may differ slightly from hardware baud rounding).
     const config::UartConfig& uart_config() const { return _uart_cfg; }

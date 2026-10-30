@@ -126,6 +126,20 @@ struct ContentTranslationConfig {
     ImageTranslationConfig image;
 };
 
+/// Palm HotSync (`hotsync:`), docs/hotsync.md. Read at start-up; a change
+/// takes effect after a restart.
+struct HotSyncConfig {
+    bool          enabled{false};
+    std::uint16_t port{14238};            // NetSync TCP port; 0 turns NetSync off
+    // A Palm cradle shares the FujiBus serial line. After 60 s with no FujiBus
+    // packet the line is deaf to FujiBus for 1.5 s of every 3 s, and requests
+    // sent then go unanswered: only for a line whose clients retry.
+    bool          cradle{false};
+    std::string   root{"/hotsync"};       // folder on the persistent filesystem
+    std::string   userName{"FujiNet"};    // given to a Palm that has never synced
+    std::string   backup{"flagged"};      // none | flagged | all
+};
+
 // Unified config for the whole FujiNet instance.
 struct FujiConfig {
     GeneralConfig        general;
@@ -140,6 +154,7 @@ struct FujiConfig {
     ClockConfig          clock;
     ChannelConfig        channel;
     ContentTranslationConfig translation;
+    HotSyncConfig        hotsync;
 };
 
 

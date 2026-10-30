@@ -27,6 +27,7 @@ idf_component_register(
         lib/diagnostic_boot_provider.cpp
         lib/diagnostic_core_provider.cpp
         lib/diagnostic_disk_provider.cpp
+        lib/diagnostic_hotsync_provider.cpp
         lib/diagnostic_modem_provider.cpp
         lib/diagnostic_network_provider.cpp
         lib/diagnostic_parse.cpp
@@ -62,6 +63,21 @@ idf_component_register(
         lib/host_service.cpp
         lib/host_service_init.cpp
         lib/host_state.cpp
+        lib/hotsync/cradle_channel.cpp
+        lib/hotsync/dlp.cpp
+        lib/hotsync/dlp_client.cpp
+        lib/hotsync/fs_storage.cpp
+        lib/hotsync/hotsync_init.cpp
+        lib/hotsync/hotsync_service.cpp
+        lib/hotsync/http_fetch.cpp
+        lib/hotsync/netsync_transport.cpp
+        lib/hotsync/padp_transport.cpp
+        lib/hotsync/palm_database.cpp
+        lib/hotsync/session.cpp
+        lib/hotsync/sha256.cpp
+        lib/hotsync/slp.cpp
+        lib/hotsync/tcp_link.cpp
+        lib/hotsync_init_off.cpp
         lib/image/ilbm_writer.cpp
         lib/image/image_pipeline.cpp
         lib/image/output_format.cpp
@@ -144,6 +160,7 @@ idf_component_register(
         platform/esp32/memory_stats.cpp
         platform/esp32/network_registry.cpp
         platform/esp32/pinmap.cpp
+        platform/esp32/service_task.cpp
         platform/esp32/sntp_service.cpp
         platform/esp32/tcp_channel.cpp
         platform/esp32/tcp_network_protocol_espidf.cpp

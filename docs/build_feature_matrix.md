@@ -11,6 +11,10 @@ It is intended as a concise engineering reference and CI/local verification chec
 - `FN_WITH_OPENSSL`
   - Enables the POSIX TLS stream backend (`TlsNetworkProtocolPosix`)
   - Lets the curl HTTPS backend add the FujiNet test CA to curl's own `SSL_CTX`, when curl uses this same OpenSSL
+- `FN_WITH_HOTSYNC`
+  - Builds Palm HotSync ([`hotsync.md`](hotsync.md)): `src/lib/hotsync/`, its diagnostics and `tests/test_hotsync.cpp`
+  - Defaults on for the `fujibus-pty-*` and `fujibus-rs232-*` presets and off for the rest; without it `src/lib/hotsync_init_off.cpp` stands in
+  - ESP32 boards turn it on with `-DFN_WITH_HOTSYNC=1` in their `pio-build/ini/platforms/*.ini` (the FN-RS232 boards do). The IDF build compiles every source, so each HotSync source is wrapped in `#if FN_WITH_HOTSYNC == 1` and `hotsync_init_off.cpp` in the opposite, as `atari_sio_ingress.cpp` is for its build. Linker garbage collection alone is not enough: ESP-IDF keeps every object's `.eh_frame`, about 14 KB for HotSync
 
 ## FujiNet Test CA Trust
 

@@ -94,6 +94,24 @@ else()
 endif()
 
 # --------------------------------------------------
+# Palm HotSync (docs/hotsync.md)
+# --------------------------------------------------
+# On by default for the FujiBus serial profiles, whose line a Palm cradle can
+# share: fujibus-pty (emulators) and fujibus-rs232 (a serial port). The other
+# profiles leave it out; src/lib/hotsync_init_off.cpp stands in for it.
+if((FN_BUILD_FUJIBUS_PTY OR FN_BUILD_AMIGA_RS232) AND NOT FN_BUILD_EMBEDDED_LIB)
+  set(FN_WITH_HOTSYNC_DEFAULT ON)
+else()
+  set(FN_WITH_HOTSYNC_DEFAULT OFF)
+endif()
+option(FN_WITH_HOTSYNC "Palm HotSync: NetSync and the serial cradle" ${FN_WITH_HOTSYNC_DEFAULT})
+if(FN_WITH_HOTSYNC)
+  target_compile_definitions(fujinet-nio PUBLIC FN_WITH_HOTSYNC=1)
+else()
+  target_compile_definitions(fujinet-nio PUBLIC FN_WITH_HOTSYNC=0)
+endif()
+
+# --------------------------------------------------
 # Build Flags
 # --------------------------------------------------
 target_compile_definitions(fujinet-nio
@@ -168,6 +186,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/host_service.cpp
         src/lib/host_service_init.cpp
         src/lib/host_state.cpp
+        src/lib/hotsync_init_off.cpp
         src/lib/image/ilbm_writer.cpp
         src/lib/image/image_pipeline.cpp
         src/lib/image/output_format.cpp
@@ -245,6 +264,7 @@ set(FUJINET_NIO_SOURCES
         src/platform/posix/network_registry.cpp
         src/platform/posix/pty_channel.cpp
         src/platform/posix/serial_channel.cpp
+        src/platform/posix/service_task.cpp
         src/platform/posix/tcp_channel.cpp
         src/platform/posix/tcp_network_protocol_posix.cpp
         src/platform/posix/tcp_server_channel.cpp
@@ -258,6 +278,27 @@ set(FUJINET_NIO_SOURCES
         src/platform/posix/wifi_link.cpp
 # __TARGET_SOURCES_END__
 )
+
+# HotSync's sources (FN_WITH_HOTSYNC). Kept out of the generated list above.
+if(FN_WITH_HOTSYNC)
+  list(APPEND FUJINET_NIO_SOURCES
+        src/lib/diagnostic_hotsync_provider.cpp
+        src/lib/hotsync/cradle_channel.cpp
+        src/lib/hotsync/dlp.cpp
+        src/lib/hotsync/dlp_client.cpp
+        src/lib/hotsync/fs_storage.cpp
+        src/lib/hotsync/hotsync_init.cpp
+        src/lib/hotsync/hotsync_service.cpp
+        src/lib/hotsync/http_fetch.cpp
+        src/lib/hotsync/netsync_transport.cpp
+        src/lib/hotsync/padp_transport.cpp
+        src/lib/hotsync/palm_database.cpp
+        src/lib/hotsync/session.cpp
+        src/lib/hotsync/sha256.cpp
+        src/lib/hotsync/slp.cpp
+        src/lib/hotsync/tcp_link.cpp
+  )
+endif()
 
 # Select exactly one per-variant build_profile source for POSIX builds.
 # lib-only (FN_BUILD_EMBEDDED_LIB) and fujibus-pty both use fujibus_pty.cpp;

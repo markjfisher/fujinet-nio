@@ -763,6 +763,11 @@ mechanism. This keeps service timing from leaking into the transport/channel
 contract and prevents one target's bus latency requirements from changing the
 whole FujiNet heartbeat.
 
+A service whose work blocks for long stretches runs on a task of its own,
+started with `platform::start_service_task()`. The Palm HotSync service
+([`hotsync.md`](hotsync.md)) is one: a sync waits on the Palm for seconds at a
+time and runs for minutes.
+
 ---
 
 # **Build Profiles, Channels & Transports**

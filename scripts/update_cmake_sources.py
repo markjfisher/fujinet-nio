@@ -41,6 +41,8 @@ def generate_posix_block(all_cpp):
       - include src/lib/**.cpp and src/platform/posix/**.cpp (and any other non-app, non-esp32 .cpp)
       - exclude anything under src/app/**
       - exclude anything under src/platform/esp32/**
+      - exclude HotSync's sources (src/lib/hotsync/**, the hotsync diagnostics),
+        which the template lists under if(FN_WITH_HOTSYNC)
     Returns only the file paths with proper indentation (8 spaces).
     """
     filtered = []
@@ -50,6 +52,9 @@ def generate_posix_block(all_cpp):
             continue
         # Exclude ESP32 platform sources
         if "/platform/esp32/" in path:
+            continue
+        # HotSync's sources are listed under if(FN_WITH_HOTSYNC) in the template
+        if path.startswith("src/lib/hotsync/") or path == "src/lib/diagnostic_hotsync_provider.cpp":
             continue
         filtered.append(path)
 
