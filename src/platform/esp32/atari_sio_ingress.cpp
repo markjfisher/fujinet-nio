@@ -149,6 +149,13 @@ void AtariSioIngress::send_early_ack()
 void AtariSioIngress::send(const std::vector<std::uint8_t>& bytes)
 {
     if (bytes.empty() || !_uart) return;
+    const auto trace_start = static_cast<std::uint32_t>(esp_timer_get_time());
+    const auto trace_finish = [&] {
+        const auto end = static_cast<std::uint32_t>(esp_timer_get_time());
+        _capture.trace_reply(trace_start, end - trace_start, _uart->uart_config().baudRate,
+                             static_cast<std::uint16_t>(bytes.size()), bytes[0],
+                             bytes[0] == sio_ack && bytes.size() > 1 ? bytes[1] : 0);
+    };
     // Timed before the write: this is when the reply starts, which is what the Atari waits for.
     _reply.record(static_cast<std::uint32_t>(esp_timer_get_time()), _capture.processing_start_us(),
                   _capture.processing_command() && _early_ack_us == 0, _capture.processing_release_us());
@@ -171,6 +178,7 @@ void AtariSioIngress::send(const std::vector<std::uint8_t>& bytes)
         }
         drop_tx_noise_edges();
         _txn.end(static_cast<std::uint32_t>(esp_timer_get_time()));
+        trace_finish();
         return;
     }
     _early_ack_us = 0;
@@ -194,12 +202,14 @@ void AtariSioIngress::send(const std::vector<std::uint8_t>& bytes)
                            static_cast<std::uint32_t>(esp_timer_get_time()) - data_start);
         drop_tx_noise_edges();
         _txn.end(static_cast<std::uint32_t>(esp_timer_get_time()));
+        trace_finish();
         return;
     }
     _uart->write(bytes.data(), bytes.size());
     _uart->flushOutput();
     drop_tx_noise_edges();
     _txn.end(static_cast<std::uint32_t>(esp_timer_get_time()));
+    trace_finish();
 }
 
 // The Atari holds CMD high while we answer, so a CMD edge pending when a reply ends with CMD still high

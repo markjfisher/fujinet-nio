@@ -15,6 +15,23 @@ TEST_CASE("Atari SIO CMD edge records one host-testable transaction boundary")
     CHECK_FALSE(boundary.consume());
 }
 
+TEST_CASE("Atari SIO reply trace records only control metadata")
+{
+    fujinet::io::AtariSioCapture capture;
+    capture.trace_reply(100, 2100, 124017, 22, 'A', 'C');
+    const auto& stats = capture.stats();
+    REQUIRE(stats.trace_count == 1);
+    const auto& t = stats.trace[0];
+    CHECK(t.event == 7);
+    CHECK(t.time_us == 100);
+    CHECK(t.duration_us == 2100);
+    CHECK(t.baud == 124017);
+    CHECK(t.pending == 22);
+    CHECK(t.frame[0] == 'A');
+    CHECK(t.frame[1] == 'C');
+    CHECK(t.frame[2] == 0);
+}
+
 #include <algorithm>
 #include <vector>
 

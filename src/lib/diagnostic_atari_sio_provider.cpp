@@ -210,9 +210,15 @@ private:
         const auto count = s.capture.trace_count;
         const auto size = static_cast<std::uint32_t>(s.capture.trace.size());
         const auto first = count > size ? count - size : 0;
-        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6; times are microseconds since boot (wraps)");
+        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7; times are microseconds since boot (wraps)");
         for (auto i = first; i < count; ++i) {
             const auto& t = s.capture.trace[i % size];
+            if (t.event == 7) {
+                line(text, "us=" + std::to_string(t.time_us) + " event=7 baud=" + std::to_string(t.baud) +
+                     " duration_us=" + std::to_string(t.duration_us) + " length=" + std::to_string(t.pending) +
+                     " first=" + hex2(t.frame[0]) + " second=" + hex2(t.frame[1]));
+                continue;
+            }
             line(text, "us=" + std::to_string(t.time_us) + " event=" + std::to_string(t.event) +
                  " edges=" + std::to_string(t.edges) + " low=" + std::to_string(t.low) +
                  " collecting=" + std::to_string(t.collecting) + " released=" + std::to_string(t.released) +

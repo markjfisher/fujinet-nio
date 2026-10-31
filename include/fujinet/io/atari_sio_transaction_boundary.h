@@ -231,6 +231,15 @@ public:
     std::uint32_t processing_release_us() const noexcept { return _processing_release_us; }
     bool processing_command() const noexcept { return _processing_command; }
     void reset_stats() noexcept { _stats = {}; }
+    // Metadata only: never retain a response body in diagnostics.
+    void trace_reply(std::uint32_t time, std::uint32_t duration, std::uint32_t baud,
+                     std::uint16_t length, std::uint8_t first, std::uint8_t second) noexcept
+    {
+        auto& t = _stats.trace[_stats.trace_count++ % _stats.trace.size()];
+        t = {};
+        t.time_us = time; t.duration_us = duration; t.baud = baud;
+        t.event = 7; t.pending = length; t.frame[0] = first; t.frame[1] = second;
+    }
     // Command frames in a row that could not be read. The ingress uses it to leave high-speed SIO.
     std::uint32_t bad_frames_in_a_row() const noexcept { return _bad_frames_in_a_row; }
     void clear_bad_frames() noexcept { _bad_frames_in_a_row = 0; }

@@ -144,7 +144,8 @@ tight, so this is how to see what the Atari is doing:
   kept, since it is not a counter
 - `sio.trace` — show the last 16 captured command frames and capture aborts, including CMD state,
   pending write-data length and partial frame state. Consecutive idle edge aborts are collapsed so they
-  don't erase the event preceding a stall. Times are the wrapping 32-bit microsecond clock;
+  don't erase the event preceding a stall. Replies record control bytes, size, baud and duration,
+  never response payloads. Times are the wrapping 32-bit microsecond clock;
   `sio.reset` clears the trace. This records no network payloads and logs nothing during SIO.
 
 The timings are measured at the existing send and poll points; nothing is logged on the SIO
