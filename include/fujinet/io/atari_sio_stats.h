@@ -19,6 +19,15 @@ struct AtariSioBadFrame {
 
 // What the capture state machine saw, from the UART and the CMD line.
 struct AtariSioCaptureStats {
+    struct Trace {
+        std::uint32_t time_us{0}, edges{0};
+        std::array<std::uint8_t, 5> frame{};
+        std::uint16_t pending{0};
+        std::uint8_t event{0}, used{0};
+        bool low{false}, collecting{false}, released{false};
+    };
+    std::array<Trace, 16> trace{};
+    std::uint32_t trace_count{0};
     struct AltDecision {
         std::array<std::uint8_t, 5> frame{};
         std::uint32_t edges{0};

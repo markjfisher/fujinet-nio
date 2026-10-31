@@ -113,6 +113,9 @@ public:
             .usage = "sio.status",
             .safe = true,
         });
+        out.push_back(DiagCommandSpec{
+            .name = "sio.trace", .summary = "recent SIO frames and capture aborts", .usage = "sio.trace", .safe = true,
+        });
         if (_probe_baud) {
             out.push_back(DiagCommandSpec{
                 .name = "sio.baud",
@@ -170,6 +173,7 @@ public:
         if (cmd == "sio.status") {
             return status();
         }
+        if (cmd == "sio.trace") return trace();
         if (cmd == "sio.baud" && _probe_baud) {
             return baud();
         }
@@ -199,6 +203,24 @@ public:
     }
 
 private:
+    DiagResult trace() const
+    {
+        const auto s = _snapshot();
+        std::string text;
+        const auto count = s.capture.trace_count;
+        const auto size = static_cast<std::uint32_t>(s.capture.trace.size());
+        const auto first = count > size ? count - size : 0;
+        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6; times are microseconds since boot (wraps)");
+        for (auto i = first; i < count; ++i) {
+            const auto& t = s.capture.trace[i % size];
+            line(text, "us=" + std::to_string(t.time_us) + " event=" + std::to_string(t.event) +
+                 " edges=" + std::to_string(t.edges) + " low=" + std::to_string(t.low) +
+                 " collecting=" + std::to_string(t.collecting) + " released=" + std::to_string(t.released) +
+                 " used=" + std::to_string(t.used) +
+                 " pending=" + std::to_string(t.pending) + " frame=" + frame_text(t.frame));
+        }
+        return DiagResult::ok(std::move(text));
+    }
     static std::string tuning_text(const io::AtariSioTuning& t)
     {
         return "tune: ack gap " + std::to_string(t.ack_gap_us) + " us, data gap " + std::to_string(t.data_gap_us) +

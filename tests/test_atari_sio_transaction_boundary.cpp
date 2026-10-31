@@ -70,6 +70,9 @@ TEST_CASE("Atari SIO capture gates commands on release and separates write data"
     boundary.note_cmd_edge();
     poll();
     CHECK((router.command == std::vector<std::uint8_t>{0x31, 1, 2, 3, 4}));
+    REQUIRE(capture.stats().trace_count == 1);
+    CHECK(capture.stats().trace[0].event == 1);
+    CHECK((capture.stats().trace[0].frame == std::array<std::uint8_t, 5>{0x31, 1, 2, 3, 4}));
     CHECK(router.pending == 2);
     uart.driver = {10, 11, 12};
     poll();
@@ -91,6 +94,11 @@ TEST_CASE("Atari SIO capture drops observed ambiguous edges and recovers")
     poll();
     CHECK(router.command.empty());
     CHECK(uart.software.empty()); CHECK(uart.driver.empty());
+    CHECK(capture.stats().trace_count == 1);
+    CHECK(capture.stats().trace[0].event == 6);
+    poll();
+    boundary.note_cmd_edge(); boundary.note_cmd_edge(); poll();
+    CHECK(capture.stats().trace_count == 1);
     poll();
     low = true; boundary.note_cmd_edge();
     uart.driver = {0x31, 1, 2, 3, 4}; poll();

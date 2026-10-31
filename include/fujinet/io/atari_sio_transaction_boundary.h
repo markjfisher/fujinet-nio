@@ -72,7 +72,22 @@ public:
     void poll(AtariSioTransactionBoundary& boundary, Router& router, Uart& uart,
               Asserted asserted, Now now, AltFrame alt_frame)
     {
-        const auto abort = [this, &router, &uart](std::uint32_t AtariSioCaptureStats::* reason) {
+        const auto abort = [this, &router, &uart, &boundary, &asserted, &now](std::uint32_t AtariSioCaptureStats::* reason) {
+            const bool idle_edge = reason == &AtariSioCaptureStats::aborts_edge &&
+                                   !_collecting && !router.pending_write_bytes();
+            if (!idle_edge || _stats.trace_count == 0 ||
+                _stats.trace[(_stats.trace_count - 1) % _stats.trace.size()].event != 6) {
+                auto& t = _stats.trace[_stats.trace_count++ % _stats.trace.size()];
+                t.time_us = static_cast<std::uint32_t>(now());
+                t.edges = boundary.total_edges();
+                t.frame = _frame;
+                t.pending = static_cast<std::uint16_t>(router.pending_write_bytes());
+                t.event = idle_edge ? 6 : reason == &AtariSioCaptureStats::aborts_edge ? 2 :
+                          reason == &AtariSioCaptureStats::aborts_timeout ? 3 :
+                          reason == &AtariSioCaptureStats::aborts_overflow ? 4 : 5;
+                t.used = static_cast<std::uint8_t>(_frame_used);
+                t.low = asserted(); t.collecting = _collecting; t.released = _released;
+            }
             ++(_stats.*reason);
             if (_collecting) ++_stats.frames_lost;
             if (reason == &AtariSioCaptureStats::aborts_edge && !_collecting && router.pending_write_bytes()) {
@@ -224,6 +239,13 @@ private:
     template<class Router, class Now>
     void dispatch_frame(AtariSioTransactionBoundary& boundary, Router& router, Now now)
     {
+        auto& t = _stats.trace[_stats.trace_count++ % _stats.trace.size()];
+        t = {};
+        t.time_us = static_cast<std::uint32_t>(now());
+        t.edges = boundary.total_edges();
+        t.frame = _frame;
+        t.event = 1;
+        t.used = 5;
         ++_stats.frames;
         const auto start = static_cast<std::uint32_t>(now());
         if (_stats.frames == 1) _stats.first_frame_us = start;

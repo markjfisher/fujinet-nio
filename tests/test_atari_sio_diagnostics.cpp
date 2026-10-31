@@ -44,9 +44,10 @@ TEST_CASE("sio.status lists its commands and reports every counter")
     CHECK(f.provider->provider_id() == "sio");
     std::vector<fujinet::diag::DiagCommandSpec> cmds;
     f.provider->list_commands(cmds);
-    REQUIRE(cmds.size() == 2);
+    REQUIRE(cmds.size() == 3);
     CHECK(cmds[0].name == "sio.status");
-    CHECK(cmds[1].name == "sio.reset");
+    CHECK(cmds[1].name == "sio.trace");
+    CHECK(cmds[2].name == "sio.reset");
 
     f.stats.cmd_edges = 12;
     f.stats.cmd_line_low = true;
@@ -75,6 +76,23 @@ TEST_CASE("sio.status shows an idle CMD line and no last frame before anything h
     REQUIRE(r.status == DiagStatus::Ok);
     CHECK(contains(r.text, "high (idle)"));
     CHECK(contains(r.text, "last_frame: none yet"));
+}
+
+TEST_CASE("sio.trace shows the newest events in chronological order")
+{
+    Fixture f;
+    f.stats.capture.trace_count = 18;
+    f.stats.capture.trace[2].time_us = 42;
+    f.stats.capture.trace[2].event = 2;
+    f.stats.capture.trace[2].pending = 3;
+    f.stats.capture.trace[2].frame = {0x7f, 'P', 0, 0, 0xcf};
+    f.stats.capture.trace[1].time_us = 99;
+    const auto r = run(*f.provider, {"sio.trace"});
+    REQUIRE(r.status == DiagStatus::Ok);
+    CHECK(contains(r.text, "us=42 event=2"));
+    CHECK(contains(r.text, "pending=3"));
+    CHECK(contains(r.text, "0x7f 0x50 0x00 0x00 0xcf"));
+    CHECK(r.text.find("us=42") < r.text.find("us=99"));
 }
 
 TEST_CASE("sio.status names the native commands and leaves unknown ones as hex")
@@ -213,7 +231,7 @@ TEST_CASE("sio.baud compares the UART rate with the POKEY rate for each high-spe
         [&](std::uint32_t target) { probed.push_back(target); return target + target / 100; });  // 1% fast
     std::vector<fujinet::diag::DiagCommandSpec> cmds;
     provider->list_commands(cmds);
-    REQUIRE(cmds.size() == 3);
+    REQUIRE(cmds.size() == 4);
 
     const auto text = run(*provider, {"sio.baud"}).text;
     REQUIRE(probed.size() == 11);                 // indexes 0..10
@@ -235,7 +253,7 @@ TEST_CASE("sio.hsio sets or clears the index, and sio.status shows the high-spee
         [&](int index, bool fb) { if (index > 9) return false; set_to = index; fallback = fb; return true; });
     std::vector<fujinet::diag::DiagCommandSpec> cmds;
     provider->list_commands(cmds);
-    REQUIRE(cmds.size() == 3);
+    REQUIRE(cmds.size() == 4);
 
     CHECK(contains(run(*provider, {"sio.status"}).text, "hsio: off (3F is NAKed"));
 
@@ -328,7 +346,7 @@ TEST_CASE("sio.tune shows and sets the gaps and the window, and sio.status shows
         [&](const fujinet::io::AtariSioTuning& t) { set_to = t; stats.tuning = t; ++calls; });
     std::vector<fujinet::diag::DiagCommandSpec> cmds;
     provider->list_commands(cmds);
-    REQUIRE(cmds.size() == 3);
+    REQUIRE(cmds.size() == 4);
 
     auto r = run(*provider, {"sio.tune"});
     CHECK(r.status == DiagStatus::Ok);
@@ -377,7 +395,7 @@ TEST_CASE("sio.save hands the current high-speed index and tuning to the config 
         });
     std::vector<fujinet::diag::DiagCommandSpec> cmds;
     provider->list_commands(cmds);
-    REQUIRE(cmds.size() == 4);      // status, tune, save, reset
+    REQUIRE(cmds.size() == 5);      // status, trace, tune, save, reset
 
     auto r = run(*provider, {"sio.save"});
     CHECK(r.status == DiagStatus::Ok);
