@@ -89,6 +89,7 @@ private:
     bool _proc_notify{false};
     std::function<void()> _early_ack;
     std::vector<std::uint8_t> _response;
+    std::uint16_t _last_read_length{0};
 };
 
 } // namespace fujinet::io

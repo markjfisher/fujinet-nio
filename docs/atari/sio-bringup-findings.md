@@ -4,6 +4,11 @@ Findings from running fujinet-nio on a FujiNet v1 board (FN32ROV-1.6, ESP32-S3) 
 Atari 800XL, October 2026. Use it to know which timings are healthy and which design rules
 came from real measurements. Re-measure before relying on a number for a different board.
 
+The native endpoint retains its most recently read response until the next
+accepted W or reset. An exact retry of that R returns the same response and
+padding, so an OS SIO retry after a lost data frame does not receive a NAK.
+P still reports idle after the first R; a different R length is refused.
+
 ## How to measure
 
 `sio.reset` before powering the Atari, boot it, run the boot disk's FTESTNIO to the end, then

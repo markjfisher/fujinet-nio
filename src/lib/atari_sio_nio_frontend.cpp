@@ -94,6 +94,8 @@ AtariSioNioFrontend::Result AtariSioNioFrontend::begin(
     case command_write:
         drop_stale_reply();
         if (_state != State::Idle || length == 0 || length > capacity) return reject();
+        _response.clear();
+        _last_read_length = 0;
         _state = State::Receiving;
         _write_bytes = length;
         return Result{{ack}, _write_bytes, true};
@@ -112,12 +114,19 @@ AtariSioNioFrontend::Result AtariSioNioFrontend::begin(
     }
 
     case command_read: {
+        // SIOV may retry R if its reply or checksum was lost. Replay only the
+        // exact last R, until the next W begins a different transaction.
+        if (_state == State::Idle && _last_read_length && length == _last_read_length) {
+            std::vector<std::uint8_t> reply = _response;
+            reply.resize(length, 0);
+            return data_reply(reply);
+        }
         if (_state != State::Ready || length < _response.size() || length > capacity) return reject();
         // The reply owns its copy before the transaction slot is consumed.  An
         // ingress may transmit Result::bytes after this function returns.
         std::vector<std::uint8_t> reply = _response;
         reply.resize(length, 0);
-        _response.clear();
+        _last_read_length = length;
         _state = State::Idle;
         return data_reply(reply);
     }
@@ -187,6 +196,7 @@ void AtariSioNioFrontend::reset()
     _state = State::Idle;
     _write_bytes = 0;
     _response.clear();
+    _last_read_length = 0;
 }
 
 void AtariSioNioFrontend::reset_host()

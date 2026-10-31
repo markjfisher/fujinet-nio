@@ -371,8 +371,11 @@ TEST_CASE("Atari native NIO frontend pads a longer R with zeros and releases the
     const auto result = harness.frontend.begin(command('R', static_cast<std::uint16_t>(padded.size())));
     REQUIRE(result.accepted);
     CHECK(result.bytes == data_reply(padded));
-    // Released like an exact read: idle, and a second R is refused.
+    // The slot is idle, but an exact SIO retry must replay the same reply.
     CHECK(harness.frontend.begin(command('P', 0)).bytes == data_reply({0, 0, 0}));
+    CHECK(harness.frontend.begin(command('R', static_cast<std::uint16_t>(padded.size()))).bytes == result.bytes);
+    CHECK_FALSE(harness.frontend.begin(command('R', static_cast<std::uint16_t>(padded.size() - 1))).accepted);
+    REQUIRE(harness.frontend.begin(fixture("w-core-dispatch").frame).accepted);
     CHECK_FALSE(harness.frontend.begin(command('R', static_cast<std::uint16_t>(padded.size()))).accepted);
 }
 
