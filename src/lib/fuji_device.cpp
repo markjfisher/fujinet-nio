@@ -41,6 +41,22 @@ IOResponse FujiDevice::handle(const IORequest& request)
     switch (to_fuji_command(request.command)) {
         case FujiCommand::GetInfo:
             return handle_get_info(request);
+        case FujiCommand::GetHsio:
+        case FujiCommand::SetHsio: {
+            if (request.payload.empty() || request.payload[0] == 0 ||
+                (request.command == static_cast<std::uint8_t>(FujiCommand::SetHsio) &&
+                 (request.payload.size() < 2 || (request.payload[1] > 9 && request.payload[1] != 0xff))))
+                return make_base_response(request, StatusCode::InvalidRequest);
+            if (!_hsioGet || !_hsioSet) return make_base_response(request, StatusCode::Unsupported);
+            if (request.command == static_cast<std::uint8_t>(FujiCommand::SetHsio)) {
+                const int index = request.payload[1] == 0xff ? -1 : request.payload[1];
+                if (!_hsioSet(index)) return make_base_response(request, StatusCode::InvalidRequest);
+            }
+            const int index = _hsioGet();
+            auto response = make_success_response(request);
+            response.payload = {1, static_cast<std::uint8_t>(index < 0 ? 0xff : index)};
+            return response;
+        }
         case FujiCommand::Reset:
             return handle_reset(request);
         default:

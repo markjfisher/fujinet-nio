@@ -5,6 +5,8 @@ namespace fujinet::io::protocol {
 
 enum class FujiCommand : std::uint8_t {
     GetInfo     = 0x01,
+    GetHsio     = 0x02,
+    SetHsio     = 0x03,
     Reset       = 0xFF,
     GetSsid     = 0xFE,
     // Add FujiDevice-specific commands only

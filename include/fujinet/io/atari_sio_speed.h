@@ -27,7 +27,18 @@ public:
     {
         if (index < -1 || index > max_index) return false;
         _index = index;
+        _active_index = index;
         if (_index < 0) _high = false;
+        return true;
+    }
+
+    // Change the advertised index without retuning the UART in a transaction.
+    // The current high-speed divisor remains available until renegotiation.
+    bool advertise_index(int index)
+    {
+        if (index < -1 || index > max_index) return false;
+        _index = index;
+        if (!_high && _active_index < 0 && index >= 0) _active_index = index;
         return true;
     }
 
@@ -38,14 +49,15 @@ public:
     int index() const { return _index; }
     bool enabled() const { return _index >= 0; }
     bool high() const { return _high; }
-    void enter_high() { if (enabled()) _high = true; }
+    void enter_high() { if (enabled()) { _active_index = _index; _high = true; } }
     void leave_high() { _high = false; }
-    std::uint32_t baud() const { return _high ? baud_for_index(static_cast<unsigned>(_index)) : standard_baud; }
+    std::uint32_t baud() const { return _high ? baud_for_index(static_cast<unsigned>(_active_index)) : standard_baud; }
 
 private:
     static constexpr std::uint32_t pal_clock_hz = 1773447;
 
     int _index{-1};
+    int _active_index{-1};
     bool _high{false};
     bool _fallback{true};
 };

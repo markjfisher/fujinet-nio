@@ -380,6 +380,9 @@ extern "C" void fujinet_core_task(void* arg)
                 core.addWorkSource(atariSioIngress.get());
                 // The ingress has no logging (SIO timing is tight): sio.status shows its counters.
                 auto* ingress = atariSioIngress.get();
+                if (services.fuji) services.fuji->set_hsio_handlers(
+                    [ingress] { return ingress->stats().hsio_index; },
+                    [ingress](int index) { return ingress->advertise_hsio_index(index); });
                 atariSioDiag = fujinet::diag::create_atari_sio_diagnostic_provider(
                     [ingress] { return ingress->stats(); },
                     [ingress] { ingress->reset_stats(); },

@@ -300,6 +300,15 @@ bool AtariSioIngress::set_hsio_index(int index, bool fallback)
     return true;
 }
 
+bool AtariSioIngress::advertise_hsio_index(int index)
+{
+    if (!_speed.advertise_index(index)) return false;
+    _disk.set_hsio_index(index);
+    _nio.set_hsio_index(index);
+    retune_alt();
+    return true;
+}
+
 // Called right after the 3F reply has been sent and flushed, so it left at the standard speed.
 void AtariSioIngress::enter_high_speed()
 {
@@ -381,7 +390,7 @@ bool AtariSioIngress::take_alt_frame(std::array<std::uint8_t, 5>& frame, bool un
     if (!_alt_pending) return false;
     _alt_pending = false;
     if (!unambiguous) ++_alt_ambiguous_dropped;
-    if (!unambiguous || !_speed.enabled() || static_cast<std::uint32_t>(esp_timer_get_time()) - _alt_found_us > _tuning.alt_window_us) return false;
+    if (!unambiguous || (!_speed.enabled() && !_speed.high()) || static_cast<std::uint32_t>(esp_timer_get_time()) - _alt_found_us > _tuning.alt_window_us) return false;
     frame = _alt_last;
     toggle_speed();
     return true;
@@ -470,7 +479,7 @@ void AtariSioIngress::poll()
                   [this](std::array<std::uint8_t, 5>& frame, bool unambiguous) { return take_alt_frame(frame, unambiguous); });
     // The legacy firmware's rule, kept as the backup for when the second listener does not catch it: two
     // unreadable command frames in a row mean the Atari is at the other speed, so toggle.
-    if (_speed.enabled() && _speed.fallback() &&
+    if ((_speed.enabled() || _speed.high()) && _speed.fallback() &&
         _capture.bad_frames_in_a_row() >= io::AtariSioSpeed::fallback_after_bad_frames) {
         toggle_speed();
     }

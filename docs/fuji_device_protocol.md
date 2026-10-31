@@ -16,6 +16,8 @@ See:
 | Command | ID | Purpose |
 |--------:|---:|---------|
 | `GetInfo` | `0x01` | Report the firmware version and build profile |
+| `GetHsio` | `0x02` | Read the Atari SIO advertised index |
+| `SetHsio` | `0x03` | Set the Atari SIO advertised index |
 | `Reset`   | `0xFF` | Request a FujiNet reset/restart |
 | `GetSsid` | `0xFE` | Reserved; not currently implemented |
 
@@ -46,6 +48,24 @@ comes from the Wi-Fi service's `GET_ADAPTER_INFO`
 ([Wi-Fi service protocol](wifi_service_protocol.md)). On the console, `core.info`
 shows the same version and profile; from a host, `./scripts/fujinet --port <port>
 fuji info` asks for it.
+
+## GetHsio (`0x02`) and SetHsio (`0x03`)
+
+Get requests contain the highest supported version (currently `1`); Set requests
+contain version and index. The index is `0`–`9` or `255` for off. Successful
+responses contain version `1` and the advertised index. An unknown command or
+an ingress without Atari SIO support returns `Unsupported`. Settings are
+transient and the console's `sio.status` and `sio.hsio` show the same state.
+
+Changing the advertised index leaves the baud of the current transaction
+unchanged. Drivers that cache speeds must clear their entries before probing
+again. Cached speeds of other devices on the shared bus can also need resetting;
+the Atari U1MB helpers in fujinet-nio-lib clear device and disk slots explicitly.
+The host sends a standard-speed `3F` probe and the FujiNet changes its UART
+after the probe reply, or rejects the probe when disabled. The alternative
+listener detects standard-speed requests while the current speed is high.
+This does not persist the index, and physical hardware testing is required for
+the U1MB's undocumented cache layout and transition timing.
 
 ## Reset (`0xFF`)
 

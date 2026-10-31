@@ -29,6 +29,7 @@ public:
     void poll();
     // Counters for bring-up (sio.status). stats() reads the CMD line too.
     io::AtariSioStats stats() const;
+    bool advertise_hsio_index(int index);
     void reset_stats();
     // Briefly sets the SIO UART to `target` baud, returns what the hardware reports, and restores the
     // current baud. For the sio.baud check only: run it with the Atari idle.

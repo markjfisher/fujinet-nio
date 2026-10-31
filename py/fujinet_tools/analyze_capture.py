@@ -28,6 +28,8 @@ DEVICE_NAMES: dict[int, str] = {
 COMMAND_NAMES: dict[int, dict[int, str]] = {
     0x70: {
         0x01: "GetInfo",
+        0x02: "GetHsio",
+        0x03: "SetHsio",
         0xFF: "Reset",
         0xFE: "GetSsid",
     },

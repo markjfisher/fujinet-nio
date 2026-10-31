@@ -23,6 +23,10 @@ public:
     void start();
 
     const fujinet::config::FujiConfig& config() const { return _config; }
+
+    using HsioGet = std::function<int()>;
+    using HsioSet = std::function<bool(int)>;
+    void set_hsio_handlers(HsioGet get, HsioSet set) { _hsioGet = std::move(get); _hsioSet = std::move(set); }
     
     /// Provide mutable access to config for devices that need to modify it (e.g., HostService)
     fujinet::config::FujiConfig& config_mut() { return _config; }
@@ -38,6 +42,8 @@ private:
 
 private:
     ResetHandler                                      _resetHandler;
+    HsioGet                                           _hsioGet;
+    HsioSet                                           _hsioSet;
     std::unique_ptr<fujinet::config::FujiConfigStore> _configStore;
     fujinet::config::FujiConfig                       _config;
 };

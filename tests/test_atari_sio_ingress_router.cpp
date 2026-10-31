@@ -6,6 +6,7 @@
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/io/atari_sio_ingress_router.h"
 #include "fujinet/io/atari_sio_speed.h"
+#include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/devices/virtual_device.h"
 
 #include "../third_party/cjson/cJSON.h"
@@ -18,6 +19,33 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+TEST_CASE("advertised HSIO changes preserve the current SIO reply speed")
+{
+    fujinet::io::AtariSioSpeed speed;
+    REQUIRE(speed.set_index(0));
+    speed.enter_high();
+    fujinet::io::FujiDevice fuji({}, nullptr);
+    fuji.set_hsio_handlers([&] { return speed.index(); },
+                           [&](int i) { return speed.advertise_index(i); });
+    fujinet::io::IORequest req;
+    req.command = 3; req.payload = {1, 4};
+    auto reply = fuji.handle(req);
+    CHECK(reply.status == fujinet::io::StatusCode::Ok);
+    CHECK(reply.payload == std::vector<std::uint8_t>{1, 4});
+    CHECK(speed.baud() == fujinet::io::AtariSioSpeed::baud_for_index(0));
+    req.command = 2; req.payload = {1};
+    CHECK(fuji.handle(req).payload == std::vector<std::uint8_t>{1, 4});
+    speed.leave_high(); speed.enter_high();
+    CHECK(speed.baud() == fujinet::io::AtariSioSpeed::baud_for_index(4));
+    req.command = 3; req.payload = {1, 0xff};
+    CHECK(fuji.handle(req).status == fujinet::io::StatusCode::Ok);
+    CHECK(speed.baud() == fujinet::io::AtariSioSpeed::baud_for_index(4));
+    speed.leave_high(); speed.enter_high();
+    CHECK(speed.baud() == 19200);
+    req.payload = {1, 10};
+    CHECK(fuji.handle(req).status == fujinet::io::StatusCode::InvalidRequest);
+}
 
 namespace {
 

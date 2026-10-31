@@ -10,6 +10,8 @@ from .fujibus import FujiBusSession
 # -----------------------
 FUJI_DEVICE_ID = 0x70
 FUJI_CMD_GET_INFO = 0x01
+FUJI_CMD_GET_HSIO = 0x02
+FUJI_CMD_SET_HSIO = 0x03
 FUJI_INFO_VERSION = 1  # the highest GetInfo version this client understands
 
 
@@ -21,6 +23,40 @@ class FujiInfo:
 
 def build_get_info_req() -> bytes:
     return bytes([FUJI_INFO_VERSION])
+
+
+def build_hsio_req(index: int | None = None) -> bytes:
+    if index is None:
+        return b"\x01"
+    if index not in (*range(10), 255):
+        raise ValueError("HSIO index must be 0-9 or 255 (off)")
+    return bytes((1, index))
+
+
+def parse_hsio_resp(payload: bytes) -> int:
+    if len(payload) != 2 or payload[0] != 1 or payload[1] not in (*range(10), 255):
+        raise ValueError("invalid HSIO response")
+    return payload[1]
+
+
+def cmd_fuji_hsio(args) -> int:
+    index = None if args.index is None else (255 if args.index == 'off' else int(args.index))
+    cmd = FUJI_CMD_GET_HSIO if index is None else FUJI_CMD_SET_HSIO
+    with open_serial(args.port, args.baud, timeout_s=0.01) as ser:
+        bus = FujiBusSession().attach(ser, debug=args.debug)
+        pkt = bus.send_command_expect(device=FUJI_DEVICE_ID, command=cmd,
+                payload=build_hsio_req(index), expect_device=FUJI_DEVICE_ID,
+                expect_command=cmd, timeout=args.timeout, cmd_txt="FUJI_HSIO")
+        if pkt is None or not status_ok(pkt):
+            print("HSIO request failed or is unsupported")
+            return 1
+        try:
+            value = parse_hsio_resp(pkt.payload)
+        except ValueError as e:
+            print(f"Bad HSIO response: {e}")
+            return 1
+        print("off" if value == 255 else value)
+    return 0
 
 
 def _string8(payload: bytes, at: int) -> tuple[str, int]:
@@ -83,3 +119,6 @@ def register_subcommands(subparsers) -> None:
         description="Ask FujiDevice GetInfo for the firmware version and build profile.",
     )
     pfi.set_defaults(fn=cmd_fuji_info)
+    ph = fsub.add_parser("hsio", help="Get or set Atari HSIO index")
+    ph.add_argument("index", nargs="?", choices=[str(i) for i in range(10)] + ["off"])
+    ph.set_defaults(fn=cmd_fuji_hsio)
