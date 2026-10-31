@@ -82,6 +82,8 @@ void TcpNetworkProtocolCommon::reset_state()
 
 void TcpNetworkProtocolCommon::set_error_from_errno(int e)
 {
+    FN_LOGW(TAG, "TCP %s:%u failed: errno=%d (%s)", _host.c_str(),
+            static_cast<unsigned>(_port), e, _socket_ops.err_string(e));
     _last_errno = e;
     _state = State::Error;
 }
@@ -227,6 +229,9 @@ void TcpNetworkProtocolCommon::step_connect()
     }
 
     _state = State::Connected;
+    FN_LOGI(TAG, "TCP %s:%u connected after %llu ms", _host.c_str(),
+            static_cast<unsigned>(_port),
+            static_cast<unsigned long long>(_socket_ops.now_ms() - _connect_start_ms));
 }
 
 std::size_t TcpNetworkProtocolCommon::rx_available() const noexcept
@@ -276,6 +281,10 @@ void TcpNetworkProtocolCommon::pump_recv()
         }
         if (n == 0) {
             // peer closed
+            FN_LOGI(TAG, "TCP %s:%u peer closed (sent=%lu received=%lu buffered=%zu)",
+                    _host.c_str(), static_cast<unsigned>(_port),
+                    static_cast<unsigned long>(_write_cursor),
+                    static_cast<unsigned long>(_read_cursor), rx_available());
             _state = State::PeerClosed;
             _peer_closed = true;
             return;
@@ -331,8 +340,11 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::open(const fujinet::io::Networ
     // Ignore HTTP method mapping here; TCP is method-agnostic.
     // Parse tcp://host:port?... from req.url
     if (!parse_tcp_url(req.url, _host, _port, _opt)) {
+        FN_LOGW(TAG, "TCP open rejected: invalid URL");
         return fujinet::io::StatusCode::InvalidRequest;
     }
+
+    FN_LOGI(TAG, "TCP open %s:%u: resolving", _host.c_str(), static_cast<unsigned>(_port));
 
     _rx.assign(_opt.rx_buf, 0);
 
@@ -344,6 +356,8 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::open(const fujinet::io::Networ
     const int gai = _socket_ops.getaddrinfo(_host.c_str(), portStr.c_str(), hints, &res);
     if (gai != 0 || !res) {
         // map DNS failure -> IOError
+        FN_LOGW(TAG, "TCP %s:%u resolution failed: getaddrinfo=%d", _host.c_str(),
+                static_cast<unsigned>(_port), gai);
         set_error_from_errno(_socket_ops.err_host_unreach());
         if (res) _socket_ops.freeaddrinfo(res);
         return fujinet::io::StatusCode::IOError;
@@ -367,9 +381,12 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::open(const fujinet::io::Networ
         _connect_start_ms = _socket_ops.now_ms();
         SockLen addrlen = 0;
         const struct sockaddr* addr = _socket_ops.addrinfo_addr(ai, &addrlen);
+        FN_LOGI(TAG, "TCP %s:%u connecting (address family=%d)", _host.c_str(),
+                static_cast<unsigned>(_port), _socket_ops.addrinfo_family(ai));
         const int cr = _socket_ops.connect(_fd, addr, addrlen);
         if (cr == 0) {
             _state = State::Connected;
+            FN_LOGI(TAG, "TCP %s:%u connected immediately", _host.c_str(), static_cast<unsigned>(_port));
             lastErr = 0;
             break;
         }
@@ -467,6 +484,10 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::write_body(std::uint32_t offse
     const SSize n = _socket_ops.send(_fd, data, len);
     if (n > 0) {
         const std::size_t nn = static_cast<std::size_t>(n);
+        if (_write_cursor == 0) {
+            FN_LOGI(TAG, "TCP %s:%u first send: %zu of %zu bytes", _host.c_str(),
+                    static_cast<unsigned>(_port), nn, len);
+        }
         _write_cursor += static_cast<std::uint32_t>(nn);
         written = static_cast<std::uint16_t>(std::min<std::size_t>(nn, 0xFFFF));
         if (nn == len) {
@@ -571,6 +592,10 @@ fujinet::io::StatusCode TcpNetworkProtocolCommon::read_body(std::uint32_t offset
     }
 
     const std::size_t actual = n - remaining;
+    if (_read_cursor == 0 && actual > 0) {
+        FN_LOGI(TAG, "TCP %s:%u first read: %zu bytes", _host.c_str(),
+                static_cast<unsigned>(_port), actual);
+    }
     _read_cursor += static_cast<std::uint32_t>(actual);
     read = static_cast<std::uint16_t>(std::min<std::size_t>(actual, 0xFFFF));
     more_available = (rx_available() > 0);
@@ -632,6 +657,10 @@ bool TcpNetworkProtocolCommon::read_ready() const noexcept
 void TcpNetworkProtocolCommon::close()
 {
     if (_fd >= 0) {
+        FN_LOGI(TAG, "TCP %s:%u closing (state=%u sent=%lu read=%lu buffered=%zu)",
+                _host.c_str(), static_cast<unsigned>(_port), static_cast<unsigned>(_state),
+                static_cast<unsigned long>(_write_cursor), static_cast<unsigned long>(_read_cursor),
+                rx_available());
         _socket_ops.close(_fd);
         _fd = -1;
     }
