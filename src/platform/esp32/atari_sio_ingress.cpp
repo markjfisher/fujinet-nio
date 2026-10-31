@@ -231,6 +231,8 @@ io::AtariSioStats AtariSioIngress::stats() const
     out.cmd_line_low = _cmd_pin >= 0 && _cmd_pin < GPIO_NUM_MAX &&
                        gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0;
     out.uart_rx_errors = _uart ? _uart->rx_errors() : 0;
+    out.uart_discarded_bytes = _uart ? _uart->discarded_bytes() : 0;
+    out.alt_discarded_bytes = _alt ? _alt->discarded_bytes() : 0;
     if (_uart) {
         out.uart_baud_set = _uart->uart_config().baudRate;
         out.uart_baud_hw = _uart->getBaudrate();
@@ -397,6 +399,8 @@ std::uint32_t AtariSioIngress::probe_baud(std::uint32_t target)
 
 void AtariSioIngress::reset_stats()
 {
+    if (_uart) _uart->reset_discarded_bytes();
+    if (_alt) _alt->reset_discarded_bytes();
     _boundary.reset_total_edges();
     _capture.reset_stats();
     _router.reset_stats();

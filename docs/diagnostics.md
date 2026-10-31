@@ -147,6 +147,8 @@ tight, so this is how to see what the Atari is doing:
   don't erase the event preceding a stall. Replies record control bytes, size, baud and duration,
   never response payloads. Times are the wrapping 32-bit microsecond clock;
   `sio.reset` clears the trace. This records no network payloads and logs nothing during SIO.
+- `sio.status` reports buffered bytes discarded from each UART after draining pending events. Bytes
+  arriving between that drain and the hardware flush may not be counted; `sio.reset` zeros these counts.
 
 The timings are measured at the existing send and poll points; nothing is logged on the SIO
 path.

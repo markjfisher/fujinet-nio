@@ -44,6 +44,8 @@ public:
     void updateFIFO();
     // Discard both the software FIFO and the IDF driver input.
     void discardInput();
+    std::uint32_t discarded_bytes() const { return _discarded_bytes; }
+    void reset_discarded_bytes() { _discarded_bytes = 0; }
     std::uint32_t rx_errors() const { return _rx_errors; }
 
     /// Flush output buffer, waiting for transmission to complete.
@@ -72,6 +74,7 @@ private:
     // Non-data events only: data events go through io::uart_rx_dispatch.
     void process_event(const uart_event_t& event);
     std::uint32_t _rx_errors{0};
+    std::uint32_t _discarded_bytes{0};
     bool _initialized{false};
     config::UartConfig _uart_cfg{};
     UartPins _uart_pins{};

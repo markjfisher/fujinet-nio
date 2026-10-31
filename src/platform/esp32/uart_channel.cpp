@@ -368,6 +368,7 @@ void UartChannel::discardInput()
 {
     if (!_initialized) return;
     updateFIFO(); // Consume pending error events before establishing a new baseline.
+    _discarded_bytes += static_cast<std::uint32_t>(_fifo.size());
     _fifo.clear();
     uart_flush_input(_uart_port);
 }

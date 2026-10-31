@@ -198,6 +198,7 @@ struct AtariSioStats {
     std::uint32_t first_edge_us{0};    // when the first CMD edge was seen (0 = none)
     bool cmd_line_low{false};          // CMD level right now (low = asserted by the Atari)
     std::uint32_t uart_rx_errors{0};   // the SIO UART's own error count
+    std::uint32_t uart_discarded_bytes{0}, alt_discarded_bytes{0};
     AtariSioCaptureStats capture;
     AtariSioRouterStats router;
     AtariSioReplyStats reply;

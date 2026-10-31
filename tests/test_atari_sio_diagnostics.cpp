@@ -52,6 +52,8 @@ TEST_CASE("sio.status lists its commands and reports every counter")
     f.stats.cmd_edges = 12;
     f.stats.cmd_line_low = true;
     f.stats.uart_rx_errors = 3;
+    f.stats.uart_discarded_bytes = 12;
+    f.stats.alt_discarded_bytes = 8;
     f.stats.capture = {.rx_bytes = 40, .frames = 7, .aborts_edge = 1, .aborts_timeout = 2, .aborts_overflow = 3, .aborts_rx_error = 4};
     f.stats.router.disk_commands = 5;
     f.stats.router.nio_commands = 1;
@@ -61,7 +63,7 @@ TEST_CASE("sio.status lists its commands and reports every counter")
 
     const auto r = run(*f.provider, {"sio.status"});
     REQUIRE(r.status == DiagStatus::Ok);
-    for (const char* expected : {"cmd_edges: 12", "low (asserted)", "rx_bytes: 40", "uart_rx_errors: 3", "frames: 7",
+    for (const char* expected : {"cmd_edges: 12", "low (asserted)", "rx_bytes: 40", "uart_rx_errors: 3", "discarded buffered bytes: main=12 alternate=8", "frames: 7",
                                  "disk(D1:-D8:): 5", "nio(0x7f): 1", "other devices: 1", "edge=1", "timeout=2",
                                  "overflow=3", "rx_error=4", "0x31 0x52 0x01 0x00 0x84", "device 0x31", "(read sector)"}) {
         CAPTURE(expected);

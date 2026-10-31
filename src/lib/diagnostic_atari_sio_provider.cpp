@@ -450,6 +450,8 @@ private:
     [[gnu::noinline]] void status_frames(const io::AtariSioStats& s, std::string& text) const
     {
         line(text, "rx_bytes: " + n(s.capture.rx_bytes) + "   uart_rx_errors: " + n(s.uart_rx_errors));
+        line(text, "discarded buffered bytes: main=" + n(s.uart_discarded_bytes) +
+                   " alternate=" + n(s.alt_discarded_bytes));
         line(text, "frames: " + n(s.capture.frames) + "   disk(D1:-D8:): " + n(s.router.disk_commands) +
                        "   nio(0x7f): " + n(s.router.nio_commands) + "   other devices: " + n(s.router.other_commands));
         line(text, "aborts: edge=" + n(s.capture.aborts_edge) + " timeout=" + n(s.capture.aborts_timeout) +
