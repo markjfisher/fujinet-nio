@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -87,8 +88,18 @@ std::vector<std::uint8_t> sio_reply(const std::vector<std::uint8_t>& payload)
 class DatagramChannel final : public fujinet::io::Channel {
 public:
     void push(std::vector<std::uint8_t> datagram) { rx.push_back(std::move(datagram)); }
-    void clear_tx() { tx.clear(); }
+    void clear_tx() { tx.clear(); tx_times.clear(); }
     bool available() override { return !rx.empty(); }
+    bool supports_readable_wait() const override { return wait_enabled; }
+    bool wait_for_readable(std::chrono::milliseconds timeout) override {
+        ++wait_calls;
+        last_wait = timeout;
+        while (!after_wait.empty()) {
+            rx.push_back(std::move(after_wait.front()));
+            after_wait.pop_front();
+        }
+        return !rx.empty();
+    }
     std::size_t read(std::uint8_t* buffer, std::size_t max_len) override
     {
         if (rx.empty()) return 0;
@@ -98,10 +109,18 @@ public:
         std::memcpy(buffer, datagram.data(), datagram.size());
         return datagram.size();
     }
-    void write(const std::uint8_t* buffer, std::size_t len) override { tx.emplace_back(buffer, buffer + len); }
+    void write(const std::uint8_t* buffer, std::size_t len) override {
+        tx.emplace_back(buffer, buffer + len);
+        tx_times.push_back(std::chrono::steady_clock::now());
+    }
 
     std::deque<std::vector<std::uint8_t>> rx;
+    std::deque<std::vector<std::uint8_t>> after_wait;
+    bool wait_enabled{false};
+    unsigned wait_calls{0};
+    std::chrono::milliseconds last_wait{0};
     std::vector<std::vector<std::uint8_t>> tx;
+    std::vector<std::chrono::steady_clock::time_point> tx_times;
 };
 
 class RecordingDevice final : public fujinet::io::VirtualDevice {
@@ -116,6 +135,16 @@ public:
     std::vector<fujinet::io::IORequest> requests;
 };
 
+DatagramChannel* delay_wire = nullptr;
+std::vector<std::uint32_t> delay_values;
+std::vector<std::vector<std::uint8_t>> delay_preceding;
+void record_delay(std::uint32_t value)
+{
+    delay_values.push_back(value);
+    REQUIRE(delay_wire != nullptr);
+    REQUIRE(!delay_wire->tx.empty());
+    delay_preceding.push_back(delay_wire->tx.back());
+}
 std::uint64_t test_clock_us = 0;
 std::uint64_t test_clock() { return test_clock_us; }
 
@@ -127,12 +156,14 @@ struct Harness {
     DatagramChannel* wire{new DatagramChannel()};
     std::unique_ptr<fujinet::platform::posix::AtariNetSioIngress> ingress;
 
-    explicit Harness(bool use_fake_clock = false)
+    explicit Harness(bool use_fake_clock = false, bool fake_delay = false, std::uint32_t gap = 250)
     {
         REQUIRE(core.deviceManager().registerDevice(1, std::unique_ptr<fujinet::io::VirtualDevice>(device)));
-        if (use_fake_clock) {
+        if (use_fake_clock || fake_delay) {
+            delay_wire = wire;
             ingress = std::make_unique<fujinet::platform::posix::AtariNetSioIngress>(
-                std::unique_ptr<fujinet::io::Channel>(wire), disks, core.routingManager(), test_clock);
+                std::unique_ptr<fujinet::io::Channel>(wire), disks, core.routingManager(),
+                use_fake_clock ? test_clock : nullptr, gap, fake_delay ? record_delay : nullptr);
         } else {
             ingress = fujinet::platform::posix::create_atari_netsio_ingress(
                 std::unique_ptr<fujinet::io::Channel>(wire), disks, core.routingManager());
@@ -299,4 +330,108 @@ TEST_CASE("Atari NetSIO production clock expires an abandoned reply")
         fujinet::io::AtariSioNioFrontend::stale_reply_us + 100'000));
     harness.command_frame(write.command, 3);
     require_write_ack(harness, 3, write.payload.size());
+}
+
+TEST_CASE("Atari NetSIO spaces ACK and completion using configured T5")
+{
+    delay_values.clear();
+    delay_preceding.clear();
+    Harness h(false, true, 375);
+    const auto write = fixture("w-core-dispatch");
+    const auto poll = fixture("p-core-dispatch-ready");
+    const auto read = fixture("r-core-dispatch");
+    h.command_frame(fixture("q-idle").command, 1);
+    REQUIRE(delay_values == std::vector<std::uint32_t>{375});
+    CHECK(delay_preceding.back() == std::vector<std::uint8_t>{sync_response, 1, ack_sync, 'A', 0, 0});
+    CHECK(decode_reply(h.wire->tx, 1) == sio_reply({1, 0, 2, 1}));
+    h.wire->clear_tx();
+    h.command_frame(write.command, 2); // ACK starts the data phase: no completion yet.
+    CHECK(delay_values.size() == 1);
+    h.wire->clear_tx();
+    h.write_data(write.payload, 3);
+    REQUIRE(delay_values.size() == 2);
+    CHECK(delay_preceding.back() == std::vector<std::uint8_t>{sync_response, 3, ack_sync, 'A', 0, 0});
+    CHECK(decode_reply(h.wire->tx, 3) == std::vector<std::uint8_t>{'A', 'C'});
+    h.wire->clear_tx();
+    h.command_frame(poll.command, 4);
+    h.wire->clear_tx();
+    h.command_frame(read.command, 5);
+    CHECK(delay_values == std::vector<std::uint32_t>{375, 375, 375, 375});
+    h.wire->clear_tx();
+    h.command_frame(command(0x7f, '?', 0), 6);
+    CHECK(decode_reply(h.wire->tx, 6) == std::vector<std::uint8_t>{'N'});
+    CHECK(delay_values.size() == 4);
+}
+
+TEST_CASE("Atari NetSIO allows the ACK gap to be disabled")
+{
+    delay_values.clear();
+    Harness h(false, true, 0);
+    h.command_frame(fixture("q-idle").command, 1);
+    CHECK(decode_reply(h.wire->tx, 1) == sio_reply({1, 0, 2, 1}));
+    CHECK(delay_values.empty());
+}
+
+TEST_CASE("Atari NetSIO default production gap separates datagrams")
+{
+    Harness h;
+    h.command_frame(fixture("q-idle").command, 9);
+    std::size_t ack = h.wire->tx.size(), complete = h.wire->tx.size();
+    for (std::size_t i = 0; i < h.wire->tx.size(); ++i) {
+        const auto& packet = h.wire->tx[i];
+        if (packet.size() == 6 && packet[0] == sync_response && packet[1] == 9 && packet[3] == 'A') ack = i;
+        if (packet.size() == 2 && packet[0] == data_byte && packet[1] == 'C') complete = i;
+    }
+    REQUIRE(ack < complete);
+    REQUIRE(complete < h.wire->tx_times.size());
+    CHECK(h.wire->tx_times[complete] - h.wire->tx_times[ack] >= std::chrono::microseconds(250));
+}
+
+TEST_CASE("Atari NetSIO waits for delayed credit and preserves unrelated datagrams")
+{
+    Harness h;
+    h.wire->wait_enabled = true;
+    h.wire->after_wait.push_back({0xc2}); // ping: process after the SIO reply
+    h.wire->after_wait.push_back({0xc7, 3});
+    h.command_frame(fixture("q-idle").command, 10);
+    CHECK(h.wire->wait_calls == 1);
+    CHECK(h.wire->last_wait > std::chrono::milliseconds::zero());
+    CHECK(h.wire->last_wait <= std::chrono::milliseconds(5));
+    CHECK(decode_reply(h.wire->tx, 10) == sio_reply({1, 0, 2, 1}));
+    CHECK(std::find(h.wire->tx.begin(), h.wire->tx.end(),
+                    std::vector<std::uint8_t>{0xc3}) != h.wire->tx.end());
+    CHECK(h.wire->rx.empty());
+}
+
+TEST_CASE("Atari NetSIO answers after the credit wait times out")
+{
+    Harness h;
+    h.wire->wait_enabled = true;
+    h.command_frame(fixture("q-idle").command, 11);
+    CHECK(h.wire->wait_calls == 1);
+    CHECK(decode_reply(h.wire->tx, 11) == sio_reply({1, 0, 2, 1}));
+}
+
+TEST_CASE("Atari NetSIO preserves a complete command received while waiting for credit")
+{
+    Harness h;
+    h.wire->wait_enabled = true;
+    const auto frame = fixture("q-idle").command;
+    h.wire->after_wait.push_back({command_on});
+    std::vector<std::uint8_t> block{data_block};
+    block.insert(block.end(), frame.begin(), frame.end());
+    block.push_back(0);
+    h.wire->after_wait.push_back(std::move(block));
+    h.wire->after_wait.push_back({command_off_sync, 13});
+    h.wire->after_wait.push_back({0xc7, 3});
+    h.command_frame(frame, 12);
+    const auto second = std::find_if(h.wire->tx.begin(), h.wire->tx.end(), [](const auto& packet) {
+        return packet.size() == 6 && packet[0] == sync_response && packet[1] == 13;
+    });
+    REQUIRE(second != h.wire->tx.end());
+    const std::vector<std::vector<std::uint8_t>> first_reply(h.wire->tx.begin(), second);
+    const std::vector<std::vector<std::uint8_t>> second_reply(second, h.wire->tx.end());
+    CHECK(decode_reply(first_reply, 12) == sio_reply({1, 0, 2, 1}));
+    CHECK(decode_reply(second_reply, 13) == sio_reply({1, 0, 2, 1}));
+    CHECK(h.wire->rx.empty());
 }

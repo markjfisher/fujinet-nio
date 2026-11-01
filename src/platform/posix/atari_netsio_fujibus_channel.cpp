@@ -7,7 +7,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -19,6 +21,11 @@ std::uint64_t monotonic_microseconds()
     using namespace std::chrono;
     return static_cast<std::uint64_t>(duration_cast<microseconds>(
         steady_clock::now().time_since_epoch()).count());
+}
+
+void delay_microseconds(std::uint32_t us)
+{
+    if (us) std::this_thread::sleep_for(std::chrono::microseconds(us));
 }
 
 constexpr std::uint8_t sio_ack = 'A';
@@ -35,13 +42,16 @@ class AtariNetSioIngress::Impl {
 public:
     Impl(std::unique_ptr<fujinet::io::Channel> udp,
          fujinet::disk::DiskService& disks,
-         fujinet::io::IRequestHandler& routing, std::uint64_t (*clock)())
+         fujinet::io::IRequestHandler& routing, std::uint64_t (*clock)(),
+         std::uint32_t ack_gap_us, void (*delay)(std::uint32_t))
         : udp(std::move(udp))
         , disk(disks)
         , nio(routing)
         , router(disk, nio, [this](const std::vector<std::uint8_t>& bytes) { replies.push_back(bytes); })
     {
         nio.set_clock(clock ? clock : monotonic_microseconds);
+        this->ack_gap_us = ack_gap_us;
+        this->delay = delay ? delay : delay_microseconds;
         netsio.sendDeviceConnect();
         write_netsio();
         netsio.sendSpeedChange(19200);
@@ -65,7 +75,14 @@ public:
         if (!udp) return;
         send_alive_if_due();
         std::uint8_t bytes[512];
-        while (udp->available()) {
+        while (!deferred.empty() || udp->available()) {
+            if (!deferred.empty()) {
+                auto packet = std::move(deferred.front());
+                deferred.pop_front();
+                if (netsio.parseMessage(packet.data(), packet.size()))
+                    handle_message(netsio.getMessageType(), netsio.getPayload());
+                continue;
+            }
             const std::size_t count = udp->read(bytes, sizeof(bytes));
             if (!count || !netsio.parseMessage(bytes, count)) continue;
             handle_message(netsio.getMessageType(), netsio.getPayload());
@@ -73,6 +90,9 @@ public:
     }
 
 private:
+    std::deque<std::vector<std::uint8_t>> deferred;
+    std::uint32_t ack_gap_us{0};
+    void (*delay)(std::uint32_t){nullptr};
     void write_netsio()
     {
         if (!udp) return;
@@ -111,7 +131,14 @@ private:
         // credit before the synchronous response starts the SIO phase.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5);
         std::uint8_t bytes[512];
-        while (udp && std::chrono::steady_clock::now() < deadline && udp->available()) {
+        while (udp && std::chrono::steady_clock::now() < deadline) {
+            if (!udp->available()) {
+                if (!udp->supports_readable_wait()) break;
+                const auto left = std::chrono::ceil<std::chrono::milliseconds>(
+                    deadline - std::chrono::steady_clock::now());
+                if (left <= std::chrono::milliseconds::zero() || !udp->wait_for_readable(left)) break;
+                continue;
+            }
             const std::size_t count = udp->read(bytes, sizeof(bytes));
             if (!count || !netsio.parseMessage(bytes, count)) continue;
             const auto type = netsio.getMessageType();
@@ -119,6 +146,9 @@ private:
             if (type == netsio::ALIVE_REQUEST) {
                 netsio.sendAliveResponse();
                 write_netsio();
+            } else {
+                // Do not lose a command or reset that arrives while awaiting credit.
+                deferred.emplace_back(bytes, bytes + count);
             }
         }
     }
@@ -147,6 +177,9 @@ private:
         }
         send_ack_sync(sync, reply.front(), write_size);
         if (reply.size() < 2) return;
+        // Wall-clock T5 mirrors the physical SIO ingress. The emulator must
+        // also honour the interval in emulated time when buffering packets.
+        if (reply.front() == sio_ack && ack_gap_us) delay(ack_gap_us);
 
         // The frontend owns literal SIO data.  NetSIO is only the virtual
         // carrier: it neither pads nor reframes the native packet.
@@ -325,8 +358,9 @@ private:
 AtariNetSioIngress::AtariNetSioIngress(std::unique_ptr<fujinet::io::Channel> udp,
                                        fujinet::disk::DiskService& disks,
                                        fujinet::io::IRequestHandler& routing,
-                                       std::uint64_t (*clock)())
-    : _impl(std::make_unique<Impl>(std::move(udp), disks, routing, clock))
+                                       std::uint64_t (*clock)(),
+                                       std::uint32_t ack_gap_us, void (*delay)(std::uint32_t))
+    : _impl(std::make_unique<Impl>(std::move(udp), disks, routing, clock, ack_gap_us, delay))
 {}
 
 AtariNetSioIngress::~AtariNetSioIngress() = default;
@@ -337,9 +371,9 @@ bool AtariNetSioIngress::wait_for_work(std::chrono::milliseconds timeout) { retu
 std::unique_ptr<AtariNetSioIngress>
 create_atari_netsio_ingress(std::unique_ptr<fujinet::io::Channel> udp,
                             fujinet::disk::DiskService& disks,
-                            fujinet::io::IRequestHandler& routing)
+                            fujinet::io::IRequestHandler& routing, std::uint32_t ack_gap_us)
 {
-    return std::make_unique<AtariNetSioIngress>(std::move(udp), disks, routing);
+    return std::make_unique<AtariNetSioIngress>(std::move(udp), disks, routing, nullptr, ack_gap_us);
 }
 
 } // namespace fujinet::platform::posix

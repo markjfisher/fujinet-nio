@@ -284,7 +284,7 @@ int main()
         return 1;
     }
     atariNetSioIngress = fujinet::platform::posix::create_atari_netsio_ingress(
-        std::move(udp), diskDev->disk_service(), core.routingManager());
+        std::move(udp), diskDev->disk_service(), core.routingManager(), config.atariSio.ackGapUs);
     core.addWorkSource(atariNetSioIngress.get());
 #else
     auto channel = platform::create_channel_for_profile(

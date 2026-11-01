@@ -110,7 +110,8 @@ the library reported `$10` for an open that had actually succeeded.
 The ESP32 ingress now sends the ACK as soon as the data frame has been checked and its request decoded
 (`AtariSioNioFrontend::set_early_ack`), runs the request, then sends COMPLETE after the usual ACK gap.
 Frames that are refused (a bad checksum, a request that does not decode) are NAKed as before, never ACKed
-first. Without the hook, as on NetSIO, the reply is still `{ACK, COMPLETE}` together. Disk writes are
+first. Without the hook, as on NetSIO, the frontend still produces `{ACK, COMPLETE}` together after
+handling; the POSIX carrier now separates those bytes by its configured wall-clock ACK gap. Disk writes are
 unchanged (they are short). The `handler` time in `sio.status` now includes the request, so a slow one shows
 there.
 

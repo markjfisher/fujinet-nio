@@ -307,6 +307,12 @@ to `FujiBusTransport`.
   `D1:`--`D8:` to `AtariSioDiskFrontend` and native `$7F` Q/W/P/R to the
   shared `AtariSioIngressRouter`/`AtariSioNioFrontend` and `RoutingManager`.
   It is not a SLIP/FujiBus byte channel and has no `$71` alias or padded read.
+  Between an ACK sync response and a following COMPLETE or ERROR byte it waits
+  `atari_sio.ack_gap_us` (250 µs by default). This is wall-clock timing: a
+  virtual SIO hub can buffer packets and must provide its own emulated-time
+  spacing if it needs a guaranteed interval at the Atari. Its credit exchange
+  waits up to 5 ms for the hub's update and queues unrelated datagrams for
+  processing after the SIO reply; a missing credit update does not prevent a reply.
 - **ESP32 + Atari SIO GPIO** uses `FN_BUILD_ATARI_FUJIBUS_SIO`, selecting
   `TransportKind::None` with `ChannelKind::SioGpio`. The one
   `AtariSioIngress` owns the UART and control pins, sends `D1:`--`D8:`
