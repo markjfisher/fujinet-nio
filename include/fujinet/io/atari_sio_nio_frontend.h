@@ -41,7 +41,7 @@ public:
 
     // A reply the Atari never read (its call timed out) would hold the endpoint busy and answer
     // every new Q/W with NAK. With a clock set, a Q or W arriving this long after the reply became
-    // ready discards it. Without a clock (tests, POSIX) nothing expires. P and R never discard.
+    // ready discards it. Without a clock nothing expires. P and R never discard.
     using Clock = std::uint64_t (*)();
     static constexpr std::uint64_t stale_reply_us = 2'000'000;
     void set_clock(Clock clock) { _clock = clock; }

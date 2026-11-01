@@ -14,6 +14,13 @@
 namespace fujinet::platform::posix {
 namespace {
 
+std::uint64_t monotonic_microseconds()
+{
+    using namespace std::chrono;
+    return static_cast<std::uint64_t>(duration_cast<microseconds>(
+        steady_clock::now().time_since_epoch()).count());
+}
+
 constexpr std::uint8_t sio_ack = 'A';
 constexpr std::uint8_t sio_nak = 'N';
 
@@ -28,12 +35,13 @@ class AtariNetSioIngress::Impl {
 public:
     Impl(std::unique_ptr<fujinet::io::Channel> udp,
          fujinet::disk::DiskService& disks,
-         fujinet::io::IRequestHandler& routing)
+         fujinet::io::IRequestHandler& routing, std::uint64_t (*clock)())
         : udp(std::move(udp))
         , disk(disks)
         , nio(routing)
         , router(disk, nio, [this](const std::vector<std::uint8_t>& bytes) { replies.push_back(bytes); })
     {
+        nio.set_clock(clock ? clock : monotonic_microseconds);
         netsio.sendDeviceConnect();
         write_netsio();
         netsio.sendSpeedChange(19200);
@@ -316,8 +324,9 @@ private:
 
 AtariNetSioIngress::AtariNetSioIngress(std::unique_ptr<fujinet::io::Channel> udp,
                                        fujinet::disk::DiskService& disks,
-                                       fujinet::io::IRequestHandler& routing)
-    : _impl(std::make_unique<Impl>(std::move(udp), disks, routing))
+                                       fujinet::io::IRequestHandler& routing,
+                                       std::uint64_t (*clock)())
+    : _impl(std::make_unique<Impl>(std::move(udp), disks, routing, clock))
 {}
 
 AtariNetSioIngress::~AtariNetSioIngress() = default;

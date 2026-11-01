@@ -18,6 +18,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -115,6 +116,9 @@ public:
     std::vector<fujinet::io::IORequest> requests;
 };
 
+std::uint64_t test_clock_us = 0;
+std::uint64_t test_clock() { return test_clock_us; }
+
 struct Harness {
     fujinet::fs::StorageManager storage;
     fujinet::disk::DiskService disks{storage, fujinet::disk::make_default_image_registry()};
@@ -123,11 +127,16 @@ struct Harness {
     DatagramChannel* wire{new DatagramChannel()};
     std::unique_ptr<fujinet::platform::posix::AtariNetSioIngress> ingress;
 
-    Harness()
+    explicit Harness(bool use_fake_clock = false)
     {
         REQUIRE(core.deviceManager().registerDevice(1, std::unique_ptr<fujinet::io::VirtualDevice>(device)));
-        ingress = fujinet::platform::posix::create_atari_netsio_ingress(
-            std::unique_ptr<fujinet::io::Channel>(wire), disks, core.routingManager());
+        if (use_fake_clock) {
+            ingress = std::make_unique<fujinet::platform::posix::AtariNetSioIngress>(
+                std::unique_ptr<fujinet::io::Channel>(wire), disks, core.routingManager(), test_clock);
+        } else {
+            ingress = fujinet::platform::posix::create_atari_netsio_ingress(
+                std::unique_ptr<fujinet::io::Channel>(wire), disks, core.routingManager());
+        }
         wire->clear_tx(); // construction lifecycle is tested by boot acceptance, not each fixture exchange.
     }
 
@@ -245,4 +254,49 @@ TEST_CASE("Atari NetSIO ingress rejects aliases, retains wrong R, and resets the
     harness.poll();
     harness.command_frame(command(0x7f, 'P', 0), 7);
     CHECK(decode_reply(harness.wire->tx, 7) == sio_reply({0, 0, 0}));
+}
+
+TEST_CASE("Atari NetSIO expires a lost reply after a suspended client resumes")
+{
+    test_clock_us = 100;
+    Harness harness(true);
+    const auto write = fixture("w-core-dispatch");
+    harness.command_frame(write.command, 1);
+    require_write_ack(harness, 1, write.payload.size());
+    harness.wire->clear_tx();
+    harness.write_data(write.payload, 2);
+    REQUIRE(harness.device->requests.size() == 1);
+    harness.wire->clear_tx();
+
+    // An unconsumed fresh reply protects the completed request.
+    test_clock_us += fujinet::io::AtariSioNioFrontend::stale_reply_us - 1;
+    harness.command_frame(write.command, 3);
+    CHECK(decode_reply(harness.wire->tx, 3) == std::vector<std::uint8_t>{'N'});
+    CHECK(harness.device->requests.size() == 1);
+    harness.wire->clear_tx();
+
+    // After suspension beyond the deadline, the same write can proceed.
+    ++test_clock_us;
+    harness.command_frame(write.command, 4);
+    require_write_ack(harness, 4, write.payload.size());
+    harness.wire->clear_tx();
+    harness.write_data(write.payload, 5);
+    CHECK(decode_reply(harness.wire->tx, 5) == std::vector<std::uint8_t>{'A', 'C'});
+    CHECK(harness.device->requests.size() == 2);
+}
+
+TEST_CASE("Atari NetSIO production clock expires an abandoned reply")
+{
+    Harness harness;
+    const auto write = fixture("w-core-dispatch");
+    harness.command_frame(write.command, 1);
+    require_write_ack(harness, 1, write.payload.size());
+    harness.wire->clear_tx();
+    harness.write_data(write.payload, 2);
+    REQUIRE(harness.device->requests.size() == 1);
+    harness.wire->clear_tx();
+    std::this_thread::sleep_for(std::chrono::microseconds(
+        fujinet::io::AtariSioNioFrontend::stale_reply_us + 100'000));
+    harness.command_frame(write.command, 3);
+    require_write_ack(harness, 3, write.payload.size());
 }
