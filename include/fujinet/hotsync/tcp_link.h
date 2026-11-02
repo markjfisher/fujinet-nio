@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fujinet/hotsync/link.h"
+#include <atomic>
 
 namespace fujinet::net {
 class ITcpSocketOps;
@@ -12,7 +13,7 @@ namespace fujinet::hotsync {
 // Waits by polling, so it belongs on the HotSync task, never the core loop.
 class TcpLink : public Link {
 public:
-    TcpLink(net::ITcpSocketOps& ops, int fd);
+    TcpLink(net::ITcpSocketOps& ops, int fd, const std::atomic_bool* stop = nullptr);
     ~TcpLink() override;
 
     TcpLink(const TcpLink&) = delete;
@@ -24,6 +25,7 @@ public:
 private:
     net::ITcpSocketOps& _ops;
     int _fd;
+    const std::atomic_bool* _stop;
 };
 
 } // namespace fujinet::hotsync

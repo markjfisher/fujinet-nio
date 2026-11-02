@@ -1316,6 +1316,8 @@ namespace {
 // `reply` and closes.
 struct ProbeSocketOps final : fujinet::net::ITcpSocketOps {
     bool accepted = false;
+    bool stall = false;
+    std::atomic_bool reading{false};
     std::uint64_t now = 0;
     bool connects = false;
     std::string reply;
@@ -1342,6 +1344,7 @@ struct ProbeSocketOps final : fujinet::net::ITcpSocketOps {
     }
     fujinet::net::SSize recv(int, void* buf, std::size_t len) override
     {
+        if (stall) { reading = true; return -1; }
         const std::size_t n = std::min(len, reply.size());
         std::memcpy(buf, reply.data(), n);
         reply.erase(0, n);
@@ -1366,10 +1369,15 @@ struct ProbeSocketOps final : fujinet::net::ITcpSocketOps {
     int addrinfo_socktype(fujinet::net::AddrInfo*) override { return 0; }
     int addrinfo_protocol(fujinet::net::AddrInfo*) override { return 0; }
     const struct sockaddr* addrinfo_addr(fujinet::net::AddrInfo*, fujinet::net::SockLen*) override { return nullptr; }
-    std::uint64_t now_ms() override { return now; }
+    std::uint64_t now_ms() override
+    {
+        if (!stall) return now;
+        return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
     int last_errno() override { return 0; }
     const char* err_string(int) override { return "probe socket"; }
-    bool is_would_block(int) const noexcept override { return false; }
+    bool is_would_block(int) const noexcept override { return stall; }
     bool is_in_progress(int) const noexcept override { return false; }
     bool is_peer_gone(int) const noexcept override { return true; }
     int err_timed_out() const noexcept override { return 110; }
@@ -1378,6 +1386,22 @@ struct ProbeSocketOps final : fujinet::net::ITcpSocketOps {
 };
 
 } // namespace
+
+TEST_CASE("HotSync service: stopping interrupts a stalled NetSync connection")
+{
+    ProbeSocketOps ops;
+    ops.stall = true;
+    fujinet::tests::MemoryFileSystem fs("host");
+    HotSyncService service(ops, fs, HotSyncSettings{}, nullptr);
+    auto task = std::async(std::launch::async, [&] { service.run(); });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!ops.reading && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(ops.reading.load());
+    service.stop();
+    CHECK(service.wait_stopped(std::chrono::seconds(2)));
+    CHECK(task.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+}
 
 TEST_CASE("HotSync service: a connection that never completes the handshake is rejected, not a failed sync")
 {

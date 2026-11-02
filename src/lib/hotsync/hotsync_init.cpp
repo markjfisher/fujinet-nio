@@ -27,8 +27,7 @@ namespace {
 
 constexpr const char* TAG = "hotsync";
 constexpr std::size_t kTaskStackBytes = 8192;
-// How long shutdown waits for the service task. A cradle sync ends at once
-// (its line is closed); a NetSync session ends at its next timeout.
+// Report periodically if shutdown waits for work on the service task.
 constexpr auto kStopWait = std::chrono::seconds(10);
 
 // Local time from the system clock and zone (clock.timezone).
@@ -135,9 +134,8 @@ std::shared_ptr<HotSyncService> start_service(fs::StorageManager& storage, const
 }
 
 // The service task holds its own reference to the service, so the service
-// can outlive this. Before the coordinator goes, the destructor stops the
-// task and waits for it; if it will not stop, the coordinator is left alive
-// for it (the program is ending anyway).
+// can outlive this. Before dependencies go, the destructor stops the task
+// and waits for it to finish.
 class Runtime final : public HotSyncRuntime {
 public:
     std::unique_ptr<CradleCoordinator> cradle;
@@ -153,9 +151,8 @@ public:
         if (cradle) {
             cradle->shutdown();
         }
-        if (!service->wait_stopped(kStopWait)) {
-            FN_LOGW(TAG, "the HotSync task did not stop; leaving it running");
-            (void)cradle.release();
+        while (!service->wait_stopped(kStopWait)) {
+            FN_LOGW(TAG, "waiting for the HotSync task to stop");
         }
     }
 

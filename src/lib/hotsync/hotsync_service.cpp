@@ -230,7 +230,7 @@ bool HotSyncService::wait_stopped(std::chrono::milliseconds timeout)
 
 void HotSyncService::serve(int fd)
 {
-    TcpLink link(_ops, fd);
+    TcpLink link(_ops, fd, &_stop);
     NetSyncTransport transport(link);
     // A port probe or a stray client is not a Palm; count it apart from syncs.
     if (!transport.accept()) {

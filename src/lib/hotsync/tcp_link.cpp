@@ -15,8 +15,8 @@ constexpr std::uint64_t kWriteTimeoutMs = 10000;
 
 } // namespace
 
-TcpLink::TcpLink(net::ITcpSocketOps& ops, int fd)
-    : _ops(ops), _fd(fd)
+TcpLink::TcpLink(net::ITcpSocketOps& ops, int fd, const std::atomic_bool* stop)
+    : _ops(ops), _fd(fd), _stop(stop)
 {
 }
 
@@ -34,6 +34,9 @@ int TcpLink::read(std::uint8_t* buf, std::size_t len, std::uint32_t timeoutMs)
     }
     const std::uint64_t deadline = _ops.now_ms() + timeoutMs;
     for (;;) {
+        if (_stop && _stop->load()) {
+            return -1;
+        }
         const net::SSize got = _ops.recv(_fd, buf, len);
         if (got > 0) {
             return static_cast<int>(got);
@@ -56,6 +59,9 @@ int TcpLink::write(const std::uint8_t* buf, std::size_t len)
     std::uint64_t deadline = _ops.now_ms() + kWriteTimeoutMs;
     std::size_t done = 0;
     while (done < len) {
+        if (_stop && _stop->load()) {
+            return -1;
+        }
         const net::SSize sent = _ops.send(_fd, buf + done, len - done);
         if (sent > 0) {
             done += static_cast<std::size_t>(sent);

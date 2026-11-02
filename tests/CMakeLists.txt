@@ -115,6 +115,12 @@ add_test(NAME posix-clock-test-isolation
 # Python unit tests (tooling). Keep these lightweight so they can run everywhere.
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+    if(FN_WITH_HOTSYNC AND FN_BUILD_FUJIBUS_PTY AND TARGET fujinet-nio-posix)
+        add_test(NAME hotsync-stalled-netsync-shutdown
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/hotsync_shutdown_integration.py
+                    $<TARGET_FILE:fujinet-nio-posix>)
+        set_tests_properties(hotsync-stalled-netsync-shutdown PROPERTIES TIMEOUT 20)
+    endif()
     add_test(
         NAME fujinet-tools-python-tests
         COMMAND ${CMAKE_COMMAND} -E env
