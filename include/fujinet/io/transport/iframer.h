@@ -3,6 +3,8 @@
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/protocol/fuji_bus_packet.h"
 
+#include <cstdint>
+
 namespace fujinet::io {
 
 using protocol::ByteBuffer;
@@ -23,6 +25,21 @@ public:
 
     // Frame one raw opaque packet and write it to ch.
     virtual void sendPacket(Channel& ch, const ByteBuffer& packet) = 0;
+
+    // What a transport reports when its line is shared
+    // (io::IBusLineCoordinator). The defaults suit a framer that never holds
+    // part of a packet.
+
+    // Bytes taken from channels so far: a running count.
+    virtual std::uint64_t bytesTaken() const { return 0; }
+
+    // After nextPacket() has returned false: true while it still holds bytes
+    // it has not delivered, such as the start of a packet that has not
+    // finished arriving.
+    virtual bool hasPartial() const { return false; }
+
+    // Drops those bytes.
+    virtual void discardPartial() {}
 };
 
 } // namespace fujinet::io

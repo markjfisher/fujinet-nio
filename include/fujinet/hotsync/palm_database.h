@@ -23,6 +23,10 @@ struct PalmDatabase {
 
     bool is_resource_db() const { return (info.flags & kDbResource) != 0; }
 
+    // False for a file too short for its header and entry list, or with a
+    // block that starts inside them or past the end of the file. Each block
+    // runs to the next start in the file, so blocks never overlap and the
+    // data parsed out of a file is at most the file's size.
     bool parse(const Bytes& file);
     Bytes serialize() const;
 };

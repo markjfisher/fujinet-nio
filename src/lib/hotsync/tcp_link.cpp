@@ -1,7 +1,3 @@
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/hotsync/tcp_link.h"
 
 #include "fujinet/net/tcp_socket_ops.h"
@@ -78,5 +74,3 @@ int TcpLink::write(const std::uint8_t* buf, std::size_t len)
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

@@ -157,8 +157,9 @@ Registered by `fujinet::hotsync::start_hotsync()` in builds with HotSync
 whether or not `hotsync.enabled` is on. It exposes:
 
 - `hotsync.status` — whether NetSync is listening, the cradle's state and
-  counters, the settings, sync counts, and the source, user, time and result
-  of the last sync
+  counters (windows, FujiBus requests, stray bytes, partial frames dropped
+  after stalling, refusals, dropped writes), the settings, sync counts, and
+  the source, user, time and result of the last sync
 - `hotsync.get` — the stored `hotsync:` settings
 - `hotsync.set <enabled|port|cradle|root|user_name|backup> <value...>` —
   change a stored setting (`enabled` and `cradle` are `0` or `1`; `port` 0

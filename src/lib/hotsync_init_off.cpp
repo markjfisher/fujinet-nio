@@ -1,7 +1,5 @@
-// Builds without HotSync (FN_WITH_HOTSYNC off): start_hotsync() does nothing.
-// The ESP32 build compiles every source, so this file compiles to nothing in
-// HotSync builds; src/lib/hotsync/hotsync_init.cpp is the real one.
-#if FN_WITH_HOTSYNC != 1
+// start_hotsync() for builds without HotSync. The build selects this file
+// instead of src/lib/hotsync/hotsync_init.cpp when FN_WITH_HOTSYNC is off.
 
 #include "fujinet/hotsync/hotsync_init.h"
 
@@ -15,5 +13,3 @@ std::unique_ptr<HotSyncRuntime> start_hotsync(const HotSyncHost&, std::unique_pt
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

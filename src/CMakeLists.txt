@@ -3,8 +3,7 @@
 
 # This is only used by esp-idf, and not the posix build.
 
-idf_component_register(
-    SRCS
+set(FN_IDF_SOURCES
 # __TARGET_SOURCES_START__
         app/console_commands.cpp
         app/console_engine.cpp
@@ -27,7 +26,6 @@ idf_component_register(
         lib/diagnostic_boot_provider.cpp
         lib/diagnostic_core_provider.cpp
         lib/diagnostic_disk_provider.cpp
-        lib/diagnostic_hotsync_provider.cpp
         lib/diagnostic_modem_provider.cpp
         lib/diagnostic_network_provider.cpp
         lib/diagnostic_parse.cpp
@@ -63,21 +61,6 @@ idf_component_register(
         lib/host_service.cpp
         lib/host_service_init.cpp
         lib/host_state.cpp
-        lib/hotsync/cradle_channel.cpp
-        lib/hotsync/dlp.cpp
-        lib/hotsync/dlp_client.cpp
-        lib/hotsync/fs_storage.cpp
-        lib/hotsync/hotsync_init.cpp
-        lib/hotsync/hotsync_service.cpp
-        lib/hotsync/http_fetch.cpp
-        lib/hotsync/netsync_transport.cpp
-        lib/hotsync/padp_transport.cpp
-        lib/hotsync/palm_database.cpp
-        lib/hotsync/session.cpp
-        lib/hotsync/sha256.cpp
-        lib/hotsync/slp.cpp
-        lib/hotsync/tcp_link.cpp
-        lib/hotsync_init_off.cpp
         lib/image/ilbm_writer.cpp
         lib/image/image_pipeline.cpp
         lib/image/output_format.cpp
@@ -179,6 +162,44 @@ idf_component_register(
 # __TARGET_SOURCES_END__
         ../third_party/cjson/cJSON.c
         ../third_party/cjson/cJSON_Utils.c
+)
+
+# Palm HotSync (docs/hotsync.md): its sources, or only the stub start_hotsync()
+# without them. FN_WITH_HOTSYNC is a CMake variable, not a compiler flag: a
+# profile that wants HotSync passes `-D FN_WITH_HOTSYNC=ON` in its
+# board_build.cmake_extra_args (pio-build/ini/platforms/*.ini).
+if(FN_WITH_HOTSYNC)
+    list(APPEND FN_IDF_SOURCES
+# __HOTSYNC_SOURCES_START__
+        lib/diagnostic_hotsync_provider.cpp
+        lib/hotsync/cradle_coordinator.cpp
+        lib/hotsync/dlp.cpp
+        lib/hotsync/dlp_client.cpp
+        lib/hotsync/fs_storage.cpp
+        lib/hotsync/hotsync_init.cpp
+        lib/hotsync/hotsync_service.cpp
+        lib/hotsync/http_fetch.cpp
+        lib/hotsync/line_arbiter.cpp
+        lib/hotsync/netsync_transport.cpp
+        lib/hotsync/padp_transport.cpp
+        lib/hotsync/palm_database.cpp
+        lib/hotsync/session.cpp
+        lib/hotsync/sha256.cpp
+        lib/hotsync/slp.cpp
+        lib/hotsync/tcp_link.cpp
+# __HOTSYNC_SOURCES_END__
+    )
+else()
+    list(APPEND FN_IDF_SOURCES
+# __HOTSYNC_OFF_SOURCES_START__
+        lib/hotsync_init_off.cpp
+# __HOTSYNC_OFF_SOURCES_END__
+    )
+endif()
+
+idf_component_register(
+    SRCS
+        ${FN_IDF_SOURCES}
     INCLUDE_DIRS
         "../include"
         "../third_party/cjson"
@@ -193,6 +214,7 @@ idf_component_register(
 
 #
 # NOTE:
-# PlatformIO/ESP-IDF builds already provide transport selection via compiler flags
-# (e.g. `-DFN_BUILD_ATARI_SIO`). We deliberately do not feature-gate sources in the
-# generated `src/CMakeLists.txt`; instead, code is gated by those compiler flags.
+# PlatformIO/ESP-IDF builds provide transport selection via compiler flags
+# (e.g. `-DFN_BUILD_ATARI_SIO`), so most sources are not feature-gated here;
+# code is gated by those compiler flags. HotSync is the exception above: the
+# build selects its sources, and they carry no feature guards.

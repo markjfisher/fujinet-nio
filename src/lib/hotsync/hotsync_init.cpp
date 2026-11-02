@@ -1,8 +1,3 @@
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing and hotsync_init_off.cpp
-// stands in for it.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/hotsync/hotsync_init.h"
 
 #include "fujinet/config/fuji_config.h"
@@ -11,8 +6,9 @@
 #include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
-#include "fujinet/hotsync/cradle_channel.h"
+#include "fujinet/hotsync/cradle_coordinator.h"
 #include "fujinet/hotsync/hotsync_service.h"
+#include "fujinet/hotsync/line_arbiter.h"
 #include "fujinet/io/core/baud_control.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/platform/memory_stats.h"
@@ -20,6 +16,7 @@
 #include "fujinet/platform/tcp_socket_ops.h"
 #include "fujinet/platform/time.h"
 
+#include <chrono>
 #include <ctime>
 #include <memory>
 #include <string>
@@ -30,6 +27,9 @@ namespace {
 
 constexpr const char* TAG = "hotsync";
 constexpr std::size_t kTaskStackBytes = 8192;
+// How long shutdown waits for the service task. A cradle sync ends at once
+// (its line is closed); a NetSync session ends at its next timeout.
+constexpr auto kStopWait = std::chrono::seconds(10);
 
 // Local time from the system clock and zone (clock.timezone).
 DlpDateTime local_now()
@@ -67,25 +67,26 @@ void run_service(void* ctx)
     delete service;
 }
 
-// With HotSync and its cradle on, wraps the FujiBus line in a CradleChannel
-// and points `cradle` at it; the line must change rate (io::BaudControl).
-// Otherwise returns `line` unchanged and leaves `cradle` null.
-std::unique_ptr<io::Channel> attach_cradle(std::unique_ptr<io::Channel> line,
-                                           const config::HotSyncConfig& config, CradleChannel*& cradle)
+// With HotSync and its cradle on, puts the FujiBus line under a LineArbiter,
+// which `line` then holds, and returns the coordinator that lends it; the line
+// must change rate (io::BaudControl). Otherwise leaves `line` alone and
+// returns null.
+std::unique_ptr<CradleCoordinator> attach_cradle(std::unique_ptr<io::Channel>& line,
+                                                 const config::HotSyncConfig& config)
 {
-    cradle = nullptr;
     if (!config.enabled || !config.cradle || !line) {
-        return line;
+        return nullptr;
     }
     auto* baud = dynamic_cast<io::BaudControl*>(line.get());
     if (baud == nullptr) {
         FN_LOGW(TAG, "hotsync.cradle needs a serial line that can change rate; no cradle");
-        return line;
+        return nullptr;
     }
-    auto wrapped = std::make_unique<CradleChannel>(std::move(line), *baud);
-    cradle = wrapped.get();
+    auto arbiter = std::make_unique<LineArbiter>(std::move(line), *baud);
+    auto coordinator = std::make_unique<CradleCoordinator>(*arbiter);
+    line = std::move(arbiter);
     FN_LOGI(TAG, "Palm cradle shares the FujiBus line");
-    return wrapped;
+    return coordinator;
 }
 
 // Starts the service on a task of its own when config.enabled, with its folder
@@ -93,7 +94,7 @@ std::unique_ptr<io::Channel> attach_cradle(std::unique_ptr<io::Channel> line,
 // cradle when `cradle` is given. Null when HotSync is off or cannot start. The
 // task keeps its own reference, so the service outlives the returned pointer.
 std::shared_ptr<HotSyncService> start_service(fs::StorageManager& storage, const config::HotSyncConfig& config,
-                                              CradleChannel* cradle)
+                                              CradleCoordinator* cradle)
 {
     if (!config.enabled) {
         return nullptr;
@@ -133,10 +134,32 @@ std::shared_ptr<HotSyncService> start_service(fs::StorageManager& storage, const
     return service;
 }
 
+// The service task holds its own reference to the service, so the service
+// can outlive this. Before the coordinator goes, the destructor stops the
+// task and waits for it; if it will not stop, the coordinator is left alive
+// for it (the program is ending anyway).
 class Runtime final : public HotSyncRuntime {
 public:
+    std::unique_ptr<CradleCoordinator> cradle;
     std::shared_ptr<HotSyncService> service;
     std::unique_ptr<diag::IDiagnosticProvider> diagnostics;
+
+    ~Runtime() override
+    {
+        if (!service) {
+            return;
+        }
+        service->stop();
+        if (cradle) {
+            cradle->shutdown();
+        }
+        if (!service->wait_stopped(kStopWait)) {
+            FN_LOGW(TAG, "the HotSync task did not stop; leaving it running");
+            (void)cradle.release();
+        }
+    }
+
+    io::IBusLineCoordinator* bus_line_coordinator() override { return cradle.get(); }
 };
 
 } // namespace
@@ -144,14 +167,11 @@ public:
 std::unique_ptr<HotSyncRuntime> start_hotsync(const HotSyncHost& host, std::unique_ptr<io::Channel>& line)
 {
     auto runtime = std::make_unique<Runtime>();
-    CradleChannel* cradle = nullptr;
-    line = attach_cradle(std::move(line), host.config, cradle);
-    runtime->service = start_service(host.storage, host.config, cradle);
+    runtime->cradle = attach_cradle(line, host.config);
+    runtime->service = start_service(host.storage, host.config, runtime->cradle.get());
     runtime->diagnostics = diag::create_hotsync_diagnostic_provider(runtime->service, host.fuji);
     host.diagnostics.add_provider(*runtime->diagnostics);
     return runtime;
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

@@ -1,11 +1,8 @@
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/hotsync/palm_database.h"
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 namespace fujinet::hotsync {
 
@@ -94,52 +91,70 @@ bool PalmDatabase::parse(const Bytes& file)
 
     const std::size_t count = get_be16(h + kNumRecords);
     const std::size_t entrySize = is_resource_db() ? kResourceEntrySize : kRecordEntrySize;
-    if (kHeaderSize + count * entrySize > file.size()) {
+    const std::size_t dataStart = kHeaderSize + count * entrySize;
+    if (dataStart > file.size()) {
         return false;
     }
 
-    records.clear();
-    resources.clear();
-    std::vector<std::uint32_t> offsets;
-    offsets.reserve(count);
+    // The data blocks: the app info block, the sort info block (either may
+    // be absent, offset 0) and one block per entry. Each runs from its start
+    // to the next start in the file, or to the end of the file; of blocks
+    // that share a start, all but the last (in that order) are empty. So the
+    // blocks never overlap: however many entries a file has and wherever
+    // they point, the data parsed out of it is at most its own size. Every
+    // start must lie after the entry list and within the file.
+    constexpr std::uint32_t kAppSlot = 0;
+    constexpr std::uint32_t kSortSlot = 1;
+    constexpr std::uint32_t kFirstEntrySlot = 2;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> blocks; // (start, slot)
+    blocks.reserve(count + 2);
+    if (appInfoOffset != 0) {
+        blocks.emplace_back(appInfoOffset, kAppSlot);
+    }
+    if (sortInfoOffset != 0) {
+        blocks.emplace_back(sortInfoOffset, kSortSlot);
+    }
     for (std::size_t i = 0; i < count; ++i) {
         const std::uint8_t* e = h + kHeaderSize + i * entrySize;
-        if (is_resource_db()) {
-            DlpResource resource;
-            std::memcpy(resource.type, e, 4);
-            resource.id = get_be16(e + 4);
-            resources.push_back(resource);
-            offsets.push_back(get_be32(e + 6));
-        } else {
-            DlpRecord record;
-            record.id = (static_cast<std::uint32_t>(e[5]) << 16) | (e[6] << 8) | e[7];
-            split_attributes(e[4], record.attributes, record.category);
-            records.push_back(record);
-            offsets.push_back(get_be32(e));
-        }
-        if (offsets.back() > file.size()) {
+        blocks.emplace_back(is_resource_db() ? get_be32(e + 6) : get_be32(e),
+                            kFirstEntrySlot + static_cast<std::uint32_t>(i));
+    }
+    for (const auto& b : blocks) {
+        if (b.first < dataStart || b.first > file.size()) {
             return false;
         }
     }
+    std::sort(blocks.begin(), blocks.end());
 
-    // Each block runs to the start of the next one that follows it.
-    std::vector<std::uint32_t> starts(offsets);
-    starts.push_back(appInfoOffset);
-    starts.push_back(sortInfoOffset);
-    std::sort(starts.begin(), starts.end());
-    auto slice = [&](std::uint32_t start, Bytes& out) {
-        if (start == 0 || start > file.size()) {
-            return;
-        }
-        auto next = std::upper_bound(starts.begin(), starts.end(), start);
-        const std::size_t end = next == starts.end() ? file.size() : std::min<std::size_t>(*next, file.size());
-        out.assign(file.begin() + start, file.begin() + static_cast<std::ptrdiff_t>(end));
-    };
-
-    slice(appInfoOffset, appInfo);
-    slice(sortInfoOffset, sortInfo);
+    appInfo.clear();
+    sortInfo.clear();
+    records.clear();
+    resources.clear();
+    if (is_resource_db()) {
+        resources.resize(count);
+    } else {
+        records.resize(count);
+    }
     for (std::size_t i = 0; i < count; ++i) {
-        slice(offsets[i], is_resource_db() ? resources[i].data : records[i].data);
+        const std::uint8_t* e = h + kHeaderSize + i * entrySize;
+        if (is_resource_db()) {
+            std::memcpy(resources[i].type, e, 4);
+            resources[i].id = get_be16(e + 4);
+        } else {
+            records[i].id = (static_cast<std::uint32_t>(e[5]) << 16) | (e[6] << 8) | e[7];
+            split_attributes(e[4], records[i].attributes, records[i].category);
+        }
+    }
+    for (std::size_t k = 0; k < blocks.size(); ++k) {
+        const std::size_t begin = blocks[k].first;
+        const std::size_t end = k + 1 < blocks.size() ? blocks[k + 1].first : file.size();
+        const std::uint32_t slot = blocks[k].second;
+        Bytes& out = slot == kAppSlot    ? appInfo
+                     : slot == kSortSlot ? sortInfo
+                     : is_resource_db()  ? resources[slot - kFirstEntrySlot].data
+                                         : records[slot - kFirstEntrySlot].data;
+        out.assign(file.begin() + static_cast<std::ptrdiff_t>(begin),
+                   file.begin() + static_cast<std::ptrdiff_t>(end));
     }
     return true;
 }
@@ -240,5 +255,3 @@ DlpDateTime palm_date_from_seconds(std::uint32_t seconds)
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

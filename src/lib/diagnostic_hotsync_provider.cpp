@@ -1,12 +1,8 @@
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/diag/diagnostic_hotsync.h"
 
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/diag/diagnostic_parse.h"
-#include "fujinet/hotsync/cradle_channel.h"
+#include "fujinet/hotsync/cradle_coordinator.h"
 #include "fujinet/hotsync/hotsync_service.h"
 #include "fujinet/hotsync/session.h"
 #include "fujinet/io/devices/fuji_device.h"
@@ -118,11 +114,12 @@ private:
         add_line(r, "listening", s.listening ? "1" : "0");
         add_line(r, "port", std::to_string(s.port));
         add_line(r, "cradle", s.cradle);
-        if (const hotsync::CradleChannel* cradle = _service->cradle()) {
+        if (const hotsync::CradleCoordinator* cradle = _service->cradle()) {
             const hotsync::CradleStats c = cradle->stats();
             add_line(r, "cradle_windows", std::to_string(s.cradleWindows));
             add_line(r, "cradle_fujibus_packets", std::to_string(c.frames));
             add_line(r, "cradle_stray_bytes", std::to_string(c.strayBytes));
+            add_line(r, "cradle_expired_frames", std::to_string(c.expiredFrames));
             add_line(r, "cradle_refused", std::to_string(c.refused));
             add_line(r, "cradle_dropped_writes", std::to_string(c.droppedWrites));
         }
@@ -275,5 +272,3 @@ std::unique_ptr<IDiagnosticProvider> create_hotsync_diagnostic_provider(
 }
 
 } // namespace fujinet::diag
-
-#endif // FN_WITH_HOTSYNC

@@ -1,7 +1,3 @@
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/hotsync/sha256.h"
 
 #include <array>
@@ -97,5 +93,3 @@ std::string sha256_hex(const Bytes& data)
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

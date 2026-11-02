@@ -6,7 +6,7 @@ namespace fujinet::io {
 
 // A serial line whose speed can change while it is open. Platform channels
 // that drive a real UART or serial port implement it beside io::Channel; it is
-// not part of io::Channel. The Palm cradle (hotsync::CradleChannel) uses it to
+// not part of io::Channel. The Palm cradle (hotsync::LineArbiter) uses it to
 // lend the bus line at another rate.
 class BaudControl {
 public:

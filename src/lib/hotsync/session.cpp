@@ -1,10 +1,6 @@
 // Derived from palm-sync (https://github.com/jichu4n/palm-sync),
 // Copyright Chuan Ji, Apache License 2.0. See docs/hotsync.md.
 
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/hotsync/session.h"
 
 #include "fujinet/core/logging.h"
@@ -123,7 +119,17 @@ DlpError Session::install_pending()
         if (!has_install_extension(fileName)) {
             continue;
         }
-        const DlpError err = install_file(fileName);
+        // Claimed, the file is this sync's: one queued under the same name
+        // from now on is a new file, for the next sync (Storage). A file not
+        // yet whole may still be in its writer's hands, so it is left alone.
+        DlpError err = DlpError::None;
+        if (!install_ready(fileName)) {
+            err = DlpError::Param;
+        } else if (!_storage.claim_install(fileName)) {
+            continue;
+        } else {
+            err = install_file(fileName);
+        }
         if (is_fatal(err)) {
             return err;
         }
@@ -137,6 +143,17 @@ DlpError Session::install_pending()
         }
     }
     return DlpError::None;
+}
+
+bool Session::install_ready(const std::string& fileName)
+{
+    Bytes file;
+    PalmDatabase db;
+    if (!_storage.peek_install(fileName, file, _options.maxDatabaseBytes) || !db.parse(file)) {
+        FN_LOGW(TAG, "%s is not a whole Palm database yet; left queued", fileName.c_str());
+        return false;
+    }
+    return true;
 }
 
 DlpError Session::install_file(const std::string& fileName)
@@ -346,5 +363,3 @@ void Session::log(const std::string& line)
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

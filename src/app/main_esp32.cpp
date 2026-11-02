@@ -338,13 +338,15 @@ extern "C" void fujinet_core_task(void* arg)
     }
 
     // Palm HotSync (FN_WITH_HOTSYNC builds). With hotsync.cradle on it puts
-    // the cradle over `channel`, so the transports below get the cradle; the
-    // UART diagnostics above keep the line beneath it.
+    // the cradle's line arbiter over `channel`, and the FujiBus transport
+    // offers the cradle its line through the runtime's coordinator; the UART
+    // diagnostics above keep the line beneath it.
     auto hotsync = fujinet::hotsync::start_hotsync(
         {core.storageManager(), config.hotsync, services.fuji, diagRegistry}, channel);
 
     if (channel) {
-        core::setup_transports(core, *channel, profile, &config);
+        core::setup_transports(core, *channel, profile, &config,
+                               hotsync ? hotsync->bus_line_coordinator() : nullptr);
         FN_ELOG("transport initialized");
     }
 

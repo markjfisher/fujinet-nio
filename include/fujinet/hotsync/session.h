@@ -59,6 +59,7 @@ public:
 private:
     DlpError identify_user();
     DlpError install_pending();
+    bool install_ready(const std::string& fileName);
     DlpError install_file(const std::string& fileName);
     DlpError write_database(const PalmDatabase& db);
     DlpError write_contents(std::uint8_t handle, const PalmDatabase& db);

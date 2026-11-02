@@ -10,6 +10,8 @@
 #include "fujinet/hotsync/session.h"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -26,7 +28,7 @@ class ITcpSocketOps;
 
 namespace fujinet::hotsync {
 
-class CradleChannel;
+class CradleCoordinator;
 
 // `hotsync.backup` in fujinet.yaml: false for an unknown value.
 bool parse_backup_policy(const std::string& text, BackupPolicy& out);
@@ -63,8 +65,8 @@ struct HotSyncStatus {
     int lastInstallFailures{0};
     int lastBackedUp{0};
     int lastBackupFailures{0};
-    // Cradle: "off", "app" (a FujiBus host holds the line), "listening",
-    // "syncing" or "idle".
+    // Cradle: "off", "app" (a FujiBus host holds the line, or was mid-request
+    // when a window was due), "listening", "syncing" or "idle".
     std::string cradle{"off"};
     std::uint32_t cradleWindows{0};
     // The service task's lowest free stack so far, in bytes; 0 when the
@@ -82,7 +84,7 @@ public:
 
     // `cradle` may be null: no cradle on this build or config.
     HotSyncService(net::ITcpSocketOps& ops, fs::IFileSystem& fs, HotSyncSettings settings, Clock clock,
-                   CradleChannel* cradle = nullptr, CradleWindow window = {});
+                   CradleCoordinator* cradle = nullptr, CradleWindow window = {});
     ~HotSyncService();
 
     HotSyncService(const HotSyncService&) = delete;
@@ -93,7 +95,10 @@ public:
     bool poll();
     // Polls until stop() is called. For the service task.
     void run();
+    // Asks run() to return once the work in hand ends.
     void stop() { _stop.store(true); }
+    // Waits up to `timeout` for run() to return; true once it has.
+    bool wait_stopped(std::chrono::milliseconds timeout);
 
     HotSyncStatus status() const;
     // Called on the service task after each pass that did something.
@@ -111,7 +116,7 @@ public:
     const HotSyncSettings& settings() const { return _settings; }
     bool has_cradle() const { return _cradle != nullptr; }
     // Null without a cradle.
-    const CradleChannel* cradle() const { return _cradle; }
+    const CradleCoordinator* cradle() const { return _cradle; }
 
 private:
     bool poll_network();
@@ -127,12 +132,16 @@ private:
     HotSyncSettings _settings;
     Clock _clock;
     StackProbe _stackProbe;
-    CradleChannel* _cradle;
+    CradleCoordinator* _cradle;
     CradleWindow _window;
+    bool _warnedNoTransport{false};
     int _listenFd{-1};
     std::uint64_t _nextListenAttemptMs{0};
     std::uint64_t _nextWindowMs{0};
     std::atomic_bool _stop{false};
+    std::mutex _runMutex;
+    std::condition_variable _runEnded;
+    bool _ended{false};
 
     mutable std::mutex _statusMutex;
     HotSyncStatus _status;

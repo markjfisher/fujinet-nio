@@ -1,11 +1,14 @@
 #include "doctest.h"
 
+#include "fujinet/io/transport/bus_line_coordinator.h"
 #include "fujinet/io/transport/fujibus_transport.h"
 #include "fujinet/io/transport/slip_framer.h"
 #include "fujinet/io/protocol/fuji_bus_packet.h"
+#include "fujinet/io/protocol/slip_codec.h"
 #include "fujinet/io/core/channel.h"
 
 #include <deque>
+#include <string>
 #include <vector>
 #include <cstdint>
 
@@ -336,4 +339,74 @@ TEST_CASE("raw and serial framers preserve literal response status and bytes") {
         CHECK(ch.tx().empty());
         CHECK_FALSE(transport.receiveResponse(response));
     }
+}
+
+namespace {
+
+// Records what a FujiBus transport tells a line coordinator.
+struct RecordingCoordinator : IBusLineCoordinator {
+    std::vector<std::string> events;
+    bool dropPartial{false};
+
+    void bytes_received(std::size_t count) override { events.push_back("bytes " + std::to_string(count)); }
+    void frame_received(bool valid) override { events.push_back(valid ? "request" : "bad frame"); }
+    bool line_idle(bool partial) override
+    {
+        events.push_back(partial ? "idle partial" : "idle");
+        return dropPartial;
+    }
+};
+
+} // namespace
+
+TEST_CASE("a line coordinator sees the bytes, each frame, and the idle point after every response") {
+    LoopbackChannel ch;
+    SlipFramer framer;
+    RecordingCoordinator coordinator;
+    FujiBusTransport transport(ch, framer, &coordinator);
+
+    const ByteBuffer request = encodeSLIP(FujiBusPacket(WireDeviceId::FujiNet, 0x01).serializeRaw());
+    const ByteBuffer bad = {0xC0, 0x70, 0x01, 0xC0};
+    std::vector<std::uint8_t> bytes(request.begin(), request.end());
+    bytes.insert(bytes.end(), bad.begin(), bad.end());
+    bytes.insert(bytes.end(), request.begin(), request.end());
+    bytes.insert(bytes.end(), {0xC0, 0x70}); // the start of another
+    ch.push(bytes);
+
+    // As IOService runs it: poll, then receive and answer until idle.
+    transport.poll();
+    IORequest req;
+    std::vector<std::string> expected = {"bytes " + std::to_string(bytes.size()), "request"};
+    REQUIRE(transport.receive(req));
+    transport.send(make_base_response(req, StatusCode::Ok));
+    CHECK_FALSE(transport.receive(req)); // the bad frame ends this pass, before any idle point
+    expected.push_back("bad frame");
+    REQUIRE(transport.receive(req));
+    expected.push_back("request");
+    CHECK_FALSE(transport.receive(req));
+    expected.push_back("idle partial");
+    CHECK(coordinator.events == expected);
+
+    // Told to, the transport drops the partial frame; the next one is whole.
+    coordinator.dropPartial = true;
+    CHECK_FALSE(transport.receive(req));
+    coordinator.dropPartial = false;
+    ch.push(std::vector<std::uint8_t>(request.begin(), request.end()));
+    transport.poll();
+    REQUIRE(transport.receive(req));
+    CHECK(req.deviceId == static_cast<DeviceID>(WireDeviceId::FujiNet));
+    CHECK_FALSE(transport.receive(req));
+    CHECK(coordinator.events.back() == "idle");
+}
+
+TEST_CASE("without a line coordinator the transport works as before") {
+    LoopbackChannel ch;
+    SlipFramer framer;
+    FujiBusTransport transport(ch, framer);
+    const ByteBuffer request = encodeSLIP(FujiBusPacket(WireDeviceId::FujiNet, 0x01).serializeRaw());
+    ch.push(std::vector<std::uint8_t>(request.begin(), request.end()));
+    transport.poll();
+    IORequest req;
+    CHECK(transport.receive(req));
+    CHECK_FALSE(transport.receive(req));
 }

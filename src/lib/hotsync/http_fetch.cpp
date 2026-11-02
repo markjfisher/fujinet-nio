@@ -1,7 +1,3 @@
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/hotsync/http_fetch.h"
 
 #include "fujinet/hotsync/tcp_link.h"
@@ -181,5 +177,3 @@ std::string http_fetch(net::ITcpSocketOps& ops, const HttpUrl& url, std::size_t 
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

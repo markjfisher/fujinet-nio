@@ -20,11 +20,13 @@ Not yet: copying a calendar into the Date Book.
 
 ## Builds
 
-HotSync is in builds with `FN_WITH_HOTSYNC`: on by default for the POSIX
-`fujibus-pty-*` and `fujibus-rs232-*` presets and on the FN-RS232 ESP32
-boards. `-DFN_WITH_HOTSYNC=OFF` leaves it out of a POSIX build and `=ON` adds
-it to another. Other builds carry none of its code; see
-[build_feature_matrix.md](build_feature_matrix.md).
+HotSync is in builds with `FN_WITH_HOTSYNC`, a CMake variable: on by default
+for the POSIX `fujibus-pty-*` and `fujibus-rs232-*` presets, and on for the
+FN-RS232 ESP32 boards, which pass `-D FN_WITH_HOTSYNC=ON` in their
+`board_build.cmake_extra_args`. `-DFN_WITH_HOTSYNC=OFF` leaves it out of a
+POSIX build and `=ON` adds it to another. The build selects HotSync's sources,
+or only the stub `start_hotsync()` without them, so other builds carry none of
+its code; see [build_feature_matrix.md](build_feature_matrix.md).
 
 ## Turning it on
 
@@ -69,6 +71,7 @@ The folder lives on the persistent filesystem (`host` on POSIX, `sd0` or
 | Folder | Contents |
 |---|---|
 | `install/` | Files to install at the next sync. FujiNet creates it at start-up. |
+| `installing/` | Files a sync has taken from `install/`. One that could not be installed stays here and is tried again at the next sync, unless a file of the same name is queued in `install/` meanwhile, which replaces it. |
 | `installed/` | Files move here once installed. |
 | `incoming/` | `hotsync.fetch` downloads, until complete. |
 | `backup/<user>/` | Databases backed up from the Palm, as `.pdb` or `.prc` |
@@ -98,7 +101,22 @@ hotsync.fetch http://192.168.1.5:8000/FujiNetTest.prc sha256=<the 64 hex digits>
 ```
 
 A database larger than 1 MB is neither installed nor backed up, so it never
-has to be held in memory. On ESP32 buffers that large come from PSRAM.
+has to be held in memory. On ESP32 buffers that large come from PSRAM. A file
+to install is checked before anything is copied out of it: each of its blocks
+must start after the entry list and within the file, and runs to the next
+block's start, so blocks never overlap and the data parsed out of a file is
+never larger than the file, however many entries it claims or where they
+point.
+
+Nothing is half-written where a reader looks for it. Downloads go to
+`incoming/` first, and a backup is written as `<name>.new` beside the old one;
+each is renamed into place only once complete and flushed. A file being
+replaced stays until its replacement is in place: `rename()` replaces a file
+on POSIX but not on FatFs, so there the old file is set aside as
+`<name>.old` and put back if the move fails. A full card or a failed write
+leaves the previous backup as it was. If power fails in the moment between
+setting the old file aside and moving the new one in, the old one is left as
+`<name>.old`, and the next replace of that file puts it back first.
 
 ### Sharing the filesystem
 
@@ -108,16 +126,33 @@ filesystems HotSync uses (host, `sd0`, `flash`): `fs::IFileSystem` documents
 why, and HotSync refuses a network filesystem. Two things still follow from
 sharing it:
 
-- Two writers to one file interleave. A client copying a file into `install/`
-  while a sync reads it can hand the sync part of a file, which the sync then
-  refuses as corrupt. `hotsync.fetch` writes to `incoming/` and renames, for
-  this reason; a FileDevice client should copy to another name and rename, or
-  write the file's header last.
+- A file can be queued while a sync is installing one of the same name. Each
+  filesystem call is safe on its own, but a sync reads a file and later
+  records it as installed, and a sequence of calls is not atomic. So a sync
+  claims each file before reading it, by renaming it from `install/` into
+  `installing/`: from then on the file is the sync's, a file queued under the
+  same name is a new one for the next sync, and what reaches `installed/` is
+  always what the Palm received.
+- A client may still be writing a file in `install/`. A sync claims a file
+  only once it reads as a whole Palm database, and leaves it queued until
+  then: renaming a file out from under its writer is not safe on FatFs, which
+  this firmware builds without file locking (`CONFIG_FATFS_FS_LOCK=0`).
+  FileDevice opens and closes the file for each write, and another task sees
+  only what has been closed, so a client that writes the header last (FI
+  Config writes the first entry's offset last) is never claimed part way.
+  `hotsync.fetch` writes to `incoming/` and renames, for this reason; any
+  other FileDevice client should copy to another name and rename, or write
+  the file's header last. A client that writes a file front to back, header
+  first, can have it claimed, or installed cut short, before it finishes.
 - A directory listing taken during a sync may or may not show the files it
   adds.
 
 `tests/test_hotsync.cpp` runs 100 syncs while another thread writes, reads,
-lists and removes files on the same filesystem.
+lists and removes files on the same filesystem, queues a file under the name a
+sync is installing, leaves a file still being written alone, and fails
+backup writes at each stage, also with FatFs's non-replacing rename. These run
+on POSIX; on ESP32 the same guarantee rests on the FatFs and LittleFS locking
+described in `fs::IFileSystem`, which has no automated test.
 
 ## Security
 
@@ -150,22 +185,41 @@ A HotSync opens at 9600 baud; FujiBus runs at the bus rate, 115200 by default.
 At the wrong rate the UART cannot see a HotSync start, so FujiNet listens for
 one now and then, and FujiBus is off the line while it does:
 
-- With `hotsync.cradle` on, `hotsync::CradleChannel` owns the FujiBus line.
-  FujiBus reads and writes it as before; the HotSync service borrows it.
+- With `hotsync.cradle` on, the FujiBus line sits under a
+  `hotsync::LineArbiter`, which can lend it at another rate. It knows nothing
+  of SLIP or FujiBus: FujiBus reads and writes it as before, and while it is
+  lent FujiBus reads nothing and its writes are dropped.
 - Every 3 seconds the service opens a window: the line drops to 9600 baud for
   1.5 s while it listens for a Palm's WAKEUP, then goes back to the bus rate.
   A WAKEUP keeps the line for the whole sync, including the change to the
   faster rate the Palm accepts; afterwards the bus rate is restored and bytes
   left at the other rate are dropped.
-- A Palm running an app is not HotSyncing: each FujiBus packet keeps windows
-  closed for 60 s. A SLIP frame counts as a packet only if the FujiBus
-  transport would take it: `CradleChannel` decodes it with `decodeSLIP` and
-  checks it with `FujiBusPacket::fromRaw`, so the two cannot disagree.
-- Bytes that are not FujiBus, with no packet in the last second, end that wait
-  at once: a Palm whose HotSync button was pressed sends a WAKEUP, which reads
-  as such bytes at the bus rate.
-- While the line is lent FujiBus requests get no answer, and the request after
-  a sync can be lost to the Palm's leftover WAKEUP bytes; Palm apps retry.
+- `hotsync::CradleCoordinator` decides when a window may open, from what the
+  FujiBus transport reports as it does its normal work
+  (`io::IBusLineCoordinator`): the bytes its SLIP framer takes, each complete
+  frame and whether it decoded as a request, and whether the framer holds
+  part of a frame. Nothing is decoded twice, and the cradle and the transport
+  cannot disagree about what a request is.
+- A Palm running an app is not HotSyncing: each FujiBus request keeps windows
+  closed for 60 s.
+- Bytes that made no request, with no request in the last second, end that
+  wait at once: a Palm whose HotSync button was pressed sends a WAKEUP, which
+  reads as such bytes at the bus rate.
+- The hand-over happens at the transport's idle point, on the core task:
+  inside `receive()`, once the framer has no packet to deliver, so every
+  request it delivered has been answered. The service asks for the line from
+  its own task and waits; the transport's next idle point grants it, or
+  refuses it if a request has arrived meanwhile. The line is never lent while
+  the framer holds bytes: a request split across the moment a window falls
+  due is completed, answered, and keeps the line. Nor is it lent while bytes
+  wait unread; they are read first. A partial frame that sits through 0.5 s
+  of idle points with no new bytes has stalled; it is dropped and no longer
+  holds a window off. The clock starts at the idle point, so time spent
+  handling requests never counts toward it.
+- What a window still costs: a request that starts arriving while the line is
+  lent, or in the moment it takes to change the rate, gets no answer, and the
+  request after a sync can be lost to the Palm's leftover WAKEUP bytes. Palm
+  apps retry.
 
 **Other FujiBus clients on the line.** With `hotsync.cradle` on, after 60 s
 without a FujiBus packet the line is deaf to FujiBus for 1.5 s of every 3 s,
@@ -212,9 +266,11 @@ how many syncs have run, and the result of the last one. `rejected` counts
 connections that never completed the NetSync handshake, such as a port scan,
 and Palms that woke but did not finish the cradle handshake; they are not
 syncs. With a cradle it adds the cradle's state (`app` while a FujiBus host
-holds the line, `listening` during a window, `syncing`, `idle`) and counters:
-windows opened, FujiBus packets seen, stray bytes, windows refused while an
-app was active, and FujiBus writes dropped while the line was lent. On ESP32,
+holds the line or was mid-request when a window fell due, `listening` during
+a window, `syncing`, `idle`) and counters: windows opened, FujiBus requests
+seen, stray bytes, partial frames dropped after stalling, windows refused
+while an app was active, and FujiBus writes dropped while the line was lent.
+On ESP32,
 `task_stack_min_free` is the least free stack the HotSync task has had, in
 bytes, out of its 8192:
 
@@ -226,6 +282,7 @@ cradle: listening
 cradle_windows: 18
 cradle_fujibus_packets: 2
 cradle_stray_bytes: 273
+cradle_expired_frames: 0
 cradle_refused: 2
 cradle_dropped_writes: 0
 root: /hotsync
@@ -258,19 +315,41 @@ sync that backed up ten databases: a sync uses about 4 KB of the task's 8 KB.
   - `DlpClient`: Desktop Link Protocol commands.
   - `PalmDatabase`: `.pdb` and `.prc` files.
   - `Session`: one sync, over injected `DlpTransport` and `Storage` interfaces.
-  - `CradleChannel`: the `io::Channel` adapter that shares the FujiBus line
-    (above). It changes rate through `io::BaudControl`, which the ESP32
-    `UartChannel` and the POSIX serial channel implement beside
-    `io::Channel`; HotSync code never touches the UART itself.
+- The cradle (above) is two parts, so that no channel knows a protocol:
+  - `LineArbiter`, an `io::Channel` over the FujiBus line, owns the line, its
+    rate and who may use it, and knows no SLIP or FujiBus. It changes rate
+    through `io::BaudControl`, which the ESP32 `UartChannel` and the POSIX
+    serial channel implement beside `io::Channel`; HotSync code never touches
+    the UART itself.
+  - `CradleCoordinator` applies the cradle's policy. It implements
+    `io::IBusLineCoordinator`, which `core::setup_transports` hands to the
+    FujiBus SLIP transport: the transport reports the bytes its framer
+    takes, each frame and whether it decoded as a request, and offers the line
+    at its idle point, where the coordinator lends it through the arbiter.
+    Checking that the transport is idle and changing the rate both happen
+    there, on the core task, so no request can slip in between; and the
+    arbiter will not lend a line with unread bytes, which closes the gap down
+    to the rate change itself. The console's `uart.*` commands still act on
+    the line directly; a rate they set while the line is lent is kept when it
+    comes back.
+  - On POSIX, where `main` returns, the runtime stops the service task and
+    waits for it before the coordinator goes; the cradle's line is closed
+    first, so a cradle sync in progress ends at once.
 - `HotSyncService` listens for NetSync through `net::ITcpSocketOps` and runs
   the cradle windows, one sync at a time. A sync waits on the Palm for seconds
   at a time and runs for minutes, so the service runs on a task of its own
   (`platform::start_service_task`, an 8 KB stack in internal RAM on ESP32),
   never in `core.tick()`.
 - A platform `main` calls `hotsync::start_hotsync()` once, after creating the
-  bus channel and before `core::setup_transports`: it puts the cradle over the
-  line, starts the service and registers `hotsync.*`. Builds without
-  `FN_WITH_HOTSYNC` link a stub of it that does nothing.
+  bus channel and before `core::setup_transports`: it puts the line arbiter
+  over the line, starts the service and registers `hotsync.*`. The main then
+  passes the runtime's `bus_line_coordinator()` to `core::setup_transports`.
+- The build selects HotSync's sources: with `FN_WITH_HOTSYNC`, the files in
+  `src/lib/hotsync/` and the diagnostics provider; without it, only
+  `src/lib/hotsync_init_off.cpp`, a `start_hotsync()` that does nothing. No
+  source tests a compiler flag. `CMakeLists_posix.cmake` and the ESP-IDF
+  component list (`src/CMakeLists.txt`) both make the choice, and
+  `scripts/update_cmake_sources.py` generates both lists.
 - NetSync binds its port once the network is up: until then `bind()` fails,
   and the service tries again every 5 s. It does not subscribe to
   `SystemEvents` ([event_driven_services.md](event_driven_services.md)):
@@ -279,17 +358,29 @@ sync that backed up ten databases: a sync uses about 4 KB of the task's 8 KB.
   retry does that with nothing shared between threads, also recovers a port
   another program holds on POSIX, and lets the cradle, which needs no
   network, start at once.
-- `FsStorage` keeps the folders above on an `fs::IFileSystem`.
+- `FsStorage` keeps the folders above on an `fs::IFileSystem`. A sync claims
+  each file it installs (Storage), and every file is written under a
+  temporary name and renamed into place.
 - HotSync adds no FujiBus device, command or setting on the wire, so
   `py/fujinet_tools` and `fujinet-nio-lib` have nothing to follow.
 - Tests: `tests/test_hotsync.cpp` replays bytes captured from a Palm OS 3.3
-  device, palm-sync's NetSync recording and the emulator rig, runs whole
-  syncs against a fake Palm, and covers the cradle hand-off: app traffic
-  holding the line, stray bytes ending the hold, a WAKEUP inside a window, a
-  window with none, and the rate restored. It also pins the cradle's packet
-  test to the transport's, runs syncs beside another thread's file traffic,
-  checks SHA-256 against the FIPS 180-4 examples, and drives
-  `start_hotsync()`.
+  device, palm-sync's NetSync recording and the emulator rig, and runs whole
+  syncs against a fake Palm. The cradle tests run the real FujiBus path
+  (arbiter, SLIP framer, transport, `IOService`) with the test as the core
+  task and the claim on a task of its own: app traffic holding the line,
+  stray bytes ending the hold, good and broken packets holding it exactly
+  when the transport answers them, a request split across the hand-over
+  completed and keeping the line, a stalled partial frame expiring but not
+  one held up by a slow request, unread bytes keeping the line, a rate set
+  from the console kept, shutdown, a WAKEUP inside a window, a window with
+  none, and the rate restored. Malformed databases (shared, out-of-order and
+  out-of-range offsets), a file queued under the name being installed, a file
+  still being written, a refused install retried, backups failing at write,
+  flush and rename, FatFs's non-replacing rename and a replace cut short are
+  covered too, as are syncs beside another thread's file traffic, SHA-256
+  against the FIPS 180-4 examples, and `start_hotsync()`. `tests/test_fujibus_transport_framing.cpp` and
+  `tests/test_slip_framer.cpp` cover what the transport and framer report,
+  in every build.
 - Not covered by automated tests, but tested live: the ESP32 service task and
   `UartChannel::set_baud_rate` (on an FN-RS232 board with a Palm in a
   cradle), and NetSync with a real Palm (only with `fake_palm.py` and

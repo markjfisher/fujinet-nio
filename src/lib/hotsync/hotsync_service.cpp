@@ -1,11 +1,7 @@
-// HotSync builds only (FN_WITH_HOTSYNC): the ESP32 build compiles every
-// source, so elsewhere this file compiles to nothing.
-#if FN_WITH_HOTSYNC == 1
-
 #include "fujinet/hotsync/hotsync_service.h"
 
 #include "fujinet/core/logging.h"
-#include "fujinet/hotsync/cradle_channel.h"
+#include "fujinet/hotsync/cradle_coordinator.h"
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/hotsync/fs_storage.h"
 #include "fujinet/hotsync/http_fetch.h"
@@ -71,7 +67,7 @@ const char* backup_policy_name(BackupPolicy policy)
 }
 
 HotSyncService::HotSyncService(net::ITcpSocketOps& ops, fs::IFileSystem& fs, HotSyncSettings settings,
-                               Clock clock, CradleChannel* cradle, CradleWindow window)
+                               Clock clock, CradleCoordinator* cradle, CradleWindow window)
     : _ops(ops), _fs(fs), _settings(std::move(settings)), _clock(std::move(clock)), _cradle(cradle),
       _window(window)
 {
@@ -129,7 +125,7 @@ bool HotSyncService::start_listening()
 bool HotSyncService::poll()
 {
     bool worked = poll_network();
-    if (_cradle) {
+    if (_cradle && !_stop.load()) {
         worked = poll_cradle() || worked;
     }
     return worked;
@@ -166,7 +162,12 @@ bool HotSyncService::poll_cradle()
     if (_ops.now_ms() < _nextWindowMs) {
         return false;
     }
-    if (!_cradle->claim(kCmpInitialBaud)) {
+    const CradleClaim claim = _cradle->claim(kCmpInitialBaud);
+    if (claim != CradleClaim::Granted) {
+        if (claim == CradleClaim::Busy && !_cradle->transport_seen() && !_warnedNoTransport) {
+            FN_LOGW(TAG, "cradle: no FujiBus transport offers its line; no windows can open");
+            _warnedNoTransport = true;
+        }
         set_cradle_state("app");
         _nextWindowMs = _ops.now_ms() + _window.gapMs;
         return false;
@@ -216,6 +217,15 @@ void HotSyncService::run()
             _status.taskStackMinFree = free;
         }
     }
+    std::lock_guard<std::mutex> lock(_runMutex);
+    _ended = true;
+    _runEnded.notify_all();
+}
+
+bool HotSyncService::wait_stopped(std::chrono::milliseconds timeout)
+{
+    std::unique_lock<std::mutex> lock(_runMutex);
+    return _runEnded.wait_for(lock, timeout, [this] { return _ended; });
 }
 
 void HotSyncService::serve(int fd)
@@ -358,5 +368,3 @@ HotSyncStatus HotSyncService::status() const
 }
 
 } // namespace fujinet::hotsync
-
-#endif // FN_WITH_HOTSYNC

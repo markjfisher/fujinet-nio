@@ -12,13 +12,14 @@
 #include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/fs_stdio.h"
 #include "fujinet/fs/storage_manager.h"
+#include "fujinet/hotsync/cradle_coordinator.h"
 #include "fujinet/hotsync/dlp.h"
 #include "fujinet/hotsync/dlp_client.h"
 #include "fujinet/hotsync/fs_storage.h"
 #include "fujinet/hotsync/hotsync_init.h"
-#include "fujinet/hotsync/cradle_channel.h"
 #include "fujinet/hotsync/hotsync_service.h"
 #include "fujinet/hotsync/http_fetch.h"
+#include "fujinet/hotsync/line_arbiter.h"
 #include "fujinet/hotsync/netsync_transport.h"
 #include "fujinet/hotsync/padp_transport.h"
 #include "fujinet/hotsync/palm_database.h"
@@ -27,9 +28,12 @@
 #include "fujinet/hotsync/slp.h"
 #include "fujinet/io/core/baud_control.h"
 #include "fujinet/io/core/channel.h"
+#include "fujinet/io/core/request_handler.h"
 #include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/protocol/fuji_bus_packet.h"
 #include "fujinet/io/protocol/slip_codec.h"
+#include "fujinet/io/transport/fujibus_transport.h"
+#include "fujinet/io/transport/io_service.h"
 #include "fujinet/io/transport/slip_framer.h"
 #include "fujinet/net/tcp_socket_ops.h"
 
@@ -39,8 +43,11 @@
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <functional>
+#include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <random>
 #include <string>
 #include <thread>
@@ -357,6 +364,87 @@ TEST_CASE("HotSync PDB: PRC files round-trip and truncated files are refused")
     CHECK_FALSE(PalmDatabase().parse(Bytes(file.begin(), file.begin() + 80)));
 }
 
+namespace {
+
+void put_be32_at(Bytes& file, std::size_t at, std::uint32_t value)
+{
+    file[at] = static_cast<std::uint8_t>(value >> 24);
+    file[at + 1] = static_cast<std::uint8_t>(value >> 16);
+    file[at + 2] = static_cast<std::uint8_t>(value >> 8);
+    file[at + 3] = static_cast<std::uint8_t>(value);
+}
+
+std::size_t data_bytes(const PalmDatabase& db)
+{
+    std::size_t total = db.appInfo.size() + db.sortInfo.size();
+    for (const DlpRecord& r : db.records) {
+        total += r.data.size();
+    }
+    for (const DlpResource& r : db.resources) {
+        total += r.data.size();
+    }
+    return total;
+}
+
+} // namespace
+
+TEST_CASE("HotSync PDB: entries that share an offset get empty blocks, not copies of one")
+{
+    // 1000 entries all pointing at one 4000-byte block. Copying the block for
+    // each would turn a 14 KB file into 4 MB.
+    PalmDatabase many = sample_app(0);
+    const DlpResource empty = many.resources[0];
+    many.resources.assign(1000, empty);
+    many.resources.back().data = Bytes(4000, 0x4E);
+    const Bytes file = many.serialize();
+
+    PalmDatabase parsed;
+    REQUIRE(parsed.parse(file));
+    REQUIRE(parsed.resources.size() == 1000);
+    CHECK(parsed.resources.front().data.empty());
+    CHECK(parsed.resources.back().data.size() == 4000);
+    CHECK(data_bytes(parsed) == 4000);
+    CHECK(data_bytes(parsed) <= file.size());
+}
+
+TEST_CASE("HotSync PDB: blocks inside the header or past the end are refused; out of order they read in file order")
+{
+    // sample_record_db(): 78-byte header, entries at 78 and 86, app info at
+    // 96, records at 99 and 103, 104 bytes in all.
+    const Bytes good = sample_record_db().serialize();
+    REQUIRE(good.size() == 104);
+    auto parse = [&](std::size_t field, std::uint32_t offset, PalmDatabase& db) {
+        Bytes file = good;
+        put_be32_at(file, field, offset);
+        return db.parse(file);
+    };
+    constexpr std::size_t kAppInfoField = 52;
+    constexpr std::size_t kSortInfoField = 56;
+    constexpr std::size_t kEntry0 = 78;
+    constexpr std::size_t kEntry1 = 86;
+    PalmDatabase db;
+
+    REQUIRE(parse(kEntry1, 104, db)); // an empty last record ends the file
+    CHECK(db.records[1].data.empty());
+    REQUIRE(parse(kEntry0, 103, db)); // an empty first record shares the next one's start
+    CHECK(db.records[0].data.empty());
+    CHECK(db.records[1].data == hex("20"));
+
+    // Out of order, each block still runs to the next start in the file.
+    REQUIRE(parse(kEntry1, 98, db)); // record 1 inside the app info block
+    CHECK(db.appInfo == hex("a1a2"));
+    CHECK(db.records[1].data == hex("a3"));
+    CHECK(db.records[0].data == hex("1011121320"));
+    CHECK(data_bytes(db) <= good.size());
+    REQUIRE(parse(kAppInfoField, 100, db)); // app info after a record
+    CHECK(db.records[0].data == hex("10"));
+    CHECK(db.appInfo == hex("111213"));
+
+    CHECK_FALSE(parse(kEntry0, 80, db));        // inside the entry list
+    CHECK_FALSE(parse(kSortInfoField, 90, db)); // sort info inside the entry list
+    CHECK_FALSE(parse(kEntry1, 105, db));       // past the end
+}
+
 TEST_CASE("HotSync: backup file names are safe on FAT")
 {
     DlpDbInfo info;
@@ -377,6 +465,9 @@ public:
     std::uint32_t userId{0};
     std::uint8_t writtenModFlags{0};
     std::vector<std::string> log;
+    // Called as each database is created, while its install is under way.
+    std::function<void(const std::string&)> onCreateDb;
+    bool refuseCreateDb{false}; // answers CreateDB with "not enough space"
 
     bool accept() override { return true; }
 
@@ -470,6 +561,12 @@ private:
             db.info.flags = in.u16();
             db.info.version = in.u16();
             db.info.name = in.cstring();
+            if (refuseCreateDb) {
+                return static_cast<std::uint16_t>(DlpError::NotEnoughSpace);
+            }
+            if (onCreateDb) {
+                onCreateDb(db.info.name);
+            }
             reply.u8(open(databases[db.info.name] = db));
             return 0;
         }
@@ -582,6 +679,11 @@ public:
         }
         return names;
     }
+    bool peek_install(const std::string& name, Bytes& out, std::size_t maxBytes) override
+    {
+        return read_install(name, out, maxBytes);
+    }
+    bool claim_install(const std::string& name) override { return install.count(name) > 0; }
     bool read_install(const std::string& name, Bytes& out, std::size_t maxBytes) override
     {
         out = install[name];
@@ -716,12 +818,17 @@ TEST_CASE("HotSync storage: queue, install and back up in a filesystem folder")
     CHECK(storage.pending_installs() == std::vector<std::string>{"hello.prc", "notes.pdb"});
 
     Bytes read;
+    CHECK_FALSE(storage.read_install("hello.prc", read, 1024 * 1024)); // not claimed yet
+    REQUIRE(storage.claim_install("hello.prc"));
+    CHECK_FALSE(fs.exists("/hotsync/install/hello.prc"));
+    CHECK(fs.exists("/hotsync/installing/hello.prc"));
     REQUIRE(storage.read_install("hello.prc", read, 1024 * 1024));
     CHECK(read == app);
     CHECK_FALSE(storage.read_install("hello.prc", read, 100));
+    CHECK_FALSE(storage.claim_install("missing.prc"));
 
     REQUIRE(storage.mark_installed("hello.prc"));
-    CHECK_FALSE(fs.exists("/hotsync/install/hello.prc"));
+    CHECK_FALSE(fs.exists("/hotsync/installing/hello.prc"));
     CHECK(fs.exists("/hotsync/installed/hello.prc"));
     CHECK(storage.pending_installs() == std::vector<std::string>{"notes.pdb"});
 
@@ -729,6 +836,266 @@ TEST_CASE("HotSync storage: queue, install and back up in a filesystem folder")
     fujinet::fs::FileInfo info;
     REQUIRE(fs.stat("/hotsync/backup/Ada/Memo.pdb", info));
     CHECK(info.sizeBytes == 2);
+}
+
+TEST_CASE("HotSync storage: a file queued under the same name during its install waits for the next sync")
+{
+    // The console's hotsync.fetch (or a FileDevice client) replaces
+    // install/hello.prc while the sync is installing the old one.
+    fujinet::tests::MemoryFileSystem fs("host");
+    FsStorage storage(fs, "/hotsync");
+    const Bytes oldApp = sample_app(3000).serialize();
+    const Bytes newApp = sample_app(5000).serialize();
+    REQUIRE(storage.queue_install("hello.prc", oldApp));
+
+    FakePalm palm;
+    palm.userName = "Ada";
+    palm.userId = 7;
+    palm.onCreateDb = [&](const std::string&) {
+        FsStorage console(fs, "/hotsync");
+        REQUIRE(console.queue_install("hello.prc", newApp));
+    };
+    SessionOptions options;
+    options.backup = BackupPolicy::None;
+    SessionReport report = Session(palm, storage, options).run();
+    REQUIRE(report.installed == 1);
+
+    // installed/ holds what the Palm got; the new file is still queued.
+    CHECK(palm.databases["Hello"].resources[0].data.size() == 3000);
+    CHECK(fs.file_bytes("/hotsync/installed/hello.prc") == oldApp);
+    CHECK(fs.file_bytes("/hotsync/install/hello.prc") == newApp);
+    CHECK(storage.pending_installs() == std::vector<std::string>{"hello.prc"});
+
+    palm.onCreateDb = nullptr;
+    report = Session(palm, storage, options).run();
+    CHECK(report.installed == 1);
+    CHECK(palm.databases["Hello"].resources[0].data.size() == 5000);
+    CHECK(fs.file_bytes("/hotsync/installed/hello.prc") == newApp);
+    CHECK(storage.pending_installs().empty());
+}
+
+TEST_CASE("HotSync storage: a file not yet whole is left queued, not taken from its writer")
+{
+    // A FileDevice client part way through writing the file. FI Config
+    // writes the first entry's offset last, so until then it is zero.
+    fujinet::tests::MemoryFileSystem fs("host");
+    FsStorage storage(fs, "/hotsync");
+    REQUIRE(storage.create_install_folder());
+    const Bytes whole = sample_app().serialize();
+    Bytes partial(whole.begin(), whole.begin() + static_cast<std::ptrdiff_t>(whole.size() / 2));
+    put_be32_at(partial, 78 + 6, 0); // the resource entry's offset
+    REQUIRE(fs.create_file("/hotsync/install/hello.prc", partial));
+    FakePalm palm;
+    palm.userName = "Ada";
+    palm.userId = 7;
+    SessionOptions options;
+    options.backup = BackupPolicy::None;
+
+    SessionReport report = Session(palm, storage, options).run();
+    CHECK(report.installFailures == 1);
+    CHECK(fs.exists("/hotsync/install/hello.prc"));
+    CHECK_FALSE(fs.exists("/hotsync/installing/hello.prc"));
+
+    fs.file_bytes("/hotsync/install/hello.prc") = whole; // the writer finishes
+    report = Session(palm, storage, options).run();
+    CHECK(report.installed == 1);
+    CHECK(fs.file_bytes("/hotsync/installed/hello.prc") == whole);
+}
+
+TEST_CASE("HotSync storage: a file the Palm refuses is tried again, unless a newer one is queued")
+{
+    fujinet::tests::MemoryFileSystem fs("host");
+    FsStorage storage(fs, "/hotsync");
+    const Bytes app = sample_app(3000).serialize();
+    REQUIRE(storage.queue_install("hello.prc", app));
+    FakePalm palm;
+    palm.userName = "Ada";
+    palm.userId = 7;
+    palm.refuseCreateDb = true;
+    SessionOptions options;
+    options.backup = BackupPolicy::None;
+
+    SessionReport report = Session(palm, storage, options).run();
+    CHECK(report.installFailures == 1);
+    CHECK(fs.exists("/hotsync/installing/hello.prc"));
+    CHECK(storage.pending_installs() == std::vector<std::string>{"hello.prc"});
+
+    // Tried again from installing/.
+    palm.refuseCreateDb = false;
+    report = Session(palm, storage, options).run();
+    CHECK(report.installed == 1);
+    CHECK(fs.file_bytes("/hotsync/installed/hello.prc") == app);
+    CHECK(storage.pending_installs().empty());
+
+    // A newer file queued under the name replaces one that failed.
+    palm.refuseCreateDb = true;
+    REQUIRE(storage.queue_install("hello.prc", app));
+    Session(palm, storage, options).run();
+    REQUIRE(fs.exists("/hotsync/installing/hello.prc"));
+    const Bytes newer = sample_app(5000).serialize();
+    REQUIRE(storage.queue_install("hello.prc", newer));
+    palm.refuseCreateDb = false;
+    report = Session(palm, storage, options).run();
+    CHECK(report.installed == 1);
+    CHECK(palm.databases["Hello"].resources[0].data.size() == 5000);
+    CHECK(fs.file_bytes("/hotsync/installed/hello.prc") == newer);
+    CHECK_FALSE(fs.exists("/hotsync/installing/hello.prc"));
+}
+
+namespace {
+
+// A filesystem that fails on request: short writes, failed flushes, failed
+// renames, and renames that will not replace a file (as on FatFs).
+class FaultyFileSystem final : public fujinet::fs::IFileSystem {
+public:
+    fujinet::tests::MemoryFileSystem inner{"host"};
+    bool failWrite{false};
+    bool failRename{false};
+    bool renameKeepsTarget{false};
+    std::string failRenameFrom; // fail renames of a path ending in this
+
+    void fail_flush(bool on) { inner.set_fail_flush(on); }
+
+    fujinet::fs::FileSystemKind kind() const override { return inner.kind(); }
+    std::string name() const override { return inner.name(); }
+    bool exists(const std::string& path) override { return inner.exists(path); }
+    bool isDirectory(const std::string& path) override { return inner.isDirectory(path); }
+    bool createDirectory(const std::string& path) override { return inner.createDirectory(path); }
+    bool removeFile(const std::string& path) override { return inner.removeFile(path); }
+    bool removeDirectory(const std::string& path) override { return inner.removeDirectory(path); }
+    bool rename(const std::string& from, const std::string& to) override
+    {
+        const bool fromMatches = !failRenameFrom.empty() && from.size() >= failRenameFrom.size() &&
+                                 from.compare(from.size() - failRenameFrom.size(), failRenameFrom.size(),
+                                              failRenameFrom) == 0;
+        if (failRename || fromMatches || (renameKeepsTarget && inner.exists(to))) {
+            return false;
+        }
+        return inner.rename(from, to);
+    }
+    std::unique_ptr<fujinet::fs::IFile> open(const std::string& path, const char* mode) override
+    {
+        auto f = inner.open(path, mode);
+        if (!f || !failWrite) {
+            return f;
+        }
+        return std::make_unique<ShortFile>(std::move(f));
+    }
+    bool stat(const std::string& path, fujinet::fs::FileInfo& out) override { return inner.stat(path, out); }
+    bool listDirectory(const std::string& path, std::vector<fujinet::fs::FileInfo>& out) override
+    {
+        return inner.listDirectory(path, out);
+    }
+
+private:
+    // Writes all but the last byte, like a card that fills up.
+    class ShortFile final : public fujinet::fs::IFile {
+    public:
+        explicit ShortFile(std::unique_ptr<fujinet::fs::IFile> f) : _f(std::move(f)) {}
+        std::size_t read(void* dst, std::size_t n) override { return _f->read(dst, n); }
+        std::size_t write(const void* src, std::size_t n) override { return n == 0 ? 0 : _f->write(src, n - 1); }
+        bool seek(std::uint64_t offset) override { return _f->seek(offset); }
+        std::uint64_t tell() const override { return _f->tell(); }
+        bool flush() override { return _f->flush(); }
+
+    private:
+        std::unique_ptr<fujinet::fs::IFile> _f;
+    };
+};
+
+std::vector<std::string> files_in(fujinet::fs::IFileSystem& fs, const std::string& dir)
+{
+    std::vector<fujinet::fs::FileInfo> entries;
+    std::vector<std::string> names;
+    fs.listDirectory(dir, entries);
+    for (const auto& e : entries) {
+        names.push_back(e.path.substr(e.path.rfind('/') + 1));
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+} // namespace
+
+TEST_CASE("HotSync storage: a backup that fails to write, flush or rename leaves the last one whole")
+{
+    FaultyFileSystem fs;
+    FsStorage storage(fs, "/hotsync");
+    const Bytes v1 = sample_record_db().serialize();
+    const Bytes v2 = sample_app().serialize();
+    REQUIRE(storage.write_backup("Ada", "Memo.pdb", v1));
+
+    SUBCASE("write") { fs.failWrite = true; }
+    SUBCASE("flush") { fs.fail_flush(true); }
+    SUBCASE("rename") { fs.failRename = true; }
+    CHECK_FALSE(storage.write_backup("Ada", "Memo.pdb", v2));
+    CHECK(fs.inner.file_bytes("/hotsync/backup/Ada/Memo.pdb") == v1);
+    CHECK(files_in(fs, "/hotsync/backup/Ada") == std::vector<std::string>{"Memo.pdb"});
+
+    fs.failWrite = false;
+    fs.fail_flush(false);
+    fs.failRename = false;
+    REQUIRE(storage.write_backup("Ada", "Memo.pdb", v2));
+    CHECK(fs.inner.file_bytes("/hotsync/backup/Ada/Memo.pdb") == v2);
+}
+
+TEST_CASE("HotSync storage: files are replaced where rename will not overwrite (FatFs)")
+{
+    FaultyFileSystem fs;
+    fs.renameKeepsTarget = true;
+    FsStorage storage(fs, "/hotsync");
+    const Bytes v1 = sample_record_db().serialize();
+    const Bytes v2 = sample_app().serialize();
+
+    REQUIRE(storage.write_backup("Ada", "Memo.pdb", v1));
+    REQUIRE(storage.write_backup("Ada", "Memo.pdb", v2));
+    CHECK(fs.inner.file_bytes("/hotsync/backup/Ada/Memo.pdb") == v2);
+    CHECK(files_in(fs, "/hotsync/backup/Ada") == std::vector<std::string>{"Memo.pdb"});
+
+    // Queue, claim and install twice under one name.
+    for (const Bytes& app : {v1, v2}) {
+        REQUIRE(storage.queue_install("hello.prc", app));
+        REQUIRE(storage.queue_install("hello.prc", app)); // replaces the queued copy
+        REQUIRE(storage.claim_install("hello.prc"));
+        REQUIRE(storage.mark_installed("hello.prc"));
+        CHECK(fs.inner.file_bytes("/hotsync/installed/hello.prc") == app);
+    }
+    CHECK(files_in(fs, "/hotsync/installed") == std::vector<std::string>{"hello.prc"});
+    CHECK(files_in(fs, "/hotsync/install").empty());
+    CHECK(files_in(fs, "/hotsync/installing").empty());
+    CHECK(files_in(fs, "/hotsync/incoming").empty());
+
+    // A newly queued file claimed over one an earlier sync left in installing/.
+    REQUIRE(storage.queue_install("hello.prc", v1));
+    REQUIRE(storage.claim_install("hello.prc"));
+    REQUIRE(storage.queue_install("hello.prc", v2));
+    REQUIRE(storage.claim_install("hello.prc"));
+    CHECK(fs.inner.file_bytes("/hotsync/installing/hello.prc") == v2);
+    CHECK(files_in(fs, "/hotsync/installing") == std::vector<std::string>{"hello.prc"});
+}
+
+TEST_CASE("HotSync storage: a replace that fails after setting the old file aside puts it back")
+{
+    FaultyFileSystem fs;
+    fs.renameKeepsTarget = true;
+    FsStorage storage(fs, "/hotsync");
+    const Bytes v1 = sample_record_db().serialize();
+    const Bytes v2 = sample_app().serialize();
+    REQUIRE(storage.write_backup("Ada", "Memo.pdb", v1));
+
+    fs.failRenameFrom = ".new"; // the old one is set aside, the new one will not move
+    CHECK_FALSE(storage.write_backup("Ada", "Memo.pdb", v2));
+    CHECK(fs.inner.file_bytes("/hotsync/backup/Ada/Memo.pdb") == v1);
+    CHECK(files_in(fs, "/hotsync/backup/Ada") == std::vector<std::string>{"Memo.pdb"});
+
+    // Power failed after setting it aside: the next replace puts it back first.
+    REQUIRE(fs.rename("/hotsync/backup/Ada/Memo.pdb", "/hotsync/backup/Ada/Memo.pdb.old"));
+    CHECK_FALSE(storage.write_backup("Ada", "Memo.pdb", v2));
+    CHECK(fs.inner.file_bytes("/hotsync/backup/Ada/Memo.pdb") == v1);
+    CHECK(files_in(fs, "/hotsync/backup/Ada") == std::vector<std::string>{"Memo.pdb"});
+    fs.failRenameFrom.clear();
+    REQUIRE(storage.write_backup("Ada", "Memo.pdb", v2));
+    CHECK(fs.inner.file_bytes("/hotsync/backup/Ada/Memo.pdb") == v2);
 }
 
 TEST_CASE("HotSync storage: syncs share a local filesystem with another task's file traffic")
@@ -1063,6 +1430,7 @@ TEST_CASE("HotSync fetch: the console queues a downloaded app for the next sync"
     FsStorage storage(fs, "/hotsync");
     CHECK(storage.pending_installs() == std::vector<std::string>{"FujiNetTest.prc"});
     Bytes data;
+    REQUIRE(storage.claim_install("FujiNetTest.prc"));
     REQUIRE(storage.read_install("FujiNetTest.prc", data, 100));
     CHECK(data == Bytes{'h', 'e', 'l', 'l', 'o'});
     CHECK_FALSE(fs.exists("/hotsync/incoming/FujiNetTest.prc"));
@@ -1142,108 +1510,196 @@ TEST_CASE("HotSync fetch: with sha256= only a matching download is queued")
 }
 
 // ---------------------------------------------------------------------------
-// Cradle: one serial line shared by FujiBus and HotSync.
+// Cradle: one serial line shared by FujiBus and HotSync. These run the real
+// FujiBus path, LineArbiter -> SlipFramer -> FujiBusTransport -> IOService,
+// with this thread as the core task.
 
 namespace {
 
 // A serial line: bytes the far end sent, bytes written to it, and its rate.
+// Locked, since the core task and the HotSync task both use it.
 class FakeLine final : public fujinet::io::Channel, public fujinet::io::BaudControl {
 public:
-    Bytes rx;
-    Bytes tx;
-    std::uint32_t baud{115200};
-    std::vector<std::uint32_t> rates; // every rate change, in order
+    void receive(const Bytes& bytes)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _rx.insert(_rx.end(), bytes.begin(), bytes.end());
+    }
+    Bytes tx() const
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return _tx;
+    }
+    bool rx_empty() const
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return _rx.empty();
+    }
+    std::uint32_t baud() const
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return _baud;
+    }
+    std::vector<std::uint32_t> rates() const // every rate change, in order
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return _rates;
+    }
 
-    void receive(const Bytes& bytes) { rx.insert(rx.end(), bytes.begin(), bytes.end()); }
-
-    bool available() override { return !rx.empty(); }
+    bool available() override
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return !_rx.empty();
+    }
     std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override
     {
-        const std::size_t n = std::min(maxLen, rx.size());
-        std::memcpy(buffer, rx.data(), n);
-        rx.erase(rx.begin(), rx.begin() + static_cast<std::ptrdiff_t>(n));
+        std::lock_guard<std::mutex> lock(_mutex);
+        const std::size_t n = std::min(maxLen, _rx.size());
+        std::memcpy(buffer, _rx.data(), n);
+        _rx.erase(_rx.begin(), _rx.begin() + static_cast<std::ptrdiff_t>(n));
         return n;
     }
-    void write(const std::uint8_t* buffer, std::size_t len) override { tx.insert(tx.end(), buffer, buffer + len); }
+    void write(const std::uint8_t* buffer, std::size_t len) override
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _tx.insert(_tx.end(), buffer, buffer + len);
+    }
 
-    std::uint32_t baud_rate() const override { return baud; }
+    std::uint32_t baud_rate() const override { return baud(); }
     bool set_baud_rate(std::uint32_t b) override
     {
-        baud = b;
-        rates.push_back(b);
+        std::lock_guard<std::mutex> lock(_mutex);
+        _baud = b;
+        _rates.push_back(b);
         return true;
+    }
+
+private:
+    mutable std::mutex _mutex;
+    Bytes _rx;
+    Bytes _tx;
+    std::uint32_t _baud{115200};
+    std::vector<std::uint32_t> _rates;
+};
+
+// Answers every FujiBus request with an empty OK, and counts them.
+struct CountingHandler final : fujinet::io::IRequestHandler {
+    std::atomic_int requests{0};
+    std::function<void()> onRequest; // runs inside the handler, on the core task
+    fujinet::io::IOResponse handleRequest(const fujinet::io::IORequest& req) override
+    {
+        ++requests;
+        if (onRequest) {
+            onRequest();
+        }
+        return fujinet::io::make_base_response(req, fujinet::io::StatusCode::Ok);
     }
 };
 
 struct CradleFixture {
-    std::uint64_t now{1000};
+    std::atomic<std::uint64_t> now{1000};
     FakeLine* line{nullptr};
-    std::unique_ptr<CradleChannel> cradle;
+    std::unique_ptr<LineArbiter> arbiter;
+    std::unique_ptr<CradleCoordinator> cradle;
+    fujinet::io::SlipFramer framer;
+    std::unique_ptr<fujinet::io::FujiBusTransport> transport;
+    CountingHandler handler;
+    fujinet::io::IOService io{handler};
 
-    CradleFixture()
+    explicit CradleFixture(CradleTiming timing = {})
     {
         auto owned = std::make_unique<FakeLine>();
         line = owned.get();
-        CradleTiming timing;
-        timing.settleMs = 0;
-        cradle = std::make_unique<CradleChannel>(std::move(owned), *line, [this] { return now; }, timing);
+        arbiter = std::make_unique<LineArbiter>(std::move(owned), *line, /*settleMs=*/0);
+        cradle = std::make_unique<CradleCoordinator>(*arbiter, [this] { return now.load(); }, timing);
+        transport = std::make_unique<fujinet::io::FujiBusTransport>(*arbiter, framer, cradle.get());
+        io.addTransport(transport.get());
     }
 
-    // What FujiBus reads off the cradle now.
-    Bytes bus_read()
+    // One core tick.
+    void tick() { io.serviceOnce(); }
+
+    // Runs `work` on another task, as the HotSync service does, while this
+    // one ticks the core until it finishes.
+    template <typename F>
+    auto on_service_task(F work)
     {
-        Bytes out;
-        std::uint8_t buf[64];
-        while (cradle->available()) {
-            const std::size_t n = cradle->read(buf, sizeof(buf));
-            out.insert(out.end(), buf, buf + n);
+        auto result = std::async(std::launch::async, work);
+        while (result.wait_for(std::chrono::milliseconds(1)) != std::future_status::ready) {
+            tick();
         }
-        return out;
+        return result.get();
+    }
+
+    CradleClaim claim(std::uint32_t baud = kCmpInitialBaud)
+    {
+        return on_service_task([this, baud] { return cradle->claim(baud); });
+    }
+
+    // Starts a claim on another task and returns once it waits for the
+    // transport's idle point, without ticking the core.
+    std::future<CradleClaim> pending_claim(std::uint32_t baud = kCmpInitialBaud)
+    {
+        auto result = std::async(std::launch::async, [this, baud] { return cradle->claim(baud); });
+        while (!cradle->claim_pending()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return result;
+    }
+
+    // Ticks the core until `claim` is decided.
+    CradleClaim finish(std::future<CradleClaim>& claim)
+    {
+        while (claim.wait_for(std::chrono::milliseconds(1)) != std::future_status::ready) {
+            tick();
+        }
+        return claim.get();
     }
 };
 
-// A FujiBus packet: device 0x70, command 0x01, length 6, checksum 0x77.
+// A FujiBus request: device 0x70, command 0x01, length 6, checksum 0x77.
 const Bytes kFujiBusFrame = {0xC0, 0x70, 0x01, 0x06, 0x00, 0x77, 0x00, 0xC0};
 
 } // namespace
 
-TEST_CASE("HotSync cradle: FujiBus traffic passes through and holds the line for a minute")
+TEST_CASE("HotSync cradle: FujiBus requests are answered and hold the line for a minute")
 {
     CradleFixture f;
     f.line->receive(kFujiBusFrame);
-    CHECK(f.bus_read() == kFujiBusFrame);
-    const std::uint8_t reply[] = {0xC0, 0x01, 0xC0};
-    f.cradle->write(reply, sizeof(reply));
-    CHECK(f.line->tx == Bytes(reply, reply + sizeof(reply)));
+    f.tick();
+    CHECK(f.handler.requests.load() == 1);
+    CHECK_FALSE(f.line->tx().empty()); // the response
 
     CHECK(f.cradle->host_active());
-    CHECK_FALSE(f.cradle->claim(9600));
+    CHECK(f.claim() == CradleClaim::HostActive);
     f.now += 59999;
-    CHECK_FALSE(f.cradle->claim(9600));
+    CHECK(f.claim() == CradleClaim::HostActive);
     f.now += 1;
-    CHECK(f.cradle->claim(9600));
+    CHECK(f.claim() == CradleClaim::Granted);
+    CHECK(f.line->baud() == kCmpInitialBaud);
     CHECK(f.cradle->stats().refused == 2);
     CHECK(f.cradle->stats().frames == 1);
+    CHECK(f.cradle->stats().lends == 1);
 }
 
-TEST_CASE("HotSync cradle: stray bytes away from any frame end the hold early")
+TEST_CASE("HotSync cradle: stray bytes away from any request end the hold early")
 {
     CradleFixture f;
     f.line->receive(kFujiBusFrame);
-    f.bus_read();
+    f.tick();
 
-    // Close behind a frame they are line noise, not a Palm.
+    // Close behind a request they are line noise, not a Palm.
     f.now += 500;
     f.line->receive({0x00, 0xF8});
-    f.bus_read();
+    f.tick();
     CHECK(f.cradle->host_active());
 
-    // A 9600-baud WAKEUP read at the bus rate, with no frame near it.
+    // A 9600-baud WAKEUP read at the bus rate, with no request near it.
     f.now += 1500;
     f.line->receive({0x00, 0x80, 0xF8, 0x00});
-    f.bus_read();
+    f.tick();
     CHECK_FALSE(f.cradle->host_active());
-    CHECK(f.cradle->claim(9600));
+    CHECK(f.claim() == CradleClaim::Granted);
     CHECK(f.cradle->stats().strayBytes == 6);
 }
 
@@ -1255,12 +1711,13 @@ TEST_CASE("HotSync cradle: a Palm's WAKEUP holds SLIP END bytes but is not FujiB
     const Bytes wakeup = hex("beefed030302000effaf01c0000a0100010200000001c20086b1");
     f.line->receive(wakeup);
     f.line->receive(wakeup);
-    f.bus_read();
+    f.tick();
     CHECK(f.cradle->stats().frames == 0);
     CHECK_FALSE(f.cradle->host_active());
 
     f.line->receive(hex("c070e806005f00c0"));
-    f.bus_read();
+    f.tick();
+    CHECK(f.handler.requests.load() == 1);
     CHECK(f.cradle->stats().frames == 1);
     CHECK(f.cradle->host_active());
 }
@@ -1270,19 +1727,21 @@ TEST_CASE("HotSync cradle: escaped bytes are decoded before the length and check
     // Length 7, one payload byte 0xC0 sent as DB DC; checksum 0x39.
     CradleFixture f;
     f.line->receive({0xC0, 0x70, 0x01, 0x07, 0x00, 0x39, 0x00, 0xDB, 0xDC, 0xC0});
-    f.bus_read();
+    f.tick();
+    CHECK(f.handler.requests.load() == 1);
     CHECK(f.cradle->stats().frames == 1);
     CHECK(f.cradle->stats().strayBytes == 0);
 }
 
-TEST_CASE("HotSync cradle: a frame holds the line exactly when the FujiBus transport would take it")
+TEST_CASE("HotSync cradle: a frame holds the line exactly when the transport answers it")
 {
     using fujinet::io::protocol::FujiBusPacket;
     using fujinet::io::protocol::WireDeviceId;
     using fujinet::io::protocol::encodeSLIP;
 
     // Raw packets, framed below: good ones (params, payloads with END and ESC
-    // bytes, a large payload) and the same broken in each way fromRaw checks.
+    // bytes, a large payload) and the same broken in each way the transport
+    // checks.
     const Bytes ping = FujiBusPacket(WireDeviceId::FujiNet, 0x01).serializeRaw();
     const Bytes params =
         FujiBusPacket(WireDeviceId::NetworkService, 0x05, std::uint8_t{3}, std::uint16_t{0xC0DB}).serializeRaw();
@@ -1317,81 +1776,225 @@ TEST_CASE("HotSync cradle: a frame holds the line exactly when the FujiBus trans
     raws.push_back({0x70, 0x01});                           // shorter than a header
     raws.push_back(hex("beefed030302000effaf01"));          // SLP noise
 
-    unsigned taken = 0;
-    for (const Bytes& raw : raws) {
-        CAPTURE(raw.size());
-        const Bytes framed = encodeSLIP(raw);
-
-        // The transport's path: SlipFramer, then FujiBusPacket::fromRaw.
-        FakeLine transportLine;
-        transportLine.receive(framed);
-        fujinet::io::SlipFramer framer;
-        framer.poll(transportLine);
-        Bytes packet;
-        const bool transportTakes = framer.nextPacket(packet) && FujiBusPacket::fromRaw(packet) != nullptr;
-
+    for (std::size_t i = 0; i < raws.size(); ++i) {
+        CAPTURE(i);
         CradleFixture f;
-        f.line->receive(framed);
-        CHECK(f.bus_read() == framed);
-        CHECK(f.cradle->host_active() == transportTakes);
-        CHECK(f.cradle->stats().frames == (transportTakes ? 1u : 0u));
-        taken += transportTakes ? 1 : 0;
+        f.line->receive(encodeSLIP(raws[i]));
+        f.tick();
+        const bool good = i < 4;
+        CHECK(f.handler.requests.load() == (good ? 1 : 0));
+        CHECK(f.cradle->stats().frames == (good ? 1u : 0u));
+        CHECK(f.cradle->host_active() == good);
     }
-    CHECK(taken == 4); // the four good packets, and none of the broken ones
 }
 
-TEST_CASE("HotSync cradle: a request still waiting at claim time keeps the line and reaches FujiBus")
+TEST_CASE("HotSync cradle: a request split across the hand-over is answered, and keeps the line")
+{
+    // The line has been quiet past the hold, so a claim would be granted. A
+    // request is arriving when the window falls due: the claim must wait for
+    // it rather than change the rate under it.
+    CradleFixture f;
+    f.line->receive({0xC0, 0x70, 0x01, 0x06}); // the first half
+    f.tick();
+
+    auto claim = f.pending_claim();
+    for (int i = 0; i < 20; ++i) {
+        f.tick();
+    }
+    CHECK(f.cradle->claim_pending());
+    CHECK(f.line->rates().empty());
+
+    f.line->receive({0x00, 0x77, 0x00, 0xC0}); // the second half
+    CHECK(f.finish(claim) == CradleClaim::HostActive);
+    CHECK(f.handler.requests.load() == 1);
+    CHECK_FALSE(f.line->tx().empty());
+    CHECK(f.line->rates().empty());
+    CHECK(f.cradle->stats().lends == 0);
+}
+
+TEST_CASE("HotSync cradle: a stalled partial frame expires and no longer holds up a claim")
+{
+    CradleTiming timing;
+    timing.partialExpiryMs = 500;
+    CradleFixture f(timing);
+    f.line->receive({0xC0, 0x70, 0x01}); // a frame that never finishes
+    f.tick();
+
+    auto claim = f.pending_claim();
+    for (int i = 0; i < 10; ++i) {
+        f.tick();
+    }
+    CHECK(f.cradle->claim_pending());
+
+    f.now += 500;
+    CHECK(f.finish(claim) == CradleClaim::Granted);
+    CHECK(f.cradle->stats().expiredFrames == 1);
+    CHECK(f.cradle->stats().strayBytes == 3);
+    CHECK_FALSE(f.framer.hasPartial());
+    f.cradle->release();
+
+    // Back on the bus, the next request is whole.
+    f.line->receive(kFujiBusFrame);
+    f.tick();
+    CHECK(f.handler.requests.load() == 1);
+}
+
+TEST_CASE("HotSync cradle: time spent handling a request does not make the next one look stalled")
+{
+    // One read brings request A and the first half of B, and A's handler
+    // takes longer than the stall limit. B's first half must survive.
+    CradleFixture f;
+    f.handler.onRequest = [&] { f.now += 600; };
+    Bytes bytes = kFujiBusFrame;
+    bytes.insert(bytes.end(), {0xC0, 0x70, 0x01, 0x06});
+    f.line->receive(bytes);
+    f.tick();
+    CHECK(f.handler.requests.load() == 1);
+    CHECK(f.framer.hasPartial());
+
+    f.line->receive({0x00, 0x77, 0x00, 0xC0});
+    f.tick();
+    CHECK(f.handler.requests.load() == 2);
+    CHECK(f.cradle->stats().expiredFrames == 0);
+}
+
+TEST_CASE("HotSync cradle: a request read with a malformed frame ahead of it is not dropped as stalled")
+{
+    // The framer skips the escape-only frame and keeps the request for its
+    // next call, so the idle point between finds bytes still held.
+    CradleFixture f;
+    Bytes bytes = {0xC0, 0xDB, 0x01, 0xC0};
+    bytes.insert(bytes.end(), kFujiBusFrame.begin(), kFujiBusFrame.end());
+    f.line->receive(bytes);
+    f.tick();
+    CHECK(f.handler.requests.load() == 0);
+    f.now += 600;
+    f.tick();
+    CHECK(f.handler.requests.load() == 1);
+    CHECK(f.cradle->stats().expiredFrames == 0);
+}
+
+TEST_CASE("HotSync cradle: a claim waits while bytes wait unread, and is granted once the bus has read them")
 {
     CradleFixture f;
-    f.line->receive(kFujiBusFrame);
-    CHECK_FALSE(f.cradle->claim(9600));
-    CHECK(f.line->rates.empty());
-    CHECK(f.bus_read() == kFujiBusFrame);
+    f.tick();
+    f.line->receive({0x00}); // landed after the transport's last read
+    auto claim = f.pending_claim();
+
+    // An idle point that comes before the transport reads them lends nothing.
+    CHECK_FALSE(f.cradle->line_idle(false));
+    CHECK(f.cradle->claim_pending());
+    CHECK(f.line->rates().empty());
+
+    // The next tick reads them first, then lends the line.
+    CHECK(f.finish(claim) == CradleClaim::Granted);
+    CHECK(f.line->rates() == std::vector<std::uint32_t>{kCmpInitialBaud});
+    CHECK(f.cradle->stats().strayBytes == 1);
+}
+
+TEST_CASE("HotSync cradle: a rate set on the line while it was lent is kept when it comes back")
+{
+    // The console's uart.* commands act on the line itself.
+    CradleFixture f;
+    f.tick();
+    REQUIRE(f.claim() == CradleClaim::Granted);
+    f.line->set_baud_rate(57600);
+    f.cradle->release();
+    CHECK(f.line->baud() == 57600);
+    CHECK(f.line->rates() == std::vector<std::uint32_t>{kCmpInitialBaud, 57600});
+}
+
+TEST_CASE("HotSync cradle: shutdown ends a sync on the lent line and refuses later claims")
+{
+    CradleFixture f;
+    f.tick();
+    REQUIRE(f.claim() == CradleClaim::Granted);
+    f.cradle->shutdown();
+    CHECK_FALSE(f.cradle->lent());
+    CHECK(f.line->baud() == 115200);
+    std::uint8_t b = 0;
+    CHECK(f.cradle->link().read(&b, 1, 0) == -1);
+    CHECK(f.cradle->link().write(&b, 1) == -1);
+    CHECK(f.cradle->claim(kCmpInitialBaud) == CradleClaim::Busy);
+    f.tick();
+    CHECK(f.line->rates() == std::vector<std::uint32_t>{kCmpInitialBaud, 115200});
+}
+
+TEST_CASE("HotSync cradle: a claim with no transport offering the line gives up")
+{
+    CradleTiming timing;
+    timing.claimWaitMs = 20;
+    CradleFixture f(timing);
+    CHECK_FALSE(f.cradle->transport_seen());
+    CHECK(f.cradle->claim(kCmpInitialBaud) == CradleClaim::Busy); // no core task ticking
+    CHECK(f.line->rates().empty());
+    f.tick();
+    CHECK(f.cradle->transport_seen());
+}
+
+TEST_CASE("HotSync cradle: the line is not lent while bytes wait unread, which reach the bus")
+{
+    FakeLine* line = nullptr;
+    auto owned = std::make_unique<FakeLine>();
+    line = owned.get();
+    LineArbiter arbiter(std::move(owned), *line, 0);
+    line->receive(kFujiBusFrame);
+    CHECK_FALSE(arbiter.lend(kCmpInitialBaud));
+    CHECK(line->rates().empty());
+    Bytes got(kFujiBusFrame.size());
+    REQUIRE(arbiter.available());
+    CHECK(arbiter.read(got.data(), got.size()) == got.size());
+    CHECK(got == kFujiBusFrame);
+    CHECK(arbiter.lend(kCmpInitialBaud));
+    CHECK(arbiter.lends() == 1);
 }
 
 TEST_CASE("HotSync cradle: a lent line is silent to FujiBus, and release restores the rate")
 {
     CradleFixture f;
-    f.line->receive({0x00, 0x00}); // stray bytes left at claim time are dropped
-    REQUIRE(f.cradle->claim(9600));
+    f.tick();
+    REQUIRE(f.claim(9600) == CradleClaim::Granted);
     CHECK(f.cradle->lent());
-    CHECK(f.line->baud == 9600);
-    CHECK(f.line->rx.empty());
+    CHECK(f.line->baud() == 9600);
 
     // FujiBus neither reads what the Palm sends nor writes over it.
     f.line->receive({0xBE, 0xEF, 0xED});
-    CHECK_FALSE(f.cradle->available());
+    f.tick();
+    CHECK(f.handler.requests.load() == 0);
+    CHECK_FALSE(f.arbiter->available());
     std::uint8_t buf[8];
-    CHECK(f.cradle->read(buf, sizeof(buf)) == 0);
+    CHECK(f.arbiter->read(buf, sizeof(buf)) == 0);
     const std::uint8_t reply[] = {0xC0, 0x01, 0xC0};
-    f.cradle->write(reply, sizeof(reply));
-    CHECK(f.line->tx.empty());
+    f.arbiter->write(reply, sizeof(reply));
+    CHECK(f.line->tx().empty());
     CHECK(f.cradle->stats().droppedWrites == 1);
 
     // The lent link sees the Palm and writes to it.
     CHECK(f.cradle->link().read(buf, sizeof(buf), 0) == 3);
     CHECK(f.cradle->link().write(reply, sizeof(reply)) == 3);
-    CHECK(f.line->tx.size() == 3);
+    CHECK(f.line->tx().size() == 3);
     f.cradle->link().set_baud_rate(57600);
-    CHECK(f.line->baud == 57600);
+    CHECK(f.line->baud() == 57600);
 
     // Bytes left at the Palm's rate are dropped; the bus rate comes back.
     f.line->receive({0x12, 0x34});
     f.cradle->release();
     CHECK_FALSE(f.cradle->lent());
-    CHECK(f.line->baud == 115200);
-    CHECK(f.line->rates == std::vector<std::uint32_t>{9600, 57600, 115200});
-    CHECK(f.line->rx.empty());
+    CHECK(f.line->baud() == 115200);
+    CHECK(f.line->rates() == std::vector<std::uint32_t>{9600, 57600, 115200});
+    CHECK(f.line->rx_empty());
     CHECK(f.cradle->link().read(buf, sizeof(buf), 0) == -1);
 
     f.line->receive(kFujiBusFrame);
-    CHECK(f.bus_read() == kFujiBusFrame);
+    f.tick();
+    CHECK(f.handler.requests.load() == 1);
 }
 
 TEST_CASE("HotSync cradle: a WAKEUP inside a window is answered on the lent line at the Palm's rate")
 {
     CradleFixture f;
-    REQUIRE(f.cradle->claim(kCmpInitialBaud));
+    f.tick();
+    REQUIRE(f.claim() == CradleClaim::Granted);
     f.line->receive(hex(kPalmWakeup));
     f.line->receive(hex(kPalmAckOfInit));
 
@@ -1401,22 +2004,23 @@ TEST_CASE("HotSync cradle: a WAKEUP inside a window is answered on the lent line
     Bytes expected = hex(kHostAckOfWakeup);
     const Bytes init = hex(kHostCmpInit);
     expected.insert(expected.end(), init.begin(), init.end());
-    CHECK(f.line->tx == expected);
-    CHECK(f.line->baud == 115200);
+    CHECK(f.line->tx() == expected);
+    CHECK(f.line->baud() == 115200);
 
     f.cradle->release();
-    CHECK(f.line->rates == std::vector<std::uint32_t>{9600, 115200, 115200});
+    CHECK(f.line->rates() == std::vector<std::uint32_t>{9600, 115200, 115200});
 }
 
 TEST_CASE("HotSync cradle: a window with no WAKEUP gives the line back")
 {
     CradleFixture f;
-    REQUIRE(f.cradle->claim(kCmpInitialBaud));
+    f.tick();
+    REQUIRE(f.claim() == CradleClaim::Granted);
     PadpTransport padp(f.cradle->link());
     CHECK_FALSE(padp.wait_for_wakeup(20));
     f.cradle->release();
-    CHECK(f.line->baud == 115200);
-    CHECK(f.line->tx.empty());
+    CHECK(f.line->baud() == 115200);
+    CHECK(f.line->tx().empty());
 }
 
 TEST_CASE("HotSync cradle: a window closes on time while bytes keep arriving")
@@ -1455,25 +2059,52 @@ TEST_CASE("HotSync service: cradle windows alternate with the bus and stop while
     window.gapMs = 0;
     HotSyncService service(ops, fs, settings, nullptr, f.cradle.get(), window);
 
-    CHECK(service.poll());
+    CHECK(f.on_service_task([&] { return service.poll(); }));
     HotSyncStatus s = service.status();
     CHECK(s.cradle == "idle");
     CHECK(s.cradleWindows == 1);
     CHECK_FALSE(s.listening);
     CHECK(s.syncs == 0);
-    CHECK(f.line->rates == std::vector<std::uint32_t>{9600, 115200});
+    CHECK(f.line->rates() == std::vector<std::uint32_t>{9600, 115200});
 
     // A Palm app talks FujiBus: no window opens.
     f.line->receive(kFujiBusFrame);
-    f.bus_read();
-    CHECK_FALSE(service.poll());
+    f.tick();
+    CHECK_FALSE(f.on_service_task([&] { return service.poll(); }));
     s = service.status();
     CHECK(s.cradle == "app");
     CHECK(s.cradleWindows == 1);
-    CHECK(f.line->rates.size() == 2);
+    CHECK(f.line->rates().size() == 2);
 }
 
-TEST_CASE("HotSync start: off leaves the line alone; the cradle wraps it; hotsync.* is always registered")
+TEST_CASE("HotSync service: run() returns when stopped, and says so")
+{
+    CradleFixture f;
+    ProbeSocketOps ops;
+    fujinet::tests::MemoryFileSystem fs("host");
+    HotSyncSettings settings;
+    settings.port = 0;
+    CradleWindow window;
+    window.listenMs = 20;
+    window.gapMs = 0;
+    HotSyncService service(ops, fs, settings, nullptr, f.cradle.get(), window);
+
+    std::thread task([&] { service.run(); });
+    for (int i = 0; i < 30; ++i) {
+        f.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_FALSE(service.wait_stopped(std::chrono::milliseconds(0)));
+    service.stop();
+    f.cradle->shutdown();
+    while (!service.wait_stopped(std::chrono::milliseconds(1))) {
+        f.tick();
+    }
+    task.join();
+    CHECK(f.line->baud() == 115200);
+}
+
+TEST_CASE("HotSync start: off leaves the line alone; the cradle takes it; hotsync.* is always registered")
 {
     fujinet::fs::StorageManager storage; // no persistent filesystem: no service starts
     fujinet::diag::DiagnosticRegistry registry;
@@ -1488,23 +2119,28 @@ TEST_CASE("HotSync start: off leaves the line alone; the cradle wraps it; hotsyn
     std::unique_ptr<fujinet::io::Channel> line = std::make_unique<FakeLine>();
     fujinet::io::Channel* const bus = line.get();
     auto off = start_hotsync({storage, config, nullptr, registry}, line);
-    CHECK(off != nullptr);
+    REQUIRE(off != nullptr);
     CHECK(line.get() == bus);
+    CHECK(off->bus_line_coordinator() == nullptr);
     CHECK(run("hotsync.status").text.rfind("enabled: 0\r\n", 0) == 0);
 
     // The cradle takes the line even when the service cannot start, so the
-    // transports always get the channel start_hotsync leaves in `line`.
+    // transports always get the channel start_hotsync leaves in `line`, and
+    // the coordinator that shares it.
     config.enabled = true;
     config.cradle = true;
     fujinet::diag::DiagnosticRegistry registry2;
     auto on = start_hotsync({storage, config, nullptr, registry2}, line);
-    auto* cradle = dynamic_cast<CradleChannel*>(line.get());
-    REQUIRE(cradle != nullptr);
-    CHECK(&cradle->line() == bus);
+    auto* arbiter = dynamic_cast<LineArbiter*>(line.get());
+    REQUIRE(arbiter != nullptr);
+    CHECK(&arbiter->line() == bus);
+    CHECK(on->bus_line_coordinator() != nullptr);
 
     // No line at all (a build without a FujiBus channel) is fine.
     std::unique_ptr<fujinet::io::Channel> none;
     fujinet::diag::DiagnosticRegistry registry3;
-    CHECK(start_hotsync({storage, config, nullptr, registry3}, none) != nullptr);
+    auto noLine = start_hotsync({storage, config, nullptr, registry3}, none);
+    REQUIRE(noLine != nullptr);
     CHECK(none == nullptr);
+    CHECK(noLine->bus_line_coordinator() == nullptr);
 }

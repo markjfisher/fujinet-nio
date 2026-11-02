@@ -27,7 +27,8 @@ namespace fujinet::core {
 io::ITransport* setup_transports(FujinetCore& core,
                                  io::Channel& channel,
                                  const build::BuildProfile& profile,
-                                 const config::FujiConfig* config)
+                                 const config::FujiConfig* config,
+                                 io::IBusLineCoordinator* lineCoordinator)
 {
     using build::TransportKind;
     io::ITransport* primary = nullptr;
@@ -37,7 +38,7 @@ io::ITransport* setup_transports(FujinetCore& core,
         break;
     case TransportKind::FujiBusSlip: {
         auto* framer = new io::SlipFramer();
-        auto* t = new io::FujiBusTransport(channel, *framer);
+        auto* t = new io::FujiBusTransport(channel, *framer, lineCoordinator);
         core.addTransport(t);
         primary = t;
         break;

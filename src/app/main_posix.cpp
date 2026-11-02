@@ -304,10 +304,12 @@ int main()
     }
 
     // Palm HotSync (FN_WITH_HOTSYNC builds). With hotsync.cradle on it puts
-    // the cradle over `channel`, so the transports below get the cradle.
+    // the cradle's line arbiter over `channel`, and the FujiBus transport
+    // offers the cradle its line through the runtime's coordinator.
     auto hotsync = fujinet::hotsync::start_hotsync(
         {core.storageManager(), config.hotsync, fujiConcrete, diagRegistry}, channel);
-    core::setup_transports(core, *channel, profile, &config);
+    core::setup_transports(core, *channel, profile, &config,
+                           hotsync ? hotsync->bus_line_coordinator() : nullptr);
 #endif
 
     const auto idleDelay = posix_idle_delay(profile);

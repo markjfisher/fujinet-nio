@@ -391,6 +391,20 @@ are parsed and routed*. Latency-sensitive paths such as Atari NetSIO can wake
 the loop promptly without reducing the global FujiNet heartbeat to a fixed
 1ms delay.
 
+### Sharing the line
+
+A line that something else must sometimes use (the Palm cradle, which lends
+the FujiBus line to HotSync at another rate) is shared through
+`io::IBusLineCoordinator`, given to `FujiBusTransport` by
+`core::setup_transports`. The transport reports what its framer and decoder
+see as they work (bytes taken, each frame and whether it decoded as a
+request) and offers the line at its idle point: inside `receive()`, once the
+framer has no packet to deliver, so every request it delivered has been
+answered, saying whether the framer still holds bytes. The channel
+underneath still knows nothing of SLIP or FujiBus; it only grants the line,
+and the coordinator decides when, on the core task, so a hand-over cannot cut
+into a request or a response. See [`hotsync.md`](hotsync.md), "Cradle".
+
 ---
 
 ## **3. FujiBus & SLIP Protocol Layer**

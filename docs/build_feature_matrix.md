@@ -13,8 +13,9 @@ It is intended as a concise engineering reference and CI/local verification chec
   - Lets the curl HTTPS backend add the FujiNet test CA to curl's own `SSL_CTX`, when curl uses this same OpenSSL
 - `FN_WITH_HOTSYNC`
   - Builds Palm HotSync ([`hotsync.md`](hotsync.md)): `src/lib/hotsync/`, its diagnostics and `tests/test_hotsync.cpp`
-  - Defaults on for the `fujibus-pty-*` and `fujibus-rs232-*` presets and off for the rest; without it `src/lib/hotsync_init_off.cpp` stands in
-  - ESP32 boards turn it on with `-DFN_WITH_HOTSYNC=1` in their `pio-build/ini/platforms/*.ini` (the FN-RS232 boards do). The IDF build compiles every source, so each HotSync source is wrapped in `#if FN_WITH_HOTSYNC == 1` and `hotsync_init_off.cpp` in the opposite, as `atari_sio_ingress.cpp` is for its build. Linker garbage collection alone is not enough: ESP-IDF keeps every object's `.eh_frame`, about 14 KB for HotSync
+  - A CMake variable, not a compiler flag, and the build selects sources by it: HotSync's, or only `src/lib/hotsync_init_off.cpp`, a `start_hotsync()` that does nothing. No source carries a feature guard. `scripts/update_cmake_sources.py` generates both lists, under `if(FN_WITH_HOTSYNC)`, in `CMakeLists_posix.cmake` and `src/CMakeLists.txt`
+  - POSIX: defaults on for the `fujibus-pty-*` and `fujibus-rs232-*` presets and off for the rest
+  - ESP32: a board turns it on with `-D FN_WITH_HOTSYNC=ON` in the `board_build.cmake_extra_args` of its `pio-build/ini/platforms/*.ini` (the FN-RS232 boards do), so the choice is made before `idf_component_register`. Other boards compile no HotSync source, which matters on ESP32: linker garbage collection alone would leave every object's `.eh_frame`, about 14 KB for HotSync
 
 ## FujiNet Test CA Trust
 

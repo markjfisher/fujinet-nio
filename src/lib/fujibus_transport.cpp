@@ -15,7 +15,16 @@ using fujinet::io::protocol::ByteBuffer;
 
 void FujiBusTransport::poll()
 {
+    if (!_lineCoordinator) {
+        _framer.poll(_channel);
+        return;
+    }
+    const std::uint64_t before = _framer.bytesTaken();
     _framer.poll(_channel);
+    const std::uint64_t taken = _framer.bytesTaken() - before;
+    if (taken > 0) {
+        _lineCoordinator->bytes_received(static_cast<std::size_t>(taken));
+    }
 }
 
 bool FujiBusTransport::supports_work_wait() const
@@ -37,11 +46,19 @@ bool FujiBusTransport::receive(IORequest& outReq)
 {
     ByteBuffer frame;
     if (!_framer.nextPacket(frame)) {
-        // No complete frame yet.
+        // No packet to deliver. Every request delivered so far has been
+        // answered, so this is the idle point where a shared line may be lent.
+        if (_lineCoordinator && _lineCoordinator->line_idle(_framer.hasPartial())) {
+            _framer.discardPartial();
+        }
         return false;
     }
 
-    if (!protocol::decode_fujibus_request(frame, _nextRequestId, outReq)) {
+    const bool valid = protocol::decode_fujibus_request(frame, _nextRequestId, outReq);
+    if (_lineCoordinator) {
+        _lineCoordinator->frame_received(valid);
+    }
+    if (!valid) {
         FN_LOGW(TAG, "invalid FujiBus frame (response), dropped");
         if (!frame.empty()) {
             FN_LOGW(TAG, "  raw frame (%zu bytes):", frame.size());
