@@ -22,8 +22,17 @@ public:
     // SLIP-escape and delimit one raw opaque packet before writing to ch.
     void sendPacket(Channel& ch, const ByteBuffer& packet) override;
 
+    std::uint64_t bytesTaken() const override { return _bytesTaken; }
+    // After nextPacket() has returned false, anything left in _rxBuffer is
+    // the start of a frame (a lone END included: each frame's closing END is
+    // consumed with it, so a lone one opens the next), or, after a malformed
+    // frame was skipped, frames the next call will deliver.
+    bool hasPartial() const override { return !_rxBuffer.empty(); }
+    void discardPartial() override { _rxBuffer.clear(); }
+
 private:
     ByteBuffer _rxBuffer;
+    std::uint64_t _bytesTaken{0};
 };
 
 } // namespace fujinet::io

@@ -89,6 +89,15 @@ public:
 
 // Abstract filesystem mounted at some root.
 // All paths are POSIX-style within this FS ("/", "/dir/file", etc.).
+//
+// Tasks: a local filesystem (create_stdio_filesystem: host, flash, sd0) may be
+// used from more than one task at once, as the core and the HotSync service
+// do. It keeps nothing between calls but its root, each IFile is a handle of
+// its own, and the layer beneath serialises its own work: the kernel on POSIX;
+// on ESP32, FatFs built reentrant (a lock per volume) and LittleFS's lock per
+// mount. As on any OS, two writers to one file interleave, and a listing taken
+// while another task adds files may or may not show them. Network filesystems
+// (TNFS, HTTP) hold a session and are for the core task only.
 class IFileSystem {
 public:
     virtual ~IFileSystem() = default;

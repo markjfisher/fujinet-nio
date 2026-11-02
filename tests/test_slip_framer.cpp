@@ -279,3 +279,39 @@ TEST_CASE("framer and serial wrapper share escaping and malformed-escape compati
 }
 
 } // TEST_SUITE
+
+TEST_CASE("SlipFramer reports bytes taken and a partial frame, and drops it on request") {
+    SlipLoopbackChannel ch;
+    SlipFramer framer;
+    ByteBuffer packet;
+    CHECK(framer.bytesTaken() == 0);
+    CHECK_FALSE(framer.hasPartial());
+
+    // A whole frame, then the start of the next.
+    ch.push({0xC0, 0x01, 0x02, 0xC0, 0xC0, 0x03});
+    framer.poll(ch);
+    CHECK(framer.bytesTaken() == 6);
+    REQUIRE(framer.nextPacket(packet));
+    CHECK(packet == ByteBuffer{0x01, 0x02});
+    CHECK_FALSE(framer.nextPacket(packet));
+    CHECK(framer.hasPartial());
+
+    // Dropped, the rest of it is noise and the next frame is whole.
+    framer.discardPartial();
+    CHECK_FALSE(framer.hasPartial());
+    ch.push({0x04, 0xC0, 0x05, 0xC0});
+    framer.poll(ch);
+    CHECK(framer.bytesTaken() == 10);
+    REQUIRE(framer.nextPacket(packet));
+    CHECK(packet == ByteBuffer{0x05});
+    CHECK_FALSE(framer.nextPacket(packet));
+    CHECK_FALSE(framer.hasPartial());
+
+    // A lone END opens the next frame: each frame's closing END went with it.
+    ch.push({0xC0});
+    framer.poll(ch);
+    CHECK_FALSE(framer.nextPacket(packet));
+    CHECK(framer.hasPartial());
+    framer.discardPartial();
+    CHECK_FALSE(framer.hasPartial());
+}

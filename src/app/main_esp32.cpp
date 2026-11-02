@@ -41,6 +41,7 @@ extern "C" {
 #include "fujinet/diag/diagnostic_provider.h"
 #include "fujinet/diag/diagnostic_registry.h"
 #include "fujinet/fs/boot_mount.h"
+#include "fujinet/hotsync/hotsync_init.h"
 
 #include <atomic>
 #include <chrono>
@@ -334,7 +335,18 @@ extern "C" void fujinet_core_task(void* arg)
         if (uartChannelDiag) diagRegistry.add_provider(*uartChannelDiag);
         packetLinkDiag = fujinet::diag::create_packet_link_diagnostic_provider(channel.get(), services.fuji);
         if (packetLinkDiag) diagRegistry.add_provider(*packetLinkDiag);
-        core::setup_transports(core, *channel, profile, &config);
+    }
+
+    // Palm HotSync (FN_WITH_HOTSYNC builds). With hotsync.cradle on it puts
+    // the cradle's line arbiter over `channel`, and the FujiBus transport
+    // offers the cradle its line through the runtime's coordinator; the UART
+    // diagnostics above keep the line beneath it.
+    auto hotsync = fujinet::hotsync::start_hotsync(
+        {core.storageManager(), config.hotsync, services.fuji, diagRegistry}, channel);
+
+    if (channel) {
+        core::setup_transports(core, *channel, profile, &config,
+                               hotsync ? hotsync->bus_line_coordinator() : nullptr);
         FN_ELOG("transport initialized");
     }
 

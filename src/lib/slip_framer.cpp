@@ -19,6 +19,7 @@ void SlipFramer::poll(Channel& ch)
             break;
         }
         _rxBuffer.insert(_rxBuffer.end(), temp, temp + n);
+        _bytesTaken += n;
     }
 }
 

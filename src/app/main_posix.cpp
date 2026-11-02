@@ -22,6 +22,7 @@
 #include "fujinet/fs/filesystem.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/fs/boot_mount.h"
+#include "fujinet/hotsync/hotsync_init.h"
 #include "fujinet/io/core/channel.h"
 #include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/devices/disk_device.h"
@@ -301,7 +302,14 @@ int main()
     if (bootDiag) {
         diagRegistry.add_provider(*bootDiag);
     }
-    core::setup_transports(core, *channel, profile, &config);
+
+    // Palm HotSync (FN_WITH_HOTSYNC builds). With hotsync.cradle on it puts
+    // the cradle's line arbiter over `channel`, and the FujiBus transport
+    // offers the cradle its line through the runtime's coordinator.
+    auto hotsync = fujinet::hotsync::start_hotsync(
+        {core.storageManager(), config.hotsync, fujiConcrete, diagRegistry}, channel);
+    core::setup_transports(core, *channel, profile, &config,
+                           hotsync ? hotsync->bus_line_coordinator() : nullptr);
 #endif
 
     const auto idleDelay = posix_idle_delay(profile);

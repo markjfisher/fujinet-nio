@@ -4,6 +4,10 @@
 file(GLOB TEST_SOURCES CONFIGURE_DEPENDS
     "test_*.cpp"
 )
+# HotSync's tests need its sources (FN_WITH_HOTSYNC).
+if(NOT FN_WITH_HOTSYNC)
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "/test_hotsync[^/]*\\.cpp$")
+endif()
 
 # Story 1.9 host harness: not part of the production fujinet-nio library.
 add_executable(fujinet-nio-native-test

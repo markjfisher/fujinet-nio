@@ -1,5 +1,7 @@
 #include "fujinet/platform/posix/serial_channel.h"
 
+#include "fujinet/io/core/baud_control.h"
+
 #include <cerrno>
 #include <cstdlib>
 #include <fcntl.h>
@@ -7,11 +9,15 @@
 #include <poll.h>
 #include <unistd.h>
 
+namespace fujinet::platform::posix {
+static bool apply_serial_baud(int fd, std::uint32_t baud);
+}
+
 namespace fujinet::platform {
 
-class SerialChannel : public fujinet::io::Channel {
+class SerialChannel : public fujinet::io::Channel, public fujinet::io::BaudControl {
 public:
-    explicit SerialChannel(int fd) : _fd(fd) {}
+    SerialChannel(int fd, std::uint32_t baud) : _fd(fd), _baud(baud) {}
 
     ~SerialChannel() override
     {
@@ -70,8 +76,27 @@ public:
         }
     }
 
+    std::uint32_t baud_rate() const override { return _baud; }
+
+    bool set_baud_rate(std::uint32_t baud) override
+    {
+        if (_fd < 0 || !posix::is_supported_serial_baud(baud)) {
+            return false;
+        }
+        if (baud == _baud) {
+            return true;
+        }
+        ::tcdrain(_fd);
+        if (!posix::apply_serial_baud(_fd, baud)) {
+            return false;
+        }
+        _baud = baud;
+        return true;
+    }
+
 private:
     int _fd;
+    std::uint32_t _baud;
 };
 
 } // namespace fujinet::platform
@@ -109,6 +134,22 @@ static speed_t baud_constant(std::uint32_t baud)
         case 230400: return B230400;
         default:     return B19200;
     }
+}
+
+static bool apply_serial_baud(int fd, std::uint32_t baud)
+{
+    termios tio{};
+    if (::tcgetattr(fd, &tio) != 0) {
+        std::perror("[SerialChannel] tcgetattr");
+        return false;
+    }
+    ::cfsetispeed(&tio, baud_constant(baud));
+    ::cfsetospeed(&tio, baud_constant(baud));
+    if (::tcsetattr(fd, TCSANOW, &tio) != 0) {
+        std::perror("[SerialChannel] tcsetattr");
+        return false;
+    }
+    return true;
 }
 
 static int normalized_data_bits(int dataBits)
@@ -240,7 +281,7 @@ create_serial_channel_for_path(const std::string& port, const config::UartConfig
               << " at " << effectiveBaud
               << " baud, " << dataBits
               << " data bits.\n";
-    return std::make_unique<fujinet::platform::SerialChannel>(fd);
+    return std::make_unique<fujinet::platform::SerialChannel>(fd, effectiveBaud);
 }
 
 std::unique_ptr<fujinet::io::Channel> create_serial_channel(const config::FujiConfig& config)
