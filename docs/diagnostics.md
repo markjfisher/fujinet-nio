@@ -227,7 +227,10 @@ tight, so this is how to see what the Atari is doing:
   line is already released, so requiring another edge-free idle poll can swallow
   the next command when its assertion wakes a sleeping task (min-010). Active
   collection aborts, low observations and multiple-edge ambiguity still use the
-  existing discard/resynchronisation barrier. Event 6 still counts the idle
+  existing discard/resynchronisation barrier. The decision uses the level sampled
+  at abort entry; a new assertion during cleanup stays queued and must not
+  retroactively turn the old idle-high observation into a low abort (min-011).
+  Event 6 still counts the idle
   observation; that counter alone does not mean an application command was lost.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a

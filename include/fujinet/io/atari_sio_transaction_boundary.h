@@ -183,6 +183,7 @@ public:
         advance_flight(static_cast<std::uint32_t>(now()));
         _poll_edges = 0;
         const auto abort = [this, &router, &uart, &boundary, &asserted, &now](std::uint32_t AtariSioCaptureStats::* reason) {
+            const bool abort_low = asserted();
             const bool idle_edge = reason == &AtariSioCaptureStats::aborts_edge &&
                                    !_collecting && !router.pending_write_bytes();
             const bool live = !idle_edge || _stats.trace_count == 0 ||
@@ -197,7 +198,7 @@ public:
                           reason == &AtariSioCaptureStats::aborts_timeout ? 3 :
                           reason == &AtariSioCaptureStats::aborts_overflow ? 4 : 5;
                 t.used = static_cast<std::uint8_t>(_frame_used);
-                t.low = asserted(); t.collecting = _collecting; t.released = _released;
+                t.low = abort_low; t.collecting = _collecting; t.released = _released;
                 t.last_edge_us = boundary.last_edge_us();
                 t.edge_batch = _poll_edges;
                 t.poll_gap_us = _poll_gap_us;
@@ -235,7 +236,7 @@ public:
             // additional edge-free idle poll can swallow the next assertion
             // when the task sleeps until that assertion wakes it (min-010).
             // Active/ambiguous aborts still require the existing resync barrier.
-            _discard_until_release = !(idle_edge && !asserted() && _poll_edges == 1);
+            _discard_until_release = !(idle_edge && !abort_low && _poll_edges == 1);
         };
         if (_write_started_us && now() - _write_started_us > 200000) {
             abort(&AtariSioCaptureStats::aborts_timeout);

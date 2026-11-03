@@ -1004,3 +1004,32 @@ TEST_CASE("Idle high observation does not require an idle poll before the next c
     CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x53,0x11,0,0xe3});
     CHECK(capture.stats().frames_lost==0);
 }
+
+TEST_CASE("New assertion during idle-high abort cleanup remains queued for capture")
+{
+    using namespace fujinet::io;
+    AtariSioTransactionBoundary boundary;
+    AtariSioCapture capture;
+    CaptureRouter router;
+    struct RacingUart : CaptureUart {
+        AtariSioTransactionBoundary* boundary;
+        bool* low;
+        void discardInput() {
+            CaptureUart::discardInput();
+            *low=true;
+            boundary->note_bus_edge(152026881,true);
+        }
+    } uart;
+    bool low=false;
+    uart.boundary=&boundary;uart.low=&low;
+    boundary.note_bus_edge(152026321,false);
+    capture.poll(boundary,router,uart,[&]{return low;},[]{return 152026560;});
+    REQUIRE(low);
+    capture.poll(boundary,router,uart,[&]{return low;},[]{return 152027639;});
+    REQUIRE(capture.needs_immediate_poll());
+    low=false;boundary.note_bus_edge(152031365,false);
+    uart.driver={0x7f,0x53,0x11,0,0xe3};
+    capture.poll(boundary,router,uart,[&]{return low;},[]{return 152031508;});
+    CHECK(capture.stats().frames==1);
+    CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x53,0x11,0,0xe3});
+}
