@@ -53,7 +53,31 @@ DLI suppression, or changes to advertised HSIO settings. POSIX NetSIO and other
 platform transports do not acquire the ESP32 GPIO behavior. Shared capture tests
 exercise the same decision code used on hardware.
 
-## Flight recorder
+## Flight recorder (opt-in build)
+
+Production builds default to `FN_ATARI_SIO_FLIGHT=0`. This is independent of
+`FN_DEBUG` and cannot be enabled by a console command. To include recording,
+add this to the existing `[env]` section of `platformio.local.ini`:
+
+```ini
+build_flags +=
+    -DFN_ATARI_SIO_FLIGHT=1
+```
+
+Build with `./build.sh -b`, then upload with `./build.sh -u`. Remove the flag
+(or set it to 0) and rebuild to return to production. Keep other local flags.
+Values other than 0 and 1 fail compilation.
+
+With the flag off, there is no 128-event recorder allocation, trigger/stream-gap
+tracking, flight-only boundary events, IRQ snapshot copying or flight formatter.
+The normal `sio.trace` live 16-event diagnostic and status counters remain.
+Only two versioned IRQ observations are retained for production recovery; their
+levels, timestamps and reply states are part of the recovery algorithm, not
+optional diagnostics. Diagnostic builds retain 16 observations for context.
+`sio.trace flight` in a production build reports that recording was not compiled.
+The CTest suite runs recovery tests in both configurations and flight-specific
+tests in a separate enabled executable.
+
 
 `sio.trace` prints the compact live 16-event trace. `sio.trace flight` prints a
 separate frozen 128-event history plus the last 16 IRQ observations at the trigger.
@@ -92,10 +116,11 @@ across resets. Inconsistent/overwritten snapshot slots are omitted.
 
 ## Cost and observation procedure
 
-The event recorder occupies approximately 5 KiB of heap plus bookkeeping and
-its 192-byte trigger IRQ snapshot. The live IRQ observation ring adds about
-200 bytes per ingress. No allocation, console logging or new task runs in the
-ISR or per-event recording path. Synchronization uses 32-bit atomics; the ESP32
+When enabled, the event recorder occupies approximately 5 KiB of heap plus
+bookkeeping and its 192-byte trigger IRQ snapshot. The diagnostic IRQ observation
+ring uses 192 bytes of slots per ingress, compared with 24 bytes in production.
+No allocation, console logging or new task runs in the ISR or per-event recording
+path. Synchronization uses 32-bit atomics; the ESP32
 build does not promise `is_always_lock_free`. ESP-IDF supplies native operations
 or ISR-safe critical-section fallbacks according to target/toolchain options.
 The snapshot reader performs bounded version checks and does not spin waiting

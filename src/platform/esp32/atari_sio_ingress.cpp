@@ -140,14 +140,19 @@ void AtariSioIngress::send_early_ack()
     _reply.record(static_cast<std::uint32_t>(esp_timer_get_time()), _capture.processing_start_us(),
                   _capture.processing_command(), _capture.processing_release_us());
     if (_capture.processing_command()) _txn.begin(_capture.last_frame()[1], _capture.processing_release_us());
+#if FN_ATARI_SIO_FLIGHT
     const auto trace_start = static_cast<std::uint32_t>(esp_timer_get_time());
+#endif
     _boundary.begin_reply([this] { return gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0; });
     _uart->write(&sio_ack, 1);
     _uart->flushOutput();
     _boundary.end_reply();
     _early_ack_us = static_cast<std::uint32_t>(esp_timer_get_time());
+#if FN_ATARI_SIO_FLIGHT
     _capture.trace_reply(trace_start, _early_ack_us - trace_start,
                          _uart->uart_config().baudRate, 1, sio_ack, 0, true);
+
+#endif
     if (_early_ack_us == 0) _early_ack_us = 1;
 }
 
@@ -468,9 +473,12 @@ void AtariSioIngress::poll()
         _poll_gap_us_max = now - _last_poll_us;
         _poll_gap_at_us = _last_poll_us;
     }
+#if FN_ATARI_SIO_FLIGHT
     _capture.trace_poll_gap(now,
         _last_poll_us != 0 && edges != _edges_at_last_poll ? now - _last_poll_us : 0,
         _boundary, gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0, edges - _edges_at_last_poll);
+
+#endif
     poll_alt();
     _capture.poll(_boundary, _router, *_uart,
                   [this] { return gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0; },

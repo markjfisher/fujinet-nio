@@ -129,3 +129,18 @@ if(Python3_Interpreter_FOUND)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 endif()
+
+# Compile flight recording separately: the normal suite tests production defaults,
+# and this executable tests the identical capture/recovery cases with recording on.
+add_executable(atari-sio-flight-tests
+    run_main.cpp
+    test_atari_sio_transaction_boundary.cpp
+    test_atari_sio_diagnostics.cpp
+    ${CMAKE_SOURCE_DIR}/src/lib/diagnostic_atari_sio_provider.cpp
+)
+target_include_directories(atari-sio-flight-tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(atari-sio-flight-tests PRIVATE cxx_std_20)
+target_compile_definitions(atari-sio-flight-tests PRIVATE
+    FN_PLATFORM_POSIX=1 FN_ATARI_SIO_FLIGHT=1)
+add_test(NAME atari-sio-flight-tests COMMAND atari-sio-flight-tests)

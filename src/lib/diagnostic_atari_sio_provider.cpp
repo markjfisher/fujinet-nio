@@ -114,7 +114,11 @@ public:
             .safe = true,
         });
         out.push_back(DiagCommandSpec{
+#if FN_ATARI_SIO_FLIGHT
             .name = "sio.trace", .summary = "recent events or frozen first-failure recording", .usage = "sio.trace [flight]", .safe = true,
+#else
+            .name = "sio.trace", .summary = "recent SIO frames and capture aborts", .usage = "sio.trace", .safe = true,
+#endif
         });
         if (_probe_baud) {
             out.push_back(DiagCommandSpec{
@@ -175,7 +179,13 @@ public:
         }
         if (cmd == "sio.trace") {
             if (args.argv.size() == 1) return trace(false);
-            if (args.argv.size() == 2 && args.argv[1] == "flight") return trace(true);
+            if (args.argv.size() == 2 && args.argv[1] == "flight") {
+#if FN_ATARI_SIO_FLIGHT
+                return trace(true);
+#else
+                return DiagResult::invalid_args("flight recording is not compiled in; build with FN_ATARI_SIO_FLIGHT=1");
+#endif
+            }
             return DiagResult::invalid_args("usage: sio.trace [flight]");
         }
         if (cmd == "sio.baud" && _probe_baud) {
@@ -211,6 +221,7 @@ private:
     {
         const auto s = _snapshot();
         std::string text;
+#if FN_ATARI_SIO_FLIGHT
         if (flight && !s.capture.flight) {
             return DiagResult::ok(s.capture.flight_triggered
                 ? "flight: triggered; collecting up to 16 following events or 1 second. Read again later.\r\n"
@@ -223,10 +234,19 @@ private:
             " trigger_event=" + n(s.capture.flight_trigger_event) +
             " trigger_record=" + n(s.capture.flight->trigger_count - 1) +
             " capacity=128; unchanged until sio.reset");
+#else
+        (void)flight;
+        const auto count = s.capture.trace_count;
+        const auto size = static_cast<std::uint32_t>(s.capture.trace.size());
+#endif
         const auto first = count > size ? count - size : 0;
         line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7 poll-gap=8 early-ack=9 edge-batch=10 capture-start=11 capture-release=12 repeated-high=14 idle-high-low=15 reply-low-pair=16 stream-gap=17 release-high-pair=18; times are microseconds since boot (wraps)");
         for (auto i = first; i < count; ++i) {
+#if FN_ATARI_SIO_FLIGHT
             const auto& t = flight ? s.capture.flight->entries[i % size] : s.capture.trace[i % size];
+#else
+            const auto& t = s.capture.trace[i % size];
+#endif
             std::string row = "us=" + n(t.time_us);
             row += " event=" + n(t.event);
             row += " record=" + n(i);
@@ -251,6 +271,7 @@ private:
             }
             line(text, row);
         }
+#if FN_ATARI_SIO_FLIGHT
         if (flight) {
             line(text, "Trigger IRQ observations: reply=0 outside, 1 filtering, 2 preserving; sampled levels, not a logic analyser");
             for (const auto& e : s.capture.flight->trigger_edges) {
@@ -260,6 +281,7 @@ private:
                      " reply=" + n(e.flags >> 2));
             }
         }
+#endif
         return DiagResult::ok(std::move(text));
     }
     static std::string tuning_text(const io::AtariSioTuning& t)

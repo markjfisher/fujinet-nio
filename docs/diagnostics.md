@@ -148,7 +148,8 @@ tight, so this is how to see what the Atari is doing:
   don't erase the event preceding a stall. Replies record control bytes, size, baud and duration,
   never response payloads. Times are the wrapping 32-bit microsecond clock;
   `sio.reset` clears the trace. This records no network payloads and logs nothing during SIO.
-- `sio.trace flight` — retrieve the frozen 128-event recording and its IRQ
+- `sio.trace flight` — available only with `-DFN_ATARI_SIO_FLIGHT=1` in
+  PlatformIO build flags (default off, independent of `FN_DEBUG`); retrieve the frozen 128-event recording and its IRQ
   observations. Reset once after the application is running; read the dump after
   the observation period. **Console output can pause SIO itself.** See
   [Atari SIO capture and recovery](atari/sio-capture.md) for event meanings,

@@ -640,6 +640,7 @@ TEST_CASE("Atari SIO capture can ignore CMD glitches while a write waits for its
     }
 }
 
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("SIO flight recording retains prehistory and freezes after sixteen following events")
 {
     using namespace fujinet::io;
@@ -673,6 +674,9 @@ TEST_CASE("SIO flight recording retains prehistory and freezes after sixteen fol
     CHECK(saved->count==157); // old snapshots survive reset without mutation
 }
 
+
+#endif
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("SIO flight recording freezes on elapsed time with clock wrap and no later traffic")
 {
     using namespace fujinet::io;
@@ -689,6 +693,9 @@ TEST_CASE("SIO flight recording freezes on elapsed time with clock wrap and no l
     CHECK(capture.stats().flight->count==33);
 }
 
+
+#endif
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("SIO flight recording triggers on ambiguous idle CMD edges with boundary metadata")
 {
     using namespace fujinet::io;
@@ -709,6 +716,9 @@ TEST_CASE("SIO flight recording triggers on ambiguous idle CMD edges with bounda
     CHECK(t.used==0);
 }
 
+
+#endif
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("SIO flight warmup requires elapsed time and history and restarts after reset")
 {
     using namespace fujinet::io;
@@ -729,6 +739,9 @@ TEST_CASE("SIO flight warmup requires elapsed time and history and restarts afte
     CHECK(capture.stats().flight_triggered);
 }
 
+
+#endif
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("SIO flight history records command edge observations and collection decisions")
 {
     using namespace fujinet::io;
@@ -764,6 +777,8 @@ TEST_CASE("SIO flight history records command edge observations and collection d
     CHECK(saved->entries[37].last_edge_us==300);
 }
 
+
+#endif
 TEST_CASE("Reply noise followed by next command assertion does not discard the command")
 {
     using namespace fujinet::io;
@@ -826,6 +841,7 @@ TEST_CASE("Reply filtering preserves ambiguous boundaries and never clears a rac
     CHECK(boundary.reply_noise()==0);
 }
 
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("Trigger preserves individual IRQ levels filtering and reply state")
 {
     using namespace fujinet::io;
@@ -859,6 +875,8 @@ TEST_CASE("Trigger preserves individual IRQ levels filtering and reply state")
     CHECK(saved->trigger_edges[15].time_us==410);
 }
 
+
+#endif
 TEST_CASE("Released command tolerates one observed high but rejects new assertions and ambiguity")
 {
     using namespace fujinet::io;
@@ -959,6 +977,7 @@ TEST_CASE("Reply low pair recovery is limited to the observed short reply handov
     }
 }
 
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("Stream retry-sized gap freezes history without a capture abort")
 {
     using namespace fujinet::io;
@@ -983,6 +1002,8 @@ TEST_CASE("Stream retry-sized gap freezes history without a capture abort")
     }
 }
 
+
+#endif
 TEST_CASE("Idle high observation does not require an idle poll before the next command")
 {
     using namespace fujinet::io;
@@ -1082,3 +1103,11 @@ TEST_CASE("Batched release recovery rejects intervening lows missing history and
         if (scenario==4) CHECK(capture.stats().aborts_timeout==1);
     }
 }
+
+#if !FN_ATARI_SIO_FLIGHT
+TEST_CASE("Production capture keeps only minimal recovery observation storage")
+{
+    CHECK(sizeof(fujinet::io::AtariSioTransactionBoundary)<128);
+    CHECK(sizeof(fujinet::io::AtariSioCapture)<2048);
+}
+#endif

@@ -55,11 +55,12 @@ public:
         }
         note_cmd_edge(at_us);
     }
+#if FN_ATARI_SIO_FLIGHT
     std::array<AtariSioEdgeObservation, 16> edge_snapshot() const noexcept
     {
         std::array<AtariSioEdgeObservation, 16> out{};
         const auto last = _published_sequence.load(std::memory_order_acquire);
-        const auto count = last < out.size() ? last : out.size();
+        const auto count = last < out.size() ? last : static_cast<std::uint32_t>(out.size());
         for (std::uint32_t i=0; i<count; ++i) {
             const auto sequence = last - count + 1 + i;
             const auto& slot = _observations[sequence % out.size()];
@@ -72,6 +73,8 @@ public:
         }
         return out;
     }
+
+#endif
     std::uint32_t observed_sequence() const noexcept {
         return _published_sequence.load(std::memory_order_acquire);
     }
@@ -152,7 +155,11 @@ private:
     struct ObservationSlot {
         std::atomic<std::uint32_t> version{0}, time{0}, flags{0};
     };
+#if FN_ATARI_SIO_FLIGHT
     std::array<ObservationSlot, 16> _observations{};
+#else
+    std::array<ObservationSlot, 2> _observations{}; // only the two recovery observations
+#endif
     std::uint32_t _edge_sequence{0}; // ISR-owned; not reset by the task
     std::atomic<std::uint32_t> _published_sequence{0};
     std::atomic<std::uint32_t> _reply_state{0}, _reply_noise{0};
@@ -194,7 +201,9 @@ public:
     void poll(AtariSioTransactionBoundary& boundary, Router& router, Uart& uart,
               Asserted asserted, Now now, AltFrame alt_frame)
     {
+#if FN_ATARI_SIO_FLIGHT
         advance_flight(static_cast<std::uint32_t>(now()));
+#endif
         _poll_edges = 0;
         const auto abort = [this, &router, &uart, &boundary, &asserted, &now](std::uint32_t AtariSioCaptureStats::* reason) {
             const bool abort_low = asserted();
@@ -216,9 +225,13 @@ public:
                 t.last_edge_us = boundary.last_edge_us();
                 t.edge_batch = _poll_edges;
                 t.poll_gap_us = _poll_gap_us;
+#if FN_ATARI_SIO_FLIGHT
                 const bool triggered = _stats.flight_triggered;
+#endif
                 record_trace(t, live);
+#if FN_ATARI_SIO_FLIGHT
                 if (!triggered && _stats.flight_triggered) _flight->trigger_edges = boundary.edge_snapshot();
+#endif
             }
             ++(_stats.*reason);
             if (_collecting) ++_stats.frames_lost;
@@ -259,13 +272,17 @@ public:
         std::uint32_t edges = boundary.consume();
         _poll_edges = edges;
         const bool low = asserted();
+#if FN_ATARI_SIO_FLIGHT
         if (edges) trace_boundary(10, now(), boundary, low, edges);
+#endif
         if (_ignore_write_glitches && edges != 0 && !low && !_collecting && router.pending_write_bytes()) {
             _stats.write_glitches_ignored += edges;
             edges = 0;
         }
         if (released_high_noise(boundary, edges, low)) {
+#if FN_ATARI_SIO_FLIGHT
             trace_boundary(14, now(), boundary, low, edges);
+#endif
             edges = 0;
         }
         if (!low) {
@@ -305,12 +322,16 @@ public:
         // two-observation sequence, both outside a reply and unfiltered.
         if (edges == 2 && low && !_collecting && !router.pending_write_bytes() &&
             boundary.idle_high_then_low()) {
+#if FN_ATARI_SIO_FLIGHT
             trace_boundary(15, now(), boundary, low, edges);
+#endif
             edges = 1;
         }
         if (edges == 2 && low && !_collecting && !router.pending_write_bytes() &&
             boundary.reply_low_pair()) {
+#if FN_ATARI_SIO_FLIGHT
             trace_boundary(16, now(), boundary, low, edges);
+#endif
             edges = 1;
         }
         // Equivalent to processing release then event-14 noise in two polls.
@@ -318,7 +339,9 @@ public:
         // two unfiltered highs, with no intervening low or missing history.
         if (edges == 2 && !low && _collecting && !_released &&
             boundary.high_pair_after(_release_irq_sequence)) {
+#if FN_ATARI_SIO_FLIGHT
             trace_boundary(18, now(), boundary, low, edges);
+#endif
             edges = 1;
         }
         if (edges > 1 || (edges == 1 && (low == _collecting || _released))) {
@@ -333,7 +356,9 @@ public:
             _released = false;
             _release_irq_sequence = boundary.observed_sequence();
             _started_us = now();
+#if FN_ATARI_SIO_FLIGHT
             trace_boundary(11, _started_us, boundary, low, edges);
+#endif
         }
         if (_collecting && now() - _started_us > 50000) {
             abort(&AtariSioCaptureStats::aborts_timeout);
@@ -347,14 +372,18 @@ public:
             std::uint32_t seen = boundary.consume();
             _poll_edges += seen;
             const bool low_now = asserted();
+#if FN_ATARI_SIO_FLIGHT
             if (seen) trace_boundary(10, now(), boundary, low_now, seen);
+#endif
             if (_ignore_write_glitches && seen != 0 && !low_now && !low && !_collecting &&
                 router.pending_write_bytes()) {
                 _stats.write_glitches_ignored += seen;
                 seen = 0;
             }
             if (!rx_error && !low && released_high_noise(boundary, seen, low_now)) {
+#if FN_ATARI_SIO_FLIGHT
                 trace_boundary(14, now(), boundary, low_now, seen);
+#endif
                 seen = 0;
             }
             if (rx_error || seen != 0 || low_now != low) {
@@ -381,14 +410,20 @@ public:
         if (_collecting && edges == 1 && !low) {
             _released = true;
             _release_irq_sequence = boundary.observed_sequence();
+#if FN_ATARI_SIO_FLIGHT
             trace_boundary(12, now(), boundary, low, edges);
+#endif
         }
         if (_collecting && _released && _frame_used == _frame.size()) {
             auto final_edges = boundary.consume();
             _poll_edges += final_edges;
+#if FN_ATARI_SIO_FLIGHT
             if (final_edges) trace_boundary(10, now(), boundary, asserted(), final_edges);
+#endif
             if (released_high_noise(boundary, final_edges, asserted())) {
+#if FN_ATARI_SIO_FLIGHT
                 trace_boundary(14, now(), boundary, false, final_edges);
+#endif
                 final_edges = 0;
             }
             if (final_edges != 0 || asserted()) {
@@ -413,12 +448,17 @@ public:
     std::uint32_t processing_release_us() const noexcept { return _processing_release_us; }
     bool processing_command() const noexcept { return _processing_command; }
     void reset_stats() {
+#if FN_ATARI_SIO_FLIGHT
         // Allocate before replacing the recorder, so old frozen readers retain
         // a stable image. Allocation never occurs in the hot recording path.
         auto fresh = std::make_shared<AtariSioFlightTrace>();
         _stats = {}; _flight = std::move(fresh); _poll_gap_us = 0;
         _flight_started = false; _flight_start_us = 0; _stream_seen = false;
+#else
+        _stats = {};
+#endif
     }
+#if FN_ATARI_SIO_FLIGHT
     void trace_poll_gap(std::uint32_t time, std::uint32_t gap,
                         const AtariSioTransactionBoundary& boundary, bool low, std::uint32_t batch = 0) noexcept {
         _poll_gap_us = gap;
@@ -432,6 +472,8 @@ public:
         record_trace(t);
         if (!triggered && _stats.flight_triggered) _flight->trigger_edges = boundary.edge_snapshot();
     }
+#endif
+
     // Metadata only: never retain a response body in diagnostics.
     void trace_reply(std::uint32_t time, std::uint32_t duration, std::uint32_t baud,
                      std::uint16_t length, std::uint8_t first, std::uint8_t second, bool early = false) noexcept
@@ -446,8 +488,11 @@ public:
     std::uint32_t bad_frames_in_a_row() const noexcept { return _bad_frames_in_a_row; }
     void clear_bad_frames() noexcept { _bad_frames_in_a_row = 0; }
 private:
-    std::uint32_t _release_irq_sequence{0}, _stream_last_us{0};
+    std::uint32_t _release_irq_sequence{0};
+#if FN_ATARI_SIO_FLIGHT
+    std::uint32_t _stream_last_us{0};
     bool _stream_seen{false};
+#endif
     bool released_high_noise(const AtariSioTransactionBoundary& boundary,
                              std::uint32_t edges, bool low) noexcept {
         if (!_collecting || !_released || low || edges != 1 ||
@@ -455,8 +500,9 @@ private:
         _release_irq_sequence = boundary.observed_sequence();
         return true;
     }
-    std::shared_ptr<AtariSioFlightTrace> _flight = std::make_shared<AtariSioFlightTrace>();
     std::uint32_t _poll_edges{0}, _poll_gap_us{0};
+#if FN_ATARI_SIO_FLIGHT
+    std::shared_ptr<AtariSioFlightTrace> _flight = std::make_shared<AtariSioFlightTrace>();
     bool _flight_started{false};
     std::uint32_t _flight_start_us{0};
     void advance_flight(std::uint32_t time) noexcept {
@@ -481,8 +527,11 @@ private:
              _flight->count - _flight->trigger_count >= 16))
             _stats.flight = _flight;
     }
+
+#endif
     void record_trace(const AtariSioCaptureStats::Trace& t, bool live = true) noexcept {
         if (live) _stats.trace[_stats.trace_count++ % _stats.trace.size()] = t;
+#if FN_ATARI_SIO_FLIGHT
         advance_flight(t.time_us);
         if (_stats.flight) return;
         _flight->entries[_flight->count++ % _flight->entries.size()] = t;
@@ -495,6 +544,7 @@ private:
             _flight->trigger_count = _flight->count;
         }
         finish_flight(t.time_us);
+#endif
     }
     // Hands the complete command frame in `_frame` to the router and starts timing its reply.
     template<class Router, class Now>
@@ -509,6 +559,7 @@ private:
         t.used = 5;
         t.last_edge_us = boundary.last_edge_us(); t.edge_batch = _poll_edges;
         t.poll_gap_us = _poll_gap_us;
+#if FN_ATARI_SIO_FLIGHT
         const bool stream = _frame[0] == 0x7f && (_frame[1] == 'S' || _frame[1] == 'T');
         if (stream && _stream_seen) {
             const auto gap = t.time_us - _stream_last_us;
@@ -522,6 +573,8 @@ private:
         }
         _stream_seen = stream;
         _stream_last_us = t.time_us;
+
+#endif
         record_trace(t);
         ++_stats.frames;
         const auto start = static_cast<std::uint32_t>(now());

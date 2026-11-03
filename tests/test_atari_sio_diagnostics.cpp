@@ -470,6 +470,7 @@ TEST_CASE("sio.proc is absent without the callbacks, and says so on a board with
     CHECK(run(*nopin, {"sio.proc", "low"}).status != fujinet::diag::DiagStatus::Ok);
 }
 
+#if FN_ATARI_SIO_FLIGHT
 TEST_CASE("sio.trace flight reports armed collecting and immutable frozen recording")
 {
     Fixture f;
@@ -498,3 +499,16 @@ TEST_CASE("sio.trace flight reports armed collecting and immutable frozen record
     run(*f.provider,{"sio.reset"});
     CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"warming up"));
 }
+
+#endif
+
+#if !FN_ATARI_SIO_FLIGHT
+TEST_CASE("Production SIO diagnostics cannot enable flight recording at runtime")
+{
+    Fixture f;
+    const auto result=run(*f.provider,{"sio.trace","flight"});
+    CHECK(result.status==DiagStatus::InvalidArgs);
+    CHECK(contains(result.text,"not compiled in"));
+    CHECK(run(*f.provider,{"sio.trace"}).status==DiagStatus::Ok);
+}
+#endif

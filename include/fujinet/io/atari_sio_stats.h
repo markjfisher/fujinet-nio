@@ -2,7 +2,15 @@
 
 #include <array>
 #include <cstdint>
+#ifndef FN_ATARI_SIO_FLIGHT
+#define FN_ATARI_SIO_FLIGHT 0
+#endif
+#if FN_ATARI_SIO_FLIGHT != 0 && FN_ATARI_SIO_FLIGHT != 1
+#error "FN_ATARI_SIO_FLIGHT must be 0 or 1"
+#endif
+#if FN_ATARI_SIO_FLIGHT
 #include <memory>
+#endif
 
 namespace fujinet::io {
 
@@ -33,6 +41,7 @@ struct AtariSioEdgeObservation {
     std::uint8_t flags{0}; // bit 0 low, bit 1 filtered, bits 2-3 reply state
 };
 
+#if FN_ATARI_SIO_FLIGHT
 // Heap-owned recording; published snapshots reference it only after freezing.
 // No multi-kilobyte arrays are copied onto the console/SIO task stacks.
 struct AtariSioFlightTrace {
@@ -42,16 +51,22 @@ struct AtariSioFlightTrace {
     std::array<AtariSioEdgeObservation, 16> trigger_edges{};
 };
 
+
+#endif
+
 // What the capture state machine saw, from the UART and the CMD line.
 struct AtariSioCaptureStats {
     using Trace = AtariSioTrace;
     std::array<Trace, 16> trace{};
     std::uint32_t trace_count{0};
+#if FN_ATARI_SIO_FLIGHT
     bool flight_armed{false};
     bool flight_triggered{false};
     std::uint32_t flight_trigger_us{0};
     std::uint8_t flight_trigger_event{0};
     std::shared_ptr<const AtariSioFlightTrace> flight;
+
+#endif
 
     struct AltDecision {
         std::array<std::uint8_t, 5> frame{};
