@@ -147,6 +147,49 @@ tight, so this is how to see what the Atari is doing:
   don't erase the event preceding a stall. Replies record control bytes, size, baud and duration,
   never response payloads. Times are the wrapping 32-bit microsecond clock;
   `sio.reset` clears the trace. This records no network payloads and logs nothing during SIO.
+- `sio.trace flight` — retrieve a **128-event first-failure recording**. It runs
+  without console output, retaining recent history until an active capture abort
+  (edge, timeout, overflow or UART error), ambiguous idle boundary (COMMAND low
+  or multiple edges), or a poll gap of at least 16 ms during which COMMAND edges
+  occurred. A lone idle edge with COMMAND high is not a trigger. These are
+  diagnostic triggers, not proof of a lost application request.
+  After triggering it records up to 16 following events, or one second, then
+  freezes. With a full history this retains 111 preceding events, the trigger,
+  and 16 following events. With less traffic/history it retains fewer. Idle
+  aborts are not coalesced in this recording. `armed`, `collecting` and `frozen`
+  indicate its state. Reads do not rearm it; **`sio.reset` clears and rearms it**.
+  The frozen recording remains unchanged while traffic continues or while it is
+  printed, so there is no need to time the console command to a short pause.
+  Reset during normal application operation to avoid capturing boot probes.
+- Trace metadata now includes `last_edge_us` (latest ISR edge timestamp),
+  `edge_batch` (observed edges consumed at this decision; poll-gap events report
+  the change since the previous poll), and `poll_gap_us` (end-of-previous-poll
+  to start-of-current-poll when COMMAND edges occurred). Event 8 marks a polling
+  gap; event 9 records the early data ACK separately from COMPLETE. `record`
+  indexes identify retained events; the frozen header names the triggering index.
+  Abort `frame=` is the previous/partially collected frame, not necessarily the
+  command lost. A poll-gap event has no command frame. This is metadata, not a
+  logic-analyser capture; multiple edges can occur before a GPIO level is sampled.
+  Shared platform-independent storage/trigger logic is host-tested; physical
+  edge/poll metadata and early ACK instrumentation are ESP32 ingress hooks.
+
+  Hardware capture procedure:
+
+  1. Boot and enter the application, then run `sio.reset` once.
+  2. Let it run without console commands until pauses occur; wait another second.
+  3. Run `sio.trace flight`, then `sio.status`, and save the complete output.
+  4. Repeat with `sio.reset` if necessary. Do not spam live dumps: console output
+     can itself delay polling. A frozen dump can be read repeatedly later.
+
+  The 128-entry recorder is heap-owned (about 5 KiB plus allocation bookkeeping),
+  rather than embedded in the repeatedly copied stats structure. A frozen snapshot
+  shares immutable storage. Reset allocates a new recorder before releasing the
+  old one, so peak reset memory includes two recorders; snapshots held by a caller
+  keep their old recording valid. There is no allocation or logging per event and
+  no additional task. Formatting a dump uses temporary heap text proportional to
+  the bounded 128-event output. The legacy live ring remains 16 entries for small
+  ordinary status snapshots. This changes diagnostics only, not SIO framing,
+  timeout/retry policy, the small-stream protocol or network services.
 - `sio.status` reports buffered bytes discarded from each UART after draining pending events. Bytes
   arriving between that drain and the hardware flush may not be counted; `sio.reset` zeros these counts.
 

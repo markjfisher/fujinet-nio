@@ -114,7 +114,7 @@ public:
             .safe = true,
         });
         out.push_back(DiagCommandSpec{
-            .name = "sio.trace", .summary = "recent SIO frames and capture aborts", .usage = "sio.trace", .safe = true,
+            .name = "sio.trace", .summary = "recent events or frozen first-failure recording", .usage = "sio.trace [flight]", .safe = true,
         });
         if (_probe_baud) {
             out.push_back(DiagCommandSpec{
@@ -173,7 +173,11 @@ public:
         if (cmd == "sio.status") {
             return status();
         }
-        if (cmd == "sio.trace") return trace();
+        if (cmd == "sio.trace") {
+            if (args.argv.size() == 1) return trace(false);
+            if (args.argv.size() == 2 && args.argv[1] == "flight") return trace(true);
+            return DiagResult::invalid_args("usage: sio.trace [flight]");
+        }
         if (cmd == "sio.baud" && _probe_baud) {
             return baud();
         }
@@ -203,27 +207,47 @@ public:
     }
 
 private:
-    DiagResult trace() const
+    DiagResult trace(bool flight) const
     {
         const auto s = _snapshot();
         std::string text;
-        const auto count = s.capture.trace_count;
-        const auto size = static_cast<std::uint32_t>(s.capture.trace.size());
+        if (flight && !s.capture.flight) {
+            return DiagResult::ok(s.capture.flight_triggered
+                ? "flight: triggered; collecting up to 16 following events or 1 second. Read again later.\r\n"
+                : "flight: armed, no failure recorded; capacity 128 events. sio.reset rearms.\r\n");
+        }
+        const auto count = flight ? s.capture.flight->count : s.capture.trace_count;
+        const auto size = static_cast<std::uint32_t>(flight ? s.capture.flight->entries.size() : s.capture.trace.size());
+        if (flight) line(text, "flight: frozen; trigger_us=" + n(s.capture.flight_trigger_us) +
+            " trigger_event=" + n(s.capture.flight_trigger_event) +
+            " trigger_record=" + n(s.capture.flight->trigger_count - 1) +
+            " capacity=128; unchanged until sio.reset");
         const auto first = count > size ? count - size : 0;
-        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7; times are microseconds since boot (wraps)");
+        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7 poll-gap=8 early-ack=9; times are microseconds since boot (wraps)");
         for (auto i = first; i < count; ++i) {
-            const auto& t = s.capture.trace[i % size];
-            if (t.event == 7) {
-                line(text, "us=" + std::to_string(t.time_us) + " event=7 baud=" + std::to_string(t.baud) +
-                     " duration_us=" + std::to_string(t.duration_us) + " length=" + std::to_string(t.pending) +
-                     " first=" + hex2(t.frame[0]) + " second=" + hex2(t.frame[1]));
-                continue;
+            const auto& t = flight ? s.capture.flight->entries[i % size] : s.capture.trace[i % size];
+            std::string row = "us=" + n(t.time_us);
+            row += " event=" + n(t.event);
+            row += " record=" + n(i);
+            if (t.event == 7 || t.event == 9) {
+                row += " baud=" + n(t.baud);
+                row += " duration_us=" + n(t.duration_us);
+                row += " length=" + n(t.pending);
+                row += " first=" + hex2(t.frame[0]);
+                row += " second=" + hex2(t.frame[1]);
+            } else {
+                row += " edges=" + n(t.edges);
+                row += " low=" + n(t.low);
+                row += " collecting=" + n(t.collecting);
+                row += " released=" + n(t.released);
+                row += " used=" + n(t.used);
+                row += " pending=" + n(t.pending);
+                row += " last_edge_us=" + n(t.last_edge_us);
+                row += " edge_batch=" + n(t.edge_batch);
+                row += " poll_gap_us=" + n(t.poll_gap_us);
+                row += " frame=" + frame_text(t.frame);
             }
-            line(text, "us=" + std::to_string(t.time_us) + " event=" + std::to_string(t.event) +
-                 " edges=" + std::to_string(t.edges) + " low=" + std::to_string(t.low) +
-                 " collecting=" + std::to_string(t.collecting) + " released=" + std::to_string(t.released) +
-                 " used=" + std::to_string(t.used) +
-                 " pending=" + std::to_string(t.pending) + " frame=" + frame_text(t.frame));
+            line(text, row);
         }
         return DiagResult::ok(std::move(text));
     }

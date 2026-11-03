@@ -72,12 +72,15 @@ public:
     void poll(AtariSioTransactionBoundary& boundary, Router& router, Uart& uart,
               Asserted asserted, Now now, AltFrame alt_frame)
     {
+        finish_flight(static_cast<std::uint32_t>(now()));
+        _poll_edges = 0;
         const auto abort = [this, &router, &uart, &boundary, &asserted, &now](std::uint32_t AtariSioCaptureStats::* reason) {
             const bool idle_edge = reason == &AtariSioCaptureStats::aborts_edge &&
                                    !_collecting && !router.pending_write_bytes();
-            if (!idle_edge || _stats.trace_count == 0 ||
-                _stats.trace[(_stats.trace_count - 1) % _stats.trace.size()].event != 6) {
-                auto& t = _stats.trace[_stats.trace_count++ % _stats.trace.size()];
+            const bool live = !idle_edge || _stats.trace_count == 0 ||
+                _stats.trace[(_stats.trace_count - 1) % _stats.trace.size()].event != 6;
+            {
+                AtariSioCaptureStats::Trace t{};
                 t.time_us = static_cast<std::uint32_t>(now());
                 t.edges = boundary.total_edges();
                 t.frame = _frame;
@@ -87,6 +90,10 @@ public:
                           reason == &AtariSioCaptureStats::aborts_overflow ? 4 : 5;
                 t.used = static_cast<std::uint8_t>(_frame_used);
                 t.low = asserted(); t.collecting = _collecting; t.released = _released;
+                t.last_edge_us = boundary.last_edge_us();
+                t.edge_batch = _poll_edges;
+                t.poll_gap_us = _poll_gap_us;
+                record_trace(t, live);
             }
             ++(_stats.*reason);
             if (_collecting) ++_stats.frames_lost;
@@ -121,6 +128,7 @@ public:
             return;
         }
         std::uint32_t edges = boundary.consume();
+        _poll_edges = edges;
         const bool low = asserted();
         if (_ignore_write_glitches && edges != 0 && !low && !_collecting && router.pending_write_bytes()) {
             _stats.write_glitches_ignored += edges;
@@ -180,6 +188,7 @@ public:
             _stats.rx_bytes += static_cast<std::uint32_t>(count);
             const bool rx_error = uart.rx_errors() != _rx_errors;
             std::uint32_t seen = boundary.consume();
+            _poll_edges += seen;
             const bool low_now = asserted();
             if (_ignore_write_glitches && seen != 0 && !low_now && !low && !_collecting &&
                 router.pending_write_bytes()) {
@@ -209,7 +218,9 @@ public:
         }
         if (_collecting && edges == 1 && !low) _released = true;
         if (_collecting && _released && _frame_used == _frame.size()) {
-            if (boundary.consume() != 0 || asserted()) {
+            const auto final_edges = boundary.consume();
+            _poll_edges += final_edges;
+            if (final_edges != 0 || asserted()) {
                 abort(&AtariSioCaptureStats::aborts_edge);
                 return;
             }
@@ -230,31 +241,74 @@ public:
     std::uint32_t processing_start_us() const noexcept { return _processing_start_us; }
     std::uint32_t processing_release_us() const noexcept { return _processing_release_us; }
     bool processing_command() const noexcept { return _processing_command; }
-    void reset_stats() noexcept { _stats = {}; }
+    void reset_stats() {
+        // Allocate before replacing the recorder, so old frozen readers retain
+        // a stable image. Allocation never occurs in the hot recording path.
+        auto fresh = std::make_shared<AtariSioFlightTrace>();
+        _stats = {}; _flight = std::move(fresh); _poll_gap_us = 0;
+    }
+    void trace_poll_gap(std::uint32_t time, std::uint32_t gap,
+                        const AtariSioTransactionBoundary& boundary, bool low, std::uint32_t batch = 0) noexcept {
+        _poll_gap_us = gap;
+        finish_flight(time);
+        if (gap < 16000) return;
+        AtariSioCaptureStats::Trace t{};
+        t.time_us=time; t.event=8; t.poll_gap_us=gap; t.edge_batch=batch;
+        t.edges=boundary.total_edges(); t.last_edge_us=boundary.last_edge_us();
+        t.low=low; t.collecting=_collecting; t.released=_released;
+        record_trace(t);
+    }
     // Metadata only: never retain a response body in diagnostics.
     void trace_reply(std::uint32_t time, std::uint32_t duration, std::uint32_t baud,
-                     std::uint16_t length, std::uint8_t first, std::uint8_t second) noexcept
+                     std::uint16_t length, std::uint8_t first, std::uint8_t second, bool early = false) noexcept
     {
-        auto& t = _stats.trace[_stats.trace_count++ % _stats.trace.size()];
+        AtariSioCaptureStats::Trace t{};
         t = {};
         t.time_us = time; t.duration_us = duration; t.baud = baud;
-        t.event = 7; t.pending = length; t.frame[0] = first; t.frame[1] = second;
+        t.event = early ? 9 : 7; t.pending = length; t.frame[0] = first; t.frame[1] = second;
+        record_trace(t);
     }
     // Command frames in a row that could not be read. The ingress uses it to leave high-speed SIO.
     std::uint32_t bad_frames_in_a_row() const noexcept { return _bad_frames_in_a_row; }
     void clear_bad_frames() noexcept { _bad_frames_in_a_row = 0; }
 private:
+    std::shared_ptr<AtariSioFlightTrace> _flight = std::make_shared<AtariSioFlightTrace>();
+    std::uint32_t _poll_edges{0}, _poll_gap_us{0};
+    void finish_flight(std::uint32_t time) noexcept {
+        if (_stats.flight_triggered && !_stats.flight &&
+            (time - _stats.flight_trigger_us >= 1000000 ||
+             _flight->count - _flight->trigger_count >= 16))
+            _stats.flight = _flight;
+    }
+    void record_trace(const AtariSioCaptureStats::Trace& t, bool live = true) noexcept {
+        if (live) _stats.trace[_stats.trace_count++ % _stats.trace.size()] = t;
+        finish_flight(t.time_us);
+        if (_stats.flight) return;
+        _flight->entries[_flight->count++ % _flight->entries.size()] = t;
+        const bool failure = (t.event >= 2 && t.event <= 5) ||
+            (t.event == 6 && (t.low || t.edge_batch > 1)) || t.event == 8;
+        if (!_stats.flight_triggered && failure) {
+            _stats.flight_triggered = true;
+            _stats.flight_trigger_us = t.time_us;
+            _stats.flight_trigger_event = t.event;
+            _flight->trigger_count = _flight->count;
+        }
+        finish_flight(t.time_us);
+    }
     // Hands the complete command frame in `_frame` to the router and starts timing its reply.
     template<class Router, class Now>
     void dispatch_frame(AtariSioTransactionBoundary& boundary, Router& router, Now now)
     {
-        auto& t = _stats.trace[_stats.trace_count++ % _stats.trace.size()];
+        AtariSioCaptureStats::Trace t{};
         t = {};
         t.time_us = static_cast<std::uint32_t>(now());
         t.edges = boundary.total_edges();
         t.frame = _frame;
         t.event = 1;
         t.used = 5;
+        t.last_edge_us = boundary.last_edge_us(); t.edge_batch = _poll_edges;
+        t.poll_gap_us = _poll_gap_us;
+        record_trace(t);
         ++_stats.frames;
         const auto start = static_cast<std::uint32_t>(now());
         if (_stats.frames == 1) _stats.first_frame_us = start;

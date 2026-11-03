@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 namespace fujinet::io {
 
@@ -17,18 +18,34 @@ struct AtariSioBadFrame {
     std::array<std::uint8_t, 5> bytes{};
 };
 
+struct AtariSioTrace {
+    std::uint32_t time_us{0}, edges{0};
+    std::uint32_t last_edge_us{0}, edge_batch{0}, poll_gap_us{0};
+    std::uint32_t duration_us{0}, baud{0};
+    std::array<std::uint8_t, 5> frame{};
+    std::uint16_t pending{0};
+    std::uint8_t event{0}, used{0};
+    bool low{false}, collecting{false}, released{false};
+};
+
+// Heap-owned recording; published snapshots reference it only after freezing.
+// No multi-kilobyte arrays are copied onto the console/SIO task stacks.
+struct AtariSioFlightTrace {
+    static constexpr std::size_t capacity = 128;
+    std::array<AtariSioTrace, capacity> entries{};
+    std::uint32_t count{0}, trigger_count{0};
+};
+
 // What the capture state machine saw, from the UART and the CMD line.
 struct AtariSioCaptureStats {
-    struct Trace {
-        std::uint32_t time_us{0}, edges{0};
-        std::uint32_t duration_us{0}, baud{0};
-        std::array<std::uint8_t, 5> frame{};
-        std::uint16_t pending{0};
-        std::uint8_t event{0}, used{0};
-        bool low{false}, collecting{false}, released{false};
-    };
+    using Trace = AtariSioTrace;
     std::array<Trace, 16> trace{};
     std::uint32_t trace_count{0};
+    bool flight_triggered{false};
+    std::uint32_t flight_trigger_us{0};
+    std::uint8_t flight_trigger_event{0};
+    std::shared_ptr<const AtariSioFlightTrace> flight;
+
     struct AltDecision {
         std::array<std::uint8_t, 5> frame{};
         std::uint32_t edges{0};

@@ -639,3 +639,70 @@ TEST_CASE("Atari SIO capture can ignore CMD glitches while a write waits for its
         }
     }
 }
+
+TEST_CASE("SIO flight recording retains prehistory and freezes after sixteen following events")
+{
+    using namespace fujinet::io;
+    AtariSioCapture capture;
+    AtariSioTransactionBoundary boundary;
+    for (unsigned i=0;i<140;++i) capture.trace_reply(1000+i, 10, 19200, 1, 'A', 0);
+    boundary.note_cmd_edge(180000);
+    capture.trace_poll_gap(200000,20000,boundary,true,1);
+    CHECK(capture.stats().flight_triggered);
+    CHECK_FALSE(capture.stats().flight);
+    for (unsigned i=0;i<15;++i) capture.trace_reply(200001+i,10,19200,1,'C',0);
+    CHECK_FALSE(capture.stats().flight);
+    capture.trace_reply(200016,10,19200,1,'A',0,true);
+    const auto saved=capture.stats().flight;
+    REQUIRE(saved);
+    CHECK(saved->count==157);
+    CHECK(saved->trigger_count==141);
+    const auto& trigger=saved->entries[140%128];
+    CHECK(trigger.event==8);
+    CHECK(trigger.last_edge_us==180000);
+    CHECK(trigger.poll_gap_us==20000);
+    CHECK(trigger.edge_batch==1);
+    CHECK(saved->entries[156%128].event==9);
+    CHECK(saved->entries[29].time_us==1029); // oldest of 128 retained records
+    for (unsigned i=0;i<200;++i) capture.trace_reply(300000+i,10,19200,1,'C',0);
+    CHECK(saved->count==157);
+    CHECK(saved->entries[29].time_us==1029);
+    capture.reset_stats();
+    CHECK_FALSE(capture.stats().flight);
+    CHECK_FALSE(capture.stats().flight_triggered);
+    CHECK(saved->count==157); // old snapshots survive reset without mutation
+}
+
+TEST_CASE("SIO flight recording freezes on elapsed time with clock wrap and no later traffic")
+{
+    using namespace fujinet::io;
+    AtariSioCapture capture;
+    AtariSioTransactionBoundary boundary;
+    capture.trace_poll_gap(0xfffffff0U,15999,boundary,false);
+    CHECK_FALSE(capture.stats().flight_triggered);
+    capture.trace_poll_gap(0xfffffff0U,16000,boundary,false);
+    capture.trace_poll_gap(999983,0,boundary,false);
+    CHECK_FALSE(capture.stats().flight);
+    capture.trace_poll_gap(999984,0,boundary,false);
+    REQUIRE(capture.stats().flight);
+    CHECK(capture.stats().flight->count==1);
+}
+
+TEST_CASE("SIO flight recording triggers on ambiguous idle CMD edges with boundary metadata")
+{
+    using namespace fujinet::io;
+    AtariSioCapture capture;
+    AtariSioTransactionBoundary boundary;
+    CaptureUart uart;
+    CaptureRouter router;
+    boundary.note_cmd_edge(100);boundary.note_cmd_edge(200);
+    capture.poll(boundary,router,uart,[]{return false;},[]{return 300;});
+    CHECK(capture.stats().flight_triggered);
+    CHECK(capture.stats().flight_trigger_event==6);
+    capture.trace_poll_gap(1000300,0,boundary,false);
+    REQUIRE(capture.stats().flight);
+    const auto& t=capture.stats().flight->entries[0];
+    CHECK(t.event==6);CHECK(t.edge_batch==2);CHECK(t.last_edge_us==200);
+    CHECK_FALSE(t.low);
+    CHECK(t.used==0);
+}

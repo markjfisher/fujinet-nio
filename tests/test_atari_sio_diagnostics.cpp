@@ -469,3 +469,28 @@ TEST_CASE("sio.proc is absent without the callbacks, and says so on a board with
     CHECK(contains(run(*nopin, {"sio.status"}).text, "this board maps no PROC pin"));
     CHECK(run(*nopin, {"sio.proc", "low"}).status != fujinet::diag::DiagStatus::Ok);
 }
+
+TEST_CASE("sio.trace flight reports armed collecting and immutable frozen recording")
+{
+    Fixture f;
+    CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"armed"));
+    f.stats.capture.flight_triggered=true;
+    CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"collecting"));
+    auto saved=std::make_shared<fujinet::io::AtariSioFlightTrace>();
+    saved->count=130;saved->trigger_count=114;
+    saved->entries[2].time_us=42;saved->entries[2].event=8;
+    saved->entries[2].poll_gap_us=20000;
+    saved->entries[1].time_us=99;saved->entries[1].event=9;
+    f.stats.capture.flight=saved;
+    const auto a=run(*f.provider,{"sio.trace","flight"});
+    REQUIRE(a.status==DiagStatus::Ok);
+    CHECK(contains(a.text,"capacity=128"));
+    CHECK(contains(a.text,"trigger_record=113"));
+    CHECK(contains(a.text,"poll_gap_us=20000"));
+    CHECK(a.text.find("us=42")<a.text.find("us=99"));
+    f.stats.capture.trace_count=1; // live traffic cannot replace frozen output
+    CHECK(run(*f.provider,{"sio.trace","flight"}).text==a.text);
+    CHECK(run(*f.provider,{"sio.trace","typo"}).status==DiagStatus::InvalidArgs);
+    run(*f.provider,{"sio.reset"});
+    CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"armed"));
+}
