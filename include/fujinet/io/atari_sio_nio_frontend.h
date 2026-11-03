@@ -2,6 +2,8 @@
 
 #include "fujinet/io/core/request_handler.h"
 
+#include "fujinet/io/stream/session.h"
+#include <memory>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -90,6 +92,9 @@ private:
     std::function<void()> _early_ack;
     std::vector<std::uint8_t> _response;
     std::uint16_t _last_read_length{0};
+    std::unique_ptr<stream::Session> _stream;
+    bool _stream_write{false};
+    std::vector<std::uint8_t> _stream_reply;
 };
 
 } // namespace fujinet::io

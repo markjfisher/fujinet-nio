@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 
+from . import streamproto
 from . import file as file_cmds
 from . import clock as clock_cmds
 from . import fuji as fuji_cmds
@@ -34,6 +35,7 @@ def main() -> None:
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    streamproto.register_subcommands(sub)
     file_cmds.register_subcommands(sub)
     clock_cmds.register_subcommands(sub)
     fuji_cmds.register_subcommands(sub)

@@ -74,6 +74,21 @@ AtariSioNioFrontend::Result AtariSioNioFrontend::begin(
 
     const auto length = aux(command);
     switch (command[1]) {
+    case 's':
+        if(length || _state==State::Receiving) return reject();
+        if(!_stream) _stream=std::make_unique<stream::Session>(_handler,this);
+        return data_reply(_stream->query());
+    case 'S':
+        drop_stale_reply();
+        if(!_stream || _state!=State::Idle || length<stream::Session::header ||
+           length>stream::Session::header+stream::Session::max_data) return reject();
+        _stream_write=true; _state=State::Receiving; _write_bytes=length;
+        return Result{{ack},length,true};
+    case 'T':
+        if(_stream_reply.empty() || length<_stream_reply.size() ||
+           length>stream::Session::header+stream::Session::max_data) return reject();
+        { auto reply=_stream_reply; reply.resize(length,0); return data_reply(reply); }
+
     case command_hsio_index: {
         // Stateless: it does not touch a transaction in progress. Off: NAK, as for any unknown command.
         if (_hsio_index < 0) return reject();
@@ -145,6 +160,13 @@ AtariSioNioFrontend::Result AtariSioNioFrontend::complete_write(const std::uint8
         return reject();
     }
 
+    if(_stream_write) {
+        const bool early=static_cast<bool>(_early_ack);
+        if(early) _early_ack();
+        _stream_reply=_stream->execute({data,data+_write_bytes});
+        _stream_write=false; _state=State::Idle; _write_bytes=0;
+        return early ? Result{{complete},0,true} : Result{{ack,complete},0,true};
+    }
     protocol::ByteBuffer raw(data, data + _write_bytes);
     IORequest request;
     if (!protocol::decode_fujibus_request(raw, _next_request_id, request)) {
@@ -194,6 +216,7 @@ void AtariSioNioFrontend::abort_write()
 void AtariSioNioFrontend::reset()
 {
     _state = State::Idle;
+    _stream_write = false;
     _write_bytes = 0;
     _response.clear();
     _last_read_length = 0;
@@ -202,6 +225,8 @@ void AtariSioNioFrontend::reset()
 void AtariSioNioFrontend::reset_host()
 {
     reset();
+    _stream.reset();
+    _stream_reply.clear();
     _handler.resetClient(protocol::to_device_id(protocol::WireDeviceId::NetworkService), this);
 }
 

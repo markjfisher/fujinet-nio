@@ -11,12 +11,12 @@ namespace fujinet::io::stream {
 // One slot per stream, owned by the cooperative service loop (not thread safe).
 // A successor request implicitly acknowledges the previous result. The caller
 // must validate the session token before consulting this slot.
-template<std::size_t RequestCapacity, std::size_t ResultCapacity>
+template<std::size_t RequestCapacity, std::size_t ResultCapacity, typename Sequence = std::uint16_t>
 class ReplaySlot {
 public:
     enum class Decision { Execute, Replay, Reject };
 
-    Decision inspect(std::uint16_t sequence, const std::uint8_t* bytes,
+    Decision inspect(Sequence sequence, const std::uint8_t* bytes,
                      std::size_t size) const noexcept
     {
         if (size > RequestCapacity || (size && !bytes)) return Decision::Reject;
@@ -29,8 +29,8 @@ public:
         }
         // Never wrap a sequence within a session: delayed packets must not
         // acquire a new meaning after 65536 operations. Renew the session.
-        return _sequence != std::numeric_limits<std::uint16_t>::max() &&
-               sequence == static_cast<std::uint16_t>(_sequence + 1)
+        return _sequence != std::numeric_limits<Sequence>::max() &&
+               sequence == static_cast<Sequence>(_sequence + 1)
             ? Decision::Execute : Decision::Reject;
     }
 
@@ -38,7 +38,7 @@ public:
     // that has received would-block issues a NEW sequence to try again; a lost
     // would-block reply is replayed, not re-evaluated against changing state.
     // Validate result capacity BEFORE performing any irreversible operation.
-    bool commit(std::uint16_t sequence, const std::uint8_t* request,
+    bool commit(Sequence sequence, const std::uint8_t* request,
                 std::size_t requestSize, const std::uint8_t* result,
                 std::size_t resultSize) noexcept
     {
@@ -62,7 +62,7 @@ private:
     std::array<std::uint8_t, RequestCapacity> _request{};
     std::array<std::uint8_t, ResultCapacity> _result{};
     std::size_t _requestSize{0}, _resultSize{0};
-    std::uint16_t _sequence{0};
+    Sequence _sequence{0};
     bool _valid{false};
 };
 

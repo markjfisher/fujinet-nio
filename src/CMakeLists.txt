@@ -16,6 +16,7 @@ set(FN_IDF_SOURCES
         lib/atari_sio_disk_frontend.cpp
         lib/atari_sio_ingress_router.cpp
         lib/atari_sio_nio_frontend.cpp
+        lib/stream_session.cpp
         lib/boot_mount.cpp
         lib/bootstrap.cpp
         platform/esp32/build_profile.cpp

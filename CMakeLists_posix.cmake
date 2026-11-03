@@ -139,6 +139,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/atari_sio_disk_frontend.cpp
         src/lib/atari_sio_ingress_router.cpp
         src/lib/atari_sio_nio_frontend.cpp
+        src/lib/stream_session.cpp
         src/lib/boot_mount.cpp
         src/lib/bootstrap.cpp
         # build_profile/*.cpp selected below via if/elseif/else
