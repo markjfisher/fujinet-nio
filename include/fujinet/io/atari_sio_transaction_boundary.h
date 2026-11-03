@@ -83,6 +83,19 @@ public:
         const auto after = slot.version.load(std::memory_order_seq_cst);
         return before == last * 2 && before == after && (flags & 3) == 0;
     }
+    bool high_pair_after(std::uint32_t sequence) const noexcept {
+        const auto last = observed_sequence();
+        if (last - sequence != 2) return false;
+        const auto& first = _observations[(last - 1) % _observations.size()];
+        const auto& second = _observations[last % _observations.size()];
+        const auto fv = first.version.load(std::memory_order_seq_cst);
+        const auto sv = second.version.load(std::memory_order_seq_cst);
+        const auto ff = first.flags.load(std::memory_order_seq_cst);
+        const auto sf = second.flags.load(std::memory_order_seq_cst);
+        return fv == (last - 1) * 2 && sv == last * 2 && ff == 0 && sf == 0 &&
+            first.version.load(std::memory_order_seq_cst) == fv &&
+            second.version.load(std::memory_order_seq_cst) == sv && observed_sequence() == last;
+    }
     bool idle_high_then_low() const noexcept {
         const auto last = observed_sequence();
         if (last < 2) return false;
@@ -299,6 +312,14 @@ public:
             trace_boundary(16, now(), boundary, low, edges);
             edges = 1;
         }
+        // Equivalent to processing release then event-14 noise in two polls.
+        // Require the entire ISR sequence since this command's assertion:
+        // two unfiltered highs, with no intervening low or missing history.
+        if (edges == 2 && !low && _collecting && !_released &&
+            boundary.high_pair_after(_release_irq_sequence)) {
+            trace_boundary(18, now(), boundary, low, edges);
+            edges = 1;
+        }
         if (edges > 1 || (edges == 1 && (low == _collecting || _released))) {
             abort(&AtariSioCaptureStats::aborts_edge);
             return;
@@ -309,6 +330,7 @@ public:
             _write_started_us = 0;
             _collecting = true;
             _released = false;
+            _release_irq_sequence = boundary.observed_sequence();
             _started_us = now();
             trace_boundary(11, _started_us, boundary, low, edges);
         }

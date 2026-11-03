@@ -1033,3 +1033,52 @@ TEST_CASE("New assertion during idle-high abort cleanup remains queued for captu
     CHECK(capture.stats().frames==1);
     CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x53,0x11,0,0xe3});
 }
+
+TEST_CASE("Command release and repeated high deliver identically in one or two polls")
+{
+    using namespace fujinet::io;
+    for (const unsigned spacing : {121,409}) for (const bool batched : {false,true}) {
+        AtariSioTransactionBoundary boundary;
+        AtariSioCapture capture;
+        CaptureUart uart;
+        CaptureRouter router;
+        boundary.note_bus_edge(1000,true);
+        capture.poll(boundary,router,uart,[]{return true;},[]{return 1100;});
+        boundary.note_bus_edge(5430,false);
+        if (!batched) capture.poll(boundary,router,uart,[]{return false;},[]{return 5500;});
+        boundary.note_bus_edge(5430+spacing,false);
+        uart.driver={0x7f,0x53,0x11,0,0xe3};
+        capture.poll(boundary,router,uart,[]{return false;},[]{return 6000;});
+        CHECK(capture.stats().frames==1);
+        CHECK(capture.stats().aborts_edge==0);
+        CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x53,0x11,0,0xe3});
+    }
+}
+
+TEST_CASE("Batched release recovery rejects intervening lows missing history and malformed input")
+{
+    using namespace fujinet::io;
+    for (unsigned scenario=0;scenario<5;++scenario) {
+        AtariSioTransactionBoundary boundary;
+        AtariSioCapture capture;
+        CaptureUart uart;
+        CaptureRouter router;
+        boundary.note_bus_edge(1000,true);
+        capture.poll(boundary,router,uart,[]{return true;},[]{return 1100;});
+        if (scenario==0) boundary.note_bus_edge(5000,true);
+        else if (scenario==1) boundary.note_cmd_edge(5000);
+        else boundary.note_bus_edge(5000,false);
+        if (scenario==1) boundary.note_cmd_edge(5400);
+        else boundary.note_bus_edge(5400,false);
+        uart.driver={0x7f,0x53,0x11,0,0xe3};
+        if (scenario==2) uart.driver.push_back(0);
+        if (scenario==3) ++uart.errors;
+        capture.poll(boundary,router,uart,[]{return false;},[&]{return scenario==4 ? 52000 : 6000;});
+        CHECK(capture.stats().frames==0);
+        CHECK(router.command.empty());
+        if (scenario<2) CHECK(capture.stats().aborts_edge==1);
+        if (scenario==2) CHECK(capture.stats().aborts_overflow==1);
+        if (scenario==3) CHECK(capture.stats().aborts_rx_error==1);
+        if (scenario==4) CHECK(capture.stats().aborts_timeout==1);
+    }
+}

@@ -232,6 +232,13 @@ tight, so this is how to see what the Atari is doing:
   retroactively turn the old idle-high observation into a low abort (min-011).
   Event 6 still counts the idle
   observation; that counter alone does not mean an application command was lost.
+  Event 18 handles release plus one repeated high arriving in the same poll
+  (min-012/min-013). While collecting an unreleased command, exactly two pending
+  edges may become one release only when the complete IRQ sequence since its
+  assertion consists of those two unfiltered high observations outside replies.
+  This gives the same delivery as release and event 14 in separate polls. A low
+  observation, missing history, extra edge, or expired command deadline still
+  rejects the command; frame-size and UART-error checks remain active.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a
   logic-analyser capture; multiple edges can occur before a GPIO level is sampled.
