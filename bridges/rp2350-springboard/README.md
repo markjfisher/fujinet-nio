@@ -168,7 +168,12 @@ one 32-bit snapshot; `src/bus.h` defines how a CS1 write is decoded from it.
   Raspberry Pi's reset interface, so `picotool load -f` needs no BOOTSEL
   button.
 
-The firmware is copied to RAM at boot and runs at 150 MHz.
+The firmware is copied to RAM at boot and runs at 150 MHz. The packet-link
+controller owns an 8 KiB request snapshot so a new Palm upload cannot change
+an in-flight request or retry. In comparable builds using a 64 KiB test ROM,
+that change increased static BSS from 219,688 to 227,876 bytes (8,188 bytes;
+the previous pointer was removed). These figures are build-specific. This RAM
+is on the RP2350 bridge, not the ESP32 running NIO.
 
 ## Reproducible setup
 

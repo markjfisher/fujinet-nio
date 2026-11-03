@@ -168,6 +168,14 @@ channel:
     record_timeout_ms: 0   # 0 = automatic (100 ms UART/serial, 1000 ms TCP)
 ```
 
+The active link reserves a receive buffer of its configured capacity plus
+record overhead, and the native framer allocates another capacity-sized packet
+buffer. At the default capacity these account for about 8 KiB together, before
+packet copies, responses and allocator overhead. Raising the capacity increases
+both allocations; on an ESP32 inspect `core.mem` for internal RAM and PSRAM
+headroom. These buffers belong to the NIO instance using the packet link; the
+Springboard bridge has its own separate RP2350 memory budget.
+
 ### Console
 
 The `link` diagnostics provider is registered when the channel is a packet

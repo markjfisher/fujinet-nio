@@ -92,6 +92,11 @@ hotsync.fetch http://192.168.1.5:8000/FujiNetTest.prc     # on the FujiNet conso
 `hotsync.fetch` takes plain `http://` only (no TLS, no redirects) and a name
 ending in `.prc`, `.pdb` or `.pqa`, from the URL or given as a second argument.
 The file lands in `incoming/` first and moves to `install/` when complete.
+The command currently performs the download synchronously on the console/core
+loop. A slow server or DNS lookup can therefore delay FujiBus requests from
+any client sharing that loop, even though the HotSync *sync* itself runs on a
+separate task. The HTTP read timeout applies to each wait, not to the entire
+download. Moving fetch work off the core loop is an open follow-up.
 
 Give it the file's SHA-256 and it queues the download only if it matches:
 
@@ -100,15 +105,31 @@ shasum -a 256 FujiNetTest.prc                   # on the computer
 hotsync.fetch http://192.168.1.5:8000/FujiNetTest.prc sha256=<the 64 hex digits>
 ```
 
-A database larger than 1 MB is neither installed nor backed up, so it never
-has to be held in memory. On ESP32 buffers that large come from PSRAM. A file
-to install is checked before anything is copied out of it: each of its blocks
-must start after the entry list and within the file, and runs to the next
-block's start, so blocks never overlap and the data parsed out of a file is
-never larger than the file, however many entries it claims or where they
-point.
+A database larger than 1 MiB is neither installed nor backed up. This limits
+the database, **not peak memory usage**: during installation the source file
+and its parsed data can coexist; during backup the parsed database and its
+serialized output can coexist. `hotsync.fetch` also holds the HTTP reply and
+a copy of its body. A fetch from the console can overlap a sync on the service
+task, so their allocations may be live at the same time. Vector capacity,
+record metadata and network buffers add overhead; peak heap use has not been
+measured for a near-limit database or concurrent fetch and sync.
 
-Nothing is half-written where a reader looks for it. Downloads go to
+On ESP32, where these allocations land depends on the build's allocator and
+available internal RAM and PSRAM; PSRAM is not an unconditional guarantee.
+The service task also allocates an 8 KiB stack in internal RAM when it starts. Use `core.mem` to inspect internal and PSRAM free space, low-water
+marks and largest blocks, and `hotsync.status` for the service task's stack
+low-water mark. The heap low-water marks are since boot, so capture them before
+and during representative syncs as well as after; the stack reading is for the
+HotSync task, whereas `core.mem` reports the calling task's stack.
+
+A file to install is checked before anything is copied out of it: each of its
+blocks must start after the entry list and within the file, and runs to the
+next block's start, so blocks never overlap and the data parsed out of a file
+is never larger than the file, however many entries it claims or where they
+point. This structural check does not establish that the producer has finished
+writing the file; see the open queue-completion question below.
+
+For files written by HotSync itself, downloads go to
 `incoming/` first, and a backup is written as `<name>.new` beside the old one;
 each is renamed into place only once complete and flushed. A file being
 replaced stays until its replacement is in place: `rename()` replaces a file
@@ -133,25 +154,27 @@ sharing it:
   `installing/`: from then on the file is the sync's, a file queued under the
   same name is a new one for the next sync, and what reaches `installed/` is
   always what the Palm received.
-- A client may still be writing a file in `install/`. A sync claims a file
-  only once it reads as a whole Palm database, and leaves it queued until
-  then: renaming a file out from under its writer is not safe on FatFs, which
-  this firmware builds without file locking (`CONFIG_FATFS_FS_LOCK=0`).
-  FileDevice opens and closes the file for each write, and another task sees
-  only what has been closed, so a client that writes the header last (FI
-  Config writes the first entry's offset last) is never claimed part way.
-  `hotsync.fetch` writes to `incoming/` and renames, for this reason; any
-  other FileDevice client should copy to another name and rename, or write
-  the file's header last. A client that writes a file front to back, header
-  first, can have it claimed, or installed cut short, before it finishes.
+- A client may still be writing a file in `install/`. The current sync checks
+  that the file parses before claiming it, but that cannot prove completeness:
+  a file with a valid header and a partially written final block can parse.
+  Claiming such a file can install a truncated database or move it while its
+  writer is still using it. This is especially relevant to FatFs, which this
+  firmware builds without file locking (`CONFIG_FATFS_FS_LOCK=0`).
+
+  **Open:** the completion/publication contract for direct uploads is being
+  discussed with Andy. Update this note when that is resolved; do not assume a
+  new marker or client protocol is in effect. `hotsync.fetch` writes into
+  `incoming/` and renames the completed download into the queue. Writers
+  putting files directly into `install/` should avoid overlapping a sync.
 - A directory listing taken during a sync may or may not show the files it
   adds.
 
 `tests/test_hotsync.cpp` runs 100 syncs while another thread writes, reads,
 lists and removes files on the same filesystem, queues a file under the name a
-sync is installing, leaves a file still being written alone, and fails
-backup writes at each stage, also with FatFs's non-replacing rename. These run
-on POSIX; on ESP32 the same guarantee rests on the FatFs and LittleFS locking
+sync is installing, rejects a file with an incomplete header, and fails
+backup writes at each stage, also with FatFs's non-replacing rename. The
+incomplete-header test does not prove that every unfinished upload is rejected.
+These tests run on POSIX; on ESP32 the same guarantee rests on the FatFs and LittleFS locking
 described in `fs::IFileSystem`, which has no automated test.
 
 ## Security
@@ -333,8 +356,10 @@ sync that backed up ten databases: a sync uses about 4 KB of the task's 8 KB.
     the line directly; a rate they set while the line is lent is kept when it
     comes back.
   - On POSIX, where `main` returns, the runtime stops the service task and
-    waits for it before the coordinator goes; the cradle's line is closed
-    first, so a cradle sync in progress ends at once.
+    waits for it before releasing its dependencies. Closing the cradle line
+    interrupts a cradle sync; NetSync reads and writes check the stop request
+    while polling. Other work, such as filesystem operations or name resolution,
+    is not necessarily interruptible, so shutdown may wait for it to finish.
 - `HotSyncService` listens for NetSync through `net::ITcpSocketOps` and runs
   the cradle windows, one sync at a time. A sync waits on the Palm for seconds
   at a time and runs for minutes, so the service runs on a task of its own

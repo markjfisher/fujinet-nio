@@ -331,6 +331,27 @@ Diagram source:
 Rendered SVG:
 [`seq_atari_fujibus_paths`](https://markjfisher.github.io/fujinet-nio/uml/seq_atari_fujibus_paths.svg).
 
+### Shared FujiBus changes for the Palm cradle
+
+HotSync cradle sharing adds an optional `IBusLineCoordinator` to the common
+FujiBus SLIP transport and byte/partial-frame reporting to `IFramer` and
+`SlipFramer`. When cradle sharing is off, no coordinator is passed: the
+transport retains its normal request decoding and wire protocol, although the
+SLIP framer still counts bytes. Native packet transports do not use this
+coordinator. The C++ interfaces changed, so embedders of the firmware library
+should rebuild; this does not change the FujiBus wire format or require a new
+Amiga, BBC or other FujiBus client. The shared configuration now reads and
+writes a `hotsync:` block even on builds that omit the service; its default
+`enabled: false` does not start it.
+
+HotSync and cradle sharing are disabled by default. On a supported serial line,
+enabling cradle sharing changes line availability for every client on that
+line, including non-Palm clients; see [HotSync cradle sharing](hotsync.md#cradle).
+Separately, the `hotsync.fetch` console command currently waits for HTTP on the
+core loop and can delay other clients even without cradle sharing. The packet
+link profiles and the independent Springboard bridge do not enable HotSync on
+other profiles.
+
 ### POSIX RS-232 serial channel
 
 The POSIX `SerialChannel` is a raw byte channel for FujiBus over a local serial
