@@ -214,6 +214,7 @@ private:
         if (flight && !s.capture.flight) {
             return DiagResult::ok(s.capture.flight_triggered
                 ? "flight: triggered; collecting up to 16 following events or 1 second. Read again later.\r\n"
+                : !s.capture.flight_armed ? "flight: warming up (2 seconds and 32 history events required).\r\n"
                 : "flight: armed, no failure recorded; capacity 128 events. sio.reset rearms.\r\n");
         }
         const auto count = flight ? s.capture.flight->count : s.capture.trace_count;
@@ -223,7 +224,7 @@ private:
             " trigger_record=" + n(s.capture.flight->trigger_count - 1) +
             " capacity=128; unchanged until sio.reset");
         const auto first = count > size ? count - size : 0;
-        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7 poll-gap=8 early-ack=9; times are microseconds since boot (wraps)");
+        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7 poll-gap=8 early-ack=9 edge-batch=10 capture-start=11 capture-release=12; times are microseconds since boot (wraps)");
         for (auto i = first; i < count; ++i) {
             const auto& t = flight ? s.capture.flight->entries[i % size] : s.capture.trace[i % size];
             std::string row = "us=" + n(t.time_us);

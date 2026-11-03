@@ -72,7 +72,7 @@ public:
     void poll(AtariSioTransactionBoundary& boundary, Router& router, Uart& uart,
               Asserted asserted, Now now, AltFrame alt_frame)
     {
-        finish_flight(static_cast<std::uint32_t>(now()));
+        advance_flight(static_cast<std::uint32_t>(now()));
         _poll_edges = 0;
         const auto abort = [this, &router, &uart, &boundary, &asserted, &now](std::uint32_t AtariSioCaptureStats::* reason) {
             const bool idle_edge = reason == &AtariSioCaptureStats::aborts_edge &&
@@ -130,6 +130,7 @@ public:
         std::uint32_t edges = boundary.consume();
         _poll_edges = edges;
         const bool low = asserted();
+        if (edges) trace_boundary(10, now(), boundary, low, edges);
         if (_ignore_write_glitches && edges != 0 && !low && !_collecting && router.pending_write_bytes()) {
             _stats.write_glitches_ignored += edges;
             edges = 0;
@@ -177,6 +178,7 @@ public:
             _collecting = true;
             _released = false;
             _started_us = now();
+            trace_boundary(11, _started_us, boundary, low, edges);
         }
         if (_collecting && now() - _started_us > 50000) {
             abort(&AtariSioCaptureStats::aborts_timeout);
@@ -190,6 +192,7 @@ public:
             std::uint32_t seen = boundary.consume();
             _poll_edges += seen;
             const bool low_now = asserted();
+            if (seen) trace_boundary(10, now(), boundary, low_now, seen);
             if (_ignore_write_glitches && seen != 0 && !low_now && !low && !_collecting &&
                 router.pending_write_bytes()) {
                 _stats.write_glitches_ignored += seen;
@@ -216,10 +219,14 @@ public:
             abort(&AtariSioCaptureStats::aborts_rx_error);
             return;
         }
-        if (_collecting && edges == 1 && !low) _released = true;
+        if (_collecting && edges == 1 && !low) {
+            _released = true;
+            trace_boundary(12, now(), boundary, low, edges);
+        }
         if (_collecting && _released && _frame_used == _frame.size()) {
             const auto final_edges = boundary.consume();
             _poll_edges += final_edges;
+            if (final_edges) trace_boundary(10, now(), boundary, asserted(), final_edges);
             if (final_edges != 0 || asserted()) {
                 abort(&AtariSioCaptureStats::aborts_edge);
                 return;
@@ -246,11 +253,12 @@ public:
         // a stable image. Allocation never occurs in the hot recording path.
         auto fresh = std::make_shared<AtariSioFlightTrace>();
         _stats = {}; _flight = std::move(fresh); _poll_gap_us = 0;
+        _flight_started = false; _flight_start_us = 0;
     }
     void trace_poll_gap(std::uint32_t time, std::uint32_t gap,
                         const AtariSioTransactionBoundary& boundary, bool low, std::uint32_t batch = 0) noexcept {
         _poll_gap_us = gap;
-        finish_flight(time);
+        advance_flight(time);
         if (gap < 16000) return;
         AtariSioCaptureStats::Trace t{};
         t.time_us=time; t.event=8; t.poll_gap_us=gap; t.edge_batch=batch;
@@ -274,6 +282,24 @@ public:
 private:
     std::shared_ptr<AtariSioFlightTrace> _flight = std::make_shared<AtariSioFlightTrace>();
     std::uint32_t _poll_edges{0}, _poll_gap_us{0};
+    bool _flight_started{false};
+    std::uint32_t _flight_start_us{0};
+    void advance_flight(std::uint32_t time) noexcept {
+        if (!_flight_started) { _flight_started = true; _flight_start_us = time; }
+        if (!_stats.flight_armed && time - _flight_start_us >= 2000000 && _flight->count >= 32)
+            _stats.flight_armed = true;
+        finish_flight(time);
+    }
+    // Poll-observed edge batches, not individual GPIO transitions. Never log in the ISR.
+    void trace_boundary(std::uint8_t event, std::uint32_t time,
+                        const AtariSioTransactionBoundary& boundary, bool low, std::uint32_t batch) noexcept {
+        AtariSioCaptureStats::Trace t{};
+        t.time_us=time; t.event=event; t.edges=boundary.total_edges();
+        t.last_edge_us=boundary.last_edge_us(); t.edge_batch=batch; t.low=low;
+        t.collecting=_collecting; t.released=_released; t.used=_frame_used;
+        t.poll_gap_us=_poll_gap_us;
+        record_trace(t, false);
+    }
     void finish_flight(std::uint32_t time) noexcept {
         if (_stats.flight_triggered && !_stats.flight &&
             (time - _stats.flight_trigger_us >= 1000000 ||
@@ -282,12 +308,12 @@ private:
     }
     void record_trace(const AtariSioCaptureStats::Trace& t, bool live = true) noexcept {
         if (live) _stats.trace[_stats.trace_count++ % _stats.trace.size()] = t;
-        finish_flight(t.time_us);
+        advance_flight(t.time_us);
         if (_stats.flight) return;
         _flight->entries[_flight->count++ % _flight->entries.size()] = t;
         const bool failure = (t.event >= 2 && t.event <= 5) ||
             (t.event == 6 && (t.low || t.edge_batch > 1)) || t.event == 8;
-        if (!_stats.flight_triggered && failure) {
+        if (_stats.flight_armed && !_stats.flight_triggered && failure) {
             _stats.flight_triggered = true;
             _stats.flight_trigger_us = t.time_us;
             _stats.flight_trigger_event = t.event;

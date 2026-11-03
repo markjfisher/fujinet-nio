@@ -153,10 +153,13 @@ tight, so this is how to see what the Atari is doing:
   or multiple edges), or a poll gap of at least 16 ms during which COMMAND edges
   occurred. A lone idle edge with COMMAND high is not a trigger. These are
   diagnostic triggers, not proof of a lost application request.
+  After reset, triggering waits for both two seconds and 32 history events;
+  failures during this warm-up are recorded without freezing. This avoids
+  capturing console/reset disruption without useful preceding history.
   After triggering it records up to 16 following events, or one second, then
   freezes. With a full history this retains 111 preceding events, the trigger,
   and 16 following events. With less traffic/history it retains fewer. Idle
-  aborts are not coalesced in this recording. `armed`, `collecting` and `frozen`
+  aborts are not coalesced in this recording. `warming up`, `armed`, `collecting` and `frozen`
   indicate its state. Reads do not rearm it; **`sio.reset` clears and rearms it**.
   The frozen recording remains unchanged while traffic continues or while it is
   printed, so there is no need to time the console command to a short pause.
@@ -167,6 +170,9 @@ tight, so this is how to see what the Atari is doing:
   to start-of-current-poll when COMMAND edges occurred). Event 8 marks a polling
   gap; event 9 records the early data ACK separately from COMPLETE. `record`
   indexes identify retained events; the frozen header names the triggering index.
+  Events 10–12 record poll-observed COMMAND edge batches, capture start, and
+  capture release, only in the flight recorder. They are not per-edge ISR
+  samples: a batch can contain multiple transitions; `low` is the sampled level.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a
   logic-analyser capture; multiple edges can occur before a GPIO level is sampled.

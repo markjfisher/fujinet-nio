@@ -473,6 +473,8 @@ TEST_CASE("sio.proc is absent without the callbacks, and says so on a board with
 TEST_CASE("sio.trace flight reports armed collecting and immutable frozen recording")
 {
     Fixture f;
+    CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"warming up"));
+    f.stats.capture.flight_armed=true;
     CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"armed"));
     f.stats.capture.flight_triggered=true;
     CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"collecting"));
@@ -492,5 +494,5 @@ TEST_CASE("sio.trace flight reports armed collecting and immutable frozen record
     CHECK(run(*f.provider,{"sio.trace","flight"}).text==a.text);
     CHECK(run(*f.provider,{"sio.trace","typo"}).status==DiagStatus::InvalidArgs);
     run(*f.provider,{"sio.reset"});
-    CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"armed"));
+    CHECK(contains(run(*f.provider,{"sio.trace","flight"}).text,"warming up"));
 }

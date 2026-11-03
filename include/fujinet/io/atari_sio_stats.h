@@ -41,6 +41,7 @@ struct AtariSioCaptureStats {
     using Trace = AtariSioTrace;
     std::array<Trace, 16> trace{};
     std::uint32_t trace_count{0};
+    bool flight_armed{false};
     bool flight_triggered{false};
     std::uint32_t flight_trigger_us{0};
     std::uint8_t flight_trigger_event{0};
