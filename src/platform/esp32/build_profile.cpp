@@ -38,6 +38,15 @@ BuildProfile current_build_profile()
         .name             = "S3 + FujiBus over USB CDC",
         .hw               = {},
     };
+#elif defined(FN_BUILD_ESP32_USB_CDC_LINK)
+    profile = BuildProfile{
+        .machine          = Machine::FujiNetESP32,
+        .primaryTransport = TransportKind::FujiBusNative,
+        .primaryChannel   = ChannelKind::UsbCdcDevice,
+        .packetLink       = true,
+        .name             = "S3 + FujiBus over a packet link on USB CDC",
+        .hw               = {},
+    };
 #elif defined(FN_BUILD_ESP32_FUJIBUS_GPIO)
     profile = BuildProfile{
         .machine          = Machine::FujiNetESP32,

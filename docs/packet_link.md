@@ -154,6 +154,11 @@ its stream channel (TCP or serial on POSIX, UART or USB CDC on ESP32) through
 `io::with_packet_link`. Profiles that don't ask, such as the Zorro placeholder
 over a Pty, are unchanged.
 
+The POSIX presets are `fujibus-link-tcp-debug` (a TCP server) and
+`fujibus-link-serial-debug` (a serial port, such as the USB CDC device of a
+bridge board, set by `channel.serial_port` and `channel.uart` in `fujinet.yaml`
+or by `FN_SERIAL_PORT` and `FN_SERIAL_BAUD`; see [build profiles](build_profiles.md)).
+
 ### Configuration
 
 ```yaml
