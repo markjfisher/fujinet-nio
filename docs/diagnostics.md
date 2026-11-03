@@ -183,6 +183,16 @@ tight, so this is how to see what the Atari is doing:
   Events 10–12 record poll-observed COMMAND edge batches, capture start, and
   capture release, only in the flight recorder. They are not per-edge ISR
   samples: a batch can contain multiple transitions; `low` is the sampled level.
+  A separate 16-observation IRQ snapshot is captured at the trigger and printed
+  after the 128-event history. It includes each sampled level, timestamp,
+  filtering decision, and reply state (0 outside, 1 filtering, 2 preserving).
+  It includes filtered interrupts too. This is additional history, not a
+  reduction of the 128-event ring. Atomic versioned slots allow bounded reading
+  without blocking the ISR; an overwritten/inconsistent slot is omitted.
+  Sequence numbers continue across resets. Levels are ISR observations, not
+  proof of physical transitions; delayed/coalesced interrupts remain possible.
+  Storage adds roughly 400 bytes per ingress/recorder combined. No allocation
+  or console output occurs in the interrupt. Capture acceptance is unchanged.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a
   logic-analyser capture; multiple edges can occur before a GPIO level is sampled.

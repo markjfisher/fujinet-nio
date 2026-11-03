@@ -825,3 +825,36 @@ TEST_CASE("Reply filtering preserves ambiguous boundaries and never clears a rac
     CHECK(boundary.consume()==1);
     CHECK(boundary.reply_noise()==0);
 }
+
+TEST_CASE("Trigger preserves individual IRQ levels filtering and reply state")
+{
+    using namespace fujinet::io;
+    AtariSioTransactionBoundary boundary;
+    AtariSioCapture capture;
+    CaptureUart uart;
+    CaptureRouter router;
+    for (unsigned i=0;i<40;++i) {
+        capture.trace_reply(0xffe00000U+i,10,19200,1,'A',0);
+        boundary.note_bus_edge(i,false);
+        boundary.consume();
+    }
+    boundary.begin_reply([]{return false;});
+    boundary.note_bus_edge(100,false); // filtered high
+    boundary.note_bus_edge(200,true);  // first low retained
+    boundary.note_bus_edge(210,true);  // duplicate low remains ambiguous
+    boundary.end_reply();
+    capture.poll(boundary,router,uart,[]{return true;},[]{return 300;});
+    REQUIRE(capture.stats().flight_triggered);
+    capture.trace_poll_gap(1000300,0,boundary,false);
+    const auto saved=capture.stats().flight;
+    REQUIRE(saved);
+    CHECK(saved->trigger_edges[0].sequence==28);
+    CHECK(saved->trigger_edges[13].time_us==100);
+    CHECK(saved->trigger_edges[13].flags==6); // high, filtered, state 1
+    CHECK(saved->trigger_edges[14].flags==5); // low, retained, state 1
+    CHECK(saved->trigger_edges[15].flags==9); // low, retained, state 2
+    for (unsigned i=0;i<32;++i) boundary.note_bus_edge(400+i,false);
+    CHECK(saved->trigger_edges[15].time_us==210);
+    capture.reset_stats();
+    CHECK(saved->trigger_edges[15].time_us==210);
+}

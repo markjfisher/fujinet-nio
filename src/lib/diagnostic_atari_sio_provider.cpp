@@ -250,6 +250,15 @@ private:
             }
             line(text, row);
         }
+        if (flight) {
+            line(text, "Trigger IRQ observations: reply=0 outside, 1 filtering, 2 preserving; sampled levels, not a logic analyser");
+            for (const auto& e : s.capture.flight->trigger_edges) {
+                if (!e.sequence) continue;
+                line(text, "irq=" + n(e.sequence) + " us=" + n(e.time_us) +
+                     " low=" + n(e.flags & 1) + " filtered=" + n((e.flags >> 1) & 1) +
+                     " reply=" + n(e.flags >> 2));
+            }
+        }
         return DiagResult::ok(std::move(text));
     }
     static std::string tuning_text(const io::AtariSioTuning& t)

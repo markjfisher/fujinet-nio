@@ -28,12 +28,18 @@ struct AtariSioTrace {
     bool low{false}, collecting{false}, released{false};
 };
 
+struct AtariSioEdgeObservation {
+    std::uint32_t time_us{0}, sequence{0};
+    std::uint8_t flags{0}; // bit 0 low, bit 1 filtered, bits 2-3 reply state
+};
+
 // Heap-owned recording; published snapshots reference it only after freezing.
 // No multi-kilobyte arrays are copied onto the console/SIO task stacks.
 struct AtariSioFlightTrace {
     static constexpr std::size_t capacity = 128;
     std::array<AtariSioTrace, capacity> entries{};
     std::uint32_t count{0}, trigger_count{0};
+    std::array<AtariSioEdgeObservation, 16> trigger_edges{};
 };
 
 // What the capture state machine saw, from the UART and the CMD line.

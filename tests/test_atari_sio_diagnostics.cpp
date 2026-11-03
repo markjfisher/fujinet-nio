@@ -483,10 +483,12 @@ TEST_CASE("sio.trace flight reports armed collecting and immutable frozen record
     saved->entries[2].time_us=42;saved->entries[2].event=8;
     saved->entries[2].poll_gap_us=20000;
     saved->entries[1].time_us=99;saved->entries[1].event=9;
+    saved->trigger_edges[0]={123,42,6};
     f.stats.capture.flight=saved;
     const auto a=run(*f.provider,{"sio.trace","flight"});
     REQUIRE(a.status==DiagStatus::Ok);
     CHECK(contains(a.text,"capacity=128"));
+    CHECK(contains(a.text,"irq=42 us=123 low=0 filtered=1 reply=1"));
     CHECK(contains(a.text,"trigger_record=113"));
     CHECK(contains(a.text,"poll_gap_us=20000"));
     CHECK(a.text.find("us=42")<a.text.find("us=99"));

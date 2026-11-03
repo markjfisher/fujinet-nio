@@ -27,8 +27,25 @@ public:
     // can join its batch. Once low is observed, preserve every subsequent edge.
     void note_bus_edge(std::uint32_t at_us, bool low) noexcept
     {
-        if (low) _reply_state.store(2, std::memory_order_release);
-        else if (_reply_state.load(std::memory_order_acquire) == 1) {
+        const auto state = _reply_state.load(std::memory_order_acquire);
+        const bool filtered = !low && state == 1;
+        // Single ISR writer; atomic fields and version checks permit a bounded
+        // task-side snapshot without a lock, allocation, or ISR logging.
+        const auto sequence = ++_edge_sequence;
+        auto& slot = _observations[sequence % _observations.size()];
+        slot.version.store(sequence * 2 + 1, std::memory_order_seq_cst);
+        slot.time.store(at_us, std::memory_order_seq_cst);
+        slot.flags.store((low ? 1U : 0U) | (filtered ? 2U : 0U) | (state << 2), std::memory_order_seq_cst);
+        slot.version.store(sequence * 2, std::memory_order_seq_cst);
+        _published_sequence.store(sequence, std::memory_order_release);
+        if (low) {
+            // Only a live filtering window needs switching to preservation.
+            // A completed reply stays outside; begin_reply checks pending edges
+            // and the pin after enabling its own new window.
+            std::uint32_t filtering = 1;
+            _reply_state.compare_exchange_strong(filtering, 2, std::memory_order_acq_rel);
+        }
+        else if (filtered) {
             if (_total.fetch_add(1, std::memory_order_relaxed) == 0)
                 _first_edge_us.store(at_us, std::memory_order_relaxed);
             _last_edge_us.store(at_us, std::memory_order_relaxed);
@@ -36,6 +53,23 @@ public:
             return;
         }
         note_cmd_edge(at_us);
+    }
+    std::array<AtariSioEdgeObservation, 16> edge_snapshot() const noexcept
+    {
+        std::array<AtariSioEdgeObservation, 16> out{};
+        const auto last = _published_sequence.load(std::memory_order_acquire);
+        const auto count = last < out.size() ? last : out.size();
+        for (std::uint32_t i=0; i<count; ++i) {
+            const auto sequence = last - count + 1 + i;
+            const auto& slot = _observations[sequence % out.size()];
+            const auto before = slot.version.load(std::memory_order_seq_cst);
+            const auto time = slot.time.load(std::memory_order_seq_cst);
+            const auto flags = slot.flags.load(std::memory_order_seq_cst);
+            const auto after = slot.version.load(std::memory_order_seq_cst);
+            if (before == sequence * 2 && before == after)
+                out[i] = {time, sequence, static_cast<std::uint8_t>(flags)};
+        }
+        return out;
     }
     template<class Asserted> void begin_reply(Asserted asserted) noexcept
     {
@@ -59,6 +93,12 @@ public:
     std::uint32_t first_edge_us() const noexcept { return _first_edge_us.load(std::memory_order_relaxed); }
     std::uint32_t last_edge_us() const noexcept { return _last_edge_us.load(std::memory_order_relaxed); }
 private:
+    struct ObservationSlot {
+        std::atomic<std::uint32_t> version{0}, time{0}, flags{0};
+    };
+    std::array<ObservationSlot, 16> _observations{};
+    std::uint32_t _edge_sequence{0}; // ISR-owned; not reset by the task
+    std::atomic<std::uint32_t> _published_sequence{0};
     std::atomic<std::uint32_t> _reply_state{0}, _reply_noise{0};
     std::atomic<std::uint32_t> _edges{0};
     std::atomic<std::uint32_t> _total{0};
@@ -119,7 +159,9 @@ public:
                 t.last_edge_us = boundary.last_edge_us();
                 t.edge_batch = _poll_edges;
                 t.poll_gap_us = _poll_gap_us;
+                const bool triggered = _stats.flight_triggered;
                 record_trace(t, live);
+                if (!triggered && _stats.flight_triggered) _flight->trigger_edges = boundary.edge_snapshot();
             }
             ++(_stats.*reason);
             if (_collecting) ++_stats.frames_lost;
@@ -290,7 +332,9 @@ public:
         t.time_us=time; t.event=8; t.poll_gap_us=gap; t.edge_batch=batch;
         t.edges=boundary.total_edges(); t.last_edge_us=boundary.last_edge_us();
         t.low=low; t.collecting=_collecting; t.released=_released;
+        const bool triggered = _stats.flight_triggered;
         record_trace(t);
+        if (!triggered && _stats.flight_triggered) _flight->trigger_edges = boundary.edge_snapshot();
     }
     // Metadata only: never retain a response body in diagnostics.
     void trace_reply(std::uint32_t time, std::uint32_t duration, std::uint32_t baud,
