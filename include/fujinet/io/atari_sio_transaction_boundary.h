@@ -231,7 +231,11 @@ public:
             _write_started_us = 0;
             uart.discardInput();
             _rx_errors = uart.rx_errors();
-            _discard_until_release = true;
+            // A lone idle-high observation is already released. Waiting for an
+            // additional edge-free idle poll can swallow the next assertion
+            // when the task sleeps until that assertion wakes it (min-010).
+            // Active/ambiguous aborts still require the existing resync barrier.
+            _discard_until_release = !(idle_edge && !asserted() && _poll_edges == 1);
         };
         if (_write_started_us && now() - _write_started_us > 200000) {
             abort(&AtariSioCaptureStats::aborts_timeout);

@@ -982,3 +982,25 @@ TEST_CASE("Stream retry-sized gap freezes history without a capture abort")
         if (gap==300000) CHECK(capture.stats().flight_trigger_event==17);
     }
 }
+
+TEST_CASE("Idle high observation does not require an idle poll before the next command")
+{
+    using namespace fujinet::io;
+    AtariSioTransactionBoundary boundary;
+    AtariSioCapture capture;
+    CaptureUart uart;
+    CaptureRouter router;
+    boundary.note_bus_edge(158126166,false);
+    capture.poll(boundary,router,uart,[]{return false;},[]{return 158126378;});
+    CHECK(capture.stats().aborts_edge==1);
+    // No intervening poll: the next assertion wakes the sleeping ingress.
+    boundary.note_bus_edge(158134260,true);
+    capture.poll(boundary,router,uart,[]{return true;},[]{return 158134316;});
+    CHECK(capture.needs_immediate_poll());
+    boundary.note_bus_edge(158138651,false);
+    uart.driver={0x7f,0x53,0x11,0,0xe3};
+    capture.poll(boundary,router,uart,[]{return false;},[]{return 158138814;});
+    CHECK(capture.stats().frames==1);
+    CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x53,0x11,0,0xe3});
+    CHECK(capture.stats().frames_lost==0);
+}

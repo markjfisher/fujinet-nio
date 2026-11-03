@@ -223,6 +223,12 @@ tight, so this is how to see what the Atari is doing:
   interval, not server execution time. User/application pacing can also trigger
   this heuristic; it is evidence to inspect, not an error classification.
   Non-stream commands break the sequence and `sio.reset` clears its baseline.
+  A single idle-high abort leaves capture ready for the next assertion: the
+  line is already released, so requiring another edge-free idle poll can swallow
+  the next command when its assertion wakes a sleeping task (min-010). Active
+  collection aborts, low observations and multiple-edge ambiguity still use the
+  existing discard/resynchronisation barrier. Event 6 still counts the idle
+  observation; that counter alone does not mean an application command was lost.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a
   logic-analyser capture; multiple edges can occur before a GPIO level is sampled.
