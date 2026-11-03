@@ -13,6 +13,7 @@ namespace fujinet::io {
 // cannot silently turn two observed edges into one. Hardware may still merge
 // interrupts while masked, so this is not a physical edge timestamp.
 class AtariSioTransactionBoundary {
+    static constexpr std::uint32_t reply_low_pair_max_us = 200;
 public:
     // `at_us` is the interrupt's clock reading, for diagnostics only (0 when the caller has none).
     void note_cmd_edge(std::uint32_t at_us = 0) noexcept
@@ -123,7 +124,7 @@ public:
         // Two low samples in one reply window, shorter than a complete command
         // even at supported maximum HSIO. Never coalesce arbitrary low batches.
         return fv == (last - 1) * 2 && sv == last * 2 && ff == 5 && sf == 9 &&
-            end - start <= 200 && first.version.load(std::memory_order_seq_cst) == fv &&
+            end - start <= reply_low_pair_max_us && first.version.load(std::memory_order_seq_cst) == fv &&
             second.version.load(std::memory_order_seq_cst) == sv && observed_sequence() == last;
     }
     template<class Asserted> void begin_reply(Asserted asserted) noexcept

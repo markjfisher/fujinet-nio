@@ -140,128 +140,19 @@ tight, so this is how to see what the Atari is doing:
 - `sio.baud` — the ESP32 UART baud for each high-speed SIO index against the POKEY rate for PAL
   and NTSC clocks (see [hsio](atari/hsio.md)); run it with the Atari idle, because it retunes the
   UART for a moment. `sio.status` also shows the current UART baud.
-- `sio.reset` — zero the counters; do this before powering the Atari. The ingress-ready time is
-  kept, since it is not a counter
+- `sio.reset` — zero counters and rearm recording. For gameplay diagnosis, run
+  once after animation begins; for boot diagnosis, run before powering the Atari.
+  The ingress-ready time is kept, since it is not a counter.
 - `sio.trace` — show the last 16 captured command frames and capture aborts, including CMD state,
   pending write-data length and partial frame state. Consecutive idle edge aborts are collapsed so they
   don't erase the event preceding a stall. Replies record control bytes, size, baud and duration,
   never response payloads. Times are the wrapping 32-bit microsecond clock;
   `sio.reset` clears the trace. This records no network payloads and logs nothing during SIO.
-- Reply-time COMMAND noise is classified when the GPIO interrupt is observed,
-  rather than clearing pending edges after UART flush. While transmitting, a
-  high-level interrupt is ignored only until an assertion is observed. Once low
-  is seen, all following edges are preserved, including release. Pending edges
-  or an already-low line at reply start disable filtering for that reply.
-  This prevents reply noise followed by a genuine next-command assertion from
-  becoming a rejected two-edge batch. Ambiguous batches remain rejected; this
-  does not infer missing physical transitions or change client retry timing.
-  The `CMD edges while we transmitted, dropped as noise` counter includes these
-  filtered observations; the total edge counter still includes them as well.
-- `sio.trace flight` — retrieve a **128-event first-failure recording**. It runs
-  without console output, retaining recent history until an active capture abort
-  (edge, timeout, overflow or UART error), ambiguous idle boundary (COMMAND low
-  or multiple edges), or a poll gap of at least 16 ms during which COMMAND edges
-  occurred. A lone idle edge with COMMAND high is not a trigger. These are
-  diagnostic triggers, not proof of a lost application request.
-  After reset, triggering waits for both two seconds and 32 history events;
-  failures during this warm-up are recorded without freezing. This avoids
-  capturing console/reset disruption without useful preceding history.
-  After triggering it records up to 16 following events, or one second, then
-  freezes. With a full history this retains 111 preceding events, the trigger,
-  and 16 following events. With less traffic/history it retains fewer. Idle
-  aborts are not coalesced in this recording. `warming up`, `armed`, `collecting` and `frozen`
-  indicate its state. Reads do not rearm it; **`sio.reset` clears and rearms it**.
-  The frozen recording remains unchanged while traffic continues or while it is
-  printed, so there is no need to time the console command to a short pause.
-  Reset during normal application operation to avoid capturing boot probes.
-- Trace metadata now includes `last_edge_us` (latest ISR edge timestamp),
-  `edge_batch` (observed edges consumed at this decision; poll-gap events report
-  the change since the previous poll), and `poll_gap_us` (end-of-previous-poll
-  to start-of-current-poll when COMMAND edges occurred). Event 8 marks a polling
-  gap; event 9 records the early data ACK separately from COMPLETE. `record`
-  indexes identify retained events; the frozen header names the triggering index.
-  Events 10–12 record poll-observed COMMAND edge batches, capture start, and
-  capture release, only in the flight recorder. They are not per-edge ISR
-  samples: a batch can contain multiple transitions; `low` is the sampled level.
-  A separate 16-observation IRQ snapshot is captured at the trigger and printed
-  after the 128-event history. It includes each sampled level, timestamp,
-  filtering decision, and reply state (0 outside, 1 filtering, 2 preserving).
-  It includes filtered interrupts too. This is additional history, not a
-  reduction of the 128-event ring. Atomic versioned slots allow bounded reading
-  without blocking the ISR; an overwritten/inconsistent slot is omitted.
-  Sequence numbers continue across resets. Levels are ISR observations, not
-  proof of physical transitions; delayed/coalesced interrupts remain possible.
-  Storage adds roughly 400 bytes per ingress/recorder combined. No allocation
-  or console output occurs in the interrupt. Capture acceptance is unchanged.
-  Event 14 marks a tolerated repeated-high observation: collection has already
-  seen release, the line remains high, and exactly one new ISR observation is
-  available with no intervening low or filtered observation. Collection continues
-  under its existing 50 ms deadline; size, checksum and UART-error handling are
-  unchanged. Multiple edges, a new assertion, or missing observation history
-  remain ambiguous and are rejected. The ISR samples cannot rule out a pulse
-  shorter than interrupt observation, so this is a bounded recovery policy,
-  not proof that every repeated-high interrupt is electrically spurious.
-  Event 15 marks idle high-then-low recovery: no command or write is pending,
-  exactly two edges were consumed, COMMAND is currently low, and the latest two
-  coherent IRQ observations are unfiltered high then low, both outside reply
-  transmission. The leading idle high is discarded and the low starts normal
-  collection. Low-low, high-high, missing history, active collection and pending
-  writes retain the existing rejection behavior. No elapsed-time grace window
-  is added. As with event 14, this is based on sampled levels, not proof that
-  the electrical line had no shorter unobserved pulse.
-  Event 16 recovers the min-009 reply handover: exactly two low observations,
-  the first in reply filtering state and the second in preservation state,
-  separated by at most 200 microseconds, with capture idle and no pending write.
-  The assertion is retained. This interval is shorter than a complete command
-  at the supported maximum HSIO rate. Other low-low batches remain rejected.
-  It is a bounded sampled-level recovery, not a claim to identify physical noise.
-  ESP-IDF's GPIO driver clears edge interrupt status before the callback; no
-  missing acknowledgement was found, and no SDK or GPIO interrupt-mode change
-  was made.
-  Event 17 triggers on 200–1000 ms between consecutive decoded native S/T
-  commands, even without a capture abort. `gap_us` is the command-to-command
-  interval, not server execution time. User/application pacing can also trigger
-  this heuristic; it is evidence to inspect, not an error classification.
-  Non-stream commands break the sequence and `sio.reset` clears its baseline.
-  A single idle-high abort leaves capture ready for the next assertion: the
-  line is already released, so requiring another edge-free idle poll can swallow
-  the next command when its assertion wakes a sleeping task (min-010). Active
-  collection aborts, low observations and multiple-edge ambiguity still use the
-  existing discard/resynchronisation barrier. The decision uses the level sampled
-  at abort entry; a new assertion during cleanup stays queued and must not
-  retroactively turn the old idle-high observation into a low abort (min-011).
-  Event 6 still counts the idle
-  observation; that counter alone does not mean an application command was lost.
-  Event 18 handles release plus one repeated high arriving in the same poll
-  (min-012/min-013). While collecting an unreleased command, exactly two pending
-  edges may become one release only when the complete IRQ sequence since its
-  assertion consists of those two unfiltered high observations outside replies.
-  This gives the same delivery as release and event 14 in separate polls. A low
-  observation, missing history, extra edge, or expired command deadline still
-  rejects the command; frame-size and UART-error checks remain active.
-  Abort `frame=` is the previous/partially collected frame, not necessarily the
-  command lost. A poll-gap event has no command frame. This is metadata, not a
-  logic-analyser capture; multiple edges can occur before a GPIO level is sampled.
-  Shared platform-independent storage/trigger logic is host-tested; physical
-  edge/poll metadata and early ACK instrumentation are ESP32 ingress hooks.
-
-  Hardware capture procedure:
-
-  1. Boot and enter the application, then run `sio.reset` once.
-  2. Let it run without console commands until pauses occur; wait another second.
-  3. Run `sio.trace flight`, then `sio.status`, and save the complete output.
-  4. Repeat with `sio.reset` if necessary. Do not spam live dumps: console output
-     can itself delay polling. A frozen dump can be read repeatedly later.
-
-  The 128-entry recorder is heap-owned (about 5 KiB plus allocation bookkeeping),
-  rather than embedded in the repeatedly copied stats structure. A frozen snapshot
-  shares immutable storage. Reset allocates a new recorder before releasing the
-  old one, so peak reset memory includes two recorders; snapshots held by a caller
-  keep their old recording valid. There is no allocation or logging per event and
-  no additional task. Formatting a dump uses temporary heap text proportional to
-  the bounded 128-event output. The legacy live ring remains 16 entries for small
-  ordinary status snapshots. This changes diagnostics only, not SIO framing,
-  timeout/retry policy, the small-stream protocol or network services.
+- `sio.trace flight` — retrieve the frozen 128-event recording and its IRQ
+  observations. Reset once after the application is running; read the dump after
+  the observation period. **Console output can pause SIO itself.** See
+  [Atari SIO capture and recovery](atari/sio-capture.md) for event meanings,
+  trigger rules, memory cost, recovery policies and the hardware procedure.
 - `sio.status` reports buffered bytes discarded from each UART after draining pending events. Bytes
   arriving between that drain and the hardware flush may not be counted; `sio.reset` zeros these counts.
 
