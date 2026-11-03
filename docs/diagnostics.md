@@ -209,6 +209,20 @@ tight, so this is how to see what the Atari is doing:
   writes retain the existing rejection behavior. No elapsed-time grace window
   is added. As with event 14, this is based on sampled levels, not proof that
   the electrical line had no shorter unobserved pulse.
+  Event 16 recovers the min-009 reply handover: exactly two low observations,
+  the first in reply filtering state and the second in preservation state,
+  separated by at most 200 microseconds, with capture idle and no pending write.
+  The assertion is retained. This interval is shorter than a complete command
+  at the supported maximum HSIO rate. Other low-low batches remain rejected.
+  It is a bounded sampled-level recovery, not a claim to identify physical noise.
+  ESP-IDF's GPIO driver clears edge interrupt status before the callback; no
+  missing acknowledgement was found, and no SDK or GPIO interrupt-mode change
+  was made.
+  Event 17 triggers on 200–1000 ms between consecutive decoded native S/T
+  commands, even without a capture abort. `gap_us` is the command-to-command
+  interval, not server execution time. User/application pacing can also trigger
+  this heuristic; it is evidence to inspect, not an error classification.
+  Non-stream commands break the sequence and `sio.reset` clears its baseline.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a
   logic-analyser capture; multiple edges can occur before a GPIO level is sampled.

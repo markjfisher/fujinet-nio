@@ -841,11 +841,11 @@ TEST_CASE("Trigger preserves individual IRQ levels filtering and reply state")
     boundary.begin_reply([]{return false;});
     boundary.note_bus_edge(100,false); // filtered high
     boundary.note_bus_edge(200,true);  // first low retained
-    boundary.note_bus_edge(210,true);  // duplicate low remains ambiguous
+    boundary.note_bus_edge(410,true);  // duplicate low remains ambiguous
     boundary.end_reply();
-    capture.poll(boundary,router,uart,[]{return true;},[]{return 300;});
+    capture.poll(boundary,router,uart,[]{return true;},[]{return 500;});
     REQUIRE(capture.stats().flight_triggered);
-    capture.trace_poll_gap(1000300,0,boundary,false);
+    capture.trace_poll_gap(1000500,0,boundary,false);
     const auto saved=capture.stats().flight;
     REQUIRE(saved);
     CHECK(saved->trigger_edges[0].sequence==28);
@@ -854,9 +854,9 @@ TEST_CASE("Trigger preserves individual IRQ levels filtering and reply state")
     CHECK(saved->trigger_edges[14].flags==5); // low, retained, state 1
     CHECK(saved->trigger_edges[15].flags==9); // low, retained, state 2
     for (unsigned i=0;i<32;++i) boundary.note_bus_edge(400+i,false);
-    CHECK(saved->trigger_edges[15].time_us==210);
+    CHECK(saved->trigger_edges[15].time_us==410);
     capture.reset_stats();
-    CHECK(saved->trigger_edges[15].time_us==210);
+    CHECK(saved->trigger_edges[15].time_us==410);
 }
 
 TEST_CASE("Released command tolerates one observed high but rejects new assertions and ambiguity")
@@ -927,5 +927,58 @@ TEST_CASE("Idle high then low handover preserves assertion without accepting oth
             CHECK(capture.stats().frames==0);
             CHECK(router.command.empty());
         }
+    }
+}
+
+TEST_CASE("Reply low pair recovery is limited to the observed short reply handover")
+{
+    using namespace fujinet::io;
+    for (unsigned scenario=0;scenario<5;++scenario) {
+        AtariSioTransactionBoundary boundary;
+        AtariSioCapture capture;
+        CaptureUart uart;
+        CaptureRouter router;
+        if (scenario!=1) boundary.begin_reply([]{return false;});
+        boundary.note_bus_edge(1000,true);
+        if (scenario==2) boundary.end_reply();
+        boundary.note_bus_edge(scenario==3 ? 1201 : 1115,true);
+        boundary.end_reply();
+        if (scenario==4) router.pending=8;
+        capture.poll(boundary,router,uart,[]{return true;},[]{return 2000;});
+        if (scenario==0) {
+            CHECK(capture.stats().aborts_edge==0);
+            boundary.note_bus_edge(5500,false);
+            uart.driver={0x7f,0x54,0x0b,0,0xde};
+            capture.poll(boundary,router,uart,[]{return false;},[]{return 6000;});
+            CHECK(capture.stats().frames==1);
+            CHECK(router.command.size()==5);
+        } else {
+            CHECK(capture.stats().aborts_edge==1);
+            CHECK(router.command.empty());
+        }
+    }
+}
+
+TEST_CASE("Stream retry-sized gap freezes history without a capture abort")
+{
+    using namespace fujinet::io;
+    for (const unsigned gap : {100000,300000,1100000}) {
+        AtariSioTransactionBoundary boundary;
+        AtariSioCapture capture;
+        CaptureUart uart;
+        CaptureRouter router;
+        for (unsigned i=0;i<40;++i) capture.trace_reply(0xffe00000U+i,10,19200,1,'A',0);
+        const auto command=[&](unsigned t) {
+            boundary.note_bus_edge(t,true);
+            capture.poll(boundary,router,uart,[]{return true;},[&]{return t;});
+            boundary.note_bus_edge(t+4500,false);
+            uart.driver={0x7f,0x54,0x0b,0,0xde};
+            capture.poll(boundary,router,uart,[]{return false;},[&]{return t+5000;});
+        };
+        command(10000);command(10000+gap);
+        CHECK(capture.stats().aborts_edge==0);
+        CHECK(capture.stats().frames==2);
+        CHECK(capture.stats().flight_triggered==(gap==300000));
+        if (gap==300000) CHECK(capture.stats().flight_trigger_event==17);
     }
 }

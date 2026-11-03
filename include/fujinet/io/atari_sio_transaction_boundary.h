@@ -96,6 +96,23 @@ public:
             high.version.load(std::memory_order_seq_cst) == hv &&
             low.version.load(std::memory_order_seq_cst) == lv && observed_sequence() == last;
     }
+    bool reply_low_pair() const noexcept {
+        const auto last = observed_sequence();
+        if (last < 2) return false;
+        const auto& first = _observations[(last - 1) % _observations.size()];
+        const auto& second = _observations[last % _observations.size()];
+        const auto fv = first.version.load(std::memory_order_seq_cst);
+        const auto sv = second.version.load(std::memory_order_seq_cst);
+        const auto ff = first.flags.load(std::memory_order_seq_cst);
+        const auto sf = second.flags.load(std::memory_order_seq_cst);
+        const auto start = first.time.load(std::memory_order_seq_cst);
+        const auto end = second.time.load(std::memory_order_seq_cst);
+        // Two low samples in one reply window, shorter than a complete command
+        // even at supported maximum HSIO. Never coalesce arbitrary low batches.
+        return fv == (last - 1) * 2 && sv == last * 2 && ff == 5 && sf == 9 &&
+            end - start <= 200 && first.version.load(std::memory_order_seq_cst) == fv &&
+            second.version.load(std::memory_order_seq_cst) == sv && observed_sequence() == last;
+    }
     template<class Asserted> void begin_reply(Asserted asserted) noexcept
     {
         _reply_state.store(1, std::memory_order_release);
@@ -272,6 +289,11 @@ public:
             trace_boundary(15, now(), boundary, low, edges);
             edges = 1;
         }
+        if (edges == 2 && low && !_collecting && !router.pending_write_bytes() &&
+            boundary.reply_low_pair()) {
+            trace_boundary(16, now(), boundary, low, edges);
+            edges = 1;
+        }
         if (edges > 1 || (edges == 1 && (low == _collecting || _released))) {
             abort(&AtariSioCaptureStats::aborts_edge);
             return;
@@ -367,7 +389,7 @@ public:
         // a stable image. Allocation never occurs in the hot recording path.
         auto fresh = std::make_shared<AtariSioFlightTrace>();
         _stats = {}; _flight = std::move(fresh); _poll_gap_us = 0;
-        _flight_started = false; _flight_start_us = 0;
+        _flight_started = false; _flight_start_us = 0; _stream_seen = false;
     }
     void trace_poll_gap(std::uint32_t time, std::uint32_t gap,
                         const AtariSioTransactionBoundary& boundary, bool low, std::uint32_t batch = 0) noexcept {
@@ -396,7 +418,8 @@ public:
     std::uint32_t bad_frames_in_a_row() const noexcept { return _bad_frames_in_a_row; }
     void clear_bad_frames() noexcept { _bad_frames_in_a_row = 0; }
 private:
-    std::uint32_t _release_irq_sequence{0};
+    std::uint32_t _release_irq_sequence{0}, _stream_last_us{0};
+    bool _stream_seen{false};
     bool released_high_noise(const AtariSioTransactionBoundary& boundary,
                              std::uint32_t edges, bool low) noexcept {
         if (!_collecting || !_released || low || edges != 1 ||
@@ -436,7 +459,7 @@ private:
         if (_stats.flight) return;
         _flight->entries[_flight->count++ % _flight->entries.size()] = t;
         const bool failure = (t.event >= 2 && t.event <= 5) ||
-            (t.event == 6 && (t.low || t.edge_batch > 1)) || t.event == 8;
+            (t.event == 6 && (t.low || t.edge_batch > 1)) || t.event == 8 || t.event == 17;
         if (_stats.flight_armed && !_stats.flight_triggered && failure) {
             _stats.flight_triggered = true;
             _stats.flight_trigger_us = t.time_us;
@@ -458,6 +481,19 @@ private:
         t.used = 5;
         t.last_edge_us = boundary.last_edge_us(); t.edge_batch = _poll_edges;
         t.poll_gap_us = _poll_gap_us;
+        const bool stream = _frame[0] == 0x7f && (_frame[1] == 'S' || _frame[1] == 'T');
+        if (stream && _stream_seen) {
+            const auto gap = t.time_us - _stream_last_us;
+            if (gap >= 200000 && gap <= 1000000) {
+                auto delayed = t;
+                delayed.event = 17; delayed.duration_us = gap;
+                const bool triggered = _stats.flight_triggered;
+                record_trace(delayed);
+                if (!triggered && _stats.flight_triggered) _flight->trigger_edges = boundary.edge_snapshot();
+            }
+        }
+        _stream_seen = stream;
+        _stream_last_us = t.time_us;
         record_trace(t);
         ++_stats.frames;
         const auto start = static_cast<std::uint32_t>(now());
