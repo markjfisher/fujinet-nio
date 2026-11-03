@@ -224,7 +224,7 @@ private:
             " trigger_record=" + n(s.capture.flight->trigger_count - 1) +
             " capacity=128; unchanged until sio.reset");
         const auto first = count > size ? count - size : 0;
-        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7 poll-gap=8 early-ack=9 edge-batch=10 capture-start=11 capture-release=12 repeated-high=14; times are microseconds since boot (wraps)");
+        line(text, "events: frame=1 edge=2 timeout=3 overflow=4 uart=5 idle-edge=6 reply=7 poll-gap=8 early-ack=9 edge-batch=10 capture-start=11 capture-release=12 repeated-high=14 idle-high-low=15; times are microseconds since boot (wraps)");
         for (auto i = first; i < count; ++i) {
             const auto& t = flight ? s.capture.flight->entries[i % size] : s.capture.trace[i % size];
             std::string row = "us=" + n(t.time_us);

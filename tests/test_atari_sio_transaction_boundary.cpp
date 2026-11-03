@@ -892,3 +892,40 @@ TEST_CASE("Released command tolerates one observed high but rejects new assertio
         }
     }
 }
+
+TEST_CASE("Idle high then low handover preserves assertion without accepting other pairs")
+{
+    using namespace fujinet::io;
+    for (unsigned scenario=0;scenario<6;++scenario) {
+        AtariSioTransactionBoundary boundary;
+        AtariSioCapture capture;
+        CaptureUart uart;
+        CaptureRouter router;
+        if (scenario==3) router.pending=8;
+        if (scenario==4) {
+            boundary.note_bus_edge(10,true);
+            capture.poll(boundary,router,uart,[]{return true;},[]{return 20;});
+        }
+        if (scenario==5) { // raw edges lack a trustworthy observation history
+            boundary.note_cmd_edge(100);
+            boundary.note_cmd_edge(208);
+        } else {
+            boundary.note_bus_edge(100,scenario==1);
+            boundary.note_bus_edge(208,scenario!=2);
+        }
+        capture.poll(boundary,router,uart,[&]{return scenario!=2;},[]{return 2000;});
+        if (scenario==0) {
+            REQUIRE(capture.stats().aborts_edge==0);
+            REQUIRE(capture.needs_immediate_poll());
+            boundary.note_bus_edge(4646,false);
+            uart.driver={0x7f,0x54,0x0b,0x00,0xde};
+            capture.poll(boundary,router,uart,[]{return false;},[]{return 4800;});
+            CHECK(capture.stats().frames==1);
+            CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x54,0x0b,0x00,0xde});
+        } else {
+            CHECK(capture.stats().aborts_edge==1);
+            CHECK(capture.stats().frames==0);
+            CHECK(router.command.empty());
+        }
+    }
+}

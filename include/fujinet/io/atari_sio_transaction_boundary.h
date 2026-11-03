@@ -83,6 +83,19 @@ public:
         const auto after = slot.version.load(std::memory_order_seq_cst);
         return before == last * 2 && before == after && (flags & 3) == 0;
     }
+    bool idle_high_then_low() const noexcept {
+        const auto last = observed_sequence();
+        if (last < 2) return false;
+        const auto& high = _observations[(last - 1) % _observations.size()];
+        const auto& low = _observations[last % _observations.size()];
+        const auto hv = high.version.load(std::memory_order_seq_cst);
+        const auto lv = low.version.load(std::memory_order_seq_cst);
+        const auto hf = high.flags.load(std::memory_order_seq_cst);
+        const auto lf = low.flags.load(std::memory_order_seq_cst);
+        return hv == (last - 1) * 2 && lv == last * 2 && hf == 0 && lf == 1 &&
+            high.version.load(std::memory_order_seq_cst) == hv &&
+            low.version.load(std::memory_order_seq_cst) == lv && observed_sequence() == last;
+    }
     template<class Asserted> void begin_reply(Asserted asserted) noexcept
     {
         _reply_state.store(1, std::memory_order_release);
@@ -250,6 +263,14 @@ public:
             uart.discardInput();
             if (!low && edges == 0) _discard_until_release = false;
             return;
+        }
+        // In idle state, a high observation cannot start a command. Preserve
+        // the following assertion only when the ISR history proves that exact
+        // two-observation sequence, both outside a reply and unfiltered.
+        if (edges == 2 && low && !_collecting && !router.pending_write_bytes() &&
+            boundary.idle_high_then_low()) {
+            trace_boundary(15, now(), boundary, low, edges);
+            edges = 1;
         }
         if (edges > 1 || (edges == 1 && (low == _collecting || _released))) {
             abort(&AtariSioCaptureStats::aborts_edge);

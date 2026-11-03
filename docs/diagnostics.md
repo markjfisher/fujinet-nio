@@ -201,6 +201,14 @@ tight, so this is how to see what the Atari is doing:
   remain ambiguous and are rejected. The ISR samples cannot rule out a pulse
   shorter than interrupt observation, so this is a bounded recovery policy,
   not proof that every repeated-high interrupt is electrically spurious.
+  Event 15 marks idle high-then-low recovery: no command or write is pending,
+  exactly two edges were consumed, COMMAND is currently low, and the latest two
+  coherent IRQ observations are unfiltered high then low, both outside reply
+  transmission. The leading idle high is discarded and the low starts normal
+  collection. Low-low, high-high, missing history, active collection and pending
+  writes retain the existing rejection behavior. No elapsed-time grace window
+  is added. As with event 14, this is based on sampled levels, not proof that
+  the electrical line had no shorter unobserved pulse.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a
   logic-analyser capture; multiple edges can occur before a GPIO level is sampled.
