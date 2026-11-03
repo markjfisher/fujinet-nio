@@ -1,0 +1,3 @@
+# Keep the FujiBus byte stream free of log output on both CDC interfaces.
+CONFIG_FN_FUJIBUS_USB_CDC_PORT=0
+CONFIG_FN_ESP_CONSOLE_CDC_NUM=1

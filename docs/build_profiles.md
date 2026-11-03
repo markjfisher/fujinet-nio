@@ -429,7 +429,6 @@ Currently supported profiles:
   - `primaryTransport = TransportKind::FujiBusSlip`  
   - `primaryChannel   = ChannelKind::UsbCdcDevice`  
   - Used by the ESP32-S3 build via PlatformIO.
-  - Used by the ESP32-S3 build via PlatformIO.
 
 - `FN_BUILD_ESP32_USB_CDC_LINK`
   - `machine          = Machine::FujiNetESP32`
@@ -439,6 +438,12 @@ Currently supported profiles:
     [packet link](packet_link.md), for a bridge microcontroller that is the USB
     host.
   - PlatformIO environment: `fujibus-link-usbcdc-freenove-s3-wroom-1-n16r8`
+
+The USB CDC FujiBus profiles use CDC interface 0 for FujiBus and interface 1
+for firmware logs. They are separate USB CDC interfaces. A previously generated
+ESP-IDF `sdkconfig` may retain its old values; if the build reports that FujiBus
+and logging share an interface, change `CONFIG_FN_ESP_CONSOLE_CDC_NUM` to 1 in
+that configuration (or regenerate it from the updated defaults).
 
 - `FN_BUILD_FUJIBUS_PTY`  
   - `machine          = Machine::Generic`  

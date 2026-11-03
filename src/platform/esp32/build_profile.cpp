@@ -1,5 +1,15 @@
 #include "fujinet/build/profile.h"
 
+#include "sdkconfig.h"
+
+#if defined(FN_BUILD_ESP32_USB_CDC) || defined(FN_BUILD_ESP32_USB_CDC_LINK)
+static_assert(CONFIG_FN_FUJIBUS_USB_CDC_PORT != CONFIG_FN_ESP_CONSOLE_CDC_NUM,
+              "FujiBus USB CDC and log output must use different interfaces");
+static_assert(CONFIG_FN_FUJIBUS_USB_CDC_PORT < CONFIG_TINYUSB_CDC_COUNT &&
+              CONFIG_FN_ESP_CONSOLE_CDC_NUM < CONFIG_TINYUSB_CDC_COUNT,
+              "FujiBus USB CDC and log interfaces must both exist");
+#endif
+
 // esp32.cpp — consolidated ESP32 build profiles.
 // IDF/PlatformIO compiles all lib/ sources together, so #ifdef selection is
 // required here. This is the only build_profile/*.cpp file that may contain
