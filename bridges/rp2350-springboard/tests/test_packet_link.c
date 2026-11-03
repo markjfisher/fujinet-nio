@@ -77,6 +77,65 @@ static uint8_t sync_up(struct pl_link *l, uint32_t *now) {
     return gen;
 }
 
+/* A disconnected peer is safe to retry only before the request was sent. */
+static void test_disconnect_outcomes(void) {
+    struct pl_link l = {.send = on_send, .done = on_done};
+    uint8_t kind, gen;
+    size_t len;
+    uint32_t now = 1000;
+    const uint8_t req[] = {0x45, 1, 2};
+    done_calls = 0;
+    sent_len = 0;
+    pl_init(&l);
+    pl_open(&l, now);
+    pl_request(&l, req, sizeof req, now);
+    pl_close(&l);
+    CHECK(done_calls == 1 && last_outcome == PL_NO_PEER);
+
+    pl_open(&l, now);
+    sync_up(&l, &now);
+    pl_request(&l, req, sizeof req, now);
+    take_record(&kind, &gen, NULL, &len);
+    pl_close(&l);
+    CHECK(done_calls == 2 && last_outcome == PL_UNANSWERED);
+    CHECK(l.state == PL_OFF);
+}
+
+/* A Palm can start assembling another request before its next doorbell. */
+static void test_request_snapshot(void) {
+    struct pl_link l = {.send = on_send, .done = on_done};
+    uint8_t kind, gen, body[8];
+    size_t len;
+    uint32_t now = 1000;
+    uint8_t source[] = {0x45, 0x01, 0x06};
+    const uint8_t original[] = {0x45, 0x01, 0x06};
+    sent_len = 0;
+    done_calls = 0;
+    pl_init(&l);
+    pl_open(&l, now);
+    uint8_t generation = sync_up(&l, &now);
+    pl_request(&l, source, sizeof source, now);
+    take_record(&kind, &gen, body, &len);
+    CHECK(len == sizeof original && !memcmp(body, original, len));
+    memset(source, 0xa5, sizeof source); /* next upload reuses the buffer */
+    uint8_t error = PL_ERR_CORRUPT;
+    peer(&l, PL_KIND_ERROR, generation, &error, 1, now);
+    take_record(&kind, &gen, body, &len);
+    CHECK(kind == PL_KIND_PACKET && len == sizeof original &&
+          !memcmp(body, original, len));
+    pl_cancel(&l, now);
+
+    /* The same ownership applies before synchronization finishes. */
+    memcpy(source, original, sizeof source);
+    pl_request(&l, source, sizeof source, now);
+    memset(source, 0x5a, sizeof source);
+    sync_up(&l, &now);
+    take_record(&kind, &gen, body, &len);
+    CHECK(kind == PL_KIND_PACKET && len == sizeof original &&
+          !memcmp(body, original, len));
+    pl_close(&l);
+}
+
 int main(void) {
     /* zlib's crc32("123456789") */
     CHECK(pl_crc32((const uint8_t *)"123456789", 9, 0) == 0xCBF43926u);
@@ -190,6 +249,8 @@ int main(void) {
 
     pl_close(&l);
     CHECK(l.state == PL_OFF);
+    test_disconnect_outcomes();
+    test_request_snapshot();
     printf(failures ? "packet_link: %d failures\n" : "packet_link: ok\n",
            failures);
     return failures != 0;

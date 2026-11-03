@@ -57,7 +57,7 @@ static void emit(struct pl_link *l, uint8_t kind, const uint8_t *body,
 static void finish(struct pl_link *l, enum pl_outcome outcome,
                    const uint8_t *body, size_t len) {
     l->pending = false;
-    l->req = NULL;
+    l->req_len = 0;
     l->done(l->ctx, outcome, body, len);
 }
 
@@ -95,9 +95,13 @@ void pl_open(struct pl_link *l, uint32_t now) {
 }
 
 void pl_close(struct pl_link *l) {
+    bool in_flight = l->state == PL_AWAIT_ANSWER;
     l->state = PL_OFF;
-    if (l->pending)
-        finish(l, PL_NO_PEER, NULL, 0);
+    if (l->pending) {
+        if (in_flight)
+            ++l->count.unanswered;
+        finish(l, in_flight ? PL_UNANSWERED : PL_NO_PEER, NULL, 0);
+    }
 }
 
 void pl_request(struct pl_link *l, const uint8_t *pkt, size_t len,
@@ -106,7 +110,7 @@ void pl_request(struct pl_link *l, const uint8_t *pkt, size_t len,
         return l->done(l->ctx, PL_NO_PEER, NULL, 0);
     if (!len || len > PL_MAX_BODY || (l->capacity && len > l->capacity))
         return l->done(l->ctx, PL_REFUSED, NULL, 0);
-    l->req = pkt;
+    memcpy(l->req, pkt, len);
     l->req_len = len;
     l->pending = true;
     l->pending_since = now;

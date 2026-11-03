@@ -53,7 +53,7 @@
 #define SBN_RES_BAD_CHECK 4        /* request words do not match SBN_W_CHECK: resend */
 #define SBN_RES_TOO_BIG   5        /* reply longer than SBN_RESP_MAX */
 #define SBN_RES_ABORTED   6
-#define SBN_RES_UNANSWERED 7       /* NIO took it but sent no answer: it may have run */
+#define SBN_RES_UNANSWERED 7       /* request sent but outcome unknown: it may have run */
 #define SBN_RES_REFUSED   8        /* NIO's link refused it: it did not run */
 
 /* Write registers: byte offset from the CS1 base */

@@ -86,7 +86,7 @@ and nothing goes to NIO. `SBN_R_STATUS` reports whether NIO's port is open
 | `SBN_RES_BAD_LEN`, `SBN_RES_BAD_CHECK` | the request was damaged on the bus | no; resend |
 | `SBN_RES_REFUSED` | NIO's link refused it, e.g. over its capacity | no |
 | `SBN_RES_TOO_BIG` | the reply is longer than `SBN_RESP_MAX`; it is not delivered | yes |
-| `SBN_RES_UNANSWERED` | NIO took it and sent no answer | maybe |
+| `SBN_RES_UNANSWERED` | NIO took it and sent no answer, or the port closed after it was sent | maybe |
 | `SBN_RES_TIMEOUT` | nothing came back in 30 s | maybe |
 | `SBN_RES_ABORTED` | the Palm aborted it | maybe |
 
@@ -129,6 +129,10 @@ What the firmware does with the link (`src/packet_link.c`):
 - It sends a request only in a ready link, and sends it again, unchanged, only
   after an error that says it did not run (Corrupt, or NotSynchronised after
   NIO restarted), at most twice.
+- If the port closes after a request is sent, it reports Unanswered; a port
+  closing before the request is sent reports No Host.
+- It keeps a copy of the in-flight request, so a new Palm upload cannot alter
+  a pending send or retry before the next doorbell abandons it.
 - After Unanswered, a timeout or an abort in flight, it resyncs with a new
   generation and never resends the request.
 - It gives up on a request that finds no peer within 3 s (`SBN_RES_NO_HOST`).

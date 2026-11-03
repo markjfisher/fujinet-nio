@@ -58,7 +58,9 @@ struct pl_link {
     uint8_t generation, version;
     uint16_t capacity, peer_timeout_ms;
     uint32_t quiet_ms, since, until;
-    const uint8_t *req;
+    /* Snapshot: callers may reuse their source as soon as pl_request returns.
+     */
+    uint8_t req[PL_MAX_BODY];
     size_t req_len;
     bool pending;
     uint32_t pending_since;
@@ -78,7 +80,7 @@ void pl_init(struct pl_link *l);
 /* The peer's port opened: start a generation. Closed: fail any request. */
 void pl_open(struct pl_link *l, uint32_t now);
 void pl_close(struct pl_link *l);
-/* Queue one request; pkt must stay valid until done is called. */
+/* Queue one request, copying its bytes before returning. */
 void pl_request(struct pl_link *l, const uint8_t *pkt, size_t len,
                 uint32_t now);
 void pl_cancel(struct pl_link *l, uint32_t now);
