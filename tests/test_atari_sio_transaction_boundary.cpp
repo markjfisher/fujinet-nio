@@ -858,3 +858,37 @@ TEST_CASE("Trigger preserves individual IRQ levels filtering and reply state")
     capture.reset_stats();
     CHECK(saved->trigger_edges[15].time_us==210);
 }
+
+TEST_CASE("Released command tolerates one observed high but rejects new assertions and ambiguity")
+{
+    using namespace fujinet::io;
+    for (unsigned scenario=0;scenario<7;++scenario) {
+        AtariSioTransactionBoundary boundary;
+        AtariSioCapture capture;
+        CaptureUart uart;
+        CaptureRouter router;
+        boundary.note_bus_edge(100,true);
+        capture.poll(boundary,router,uart,[]{return true;},[]{return 110;});
+        boundary.note_bus_edge(4500,false);
+        capture.poll(boundary,router,uart,[]{return false;},[]{return 4600;});
+        if (scenario==2) boundary.note_bus_edge(5700,true);
+        if (scenario==3) boundary.note_bus_edge(5700,false);
+        boundary.note_bus_edge(5800,scenario==1);
+        uart.driver={0x7f,0x53,0x11,0x00,0xe3};
+        if (scenario==5) uart.driver.push_back(0);
+        if (scenario==6) ++uart.errors;
+        capture.poll(boundary,router,uart,[&]{return scenario==1;},[&]{return scenario==4 ? 50200 : 5900;});
+        if (scenario==0) {
+            CHECK(capture.stats().frames==1);
+            CHECK(capture.stats().aborts_edge==0);
+            CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x53,0x11,0x00,0xe3});
+        } else {
+            CHECK(capture.stats().frames==0);
+            CHECK(router.command.empty());
+            if (scenario==4) CHECK(capture.stats().aborts_timeout==1);
+            else if (scenario==5) CHECK(capture.stats().aborts_overflow==1);
+            else if (scenario==6) CHECK(capture.stats().aborts_rx_error==1);
+            else CHECK(capture.stats().aborts_edge==1);
+        }
+    }
+}

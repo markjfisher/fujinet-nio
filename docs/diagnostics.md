@@ -193,6 +193,14 @@ tight, so this is how to see what the Atari is doing:
   proof of physical transitions; delayed/coalesced interrupts remain possible.
   Storage adds roughly 400 bytes per ingress/recorder combined. No allocation
   or console output occurs in the interrupt. Capture acceptance is unchanged.
+  Event 14 marks a tolerated repeated-high observation: collection has already
+  seen release, the line remains high, and exactly one new ISR observation is
+  available with no intervening low or filtered observation. Collection continues
+  under its existing 50 ms deadline; size, checksum and UART-error handling are
+  unchanged. Multiple edges, a new assertion, or missing observation history
+  remain ambiguous and are rejected. The ISR samples cannot rule out a pulse
+  shorter than interrupt observation, so this is a bounded recovery policy,
+  not proof that every repeated-high interrupt is electrically spurious.
   Abort `frame=` is the previous/partially collected frame, not necessarily the
   command lost. A poll-gap event has no command frame. This is metadata, not a
   logic-analyser capture; multiple edges can occur before a GPIO level is sampled.

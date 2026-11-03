@@ -71,6 +71,18 @@ public:
         }
         return out;
     }
+    std::uint32_t observed_sequence() const noexcept {
+        return _published_sequence.load(std::memory_order_acquire);
+    }
+    bool single_high_after(std::uint32_t sequence) const noexcept {
+        const auto last = observed_sequence();
+        if (last - sequence != 1) return false;
+        const auto& slot = _observations[last % _observations.size()];
+        const auto before = slot.version.load(std::memory_order_seq_cst);
+        const auto flags = slot.flags.load(std::memory_order_seq_cst);
+        const auto after = slot.version.load(std::memory_order_seq_cst);
+        return before == last * 2 && before == after && (flags & 3) == 0;
+    }
     template<class Asserted> void begin_reply(Asserted asserted) noexcept
     {
         _reply_state.store(1, std::memory_order_release);
@@ -203,6 +215,10 @@ public:
             _stats.write_glitches_ignored += edges;
             edges = 0;
         }
+        if (released_high_noise(boundary, edges, low)) {
+            trace_boundary(14, now(), boundary, low, edges);
+            edges = 0;
+        }
         if (!low) {
             std::array<std::uint8_t, 5> from_alt{};
             // Multiple pending CMD edges cannot identify the transaction that
@@ -266,6 +282,10 @@ public:
                 _stats.write_glitches_ignored += seen;
                 seen = 0;
             }
+            if (!rx_error && !low && released_high_noise(boundary, seen, low_now)) {
+                trace_boundary(14, now(), boundary, low_now, seen);
+                seen = 0;
+            }
             if (rx_error || seen != 0 || low_now != low) {
                 abort(rx_error ? &AtariSioCaptureStats::aborts_rx_error : &AtariSioCaptureStats::aborts_edge);
                 return;
@@ -289,12 +309,17 @@ public:
         }
         if (_collecting && edges == 1 && !low) {
             _released = true;
+            _release_irq_sequence = boundary.observed_sequence();
             trace_boundary(12, now(), boundary, low, edges);
         }
         if (_collecting && _released && _frame_used == _frame.size()) {
-            const auto final_edges = boundary.consume();
+            auto final_edges = boundary.consume();
             _poll_edges += final_edges;
             if (final_edges) trace_boundary(10, now(), boundary, asserted(), final_edges);
+            if (released_high_noise(boundary, final_edges, asserted())) {
+                trace_boundary(14, now(), boundary, false, final_edges);
+                final_edges = 0;
+            }
             if (final_edges != 0 || asserted()) {
                 abort(&AtariSioCaptureStats::aborts_edge);
                 return;
@@ -350,6 +375,14 @@ public:
     std::uint32_t bad_frames_in_a_row() const noexcept { return _bad_frames_in_a_row; }
     void clear_bad_frames() noexcept { _bad_frames_in_a_row = 0; }
 private:
+    std::uint32_t _release_irq_sequence{0};
+    bool released_high_noise(const AtariSioTransactionBoundary& boundary,
+                             std::uint32_t edges, bool low) noexcept {
+        if (!_collecting || !_released || low || edges != 1 ||
+            !boundary.single_high_after(_release_irq_sequence)) return false;
+        _release_irq_sequence = boundary.observed_sequence();
+        return true;
+    }
     std::shared_ptr<AtariSioFlightTrace> _flight = std::make_shared<AtariSioFlightTrace>();
     std::uint32_t _poll_edges{0}, _poll_gap_us{0};
     bool _flight_started{false};
