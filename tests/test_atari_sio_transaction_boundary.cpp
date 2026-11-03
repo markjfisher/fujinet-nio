@@ -763,3 +763,65 @@ TEST_CASE("SIO flight history records command edge observations and collection d
     CHECK(saved->entries[37].used==0);
     CHECK(saved->entries[37].last_edge_us==300);
 }
+
+TEST_CASE("Reply noise followed by next command assertion does not discard the command")
+{
+    using namespace fujinet::io;
+    // Reproduce the old deferred filtering outcome: low at flush completion
+    // keeps both raw edges, and the command collector rejects the next command.
+    {
+        AtariSioTransactionBoundary old_boundary;
+        AtariSioCapture old_capture;
+        CaptureUart old_uart;
+        CaptureRouter old_router;
+        old_boundary.note_cmd_edge(95045000);
+        old_boundary.note_cmd_edge(95045950);
+        old_capture.poll(old_boundary,old_router,old_uart,[]{return true;},[]{return 95047810;});
+        CHECK(old_capture.stats().aborts_edge==1);
+        CHECK_FALSE(old_capture.needs_immediate_poll());
+    }
+
+    AtariSioTransactionBoundary boundary;
+    AtariSioCapture capture;
+    CaptureUart uart;
+    CaptureRouter router;
+    boundary.begin_reply([]{return false;});
+    boundary.note_bus_edge(95045000,false); // reply-time high interrupt
+    boundary.note_bus_edge(95045950,true);  // next COMMAND before flush returns
+    boundary.end_reply();
+    capture.poll(boundary,router,uart,[]{return true;},[]{return 95047810;});
+    CHECK(capture.stats().aborts_edge==0);
+    CHECK(capture.needs_immediate_poll());
+    boundary.note_bus_edge(95050481,false);
+    uart.driver={0x7f,0x54,0x0b,0x00,0xde};
+    capture.poll(boundary,router,uart,[]{return false;},[]{return 95050776;});
+    CHECK(capture.stats().frames==1);
+    CHECK(router.command==std::vector<std::uint8_t>{0x7f,0x54,0x0b,0x00,0xde});
+    CHECK(boundary.reply_noise()==1);
+    CHECK(boundary.total_edges()==3);
+}
+
+TEST_CASE("Reply filtering preserves ambiguous boundaries and never clears a racing assertion")
+{
+    using namespace fujinet::io;
+    for (unsigned scenario=0;scenario<4;++scenario) {
+        AtariSioTransactionBoundary boundary;
+        if (scenario==0) boundary.note_bus_edge(10,true); // already pending
+        boundary.begin_reply([&]{
+            if (scenario==1) boundary.note_bus_edge(11,true); // during level check
+            return scenario==2; // low at entry, even without recorded interrupt
+        });
+        if (scenario==3) boundary.note_bus_edge(12,true); // during transmission
+        boundary.note_bus_edge(20,false);
+        boundary.note_bus_edge(30,true);
+        boundary.end_reply();
+        CHECK(boundary.reply_noise()==0);
+        CHECK(boundary.consume()==(scenario==2 ? 2 : 3));
+    }
+    AtariSioTransactionBoundary boundary;
+    boundary.begin_reply([]{return false;});
+    boundary.end_reply();
+    boundary.note_bus_edge(40,false); // outside transmission is never filtered
+    CHECK(boundary.consume()==1);
+    CHECK(boundary.reply_noise()==0);
+}

@@ -147,6 +147,16 @@ tight, so this is how to see what the Atari is doing:
   don't erase the event preceding a stall. Replies record control bytes, size, baud and duration,
   never response payloads. Times are the wrapping 32-bit microsecond clock;
   `sio.reset` clears the trace. This records no network payloads and logs nothing during SIO.
+- Reply-time COMMAND noise is classified when the GPIO interrupt is observed,
+  rather than clearing pending edges after UART flush. While transmitting, a
+  high-level interrupt is ignored only until an assertion is observed. Once low
+  is seen, all following edges are preserved, including release. Pending edges
+  or an already-low line at reply start disable filtering for that reply.
+  This prevents reply noise followed by a genuine next-command assertion from
+  becoming a rejected two-edge batch. Ambiguous batches remain rejected; this
+  does not infer missing physical transitions or change client retry timing.
+  The `CMD edges while we transmitted, dropped as noise` counter includes these
+  filtered observations; the total edge counter still includes them as well.
 - `sio.trace flight` — retrieve a **128-event first-failure recording**. It runs
   without console output, retaining recent history until an active capture abort
   (edge, timeout, overflow or UART error), ambiguous idle boundary (COMMAND low

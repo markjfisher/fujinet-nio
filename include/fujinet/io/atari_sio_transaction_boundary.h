@@ -23,6 +23,31 @@ public:
         }
         _last_edge_us.store(at_us, std::memory_order_relaxed);
     }
+    // Classify a reply-time high-level interrupt before a later real assertion
+    // can join its batch. Once low is observed, preserve every subsequent edge.
+    void note_bus_edge(std::uint32_t at_us, bool low) noexcept
+    {
+        if (low) _reply_state.store(2, std::memory_order_release);
+        else if (_reply_state.load(std::memory_order_acquire) == 1) {
+            if (_total.fetch_add(1, std::memory_order_relaxed) == 0)
+                _first_edge_us.store(at_us, std::memory_order_relaxed);
+            _last_edge_us.store(at_us, std::memory_order_relaxed);
+            _reply_noise.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        note_cmd_edge(at_us);
+    }
+    template<class Asserted> void begin_reply(Asserted asserted) noexcept
+    {
+        _reply_state.store(1, std::memory_order_release);
+        // Check after enabling: a racing assertion either marks state 2 in the
+        // ISR or leaves a pending edge here. Never clear pending boundaries.
+        if (asserted() || _edges.load(std::memory_order_acquire) != 0)
+            _reply_state.store(2, std::memory_order_release);
+    }
+    void end_reply() noexcept { _reply_state.store(0, std::memory_order_release); }
+    std::uint32_t reply_noise() const noexcept { return _reply_noise.load(std::memory_order_relaxed); }
+    void reset_reply_noise() noexcept { _reply_noise.store(0, std::memory_order_relaxed); }
     std::uint32_t consume() noexcept { return _edges.exchange(0, std::memory_order_acq_rel); }
     // Every edge since the last reset, for diagnostics; consume() does not affect it.
     std::uint32_t total_edges() const noexcept { return _total.load(std::memory_order_relaxed); }
@@ -34,6 +59,7 @@ public:
     std::uint32_t first_edge_us() const noexcept { return _first_edge_us.load(std::memory_order_relaxed); }
     std::uint32_t last_edge_us() const noexcept { return _last_edge_us.load(std::memory_order_relaxed); }
 private:
+    std::atomic<std::uint32_t> _reply_state{0}, _reply_noise{0};
     std::atomic<std::uint32_t> _edges{0};
     std::atomic<std::uint32_t> _total{0};
     std::atomic<std::uint32_t> _first_edge_us{0};

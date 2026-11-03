@@ -141,8 +141,10 @@ void AtariSioIngress::send_early_ack()
                   _capture.processing_command(), _capture.processing_release_us());
     if (_capture.processing_command()) _txn.begin(_capture.last_frame()[1], _capture.processing_release_us());
     const auto trace_start = static_cast<std::uint32_t>(esp_timer_get_time());
+    _boundary.begin_reply([this] { return gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0; });
     _uart->write(&sio_ack, 1);
     _uart->flushOutput();
+    _boundary.end_reply();
     _early_ack_us = static_cast<std::uint32_t>(esp_timer_get_time());
     _capture.trace_reply(trace_start, _early_ack_us - trace_start,
                          _uart->uart_config().baudRate, 1, sio_ack, 0, true);
@@ -159,6 +161,7 @@ void AtariSioIngress::send(const std::vector<std::uint8_t>& bytes)
                              static_cast<std::uint16_t>(bytes.size()), bytes[0],
                              bytes[0] == sio_ack && bytes.size() > 1 ? bytes[1] : 0);
     };
+    _boundary.begin_reply([this] { return gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0; });
     // Timed before the write: this is when the reply starts, which is what the Atari waits for.
     _reply.record(static_cast<std::uint32_t>(esp_timer_get_time()), _capture.processing_start_us(),
                   _capture.processing_command() && _early_ack_us == 0, _capture.processing_release_us());
@@ -179,7 +182,7 @@ void AtariSioIngress::send(const std::vector<std::uint8_t>& bytes)
             _reply.record_data(static_cast<std::uint32_t>(bytes.size() - 1),
                                static_cast<std::uint32_t>(esp_timer_get_time()) - data_start);
         }
-        drop_tx_noise_edges();
+        _boundary.end_reply();
         _txn.end(static_cast<std::uint32_t>(esp_timer_get_time()));
         trace_finish();
         return;
@@ -203,27 +206,16 @@ void AtariSioIngress::send(const std::vector<std::uint8_t>& bytes)
         _uart->flushOutput();
         _reply.record_data(static_cast<std::uint32_t>(data_bytes),
                            static_cast<std::uint32_t>(esp_timer_get_time()) - data_start);
-        drop_tx_noise_edges();
+        _boundary.end_reply();
         _txn.end(static_cast<std::uint32_t>(esp_timer_get_time()));
         trace_finish();
         return;
     }
     _uart->write(bytes.data(), bytes.size());
     _uart->flushOutput();
-    drop_tx_noise_edges();
+    _boundary.end_reply();
     _txn.end(static_cast<std::uint32_t>(esp_timer_get_time()));
     trace_finish();
-}
-
-// The Atari holds CMD high while we answer, so a CMD edge pending when a reply ends with CMD still high
-// can only be noise from our own transmission. Left in, it aborts the next thing the capture is doing,
-// and after an ACK that is the write's data frame: the Atari gets no ACK for it and times out (9 s on
-// the OS SIO, 40 ms plus a retry on the high-speed driver). A real assertion leaves the pin low and is kept.
-void AtariSioIngress::drop_tx_noise_edges()
-{
-    if (_cmd_pin < 0 || _cmd_pin >= GPIO_NUM_MAX) return;
-    if (gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0) return;
-    _tx_noise_edges += _boundary.consume();
 }
 
 io::AtariSioStats AtariSioIngress::stats() const
@@ -253,7 +245,7 @@ io::AtariSioStats AtariSioIngress::stats() const
     out.hsio_fallback_enabled = _speed.fallback();
     out.tuning = _tuning;
     out.txn = _txn;
-    out.tx_noise_edges = _tx_noise_edges;
+    out.tx_noise_edges = _boundary.reply_noise();
     out.proc_available = _proc_pin >= 0 && _proc_pin < GPIO_NUM_MAX;
     out.proc_low = out.proc_available && gpio_get_level(static_cast<gpio_num_t>(_proc_pin)) == 0;
     out.proc_asserts = _proc_asserts;
@@ -423,14 +415,15 @@ void AtariSioIngress::reset_stats()
     _alt_valid = 0;
     _alt_ambiguous_dropped = 0;
     _alt_last = {};
-    _tx_noise_edges = 0;
+    _boundary.reset_reply_noise();
     _poll_gap_us_max = 0;
     _poll_gap_at_us = 0;
 }
 
 void AtariSioIngress::note_cmd_edge() noexcept
 {
-    _boundary.note_cmd_edge(static_cast<std::uint32_t>(esp_timer_get_time()));
+    _boundary.note_bus_edge(static_cast<std::uint32_t>(esp_timer_get_time()),
+                            gpio_get_level(static_cast<gpio_num_t>(_cmd_pin)) == 0);
     BaseType_t woken = pdFALSE;
     if (_owner_task) vTaskNotifyGiveFromISR(static_cast<TaskHandle_t>(_owner_task), &woken);
     if (woken == pdTRUE) portYIELD_FROM_ISR();
