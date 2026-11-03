@@ -1633,7 +1633,7 @@ unchanged, including its `$0f` timeout byte. READ/PUT/WRITE still interpret
 AUX as a one-based sector number. The native NIO packet protocol and its
 Python/C clients are unaffected.
 
-The optional [experimental Atari small-stream projection](atari/small-stream.md)
+The optional [Atari small-stream projection](atari/small-stream.md)
 uses the same routed NetworkDevice/FileDevice services with firmware-owned
 cursors and bounded replay. It adds no socket implementation or platform guards
 to the services and leaves the existing Q/W/P/R projection available.

@@ -7,7 +7,7 @@
 
 namespace fujinet::io::stream {
 
-// Experimental stream transaction primitive. No wire command is allocated yet.
+// Bounded stream transaction replay primitive, independent of carrier framing.
 // One slot per stream, owned by the cooperative service loop (not thread safe).
 // A successor request implicitly acknowledges the previous result. The caller
 // must validate the session token before consulting this slot.
@@ -28,7 +28,7 @@ public:
             return Decision::Replay;
         }
         // Never wrap a sequence within a session: delayed packets must not
-        // acquire a new meaning after 65536 operations. Renew the session.
+        // acquire a new meaning after sequence exhaustion. Renew the session.
         return _sequence != std::numeric_limits<Sequence>::max() &&
                sequence == static_cast<Sequence>(_sequence + 1)
             ? Decision::Execute : Decision::Reject;

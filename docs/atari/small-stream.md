@@ -1,8 +1,9 @@
-# Experimental small stream, revision 1
+# Atari small stream, revision 1
 
 This optional `$7F` SIO projection is for small Atari clients. Existing Q/W/P/R
-and all existing service protocols remain unchanged. It is experimental: use
-matching firmware and `fn_stream.h`, not a published library package.
+and all existing service protocols remain unchanged. This is an opt-in, hardware-validated path: use
+firmware and `fn_stream.h` with version 1 support. Older released archives may
+not contain this API. The normal packet route remains supported.
 
 The Atari uses a polled 19200-baud POKEY carrier, never SIOV. It does not change
 FujiNet's advertised HSIO index, clear U1MB tables, or suppress VBI/DLI. The
@@ -103,3 +104,31 @@ Current receive policy intentionally uses bounded padding. A one-byte read with
 capacity 120 still receives 131 bytes; choose capacity for the application. The
 first experiment reduces packet/client complexity and removes the length poll;
 it does not claim optimal serial bandwidth for every workload.
+
+## Deployment and architectural trade-off
+
+This projection serves memory-constrained Atari TCP games and interactive clients,
+not general service consumers. It removes generic packet construction, cursor
+tracking and polling from their hot path. Firmware still routes operations through
+NetworkDevice/FileDevice; the SIO layer does not own sockets. Other platforms and
+their existing service commands are unaffected. There are no platform conditionals
+added to the shared network/file services for this projection.
+
+The application pays for a 262-byte context, partial-transfer/framing logic and
+cooperative use of POKEY/interrupts; network calls use polled 19200 rather than
+HSIO. Firmware pays the per-active-ingress replay/result storage described above,
+plus existing TCP buffers. Receive padding and two SIO exchanges per operation
+remain bandwidth costs. This is a code/RAM optimization, not a throughput promise.
+
+A capability query is non-destructive. Close releases the connection but retains
+session sequencing/replay; only ingress teardown resets that lifetime. Version 1
+must preserve this behavior. An incompatible extension needs version negotiation,
+not a silent reinterpretation of existing commands. Standard Q/W/P/R clients
+continue to work without opting into these commands.
+
+Hardware acceptance: 459 diagnostic echoes at stock speed and 600 starting with
+U1MB HSIO enabled, with DLI/VBI sound and no errors; SYN-ACK WIRE gameplay, disk
+help, sound, colours and logoff/rejoin also passed user testing. An observed stale
+game/missing-grid issue is unresolved and is not attributed to the transport.
+The library's `docs/atari-small-stream.md` owns the application integration guide,
+including retry, timeout, register ownership and memory costs.

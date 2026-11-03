@@ -3,7 +3,7 @@
 #include "fujinet/io/stream/replay_slot.h"
 #include <vector>
 namespace fujinet::io::stream {
-// Single experimental stream per ingress; all network/file work goes through routing.
+// Single version 1 stream per ingress; all network/file work goes through routing.
 class Session {
 public:
     static constexpr unsigned max_data = 120, header = 11;
