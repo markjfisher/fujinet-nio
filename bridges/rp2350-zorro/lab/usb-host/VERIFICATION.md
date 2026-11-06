@@ -77,3 +77,34 @@ redirection and filesystem initialization. With the workspace environment
 sourced, `./build.sh -b` passed; both marker strings were confirmed in the built
 ELF and `git diff --check` passed. Countdown output/timing on hardware is pending
 the next flash; this build does not establish the cause of the silent console.
+
+## Idle USB stalls the first core tick
+
+Mark's next capture confirmed the countdown and USB logs, LittleFS mounted,
+transport setup completed, and startup reached `starting main loop`. No prompt
+or phase-1 completion followed. A reset reproduced that sequence. This proves
+USB output and startup through the loop entry, but not loop progress or USB RX.
+
+The USB byte channel returned driver readiness from `available()` even with an
+empty RX FIFO. `PacketLink::receive()` then repeatedly called `fill()` and
+retried because `available()` remained true, never returning to console polling.
+Changed the adapter to check the selected CDC interface's actual buffered input.
+No packet protocol or settings changed.
+
+Verification (workspace environment sourced, commands in firmware root):
+
+- `python3 tests/test_esp32_usb_cdc_channel.py`: before the fix, idle receive
+  timed out for both port selections; after the fix, passed. Compiles the actual
+  USB adapter and PacketLink against mocked USB/RTOS calls. Covers idle input,
+  isolation from the other CDC port, partial reads, partial records and failed
+  initialization. It does not emulate USB enumeration or electrical behaviour.
+- `cmake --preset fujibus-pty-debug` and
+  `ctest --test-dir build/fujibus-pty-debug -R '^esp32-usb-cdc-channel$' --output-on-failure`:
+  passed (1 test).
+- `./build.sh -b`: bench N16R8 firmware passed.
+- `git diff --check`: passed.
+
+Next physical check: upload this build, reconnect the console after reset, and
+confirm the prompt, `help`, `core.info`, and phase-1 service startup. Repeat
+`core.info` to verify advancing ticks. The five-second LED flash remains
+unexplained; no physical console recovery is claimed yet.

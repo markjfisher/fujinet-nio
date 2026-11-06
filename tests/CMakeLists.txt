@@ -115,6 +115,10 @@ add_test(NAME posix-clock-test-isolation
 # Python unit tests (tooling). Keep these lightweight so they can run everywhere.
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+    add_test(NAME esp32-usb-cdc-channel
+        COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_esp32_usb_cdc_channel.py)
+    set_tests_properties(esp32-usb-cdc-channel PROPERTIES TIMEOUT 150)
     if(FN_WITH_HOTSYNC AND FN_BUILD_FUJIBUS_PTY AND TARGET fujinet-nio-posix)
         add_test(NAME hotsync-stalled-netsync-shutdown
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/hotsync_shutdown_integration.py

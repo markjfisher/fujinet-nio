@@ -177,6 +177,13 @@ log redirection, filesystem initialization or service startup; they do not
 depend on `FN_DEBUG` or log levels. Open `/dev/fujinet-console` after reset to
 capture them. Remove the flag from this profile when the investigation is done.
 
+If an older build stops printing at `starting main loop` without a prompt,
+update to the USB readability fix: `UsbCdcChannel::available()` must check the
+configured CDC RX FIFO, not just driver initialization. Otherwise idle PacketLink
+receive loops indefinitely before the core can poll the console or start phase-1
+services. The regression check is `python3 tests/test_esp32_usb_cdc_channel.py`
+from the firmware root (also registered with CTest as `esp32-usb-cdc-channel`).
+
 The probe expects CDC0/control-interface 0 for packets and CDC1/control-interface
 2 for logs. It asserts DTR/RTS on enumeration and drains logs separately, counting
 their bytes without feeding them into PacketLink. It uses USB-OTG CDC in Run
