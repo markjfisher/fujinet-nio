@@ -168,6 +168,15 @@ Internal LittleFS mounts the `storage` partition and formats it automatically
 if mounting fails; a separate filesystem upload is unnecessary for the console
 and clock test. Packaged boot images are not required for either test.
 
+The bench profile enables `FN_DEBUG_BOOT_COUNTDOWN` while investigating a silent
+ESP console. After USB initialization it waits five seconds, writes `booting up`
+to the console CDC port, then writes `5`, `4`, `3`, `2`, `1` on separate lines
+one second apart. `starting application` marks resumption of normal startup,
+about ten seconds after USB initialization. These are direct CDC writes before
+log redirection, filesystem initialization or service startup; they do not
+depend on `FN_DEBUG` or log levels. Open `/dev/fujinet-console` after reset to
+capture them. Remove the flag from this profile when the investigation is done.
+
 The probe expects CDC0/control-interface 0 for packets and CDC1/control-interface
 2 for logs. It asserts DTR/RTS on enumeration and drains logs separately, counting
 their bytes without feeding them into PacketLink. It uses USB-OTG CDC in Run

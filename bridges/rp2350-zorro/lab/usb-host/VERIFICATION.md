@@ -68,3 +68,12 @@ debug settings. `git diff --check` passed. Hardware verification of the SD skip
 and console response remains pending: serial devices are not exposed in the
 agent environment. Next check: flash this application build, reconnect the
 monitor to `/dev/fujinet-console`, and try `help` and `core.info`.
+
+Mark subsequently reported that reflashing the SD guard still left the console
+silent with the same roughly five-second LED activity. Added a temporary bench
+`FN_DEBUG_BOOT_COUNTDOWN`: five-second initial delay, direct CDC `booting up`,
+five one-second countdown lines, then `starting application`, all before log
+redirection and filesystem initialization. With the workspace environment
+sourced, `./build.sh -b` passed; both marker strings were confirmed in the built
+ELF and `git diff --check` passed. Countdown output/timing on hardware is pending
+the next flash; this build does not establish the cause of the silent console.
