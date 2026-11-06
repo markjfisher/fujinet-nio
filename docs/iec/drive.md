@@ -12,7 +12,7 @@ Behaviour follows a stock 1541 where a program can see it. The status text is th
 
 | | |
 |---|---|
-| Media | D64: 35, 40 or 42 tracks. Mounting anything else reads as `74,DRIVE NOT READY` |
+| Media | D64: 35, 40 or 42 tracks. A loose `.prg`, as a read-only disk holding that one file, named after it. Mounting anything else reads as `74,DRIVE NOT READY` |
 | `LOAD"name",8` | Channel 0, PRG only. EOI goes with the last byte |
 | `LOAD"*",8` | The first PRG on the disk. `0:*` is an ordinary pattern: the first file of any type, then type checked |
 | `LOAD"$",8` | The 1541's listing, 32 bytes per line. `$0`, `$:PAT*`, `$0:PAT*` and `$:*=P` all work |
@@ -34,7 +34,7 @@ does not write over the screen.
 | REL files | Answer `64, FILE TYPE MISMATCH` |
 | Direct access (`#`, `U1`, `B-R`) | `#` answers `70,NO CHANNEL`; the commands answer `31,SYNTAX ERROR` |
 | Drive memory (`M-R`, `M-W`, `M-E`) | `31,SYNTAX ERROR`. Drive code cannot run here, so a fast loader fails at once |
-| D71, D81, loose PRG files | Not mounted as drive media |
+| D71, D81 | Not mounted as drive media |
 
 ## Status messages
 
@@ -52,7 +52,7 @@ does not write over the screen.
 | 66 | `ILLEGAL TRACK OR SECTOR` | A chain leaves the disk or loops |
 | 70 | `NO CHANNEL` | Direct access |
 | 73 | `FUJINET NIO DOS` | Power on and reset |
-| 74 | `DRIVE NOT READY` | No disk, or not a D64 |
+| 74 | `DRIVE NOT READY` | No disk, or a disk of another machine |
 
 ## Damaged disks
 

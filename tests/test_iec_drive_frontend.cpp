@@ -205,6 +205,38 @@ TEST_CASE("IEC drive: a missing file ends the first read at once, so the KERNAL 
     CHECK(next.bytes == program(30));
 }
 
+TEST_CASE("IEC drive: a loose PRG loads by name and by \"*\", and lists as its one file")
+{
+    Rig rig;
+    const auto bytes = program(600);
+    rig.fs->file_bytes("/hello.prg") = bytes;
+    fujinet::disk::MountOptions options;
+    options.readOnlyRequested = true;
+    options.sectorSizeHint = 256;
+    REQUIRE(rig.disks->mount(0, "mem", "/hello.prg", options).ok());
+    rig.drain_status();
+
+    const ReadOutcome byStar = rig.load("*");
+    CHECK(byStar.bytes == bytes);
+    CHECK(byStar.eoiOnLastByte);
+    CHECK(rig.status() == "00, OK,00,00\r");
+
+    CHECK(rig.load("HELLO").bytes == bytes);
+    CHECK(rig.status() == "00, OK,00,00\r");
+
+    const std::vector<std::uint8_t> listing = rig.load("$").bytes;
+    const std::string text = as_text(listing);
+    CHECK(text.find("\"HELLO\"") != std::string::npos);
+    CHECK(text.find("PRG") != std::string::npos);
+    const auto freeLine = text.find("BLOCKS FREE");
+    REQUIRE(freeLine != std::string::npos);
+    // The count is that BASIC line's number: 664 less the file's 3 blocks.
+    CHECK((listing[freeLine - 2] | (listing[freeLine - 1] << 8)) == 661);
+
+    rig.command("S0:HELLO");
+    CHECK(rig.status().rfind("26,", 0) == 0);
+}
+
 TEST_CASE("IEC drive: LOAD with no disk, or a disk of another machine, is DRIVE NOT READY")
 {
     SUBCASE("nothing mounted")

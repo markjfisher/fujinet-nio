@@ -10,7 +10,7 @@ frontend that composes `DiskService` directly.
 | Ingress | `NetIecIngress` (`io/netiec_ingress.h`) | Bus transactions from an emulator. On hardware, a line driver takes this place |
 | Bus | `IecBus` (`io/iec_bus.h`) | Who is addressed: ATN commands, LISTEN and TALK roles, OPEN names |
 | Devices | `IecDriveFrontend`, `IecNioFrontend`, composed by `IecDeviceSet` | Drives 8-15 and the packet channel on device 30 |
-| Disk | `CbmVolume` over `DiskService` and the D64 image type | The DOS structures on a disk, as sectors |
+| Disk | `CbmVolume` over `DiskService` and the D64 and PRG image types | The DOS structures on a disk, as sectors |
 
 None of the portable layers has a platform `#ifdef`. `IecBus` is the seam a hardware
 ingress plugs into.

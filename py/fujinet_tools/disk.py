@@ -30,6 +30,7 @@ TYPE_TEXT = {
     dp.TYPE_DC42: "dc42",
     dp.TYPE_XEXBOOT: "xexboot",
     dp.TYPE_D64: "d64",
+    dp.TYPE_PRG: "prg",
 }
 
 
@@ -69,7 +70,9 @@ def _type_parse(s: str) -> int:
         return dp.TYPE_XEXBOOT
     if sl == "d64":
         return dp.TYPE_D64
-    raise ValueError(f"unknown type {s!r} (expected auto|atr|ssd|dsd|raw|dc42|xexboot|d64)")
+    if sl == "prg":
+        return dp.TYPE_PRG
+    raise ValueError(f"unknown type {s!r} (expected auto|atr|ssd|dsd|raw|dc42|xexboot|d64|prg)")
 
 
 def _send_expect(*, args, command: int, payload: bytes, cmd_txt: str):
@@ -272,7 +275,7 @@ def register_subcommands(subparsers) -> None:
         "uri", help="URI (e.g., tnfs://192.168.1.101:16384/path, sd0:/path, /path)"
     )
     pm.add_argument("--ro", action="store_true", help="Request readonly")
-    pm.add_argument("--type", default="auto", help="auto|atr|ssd|dsd|raw|dc42|xexboot")
+    pm.add_argument("--type", default="auto", help="auto|atr|ssd|dsd|raw|dc42|xexboot|d64|prg")
     pm.add_argument(
         "--sector-size",
         type=int,

@@ -38,6 +38,7 @@ set(FN_IDF_SOURCES
         lib/disk/cbm_volume.cpp
         lib/disk/d64_image.cpp
         lib/disk/dc42_image.cpp
+        lib/disk/prg_image.cpp
         lib/disk/xex_boot_image.cpp
         lib/disk/disk_service.cpp
         lib/disk/image_probers/fat_bpb_probe.cpp

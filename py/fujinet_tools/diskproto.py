@@ -42,6 +42,7 @@ TYPE_RAW = 4
 TYPE_DC42 = 5
 TYPE_XEXBOOT = 6  # Atari executable as a synthesised read-only boot disk (mount only)
 TYPE_D64 = 7  # Commodore 1541 image (mount only)
+TYPE_PRG = 8  # Commodore program as a synthesised read-only one-file 1541 disk (mount only)
 
 
 # DiskError (matches C++ disk::DiskError; values are wire protocol). A failed

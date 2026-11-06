@@ -166,7 +166,8 @@ bool IecDriveFrontend::media_ready(std::uint32_t& sectorCount)
         return false;
     }
     const disk::DiskSlotInfo info = _service.info(_slot);
-    if (!info.inserted || info.type != disk::ImageType::D64) {
+    const bool cbmDisk = info.type == disk::ImageType::D64 || info.type == disk::ImageType::Prg;
+    if (!info.inserted || !cbmDisk) {
         return false;
     }
     sectorCount = info.geometry.sectorCount;

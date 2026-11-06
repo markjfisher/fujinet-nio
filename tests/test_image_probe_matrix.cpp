@@ -57,6 +57,15 @@ void put_be32(Bytes& v, std::size_t at, std::uint32_t x)
 
 Bytes zeros(std::size_t n) { return Bytes(n, 0); }
 
+// A file that starts with the Atari binary-load header.
+Bytes xex_header(std::size_t n)
+{
+    Bytes v(n, 0);
+    v[0] = 0xFF;
+    v[1] = 0xFF;
+    return v;
+}
+
 // Atari ATR: 16-byte header, then 720 single-density 128-byte sectors.
 Bytes atr_sd()
 {
@@ -174,6 +183,11 @@ std::vector<Row> matrix()
         {"Commodore 40-track .d64 with error table", zeros(768 * 257), "/big.d64", 0, true, ImageType::D64, 256, 768, OK},
         {"Commodore 42-track .d64", zeros(802 * 256), "/big42.d64", 0, true, ImageType::D64, 256, 802, OK},
         {"Commodore .d64, client hint 512 (ignored)", zeros(683 * 256), "/game.d64", 512, true, ImageType::D64, 256, 683, OK},
+        // A program is never a disk image on any machine, so claiming .prg hides none.
+        {"Commodore .prg", zeros(1000), "/game.prg", 0, true, ImageType::Prg, 256, 683, OK},
+        {"Commodore .PRG, client hint that does not fit (ignored)", zeros(51173), "/GAME.PRG", 256, true, ImageType::Prg, 256, 683, OK},
+        {"Commodore .prg, client hint that fits (still not raw)", zeros(10 * 256), "/even.prg", 256, true, ImageType::Prg, 256, 683, OK},
+        {"Commodore .prg loading at $FFFF (not an Atari executable)", xex_header(1000), "/high.prg", 0, true, ImageType::Prg, 256, 683, OK},
         {"BBC DFS .ssd", ssd_80track(), "/bbc.ssd", 0, true, ImageType::Ssd, 256, 800, OK},
         {"BBC DFS 80-track .dsd", dsd(80), "/bbc.dsd", 0, true, ImageType::Dsd, 0, 0, OK},
         {"BBC DFS 40-track .dsd", dsd(40), "/bbc40.dsd", 0, true, ImageType::Dsd, 0, 0, OK},
@@ -209,6 +223,8 @@ std::vector<Row> matrix()
         {"Amiga .adf of a size no ADF has", zeros(1000 * 512), "/bad.adf", 0, true, ImageType::Raw, 512, 0, DiskError::BadImage},
         {"DiskCopy-like header, unknown disk format", dc42(1600, 7), "/bad.dsk", 0, false, ImageType::Auto, 0, 0, DiskError::GeometryRequired},
         {"Commodore .d64 of a size no D64 has", zeros(1000 * 256), "/bad.d64", 0, true, ImageType::D64, 0, 0, DiskError::BadImage},
+        {"Commodore .prg with no load address", zeros(1), "/tiny.prg", 256, true, ImageType::Prg, 0, 0, DiskError::BadImage},
+        {"Commodore .prg too big for a 1541 disk", zeros(664 * 254 + 1), "/huge.prg", 0, true, ImageType::Prg, 0, 0, DiskError::BadImage},
         {"Mac .hda not whole blocks", zeros(1000), "/odd.hda", 0, false, ImageType::Auto, 0, 0, DiskError::GeometryRequired},
     };
 }

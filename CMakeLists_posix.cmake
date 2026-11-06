@@ -163,6 +163,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/disk/cbm_volume.cpp
         src/lib/disk/d64_image.cpp
         src/lib/disk/dc42_image.cpp
+        src/lib/disk/prg_image.cpp
         src/lib/disk/xex_boot_image.cpp
         src/lib/disk/disk_service.cpp
         src/lib/disk/image_probers/fat_bpb_probe.cpp

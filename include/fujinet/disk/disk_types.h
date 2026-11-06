@@ -15,6 +15,7 @@ enum class ImageType : std::uint8_t {
     DiskCopy42 = 5, // Apple DiskCopy 4.2 (Mac 400K/800K floppies)
     XexBoot = 6, // Atari executable synthesised as a read-only bootable disk (mount only)
     D64 = 7, // Commodore 1541 disk image, flat 256-byte sectors (mount only)
+    Prg = 8, // Commodore program synthesised as a read-only one-file 1541 disk (mount only)
 };
 
 enum class DiskError : std::uint8_t {
@@ -64,6 +65,10 @@ struct MountOptions {
     // Optional geometry supplied by image detection. Image implementations
     // still validate final mount state before accepting it.
     DiskGeometry geometryHint{};
+
+    // Where the image came from, set by the mount. A format that shows a name
+    // (a one-file disk names its file after it) reads it here.
+    std::string sourcePath{};
 };
 
 struct DiskResult {
