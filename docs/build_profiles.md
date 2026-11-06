@@ -438,6 +438,11 @@ Currently supported profiles:
     [packet link](packet_link.md), for a bridge microcontroller that is the USB
     host.
   - PlatformIO environment: `fujibus-link-usbcdc-freenove-s3-wroom-1-n16r8`
+  - Isolated N16R8 USB bench environment:
+    `fujibus-link-usbcdc-bench-s3-n16r8`. This overrides the board pin map with
+    `FN_PINMAP_USB_BENCH`: no SD, SIO, RS232, application LEDs or buttons.
+    Use it for a bare USB-connected module without Freenove peripherals.
+    See the [RP USB host probe](../bridges/rp2350-zorro/lab/usb-host/README.md).
 
 The USB CDC FujiBus profiles use CDC interface 0 for FujiBus and interface 1
 for firmware logs. They are separate USB CDC interfaces. A previously generated
