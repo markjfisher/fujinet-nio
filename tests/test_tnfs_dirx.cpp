@@ -34,6 +34,7 @@ public:
         bool supportX = true;      // OPENDIRX answers (else 0x16)
         bool supportSeek = true;
         std::size_t perReply = 5;  // READDIRX entries per datagram
+        std::uint16_t session = 0x1234; // what MOUNT assigns; tnfsd's first session is 0
         bool silent = false;       // never answers
     };
 
@@ -65,7 +66,7 @@ public:
         switch (cmd) {
         case CMD_MOUNT:
             pl = {0, _cfg->verMinor, _cfg->verMajor, 0xE8, 0x03};
-            send(seq, cmd, pl, 0x1234);
+            send(seq, cmd, pl, _cfg->session);
             return;
         case CMD_OPENDIRX: {
             if (!_cfg->supportX) { send(seq, cmd, {RESULT_FUNCTION_UNIMPLEMENTED}); return; }
@@ -162,7 +163,7 @@ private:
     }
     void send(std::uint8_t seq, std::uint8_t cmd, std::vector<std::uint8_t> payload, std::uint16_t sess = 0)
     {
-        if (sess == 0) sess = 0x1234;
+        if (sess == 0) sess = _cfg->session;
         std::vector<std::uint8_t> r{static_cast<std::uint8_t>(sess & 0xFF), static_cast<std::uint8_t>(sess >> 8), seq, cmd};
         r.insert(r.end(), payload.begin(), payload.end());
         _replies.push_back(std::move(r));
@@ -199,6 +200,20 @@ struct Rig {
 };
 
 } // namespace
+
+TEST_CASE("TNFS session 0 is a real session: the first one tnfsd hands out")
+{
+    Rig r;
+    r.cfg->session = 0;
+    r.make_entries(3);
+    r.connect();
+
+    std::vector<TnfsDirEntry> out;
+    std::size_t total = 0;
+    CHECK(r.client->listDirectoryRange("/d", DirSort::NameDirsFirst, 0, 8, out, total) == TnfsListStatus::Ok);
+    CHECK(total == 5);
+    CHECK(out.size() == 5);
+}
 
 TEST_CASE("TNFS OPENDIRX/READDIRX range: sizes and times without stat")
 {
