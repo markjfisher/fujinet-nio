@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import argparse
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]  # assuming scripts/ under repo root
@@ -83,6 +84,11 @@ def generate_posix_block(all_cpp):
     """
     filtered = []
     for path in all_cpp:
+        # Explicit opt-in Visor profile owns these sources (no dependency when off).
+        if path.startswith(("src/lib/visor_usb/", "src/platform/posix/visor_usb/")):
+            continue
+        if path.startswith("src/lib/build_profile/"):
+            continue
         # Exclude all app sources from the library
         if path.startswith("src/app/"):
             continue
@@ -145,6 +151,9 @@ def generate_esp32_block(all_cpp):
     """
     filtered = []
     for path in all_cpp:
+        # Future ESP driver must explicitly opt into portable helpers.
+        if path.startswith("src/lib/visor_usb/") or path == "src/lib/build_profile/visor_usb.cpp":
+            continue
         if path == "src/app/main_posix.cpp":
             continue
         if "/platform/posix/" in path:
@@ -190,11 +199,15 @@ def copy_template_and_replace_comment(template_path: Path, output_path: Path):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--posix-only", action="store_true", help="Leave ESP build definitions untouched")
+    args = parser.parse_args()
     all_cpp = collect_cpp_files()
 
     # Copy templates to output locations
     copy_template_and_replace_comment(POSIX_CMAKE_TEMPLATE, POSIX_CMAKE)
-    copy_template_and_replace_comment(ESP32_CMAKE_TEMPLATE, ESP32_CMAKE)
+    if not args.posix_only:
+        copy_template_and_replace_comment(ESP32_CMAKE_TEMPLATE, ESP32_CMAKE)
 
     # Generate source blocks
     posix_block = generate_posix_block(all_cpp)
@@ -207,10 +220,14 @@ def main():
     replace_block_in_file(POSIX_CMAKE, APP_START_MARKER, APP_END_MARKER, posix_app_block)
 
     # Update ESP32 CMake
-    replace_block_in_file(ESP32_CMAKE, START_MARKER, END_MARKER, esp32_block)
+    if not args.posix_only:
+        replace_block_in_file(ESP32_CMAKE, START_MARKER, END_MARKER, esp32_block)
 
     # HotSync's sources, or its stub, in both
-    for path, relative in ((POSIX_CMAKE, False), (ESP32_CMAKE, True)):
+    targets = [(POSIX_CMAKE, False)]
+    if not args.posix_only:
+        targets.append((ESP32_CMAKE, True))
+    for path, relative in targets:
         on_block, off_block = generate_hotsync_blocks(all_cpp, relative)
         replace_block_in_file(path, HOTSYNC_START_MARKER, HOTSYNC_END_MARKER, on_block)
         replace_block_in_file(path, HOTSYNC_OFF_START_MARKER, HOTSYNC_OFF_END_MARKER, off_block)

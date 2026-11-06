@@ -68,3 +68,17 @@ TEST_CASE("current build profile maps the packet-link serial preset to FujiBusNa
     CHECK(true);
 #endif
 }
+
+TEST_CASE("current build profile maps Visor USB to a dedicated native host ingress")
+{
+#if defined(FN_BUILD_VISOR_USB_HOST)
+    const auto profile = build::current_build_profile();
+    CHECK(profile.machine == build::Machine::Generic);
+    CHECK(profile.primaryTransport == build::TransportKind::FujiBusNative);
+    CHECK(profile.primaryChannel == build::ChannelKind::VisorUsbHost);
+    CHECK_FALSE(profile.packetLink);
+    CHECK(profile.hw.hasUsbHost);
+#else
+    CHECK(true);
+#endif
+}

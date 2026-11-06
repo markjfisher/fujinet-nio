@@ -113,6 +113,7 @@ CMake (`CMakeLists_posix.cmake`) selects one file via an `if/elseif/else` block:
 | `atari_fujibus_netsio.cpp` | `FN_BUILD_ATARI_FUJIBUS_NETSIO` | `FujiBusSlip` | `UdpSocket` |
 | `fujibus_link_tcp.cpp` | `FN_BUILD_FUJIBUS_LINK_TCP` | `FujiBusNative` | `TcpSocket` (packet link) |
 | `fujibus_link_serial.cpp` | `FN_BUILD_FUJIBUS_LINK_SERIAL` | `FujiBusNative` | `SerialPort` (packet link) |
+| `visor_usb.cpp` | `FN_BUILD_VISOR_USB_HOST` | `FujiBusNative` | `VisorUsbHost` (optional libusb; see [host transport](visor-usb-host.md)) |
 | `zorro.cpp` | `FN_BUILD_ZORRO` | `FujiBusNative` | `Pty` (stub) |
 | `default.cpp` | *(none)* | `FujiBusSlip` | `Pty` |
 

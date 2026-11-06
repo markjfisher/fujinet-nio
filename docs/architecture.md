@@ -15,6 +15,9 @@ The isolated [RP2350 Springboard bridge](../bridges/rp2350-springboard/README.md
 serves a Handspring Visor Springboard module and carries its FujiBus packets to
 NIO over a [packet link](packet_link.md).
 
+The optional [Visor USB Host profile](visor-usb-host.md) receives raw FujiBus
+packets through a POSIX-local libusb adapter; existing services remain unchanged.
+
 ## **Table of Contents**
 1. [Overview](#overview)  
 2. [Design Principles](#design-principles)  

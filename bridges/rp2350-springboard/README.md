@@ -39,7 +39,7 @@ The bus engineering here is mozzwald's. This bridge stands on:
   captures showed that a second state machine can sample the bus.
 - **The read engine**: the persistent PIO and Core1 responder that answers
   every read ("Experiment 2", dual-select) is his hardware-proven code from
-  [mozzwald/fujinet-nio](https://github.com/mozzwald/fujinet-nio), branch
+  the `fujinet-nio` repository, historical branch
   `experiment/dual-cs-write-capture`, `bridges/rp2350-springboard`.
 
 | Here | From mozzwald, and what changed |
