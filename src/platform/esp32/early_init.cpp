@@ -18,6 +18,10 @@ void early_init()
     platform_usb_console_early_init();
 
 #if defined(FN_DEBUG_BOOT_COUNTDOWN) && CONFIG_TINYUSB_CDC_ENABLED
+    // To enable a debug countdown (useful for when you can't grab immediate logs) add FN_DEBUG_BOOT_COUNTDOWN
+    // to the pio-build INI file,
+    // (e.g.) repos/fujinet-nio/pio-build/ini/platforms/platformio-fujibus-link-usbcdc-bench-s3-n16r8.ini
+
     // Give the PC time to reopen the enumerated console. Write directly to CDC
     // before installing the log redirect, independent of FN_DEBUG/log levels.
     const auto port = (CONFIG_FN_ESP_CONSOLE_CDC_NUM == 0)
