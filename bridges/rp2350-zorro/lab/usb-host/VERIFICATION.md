@@ -108,3 +108,28 @@ Next physical check: upload this build, reconnect the console after reset, and
 confirm the prompt, `help`, `core.info`, and phase-1 service startup. Repeat
 `core.info` to verify advancing ticks. The five-second LED flash remains
 unexplained; no physical console recovery is claimed yet.
+
+## ESP standalone console recovery confirmed
+
+On 2026-11-06 Mark confirmed recovery after flashing the USB readability fix
+(`27d83ce4`). The supplied capture shows:
+
+- 13:57:50: startup reaches the main loop and prints the interactive prompt.
+- 13:57:52: ClockDevice (69) and NetworkDevice (253) are registered; phase 1
+  completes in 1 ms.
+- `help` works (reported by Mark).
+- `cd flash:/` and `ls` work; the listing shows a 1020-byte `fujinet.yaml`.
+- `hexdump fujinet.yaml` returns readable contents from internal flash.
+
+This confirms console RX/TX, main-loop progress, phase-1 startup and internal
+flash reads on the physical ESP. The SD/config-primary and absent boot-image
+warnings do not prevent these operations. No SD card or filesystem upload was
+required. The temporary countdown remains enabled for the next bench run.
+
+RP-to-ESP enumeration, PacketLink synchronization and Clock.GetTime remain
+unverified. Next checkpoint is Run-mode wiring/power and capture of the RP UART
+console through ESP-Prog. The five-second LED activity is still unexplained;
+this report does not establish whether it persisted after the fix.
+
+Documentation-only update: `git diff --check` passed; evidence is the user's
+physical console capture, not an additional firmware build.
