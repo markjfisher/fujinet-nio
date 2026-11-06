@@ -134,6 +134,14 @@ v1 includes (image-format understanding required for sector I/O):
     - 80 track: 800 sectors = 204,800 bytes
   - v1 scope: **geometry + sector read/write only** (no DFS catalog parsing)
 
+- **D64** (`ImageType::D64`, `.d64`): Commodore 1541 image, flat 256-byte sectors
+  in track and sector order
+  - supported sizes: 35, 40 or 42 tracks (683, 768 or 802 sectors), each with or
+    without the one-byte-per-sector error table at the end of the file, which is
+    ignored; any other size is `BadImage`
+  - v1 scope: **geometry + sector read/write only**. The DOS structures on the disk
+    are read by the IEC drive, not here: see [IEC drive](iec/drive.md)
+
 - **DSD** (`ImageType::Dsd`, `.dsd`): BBC double-sided DFS image. Each side is
   an SSD surface (DFS drives 0 and 2 on a BBC), stored track-interleaved:
   track 0 side 0, track 0 side 1, track 1 side 0, ...
@@ -240,7 +248,7 @@ them, so detection must never guess:
    called, and its geometry overrides any sector size hint the client sent.
 2. **Only unambiguous extensions imply geometry.** An extension may select a
    type or geometry only if it means the same thing on every machine:
-   `.atr`, `.ssd`, `.dsd`, `.adf`, `.hda`, `.hfv`, `.xfd`. Where that
+   `.atr`, `.ssd`, `.dsd`, `.d64`, `.adf`, `.hda`, `.hfv`, `.xfd`. Where that
    format's sector size varies (`.hda`, `.hfv`, `.xfd`), the geometry is an
    inference, so a client's sector size hint takes precedence when it fits
    the file (an image of a standard size may have another layout). Where the
@@ -455,7 +463,7 @@ Mount an image into a slot using a **full URI**. The fujinet-nio parses the URI 
 u8  version
 u8  slot
 u8  flags            // bit0 = readonly_requested; bit1 = stage as a lazy pending mount
-u8  typeOverride     // 0=Auto, 1=ATR, 2=SSD, 3=DSD, 4=Raw, 5=DiskCopy42, 6=XexBoot
+u8  typeOverride     // 0=Auto, 1=ATR, 2=SSD, 3=DSD, 4=Raw, 5=DiskCopy42, 6=XexBoot, 7=D64
 u16 sectorSizeHint   // for Raw; otherwise 0
 u16 uriLen           // LE
 u8[] uri             // length uriLen - e.g., "tnfs://192.168.1.101:16384/disk.atr" or "sd0:/games.atr"
@@ -843,7 +851,7 @@ Create a new image file on a named filesystem using a **full URI**. This command
 ```
 u8  version
 u8  flags            // bit0 = overwrite
-u8  type             // 1=ATR, 2=SSD, 3=DSD, 4=Raw (0=Auto invalid; 5=DiskCopy42 and 6=XexBoot have no creator)
+u8  type             // 1=ATR, 2=SSD, 3=DSD, 4=Raw (0=Auto invalid; 5=DiskCopy42, 6=XexBoot and 7=D64 have no creator)
 u16 sectorSize       // LE
 u32 sectorCount      // LE
 u16 uriLen           // LE

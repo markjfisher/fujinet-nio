@@ -1,5 +1,6 @@
 #include "fujinet/disk/image_probers/image_probe.h"
 
+#include "fujinet/disk/d64_image.h"
 #include "fujinet/disk/dc42_image.h"
 #include "fujinet/disk/image_probers/fat_bpb_probe.h"
 #include "fujinet/disk/xex_boot_image.h"
@@ -48,7 +49,7 @@ static bool is_disk_image_extension(std::string_view ext) noexcept
 {
     return ext == "atr" || ext == "xfd" || ext == "ssd" || ext == "dsd" || ext == "adf" ||
            ext == "adl" || ext == "img" || ext == "ima" || ext == "raw" || ext == "dsk" ||
-           ext == "hda" || ext == "hfv" || ext == "dc42";
+           ext == "hda" || ext == "hfv" || ext == "dc42" || ext == "d64";
 }
 
 static bool is_adf_extension(std::string_view ext) noexcept
@@ -262,6 +263,13 @@ public:
         if (ext == "atr") return {true, ImageType::Atr, {}, ImageProbeConfidence::Extension};
         if (ext == "ssd") return {true, ImageType::Ssd, {}, ImageProbeConfidence::Extension};
         if (ext == "dsd") return {true, ImageType::Dsd, {}, ImageProbeConfidence::Extension};
+        if (ext == "d64") {
+            // The extension is Commodore-only, and a file of another size is
+            // left for the mount to refuse as BadImage.
+            DiskGeometry geometry{};
+            d64_geometry_for_size(sizeBytes, geometry);
+            return {true, ImageType::D64, geometry, ImageProbeConfidence::Extension};
+        }
         if (is_adf_extension(ext)) {
             // ADF is a flat Amiga block image.  Keep it generic/raw, but do
             // not let the raw handler's 256-byte fallback hide malformed

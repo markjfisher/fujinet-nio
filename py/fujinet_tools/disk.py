@@ -29,6 +29,7 @@ TYPE_TEXT = {
     dp.TYPE_RAW: "raw",
     dp.TYPE_DC42: "dc42",
     dp.TYPE_XEXBOOT: "xexboot",
+    dp.TYPE_D64: "d64",
 }
 
 
@@ -66,7 +67,9 @@ def _type_parse(s: str) -> int:
         return dp.TYPE_DC42
     if sl == "xexboot":
         return dp.TYPE_XEXBOOT
-    raise ValueError(f"unknown type {s!r} (expected auto|atr|ssd|dsd|raw|dc42|xexboot)")
+    if sl == "d64":
+        return dp.TYPE_D64
+    raise ValueError(f"unknown type {s!r} (expected auto|atr|ssd|dsd|raw|dc42|xexboot|d64)")
 
 
 def _send_expect(*, args, command: int, payload: bytes, cmd_txt: str):

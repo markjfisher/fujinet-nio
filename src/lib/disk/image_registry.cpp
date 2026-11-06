@@ -1,6 +1,7 @@
 #include "fujinet/disk/image_registry.h"
 
 #include "fujinet/disk/atr_image.h"
+#include "fujinet/disk/d64_image.h"
 #include "fujinet/disk/dc42_image.h"
 #include "fujinet/disk/raw_image.h"
 #include "fujinet/disk/ssd_image.h"
@@ -81,6 +82,7 @@ ImageRegistry make_default_image_registry()
     reg.register_type(ImageType::DiskCopy42, [] { return make_dc42_disk_image(); });
     reg.register_type(ImageType::Dsd, [] { return make_dsd_disk_image(); });
     reg.register_type(ImageType::XexBoot, [] { return make_xex_boot_disk_image(); });
+    reg.register_type(ImageType::D64, [] { return make_d64_disk_image(); });
 
     // Creators (blank image creation).
     reg.register_creator(
