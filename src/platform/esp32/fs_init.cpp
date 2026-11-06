@@ -57,6 +57,12 @@ bool init_sdcard_spi()
 
     const auto& pins = pinmap().sd;
 
+    // USB-only boards have no SD wiring. Do not pass disabled GPIOs to SDSPI.
+    if (pins.mosi < 0 || pins.miso < 0 || pins.sck < 0 || pins.cs < 0) {
+        FN_LOGI(TAG, "SD card disabled: SPI pin mapping is incomplete");
+        return false;
+    }
+
     FN_ELOG(
         "Initializing SD card over SPI: MOSI=%d MISO=%d SCK=%d CS=%d",
         pins.mosi, pins.miso, pins.sck, pins.cs);
@@ -117,4 +123,3 @@ bool init_sdcard_spi()
 }
 
 } // namespace fujinet::platform::esp32
-                                            

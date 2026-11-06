@@ -46,3 +46,25 @@ full LED-state behaviour, independent ROM recovery, real clock response,
 maximum-size known-data transfers, fault injection, power/mode switching and
 measured rates. Build success and this initial flash observation do not close
 those checklist items.
+
+## ESP standalone console investigation
+
+On 2026-11-06 Mark flashed the bench profile with `console_type = consolecdc`
+and `FN_DEBUG`. Runtime USB enumerated as 303a:4002, with interface 00 on
+`/dev/fujinet-fujibus` (`ttyACM0`) and interface 02 on `/dev/fujinet-console`
+(`ttyACM1`). USB remained connected until an explicit reset, but the console
+showed neither input echo nor command responses. A roughly five-second LED
+flash was observed; its cause is unknown, and the bench pin map defines no
+application LEDs. No SD hardware is connected and no filesystem was uploaded.
+
+Source inspection confirmed LittleFS formats on mount failure. SD initialization
+previously passed the disabled pin mapping to the driver; it now returns before
+any SPI initialization when a required pin is absent. This is not a confirmed
+explanation for the console symptom.
+
+With the workspace environment sourced, `./build.sh -b` in the firmware root
+passed for `fujibus-link-usbcdc-bench-s3-n16r8`, preserving the user's console and
+debug settings. `git diff --check` passed. Hardware verification of the SD skip
+and console response remains pending: serial devices are not exposed in the
+agent environment. Next check: flash this application build, reconnect the
+monitor to `/dev/fujinet-console`, and try `help` and `core.info`.

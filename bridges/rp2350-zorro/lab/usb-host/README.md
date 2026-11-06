@@ -162,6 +162,12 @@ Do not erase or upload a filesystem for the clock test. An existing stored
 configuration may affect clock/network state; preserve it and inspect the
 diagnostics console before changing it.
 
+No SD card or external SD adapter is required. The bench pin map disables all
+SD pins, and startup skips the SD driver when the mapping is incomplete.
+Internal LittleFS mounts the `storage` partition and formats it automatically
+if mounting fails; a separate filesystem upload is unnecessary for the console
+and clock test. Packaged boot images are not required for either test.
+
 The probe expects CDC0/control-interface 0 for packets and CDC1/control-interface
 2 for logs. It asserts DTR/RTS on enumeration and drains logs separately, counting
 their bytes without feeding them into PacketLink. It uses USB-OTG CDC in Run
