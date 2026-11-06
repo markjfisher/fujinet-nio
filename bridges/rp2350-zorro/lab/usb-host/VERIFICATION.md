@@ -26,7 +26,23 @@ Workspace/local document links, code-fence balance and `git diff --check`
 passed. The RP build used the existing pinned Pico SDK 2.3.1 and Arm GNU
 14.2.Rel1 toolchain. The ESP environment uses espressif32 6.10.0.
 
-Hardware still to verify: USB enumeration and interface selection, actual UART
-and LED behaviour, independent ROM recovery, real clock response, maximum-size
-known-data transfers, fault injection, power/mode switching and measured rates.
-Build success does not close these checklist items.
+## First RP flash observation
+
+On 2026-11-06 Mark reported entering BOOTSEL by power-cycling with BOOT held,
+then copying `build/usb-host-rp2350/usb_host_probe.uf2` to the RP boot drive.
+The drive contents disappeared and the onboard LED began flashing. This is
+consistent with the image starting and waiting for its USB peer; blink cadence
+and UART status have not yet been captured. It does not establish RP-to-ESP
+communication or shared-connector recovery.
+
+A USB-C breadboard power adapter has been ordered, advertised with selectable
+3.3 V / 5 V outputs and 1 / 1.5 A ratings. The exact model, rating per output,
+rail selection and measured voltage remain to be checked on arrival. The
+planned Run supply is 5 V to RP VBUS and ESP 5V, with common ground; ESP-Prog
+receives power from PC USB and its VDD header remains disconnected.
+
+Hardware still to verify: USB enumeration and interface selection, UART output,
+full LED-state behaviour, independent ROM recovery, real clock response,
+maximum-size known-data transfers, fault injection, power/mode switching and
+measured rates. Build success and this initial flash observation do not close
+those checklist items.
