@@ -43,6 +43,64 @@ bench supply. Do not join the boards' regulated 3.3 V outputs. Verify USB-C
 breakout CC handling if the shared connector is USB-C. A generic DPDT switch
 alone does not address power routing or USB-C attachment.
 
+## Confirmed ESP-Prog console setup
+
+Bench observation supplied by Mark on 2026-11-06: the official Micro-USB
+ESP-Prog enumerates as an FT2232H with two interfaces. It connects to the
+computer through Micro-USB and to the RP through its **6-pin PROG header**;
+it does not connect to the ESP32-S3 USB socket. The 10-pin JTAG header is unused.
+
+| Linux by-id path under `/dev/serial/by-id/` | Observed device | Use |
+| --- | --- | --- |
+| `usb-FTDI_Dual_RS232-HS-if00-port0` | `/dev/ttyUSB1` | ESP-Prog JTAG channel; not the console |
+| `usb-FTDI_Dual_RS232-HS-if01-port0` | `/dev/ttyUSB3` | ESP-Prog PROG UART; RP console |
+| `usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0` | `/dev/ttyUSB0` | Separate adapter; not used for this console |
+
+Use this console path rather than the transient `ttyUSB` number:
+
+```sh
+RP_CONSOLE=/dev/serial/by-id/usb-FTDI_Dual_RS232-HS-if01-port0
+```
+
+Both ESP-Prog device nodes were owned by `root:uucp` with mode `0660`; Mark is
+already a member of `uucp`. No permission change is required. The by-id name
+has no unique serial suffix, so distinguish by USB topology or a programmed
+serial number if another identical FTDI adapter is attached later.
+
+| ESP-Prog PROG pin | RP connection |
+| --- | --- |
+| 3, `ESP_TXD` | GP0, RP UART TX |
+| 5, `ESP_RXD` | GP1, RP UART RX |
+| 4, `GND` | Common ground |
+| 1 (`ESP_EN`), 2 (`VDD`), 6 (`ESP_IO0`) | Leave disconnected |
+
+These labels describe the target's UART directions: pin 3 receives into the
+ESP-Prog and pin 5 transmits from it. See the
+[official schematic](https://dl.espressif.com/dl/schematics/SCH_ESP32-PROG_V2.1_20190709.pdf).
+Locate pin 1 using the board marking before wiring with power disconnected.
+Leave the jumpers unchanged for this three-wire console connection. Actual
+RP console traffic has not yet been verified.
+
+### Existing local udev aliases
+
+Mark's `/etc/udev/rules.d/99-fujinet-nio.rules` already contains the following
+tty aliases, all matching `ACTION=="add"` and `SUBSYSTEM=="tty"`. This is a
+record of the supplied configuration, not an installed or modified rule file.
+
+| Kernel name | Vendor ID | Product ID | USB interface | Symlink under `/dev/` |
+| --- | --- | --- | --- | --- |
+| `ttyACM*` | `303a` | `4002` | `00` | `fujinet-fujibus` |
+| `ttyACM*` | `303a` | `4002` | `02` | `fujinet-console` |
+| `ttyACM*` | `303a` | `4001` | `00` | `fujinet-fujibus` |
+| `ttyACM*` | `303a` | `1001` | `00` | `fujinet-rs232` |
+| `ttyUSB*` | `10c4` | `ea60` | `00` | `fujinet-atari` |
+
+The RP console currently uses the FTDI by-id path above; no additional alias
+is needed. A future `/dev/fujinet-rp-console` alias should match the actual
+ESP-Prog udev properties and interface `01`, not a `ttyUSB` number. These ESP
+runtime aliases do not identify the ESP ROM flashing port. In Run mode the
+RP owns the ESP USB link, so its CDC ports are not available directly on the PC.
+
 ## Build and load the RP
 
 From `bridges/rp2350-zorro`:
