@@ -41,6 +41,7 @@ option (FN_BUILD_ATARI_PTY    "Build for Atari SIO over PTY (POSIX)"  OFF)
 option (FN_BUILD_ATARI_NETSIO "Build for Atari SIO over NetSIO/UDP (POSIX)" OFF)
 option (FN_BUILD_ATARI_FUJIBUS_SIO "Build for Atari NIO FujiBus over SIO GPIO (ESP32)" OFF)
 option (FN_BUILD_ATARI_FUJIBUS_NETSIO "Build for Atari NIO FujiBus over NetSIO/UDP (POSIX)" OFF)
+option (FN_BUILD_C64_NETIEC "Build for C64 NIO over NetIEC/TCP from an emulator (POSIX)" OFF)
 option (FN_BUILD_FUJIBUS_PTY  "Build for FUJIBUS PTY profile"         OFF)
 option (FN_BUILD_FUJIBUS_TCP  "Build for FUJIBUS TCP serial profile"  OFF)
 option (FN_BUILD_FUJIBUS_LINK_TCP "Build for FujiBus packets over a packet link on TCP" OFF)
@@ -123,6 +124,7 @@ target_compile_definitions(fujinet-nio
         $<$<BOOL:${FN_BUILD_ATARI_NETSIO}>:FN_BUILD_ATARI_NETSIO>
         $<$<BOOL:${FN_BUILD_ATARI_FUJIBUS_SIO}>:FN_BUILD_ATARI_FUJIBUS_SIO>
         $<$<BOOL:${FN_BUILD_ATARI_FUJIBUS_NETSIO}>:FN_BUILD_ATARI_FUJIBUS_NETSIO>
+        $<$<BOOL:${FN_BUILD_C64_NETIEC}>:FN_BUILD_C64_NETIEC>
         $<$<BOOL:${FN_BUILD_FUJIBUS_PTY}>:FN_BUILD_FUJIBUS_PTY>
         $<$<BOOL:${FN_BUILD_FUJIBUS_TCP}>:FN_BUILD_FUJIBUS_TCP>
         $<$<BOOL:${FN_BUILD_FUJIBUS_LINK_TCP}>:FN_BUILD_FUJIBUS_LINK_TCP>
@@ -158,6 +160,8 @@ set(FUJINET_NIO_SOURCES
         src/lib/directory_cache.cpp
         src/lib/diagnostic_uart_channel_provider.cpp
         src/lib/disk/atr_image.cpp
+        src/lib/disk/cbm_volume.cpp
+        src/lib/disk/d64_image.cpp
         src/lib/disk/dc42_image.cpp
         src/lib/disk/xex_boot_image.cpp
         src/lib/disk/disk_service.cpp
@@ -190,6 +194,10 @@ set(FUJINET_NIO_SOURCES
         src/lib/image/output_format.cpp
         src/lib/image/stb_image_impl.cpp
         src/lib/image_content_translator.cpp
+        src/lib/iec_bus.cpp
+        src/lib/iec_device_set.cpp
+        src/lib/iec_drive_frontend.cpp
+        src/lib/iec_nio_frontend.cpp
         src/lib/io_device_manager.cpp
         src/lib/io_service.cpp
         src/lib/json_content_translator.cpp
@@ -199,6 +207,7 @@ set(FUJINET_NIO_SOURCES
         src/lib/modem_device_init.cpp
         src/lib/native_framer.cpp
         src/lib/packet_link.cpp
+        src/lib/netiec_ingress.cpp
         src/lib/network_device.cpp
         src/lib/network_device_init.cpp
         src/lib/network_protocol_registry.cpp
@@ -323,6 +332,8 @@ elseif(FN_BUILD_ATARI_NETSIO)
     list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/atari_netsio.cpp)
 elseif(FN_BUILD_ATARI_FUJIBUS_NETSIO)
     list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/atari_fujibus_netsio.cpp)
+elseif(FN_BUILD_C64_NETIEC)
+    list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/c64_netiec.cpp)
 elseif(FN_BUILD_FUJIBUS_LINK_TCP)
     list(APPEND FUJINET_NIO_SOURCES src/lib/build_profile/fujibus_link_tcp.cpp)
 elseif(FN_BUILD_FUJIBUS_LINK_SERIAL)

@@ -35,6 +35,8 @@ set(FN_IDF_SOURCES
         lib/directory_cache.cpp
         lib/diagnostic_uart_channel_provider.cpp
         lib/disk/atr_image.cpp
+        lib/disk/cbm_volume.cpp
+        lib/disk/d64_image.cpp
         lib/disk/dc42_image.cpp
         lib/disk/xex_boot_image.cpp
         lib/disk/disk_service.cpp
@@ -67,6 +69,10 @@ set(FN_IDF_SOURCES
         lib/image/output_format.cpp
         lib/image/stb_image_impl.cpp
         lib/image_content_translator.cpp
+        lib/iec_bus.cpp
+        lib/iec_device_set.cpp
+        lib/iec_drive_frontend.cpp
+        lib/iec_nio_frontend.cpp
         lib/io_device_manager.cpp
         lib/io_service.cpp
         lib/json_content_translator.cpp
@@ -76,6 +82,7 @@ set(FN_IDF_SOURCES
         lib/modem_device_init.cpp
         lib/native_framer.cpp
         lib/packet_link.cpp
+        lib/netiec_ingress.cpp
         lib/network_device.cpp
         lib/network_device_init.cpp
         lib/network_protocol_registry.cpp

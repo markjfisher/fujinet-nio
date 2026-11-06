@@ -66,7 +66,7 @@ enum class TransportKind {
     FujiBusSlip,   // FujiBus protocol framed with SLIP — the standard protocol
     FujiBusNative, // FujiBus protocol over a packet-native channel (no SLIP framing)
     SIO,           // Atari SIO (future)
-    IEC,           // C64 IEC (future)
+    IEC,           // unused: C64 NIO runs with TransportKind::None, see docs/iec/README.md
 };
 
 enum class ChannelKind {
