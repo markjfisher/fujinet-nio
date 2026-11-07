@@ -74,7 +74,10 @@ visor:
 Omit `path` or use YAML `null` to unset it. Empty environment overrides are errors.
 The path is a physical port chain, not the changing USB device address. Invalid
 Visor settings are not replaced with backup/default settings or rewritten by the
-YAML loader; unrelated configuration recovery behavior is unchanged.
+YAML loader; unrelated configuration recovery behavior is unchanged. If Visor
+settings become invalid after startup, `Clock.SetTimezoneSave` returns `IOError`
+instead of terminating the request loop. A rejected reload leaves the live
+timezone and invalid file unchanged; subsequent requests remain usable.
 
 The diagnostic console supports:
 
@@ -131,16 +134,17 @@ invalid Generic connection information) release acquired resources and retry at
 most once per second. They do not quarantine the device: releasing the driver or
 opening the Palm port can allow the same enumerated device to connect. Every
 retry repeats descriptor/function validation; it never sends or replays a NIO
-command. Same-enumeration recovery is mock-tested. In a physical follow-up, the host
-reported kernel ownership, but the Prism re-enumerated after manual interface
-release. It connected without a host restart after access was granted to the new
-node; that does not prove recovery on the original enumerated device.
+command. Practical Linux/Prism recovery passed: after the kernel-ownership error
+and operator-controlled interface release, the host connected without restart.
+The user confirmed Palm screen timeouts during the test pauses; sleep/wake
+re-enumeration changed the USB address and required renewing temporary access.
+Stable-enumeration retries and missing/malformed connection-info recovery are
+also covered by the driver mocks.
 
-For initial use, finish HotSync and arrange interface access, start the host,
-then open a Palm NIO client. The previous acceptance sessions used coordinated
-access release and stdio; they did not qualify recovery from an initial setup
-failure. If the Palm opening causes fresh enumeration, operator-controlled access
-may need to be arranged for the new instance.
+For initial use, finish HotSync and arrange interface access/release, start the
+host, then open a Palm NIO client. If opening the connection or a sleep/wake cycle
+causes fresh enumeration, operator-controlled access may need to be renewed for
+the new device node. Pre-session setup failures do not require a host restart.
 
 ## Discovery and packet handling
 
@@ -237,14 +241,13 @@ working with faster app loading, without a new complete transport qualification
 sequence or timing benchmark. No RP2350 firmware/ROM change was required for USB.
 The subsequent Linux/Prism PTY check passed Clock + two HTTP, active-USB
 console queries, zero-handle cleanup and orderly console shutdown. The host was
-started before the Palm connection and also connected without restart after
-renewing expired temporary access. This observed `LIBUSB_ERROR_ACCESS` recovery;
-A separate kernel-ownership check captured the expected setup error, followed
-by re-enumeration and a successful connection after renewed access, with the host
-PID unchanged. Since re-enumeration also clears quarantine, same-enumeration
-kernel-owner recovery remains physically inconclusive; invalid connection-info
-recovery remains mock-tested only. YAML persistence and environment precedence remain
-automatically verified; the physical session used the default config selection.
+started before the Palm connection and recovered without restart after temporary
+access renewal. A separate kernel-ownership check passed practical recovery with
+Palm sleep/wake and renewed access after re-enumeration, with the host PID
+unchanged and no manual unplug or reset. Stable-enumeration setup retry and
+invalid connection-info recovery are automatically tested. YAML persistence and
+environment precedence are also automatically verified; the physical session
+used the default config selection.
 No PRC or Springboard firmware update was needed for these host-only changes.
 macOS, serial hardware, arbitrary physical failure recovery and long-duration
 heap/stress qualification remain unverified.
