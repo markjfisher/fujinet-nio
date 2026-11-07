@@ -87,9 +87,33 @@ static bool name_matches_filter(std::string_view name, const std::string& patter
     return pi == glob.size();
 }
 
-FileDevice::FileDevice(StorageManager& storage)
+FileDevice::FileDevice(StorageManager& storage, std::chrono::milliseconds readIdle)
     : _storage(storage)
+    , _readIdle(readIdle)
 {}
+
+void FileDevice::poll()
+{
+    if (_heldRead.file && std::chrono::steady_clock::now() - _heldRead.lastUse >= _readIdle) {
+        _heldRead = HeldRead{};
+    }
+}
+
+// The file held from the last ReadFile when it is the same one and has not been idle too
+// long; otherwise a new open, after the held file (and its TNFS handles) is given back.
+std::unique_ptr<IFile> FileDevice::open_for_read(IFileSystem& fs, const std::string& path,
+                                                 bool& reused)
+{
+    HeldRead held = std::move(_heldRead);
+    _heldRead = HeldRead{};
+    reused = held.file && held.fs == &fs && held.path == path &&
+             std::chrono::steady_clock::now() - held.lastUse < _readIdle;
+    if (reused) {
+        return std::move(held.file);
+    }
+    held.file.reset();
+    return fs.open(path, "rb");
+}
 
 IOResponse FileDevice::handle(const IORequest& request)
 {
@@ -763,7 +787,8 @@ IOResponse FileDevice::handle_read_file(const IORequest& request)
         return resp;
     }
 
-    auto file = fs->open(resolvedPath, "rb");
+    bool reused = false;
+    auto file = open_for_read(*fs, resolvedPath, reused);
     if (!file) {
         resp.status = StatusCode::IOError;
         return resp;
@@ -795,7 +820,38 @@ IOResponse FileDevice::handle_read_file(const IORequest& request)
     const std::size_t dataStart = out.size();
     out.resize(dataStart + maxBytes);
 
-    const std::size_t n = file->read(out.data() + dataStart, maxBytes);
+    std::size_t n = file->read(out.data() + dataStart, maxBytes);
+
+    // A held handle can go stale (a TNFS server restarted, say): it then reads nothing, or only
+    // what is still cached, which a host takes for the end of the file. A short read from a
+    // held handle is the real end when it reaches the file's size; one stat says which,
+    // without opening the file again (a TNFS open is the file and its read-ahead handles).
+    // An HTTP file is a body already fetched, which cannot go stale, and its stat is a request.
+    bool stale = false;
+    if (reused && n < maxBytes && fs->kind() != fujinet::fs::FileSystemKind::NetworkHttp) {
+        fujinet::fs::FileInfo info{};
+        stale = !fs->stat(resolvedPath, info) ||
+                static_cast<std::uint64_t>(offset) + n < info.sizeBytes;
+    }
+    if (stale) {
+        // Read once more from a fresh open, so nothing is reported that a new open would not.
+        file.reset();
+        file = fs->open(resolvedPath, "rb");
+        if (!file || !file->seek(static_cast<std::uint64_t>(offset))) {
+            resp.status = StatusCode::IOError;
+            return resp;
+        }
+        n = file->read(out.data() + dataStart, maxBytes);
+    }
+
+    // Keep a network file open for the next read unless this one reached its end. A local
+    // file is cheap to open, and the HotSync task may be writing it, so it is closed.
+    if (n == maxBytes && fujinet::fs::is_network_kind(fs->kind())) {
+        _heldRead.fs = fs;
+        _heldRead.path = resolvedPath;
+        _heldRead.file = std::move(file);
+        _heldRead.lastUse = std::chrono::steady_clock::now();
+    }
 
     out.resize(dataStart + n);
 
@@ -847,6 +903,9 @@ IOResponse FileDevice::handle_write_file(const IORequest& request)
         resp.status = StatusCode::DeviceNotFound;
         return resp;
     }
+
+    // A file held open for reading could be this one, with blocks cached from before the write.
+    _heldRead = HeldRead{};
 
     // v1 open mode convention:
     // offset==0 => create/truncate
