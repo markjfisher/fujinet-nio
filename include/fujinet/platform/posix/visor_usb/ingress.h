@@ -11,7 +11,8 @@ namespace fujinet::platform::posix::visor_usb {
 // POSIX-only ownership adapter. Composes existing framers/codecs; no service logic.
 class Ingress final : public io::ITransport, public diag::IDiagnosticProvider {
 public:
-    Ingress(io::IRequestHandler& router, Options options = {}, io::FujiDevice* fuji = nullptr);
+    Ingress(io::IRequestHandler& router, Options options = {}, io::FujiDevice* fuji = nullptr,
+            Host::Now now = std::chrono::steady_clock::now);
     ~Ingress();
     void poll() override;
     bool receive(io::IORequest& request) override;

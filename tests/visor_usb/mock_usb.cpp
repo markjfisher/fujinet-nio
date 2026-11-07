@@ -8,9 +8,11 @@
 namespace mock_usb {
 unsigned eventCalls, positiveWaits;
 long lastWaitMicros;
+unsigned opens, closes, references;
 unsigned devices, claims, releases, inLength, outSubmits, freesPending;
 int openError, claimError, config, kernel, extendedError, oldSize, alternate;
 unsigned vid, pid, endpointType, inAddress, outAddress, mps, interfaceClass;
+bool holdOutput;
 bool present, inCallback, holdCancellation, lateSuccess;
 std::vector<unsigned char> info, written;
 std::deque<Result> input, output;
@@ -18,8 +20,13 @@ struct Pending { libusb_transfer* transfer; bool cancel; };
 std::vector<Pending> transfers;
 std::array<unsigned,8> identities{};
 unsigned identity;
+std::chrono::steady_clock::time_point clockNow{};
+std::chrono::steady_clock::time_point now() { return clockNow; }
+void advance(std::chrono::milliseconds elapsed) { clockNow += elapsed; }
 void reset() {
-    assert(transfers.empty()); eventCalls = positiveWaits = 0; lastWaitMicros = 0; devices = 1; claims = releases = inLength = outSubmits = freesPending = 0;
+    clockNow = {}; holdOutput = false;
+    assert(transfers.empty()); assert(opens==closes); assert(references==0);
+    opens=closes=references=0; eventCalls = positiveWaits = 0; lastWaitMicros = 0; devices = 1; claims = releases = inLength = outSubmits = freesPending = 0;
     openError = claimError = kernel = alternate = 0; config = 1; extendedError = LIBUSB_ERROR_PIPE; oldSize = 6;
     vid = 0x082d; pid = 0x0100; endpointType = 2; inAddress = 0x82; outAddress = 2; mps = 64; interfaceClass = 255;
     present = true; inCallback = holdCancellation = lateSuccess = false; identity = 0;
@@ -38,8 +45,8 @@ ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context*, libusb_device*** lis
     *list = new libusb_device*[n+1]{}; for(unsigned i=0;i<n;++i) (*list)[i] = device(i); return n;
 }
 void LIBUSB_CALL libusb_free_device_list(libusb_device** l, int) { delete[] l; }
-libusb_device* LIBUSB_CALL libusb_ref_device(libusb_device* d) { return d; }
-void LIBUSB_CALL libusb_unref_device(libusb_device*) {}
+libusb_device* LIBUSB_CALL libusb_ref_device(libusb_device* d) { ++references; return d; }
+void LIBUSB_CALL libusb_unref_device(libusb_device*) { assert(references); --references; }
 int LIBUSB_CALL libusb_get_device_descriptor(libusb_device*, libusb_device_descriptor* d) {
     *d = {}; d->idVendor = vid; d->idProduct = pid; return 0;
 }
@@ -49,10 +56,10 @@ int LIBUSB_CALL libusb_get_port_numbers(libusb_device* d, uint8_t* p, int size) 
     assert(size>=2); p[0] = 9; p[1] = d == device() ? 4 : 5; return 2;
 }
 int LIBUSB_CALL libusb_open(libusb_device* d, libusb_device_handle** h) {
-    if(openError) return openError; *h = reinterpret_cast<libusb_device_handle*>(d); return 0;
+    if(openError) return openError; ++opens; *h = reinterpret_cast<libusb_device_handle*>(d); return 0;
 }
 libusb_device* LIBUSB_CALL libusb_get_device(libusb_device_handle* h) { return reinterpret_cast<libusb_device*>(h); }
-void LIBUSB_CALL libusb_close(libusb_device_handle*) { assert(transfers.empty()); }
+void LIBUSB_CALL libusb_close(libusb_device_handle*) { assert(transfers.empty()); assert(opens>closes); ++closes; }
 int LIBUSB_CALL libusb_get_configuration(libusb_device_handle*, int* c) { *c = config; return 0; }
 int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device*, libusb_config_descriptor** d) {
     static libusb_endpoint_descriptor eps[2];
@@ -103,9 +110,11 @@ int LIBUSB_CALL libusb_handle_events_timeout_completed(libusb_context*, timeval*
         bool in = t->endpoint & 0x80;
         if(pending.cancel && holdCancellation) continue;
         auto& q = in ? input : output;
-        if(!pending.cancel && in && q.empty()) continue;
+        if(!pending.cancel && ((in && q.empty()) || (!in && holdOutput))) continue;
         Result r{LIBUSB_TRANSFER_COMPLETED,{},-1};
-        if(pending.cancel && !(in && lateSuccess && !q.empty())) r.status=LIBUSB_TRANSFER_CANCELLED;
+        if(pending.cancel && !(in && lateSuccess && !q.empty())) {
+            r.status=LIBUSB_TRANSFER_CANCELLED; r.actual=0;
+        }
         else if(!q.empty()) { r=std::move(q.front()); q.pop_front(); }
         t->status=r.status;
         t->actual_length=r.actual>=0 ? r.actual : (in ? std::min<int>(t->length,r.data.size()) : t->length);

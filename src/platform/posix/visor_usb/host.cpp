@@ -50,6 +50,7 @@ struct Host::Impl {
         std::uint64_t generation{0};
     };
     Options options;
+    Host::Now now;
     libusb_context* context{nullptr};
     libusb_device_handle* handle{nullptr};
     libusb_device* blocked{nullptr}; // kept referenced until verified absent
@@ -65,7 +66,7 @@ struct Host::Impl {
     Clock::time_point nextDiscovery{}, partialSince{}, txSince{};
     std::string error{"Not connected"}, deviceInfo;
 
-    explicit Impl(Options o) : options(std::move(o))
+    Impl(Options o, Host::Now clock) : options(std::move(o)), now(std::move(clock))
     {
         if ((options.port != 1 && options.port != 2) || options.path.size() > 7)
             throw std::invalid_argument("Invalid Visor USB options");
@@ -125,14 +126,14 @@ struct Host::Impl {
                 s.stop("Invalid/overflowed raw FujiBus stream; no resynchronization"); return;
             }
             if (!s.incoming.partial()) s.partialSince = {};
-            else if (!wasPartial || completedBefore != s.incoming.completed()) s.partialSince = Clock::now();
+            else if (!wasPartial || completedBefore != s.incoming.completed()) s.partialSince = s.now();
         } else {
             // Never retry an error, including a zero-byte timeout. Completion is ambiguous.
             if (transfer->status != LIBUSB_TRANSFER_COMPLETED || actual == 0) {
                 s.stop("USB OUT completion ambiguous; no replay, close/reopen required"); return;
             }
             s.offset += static_cast<std::size_t>(actual);
-            if (s.offset == s.outgoing.front().size()) { s.outgoing.pop_front(); s.offset = 0; s.txSince = Clock::now(); }
+            if (s.offset == s.outgoing.front().size()) { s.outgoing.pop_front(); s.offset = 0; s.txSince = s.now(); }
         }
     }
     void submit(Slot& slot)
@@ -162,8 +163,8 @@ struct Host::Impl {
     }
     void discover()
     {
-        if (Clock::now() < nextDiscovery) return;
-        nextDiscovery = Clock::now() + 1s;
+        if (now() < nextDiscovery) return;
+        nextDiscovery = now() + 1s;
         libusb_device** list = nullptr;
         const auto n = libusb_get_device_list(context, &list);
         if (n < 0) { report("USB enumeration failed"); return; }
@@ -255,17 +256,18 @@ struct Host::Impl {
     void poll()
     {
         pump(0ms);
-        if (active && incoming.partial() && Clock::now() - partialSince >= 5s) stop("Truncated raw packet deadline");
-        if (active && !outgoing.empty() && Clock::now() - txSince >= 5s) stop("USB OUT total deadline; no replay");
+        if (active && incoming.partial() && now() - partialSince >= 5s) stop("Truncated raw packet deadline");
+        if (active && !outgoing.empty() && now() - txSince >= 5s) stop("USB OUT total deadline; no replay");
         finish_close();
         if (!active && !handle && !rx.pending && !tx.pending) discover();
         submit(rx); submit(tx);
     }
 };
-Host::Host(Options o) : _impl(std::make_unique<Impl>(std::move(o))) {}
+Host::Host(Options o, Now now) : _impl(std::make_unique<Impl>(std::move(o), std::move(now))) {}
 Host::~Host()
 {
     _impl->stop("Host shutdown");
+    // Cancellation bounds use wall time even when operational time is injected.
     const auto deadline = Clock::now() + 2s;
     while ((_impl->rx.pending || _impl->tx.pending) && Clock::now() < deadline) _impl->pump(10ms);
     if (_impl->rx.pending || _impl->tx.pending) {
@@ -289,7 +291,7 @@ bool Host::send(const io::protocol::ByteBuffer& p)
         !io::protocol::FujiBusPacket::fromRaw(p) || _impl->outgoing.size() >= 4) {
         retire("Invalid response or USB output queue full"); return false;
     }
-    if (_impl->outgoing.empty()) _impl->txSince = Clock::now();
+    if (_impl->outgoing.empty()) _impl->txSince = _impl->now();
     _impl->outgoing.push_back(p); _impl->submit(_impl->tx); return active();
 }
 void Host::retire(const std::string& reason) { _impl->stop(reason); }

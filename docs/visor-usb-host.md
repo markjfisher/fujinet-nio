@@ -105,8 +105,9 @@ picocom /dev/pts/N
 ```
 
 `FN_CONSOLE=stdio` remains supported. The console PTY is separate from the USB
-cradle and does not claim it. PTY use with an attached Prism still needs physical
-verification; recorded USB acceptance used stdio.
+cradle and does not claim it. A Linux automated test exercises the real PTY and console engine while the
+mock USB backend routes a Clock request. PTY use with an attached Prism still
+needs physical verification; recorded USB acceptance used stdio.
 
 Multiple matching devices require an unambiguous selector. An absent device is
 not an error requiring restart; discovery is limited to once per second.
@@ -203,7 +204,11 @@ OS enumeration/claim time is outside that USB timeout budget.
 libusb mocks, with no live USB access. Coverage includes descriptor/function
 selection, partial/combined records, corruption, deadlines, cancellation, stale
 generations, idle scheduling, response-framing rejection, real Clock routing,
-two network handles and owner isolation. Existing POSIX codec/service/serial
+two network handles and owner isolation. Discovery and record/output deadline tests
+inject a monotonic clock into the real host/ingress code rather than sleeping;
+production uses `steady_clock`. Tests cover the instant before and at the
+five-second deadlines. Cancellation shutdown retains its real two-second bound,
+independent of the injected operational clock. Existing POSIX codec/service/serial
 and PacketLink regressions remain applicable.
 
 For dependency isolation, also build an ordinary profile and inspect both:
@@ -224,6 +229,13 @@ Post-audit fixes passed the shorter USB/CS1 regression; logs ended with no activ
 network handles. The later cached-JSON NioLib/apps were separately reported
 working with faster app loading, without a new complete transport qualification
 sequence or timing benchmark. No RP2350 firmware/ROM change was required for USB.
+The later setup-retry and YAML/console changes are automatically verified only.
+For their next short physical check, use the PTY console, start the host before
+opening a Palm NIO client, inspect `visor.status`, and run Clock + two HTTP once.
+If checking kernel-driver release recovery, release only the verified interface
+with explicit operator approval; the same device should connect on a subsequent
+discovery without restarting the host. No PRC or Springboard firmware update is
+needed for these host-only changes.
 macOS, serial hardware, arbitrary physical failure recovery and long-duration
 heap/stress qualification remain unverified.
 

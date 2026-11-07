@@ -3,6 +3,7 @@
 #include "fujinet/io/visor_usb/protocol.h"
 #include "fujinet/config/fuji_config.h"
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -20,7 +21,8 @@ Options options_from_environment(); // strict; no invalid-value fallback
 // they never call NIO services. All transfer storage lives until completion.
 class Host {
 public:
-    explicit Host(Options options = {});
+    using Now = std::function<std::chrono::steady_clock::time_point()>;
+    explicit Host(Options options = {}, Now now = std::chrono::steady_clock::now);
     ~Host();
     Host(const Host&) = delete;
     Host& operator=(const Host&) = delete;

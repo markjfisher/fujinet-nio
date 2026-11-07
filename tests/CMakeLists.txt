@@ -157,6 +157,11 @@ if(FN_BUILD_VISOR_USB_HOST)
         visor_usb/test_protocol.cpp
         visor_usb/test_host.cpp
         visor_usb/mock_usb.cpp
+        # Exercise the real console/PTY path alongside the USB mocks.
+        ${CMAKE_SOURCE_DIR}/src/app/console_parse.cpp
+        ${CMAKE_SOURCE_DIR}/src/app/console_commands.cpp
+        ${CMAKE_SOURCE_DIR}/src/app/console_fs_shell.cpp
+        ${CMAKE_SOURCE_DIR}/src/app/console_engine.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/posix/visor_usb/host.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/posix/visor_usb/ingress.cpp
         ${CMAKE_SOURCE_DIR}/src/lib/visor_usb/protocol.cpp)

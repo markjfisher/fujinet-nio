@@ -41,7 +41,8 @@ struct Ingress::Impl {
     std::unique_ptr<std::uint64_t> owner, retiredOwner;
     std::uint64_t generation{0}, pendingGeneration{0};
     io::RequestID nextId{0}, pendingId{0};
-    Impl(io::IRequestHandler& r, Options o, io::FujiDevice* f) : router(r), host(std::move(o)), fuji(f) {}
+    Impl(io::IRequestHandler& r, Options o, io::FujiDevice* f, Host::Now now)
+        : router(r), host(std::move(o), std::move(now)), fuji(f) {}
     void cleanup() {
         if (owner) router.resetClient(io::protocol::to_device_id(io::protocol::WireDeviceId::NetworkService), owner.get());
         transport.reset(); framer.reset();
@@ -60,8 +61,8 @@ struct Ingress::Impl {
         }
     }
 };
-Ingress::Ingress(io::IRequestHandler& r, Options o, io::FujiDevice* f)
-    : _impl(std::make_unique<Impl>(r, std::move(o), f)) {}
+Ingress::Ingress(io::IRequestHandler& r, Options o, io::FujiDevice* f, Host::Now now)
+    : _impl(std::make_unique<Impl>(r, std::move(o), f, std::move(now))) {}
 Ingress::~Ingress() { _impl->host.retire("Ingress shutdown"); _impl->cleanup(); }
 void Ingress::poll()
 {
