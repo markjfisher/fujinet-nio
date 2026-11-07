@@ -131,7 +131,10 @@ invalid Generic connection information) release acquired resources and retry at
 most once per second. They do not quarantine the device: releasing the driver or
 opening the Palm port can allow the same enumerated device to connect. Every
 retry repeats descriptor/function validation; it never sends or replays a NIO
-command. This recovery is mock-tested, not yet physically qualified on the Prism.
+command. Same-enumeration recovery is mock-tested. In a physical follow-up, the host
+reported kernel ownership, but the Prism re-enumerated after manual interface
+release. It connected without a host restart after access was granted to the new
+node; that does not prove recovery on the original enumerated device.
 
 For initial use, finish HotSync and arrange interface access, start the host,
 then open a Palm NIO client. The previous acceptance sessions used coordinated
@@ -236,8 +239,11 @@ The subsequent Linux/Prism PTY check passed Clock + two HTTP, active-USB
 console queries, zero-handle cleanup and orderly console shutdown. The host was
 started before the Palm connection and also connected without restart after
 renewing expired temporary access. This observed `LIBUSB_ERROR_ACCESS` recovery;
-recovery specifically from a kernel-owned interface or invalid connection info
-remains mock-tested only. YAML persistence and environment precedence remain
+A separate kernel-ownership check captured the expected setup error, followed
+by re-enumeration and a successful connection after renewed access, with the host
+PID unchanged. Since re-enumeration also clears quarantine, same-enumeration
+kernel-owner recovery remains physically inconclusive; invalid connection-info
+recovery remains mock-tested only. YAML persistence and environment precedence remain
 automatically verified; the physical session used the default config selection.
 No PRC or Springboard firmware update was needed for these host-only changes.
 macOS, serial hardware, arbitrary physical failure recovery and long-duration
