@@ -821,9 +821,20 @@ IOResponse FileDevice::handle_read_file(const IORequest& request)
     out.resize(dataStart + maxBytes);
 
     std::size_t n = file->read(out.data() + dataStart, maxBytes);
-    if (n == 0 && reused) {
-        // A held handle can go stale (a TNFS server restarted, say): read once more from a
-        // fresh open, so nothing is reported that a new open would not report.
+
+    // A held handle can go stale (a TNFS server restarted, say): it then reads nothing, or only
+    // what is still cached, which a host takes for the end of the file. A short read from a
+    // held handle is the real end when it reaches the file's size; one stat says which,
+    // without opening the file again (a TNFS open is the file and its read-ahead handles).
+    // An HTTP file is a body already fetched, which cannot go stale, and its stat is a request.
+    bool stale = false;
+    if (reused && n < maxBytes && fs->kind() != fujinet::fs::FileSystemKind::NetworkHttp) {
+        fujinet::fs::FileInfo info{};
+        stale = !fs->stat(resolvedPath, info) ||
+                static_cast<std::uint64_t>(offset) + n < info.sizeBytes;
+    }
+    if (stale) {
+        // Read once more from a fresh open, so nothing is reported that a new open would not.
         file.reset();
         file = fs->open(resolvedPath, "rb");
         if (!file || !file->seek(static_cast<std::uint64_t>(offset))) {

@@ -4,16 +4,20 @@
 // network filesystem. These run through the real TNFS filesystem over a fake
 // server, whose open-handle count shows when FileDevice lets the file go.
 #include "fujinet/fs/filesystem.h"
+#include "fujinet/fs/http_filesystem.h"
 #include "fujinet/fs/storage_manager.h"
 #include "fujinet/fs/tnfs_filesystem.h"
 #include "fujinet/io/core/io_message.h"
 #include "fujinet/io/devices/file_commands.h"
 #include "fujinet/io/devices/file_device.h"
+#include "fujinet/io/devices/network_protocol.h"
 #include "fake_fs.h"
 #include "fake_tnfs_server.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -159,6 +163,51 @@ private:
     };
 };
 
+// A one-file HTTP protocol that counts the fetches made of it.
+class CountingHttp final : public fujinet::io::INetworkProtocol {
+public:
+    CountingHttp(std::vector<std::uint8_t> body, int& fetches) : _body(std::move(body)), _fetches(fetches) {}
+
+    StatusCode open(const fujinet::io::NetworkOpenRequest&) override
+    {
+        ++_fetches;
+        return StatusCode::Ok;
+    }
+    StatusCode write_body(std::uint32_t, const std::uint8_t*, std::size_t, std::uint16_t& written) override
+    {
+        written = 0;
+        return StatusCode::Unsupported;
+    }
+    StatusCode read_body(std::uint32_t offset, std::uint8_t* out, std::size_t outLen, std::uint16_t& read,
+                         bool& eof, bool& more) override
+    {
+        read = 0;
+        const std::size_t n = offset >= _body.size() ? 0 : std::min(outLen, _body.size() - offset);
+        if (n > 0) {
+            std::memcpy(out, _body.data() + offset, n);
+            read = static_cast<std::uint16_t>(n);
+        }
+        eof = offset + n >= _body.size();
+        more = !eof;
+        return StatusCode::Ok;
+    }
+    StatusCode info(fujinet::io::NetworkInfo& out) override
+    {
+        out = fujinet::io::NetworkInfo{};
+        out.hasHttpStatus = true;
+        out.httpStatus = 200;
+        out.hasContentLength = true;
+        out.contentLength = _body.size();
+        return StatusCode::Ok;
+    }
+    void poll() override {}
+    void close() override {}
+
+private:
+    std::vector<std::uint8_t> _body;
+    int& _fetches;
+};
+
 } // namespace
 
 TEST_CASE("FileDevice: a TNFS file read in many ReadFile requests is opened once")
@@ -295,4 +344,97 @@ TEST_CASE("FileDevice: a local file is closed after every ReadFile")
     REQUIRE(read_file(device, "persist:///app.prc", kBlock).status == StatusCode::Ok);
     CHECK(local->opens == 2);
     CHECK(local->openNow == 0);
+}
+
+TEST_CASE("FileDevice: a held handle gone stale does not cut a read short at the cache edge")
+{
+    TnfsRig rig;
+    const auto file = pattern(32 * kBlock, 9);
+    rig.server->files["/app.prc"] = file;
+    FileDevice device(rig.storage);
+
+    REQUIRE(read_file(device, "tnfs://server/app.prc", 0).status == StatusCode::Ok); // blocks 0-7 cached
+    rig.server->forget_handles();
+
+    // The first 100 bytes are still cached; the rest are not, and the held handles are gone.
+    // Reporting those 100 bytes as the end would end the host's read 412 bytes early.
+    const Read r = read_file(device, "tnfs://server/app.prc", 8 * kBlock - 100);
+    CHECK(r.status == StatusCode::Ok);
+    CHECK_FALSE(r.eof);
+    CHECK(r.data == slice(file, 8 * kBlock - 100, kBlock));
+}
+
+TEST_CASE("FileDevice: a file of an exact multiple of the read size ends without opening it again")
+{
+    TnfsRig rig;
+    const auto file = pattern(8 * kBlock, 10);
+    rig.server->files["/app.prc"] = file;
+    FileDevice device(rig.storage);
+
+    std::vector<std::uint8_t> got;
+    for (std::uint32_t at = 0; at < file.size(); at += kBlock) {
+        const Read r = read_file(device, "tnfs://server/app.prc", at);
+        REQUIRE(r.status == StatusCode::Ok);
+        got.insert(got.end(), r.data.begin(), r.data.end());
+    }
+    CHECK(got == file);
+
+    // The host cannot tell the file has ended until a read comes back empty.
+    const Read last = read_file(device, "tnfs://server/app.prc", static_cast<std::uint32_t>(file.size()));
+    CHECK(last.status == StatusCode::Ok);
+    CHECK(last.eof);
+    CHECK(last.data.empty());
+    // That read is the end of the file, not a stale handle: no second set of handles.
+    CHECK(rig.server->opens == 8);
+    CHECK(rig.server->open_handles() == 0);
+}
+
+TEST_CASE("FileDevice: another open on the session takes the held file's read-ahead handles, and reads go on")
+{
+    TnfsRig rig;
+    const auto a = pattern(32 * kBlock, 11);
+    const auto b = pattern(32 * kBlock, 12);
+    rig.server->files["/a.prc"] = a;
+    rig.server->files["/b.prc"] = b;
+    rig.server->maxOpen = 8; // the held file's eight handles are the session's whole allowance
+    FileDevice device(rig.storage);
+
+    REQUIRE(read_file(device, "tnfs://server/a.prc", 0).data == slice(a, 0, kBlock));
+    REQUIRE(rig.server->open_handles() == 8);
+
+    // Something else on the session (a disk image mount, say) opens a file through the same filesystem.
+    auto [fs, path] = rig.storage.resolveUri("tnfs://server/b.prc");
+    REQUIRE(fs != nullptr);
+    auto other = fs->open(path, "rb");
+    REQUIRE(other != nullptr);
+    std::vector<std::uint8_t> head(kBlock);
+    REQUIRE(other->read(head.data(), head.size()) == kBlock);
+    CHECK(head == slice(b, 0, kBlock));
+
+    // The held file lost its read-ahead handles to that open but still reads correctly.
+    for (std::uint32_t at = kBlock; at < 12 * kBlock; at += kBlock) {
+        CHECK(read_file(device, "tnfs://server/a.prc", at).data == slice(a, at, kBlock));
+    }
+}
+
+TEST_CASE("FileDevice: an HTTP file read in many ReadFile requests is fetched once")
+{
+    int fetches = 0;
+    const auto file = pattern(5 * kBlock - 30, 13);
+    StorageManager storage;
+    REQUIRE(storage.registerFileSystem(fujinet::fs::make_http_filesystem(
+        [&](std::string_view) -> std::unique_ptr<fujinet::io::INetworkProtocol> {
+            return std::make_unique<CountingHttp>(file, fetches);
+        })));
+    FileDevice device(storage);
+
+    std::vector<std::uint8_t> got;
+    for (;;) {
+        const Read r = read_file(device, "http://example.com/app.prc", static_cast<std::uint32_t>(got.size()));
+        REQUIRE(r.status == StatusCode::Ok);
+        got.insert(got.end(), r.data.begin(), r.data.end());
+        if (r.eof) break;
+    }
+    CHECK(got == file);
+    CHECK(fetches == 1);
 }

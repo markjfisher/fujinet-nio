@@ -378,8 +378,10 @@ Notes:
   fetches the whole body). It is closed when a read returns fewer than `maxBytes`, when a
   `ReadFile` names another file, on any `WriteFile`, and after 5 seconds without a read.
   Requests stay independent: the host may read any offset in any order and never closes
-  anything. While the file is held, a change made to it on the server by someone else may not
-  be seen. Local filesystems are opened for every request.
+  anything. While the file is held, a change made to it on the server by someone else, or by
+  another part of the firmware (a disk image mounted from the same file, say), may not be
+  seen. A held file its server has forgotten is noticed when a read comes back short of the
+  file's size, and is opened again. Local filesystems are opened for every request.
 
 ---
 
