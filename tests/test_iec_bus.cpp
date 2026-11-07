@@ -3,6 +3,7 @@
 #include "fujinet/io/iec_bus.h"
 #include "iec_test_helpers.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
