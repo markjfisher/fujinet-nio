@@ -15,6 +15,9 @@ The isolated [RP2350 Springboard bridge](../bridges/rp2350-springboard/README.md
 serves a Handspring Visor Springboard module and carries its FujiBus packets to
 NIO over a [packet link](packet_link.md).
 
+The optional [Visor USB Host profile](visor-usb-host.md) receives raw FujiBus
+packets through a POSIX-local libusb adapter; existing services remain unchanged.
+
 ## **Table of Contents**
 1. [Overview](#overview)  
 2. [Design Principles](#design-principles)  
@@ -330,6 +333,20 @@ Diagram source:
 [`docs/uml/seq_atari_fujibus_paths.puml`](uml/seq_atari_fujibus_paths.puml).
 Rendered SVG:
 [`seq_atari_fujibus_paths`](https://markjfisher.github.io/fujinet-nio/uml/seq_atari_fujibus_paths.svg).
+
+### Handspring Visor USB host path
+
+The opt-in `fujibus-visor-usb-debug` profile (`FN_BUILD_VISOR_USB_HOST`, POSIX with
+libusb) uses `TransportKind::FujiBusNative` with `ChannelKind::VisorUsbHost`. It has no
+byte channel: `channel_factory` returns none for it, and `main_posix.cpp` registers one
+`visor_usb::Ingress` as the core's transport. The ingress is an `ITransport` that
+composes an `IPacketIO` adapter, `NativeFramer` and `FujiBusTransport` over the
+libusb-owning `Host`, so each USB record is one complete raw FujiBus packet (no SLIP).
+Only `Host` touches libusb, and its callbacks update private state; routing and
+`resetClient(NetworkService, owner)` cleanup run on the core thread, with a new owner
+for every physical connection so a retired connection's handles and responses cannot
+reach the next. The portable helpers (`include/fujinet/io/visor_usb/protocol.h`) carry no
+libusb or POSIX types. See [`visor-usb-host.md`](visor-usb-host.md).
 
 ### C64 IEC paths
 

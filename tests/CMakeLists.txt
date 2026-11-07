@@ -148,3 +148,30 @@ target_compile_features(atari-sio-flight-tests PRIVATE cxx_std_20)
 target_compile_definitions(atari-sio-flight-tests PRIVATE
     FN_PLATFORM_POSIX=1 FN_ATARI_SIO_FLIGHT=1)
 add_test(NAME atari-sio-flight-tests COMMAND atari-sio-flight-tests)
+
+# Real production Visor implementation against link-time USB mocks; never enumerates
+# hardware and never links libusb. Enabled only with the explicit host profile.
+if(FN_BUILD_VISOR_USB_HOST)
+    add_executable(visor-usb-tests
+        run_main.cpp
+        visor_usb/test_protocol.cpp
+        visor_usb/test_host.cpp
+        visor_usb/mock_usb.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/posix/visor_usb/host.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/posix/visor_usb/ingress.cpp
+        ${CMAKE_SOURCE_DIR}/src/lib/visor_usb/protocol.cpp)
+    target_include_directories(visor-usb-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${LIBUSB_INCLUDE_DIRS})
+    # Link the archive without its libusb dependency: every USB entry point is
+    # supplied by mock_usb.cpp. Keep all other existing platform dependencies.
+    get_target_property(VISOR_TEST_DEPS fujinet-nio LINK_LIBRARIES)
+    list(REMOVE_ITEM VISOR_TEST_DEPS PkgConfig::LIBUSB)
+    add_dependencies(visor-usb-tests fujinet-nio)
+    target_include_directories(visor-usb-tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_compile_definitions(visor-usb-tests PRIVATE FN_PLATFORM_POSIX)
+    target_link_libraries(visor-usb-tests PRIVATE $<TARGET_FILE:fujinet-nio> ${VISOR_TEST_DEPS})
+    add_test(NAME visor-usb-tests COMMAND visor-usb-tests)
+endif()
+if(FN_BUILD_VISOR_USB_HOST AND Python3_Interpreter_FOUND)
+    add_test(NAME visor-usb-source-ownership
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/visor_usb/test_generation.py)
+endif()
