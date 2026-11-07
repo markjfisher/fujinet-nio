@@ -686,10 +686,18 @@ TEST_CASE("IEC drive: commands run at UNLISTEN, through OPEN or PRINT#")
     }
     SUBCASE("anything else is a syntax error")
     {
-        for (const char* command : {"Z\r", "M-R\r", "B-R 2 0 18 0\r", "U1 2 0 18 0\r"}) {
+        for (const char* command : {"Z\r", "M-R\r"}) {
             CAPTURE(command);
             rig.command(command);
             CHECK(rig.status() == "31,SYNTAX ERROR,00,00\r");
+        }
+    }
+    SUBCASE("block access has no channel to use")
+    {
+        for (const char* command : {"B-R 2 0 18 0\r", "U1 2 0 18 0\r", "U2 2 0 18 0\r", "B-P 2 0\r"}) {
+            CAPTURE(command);
+            rig.command(command);
+            CHECK(rig.status() == "70,NO CHANNEL,00,00\r");
         }
     }
     SUBCASE("a very long command is cut short, never refused")
@@ -744,4 +752,53 @@ TEST_CASE("IEC drive: only drive 8 answers with nothing mounted")
     CHECK(nine.present());
     REQUIRE(disks.unmount(1).ok());
     CHECK_FALSE(nine.present());
+}
+
+TEST_CASE("IEC drive: a pending mount makes the drive answer, and mounts on first use")
+{
+    fujinet::fs::StorageManager storage;
+    auto mem = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* fs = mem.get();
+    REQUIRE(storage.registerFileSystem(std::move(mem)));
+    fujinet::disk::DiskService disks(storage, fujinet::disk::make_default_image_registry());
+
+    fs->file_bytes("/d.d64") = sample_disk().bytes;
+    IecDriveFrontend nine(disks, 1, false);
+    CHECK_FALSE(nine.present());
+
+    disks.set_pending_mount(1, "mem:/d.d64", "r", true);
+    CHECK(nine.present());
+
+    IecBus bus;
+    bus.attach(9, nine);
+    open_file(bus, 9, 0, "FIRST");
+    const ReadOutcome read = read_all(bus, 9, 0);
+    CHECK(read.bytes == program(600));
+}
+
+TEST_CASE("IEC drive: a D64 with an error table reads as stored through the service")
+{
+    fujinet::fs::StorageManager storage;
+    auto mem = std::make_unique<fujinet::tests::MemoryFileSystem>("mem");
+    auto* fs = mem.get();
+    REQUIRE(storage.registerFileSystem(std::move(mem)));
+    fujinet::disk::DiskService disks(storage, fujinet::disk::make_default_image_registry());
+
+    std::vector<std::uint8_t> image = sample_disk().bytes;
+    image.insert(image.end(), 683, 0x02); // an error table: never part of a sector
+    fs->file_bytes("/d.d64") = image;
+    REQUIRE(disks.mount(0, "mem", "/d.d64", {}).ok());
+    CHECK(disks.info(0).geometry.sectorCount == 683);
+
+    IecDriveFrontend eight(disks, 0, true);
+    IecBus bus;
+    bus.attach(8, eight);
+    open_file(bus, 8, 0, "FIRST");
+    CHECK(read_all(bus, 8, 0).bytes == program(600));
+
+    // The last sector is the last 256 bytes of the sector area, not the table.
+    std::uint8_t last[256]{};
+    REQUIRE(disks.read_sector(0, 682, last, sizeof(last)).ok());
+    CHECK(std::vector<std::uint8_t>(last, last + 256) ==
+          std::vector<std::uint8_t>(image.begin() + 682 * 256, image.begin() + 683 * 256));
 }

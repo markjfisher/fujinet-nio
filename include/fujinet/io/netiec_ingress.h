@@ -27,6 +27,10 @@ public:
     // each request they complete.
     void receive(const std::uint8_t* data, std::size_t length, std::vector<std::uint8_t>& out);
 
+    // The connection changed: forget a request received in part. Device state and
+    // the bus's addressing are left to the new connection's HELLO.
+    void drop_partial_request() { _pending.clear(); }
+
 private:
     void handle(std::uint8_t command, const std::uint8_t* payload, std::size_t length,
                 std::vector<std::uint8_t>& out);
@@ -49,6 +53,7 @@ public:
 
 private:
     std::unique_ptr<Channel> _channel;
+    std::uint32_t _epoch{0};
     NetIecServer _server;
     std::vector<std::uint8_t> _out;
 };

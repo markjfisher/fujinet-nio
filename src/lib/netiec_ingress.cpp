@@ -113,7 +113,8 @@ void NetIecServer::handle(std::uint8_t command, const std::uint8_t* payload, std
 }
 
 NetIecIngress::NetIecIngress(std::unique_ptr<Channel> channel, IecBus& bus, std::string name)
-    : _channel(std::move(channel)), _server(bus, std::move(name))
+    : _channel(std::move(channel)), _epoch(_channel ? _channel->connection_epoch() : 0),
+      _server(bus, std::move(name))
 {
 }
 
@@ -124,6 +125,13 @@ void NetIecIngress::poll()
     }
     std::uint8_t buffer[1024];
     while (_channel->available()) {
+        // A client that went away mid-request must not have its half frame
+        // completed by the next one's first bytes.
+        const std::uint32_t epoch = _channel->connection_epoch();
+        if (epoch != _epoch) {
+            _epoch = epoch;
+            _server.drop_partial_request();
+        }
         const std::size_t got = _channel->read(buffer, sizeof(buffer));
         if (got == 0) {
             break;

@@ -331,6 +331,29 @@ Diagram source:
 Rendered SVG:
 [`seq_atari_fujibus_paths`](https://markjfisher.github.io/fujinet-nio/uml/seq_atari_fujibus_paths.svg).
 
+### C64 IEC paths
+
+The Commodore 64 follows the Atari NIO shape: no SLIP byte channel, no
+`FujiBusTransport`, and `TransportKind::None` in its build profile.
+`IecBus` tracks who is addressed from the commands sent under ATN and calls
+`IIecDevice`s. `IecDriveFrontend` (devices 8-15, one per `DiskService` slot) is a
+read-only 1541 over `DiskService` and `CbmVolume`, as `AtariSioDiskFrontend` is the
+Atari's `D1:`. `IecNioFrontend` (device 30) carries complete FujiBus packets to
+`RoutingManager`, as `AtariSioNioFrontend` does for `$7F`. `IecDeviceSet` composes them.
+
+- **POSIX + emulator** (`c64-netiec` presets) uses `ChannelKind::TcpSocket` as the
+  carrier. `NetIecIngress` is an `IWorkSource` that speaks the NetIEC protocol over
+  it and drives `IecBus`; the channel can block the core loop until bytes arrive
+  (`supports_readable_wait`), because the emulator makes a round trip per bus byte.
+  The ingress drops a half-received request when `Channel::connection_epoch()`
+  changes.
+- **Hardware** needs a line-level ingress that drives the same `IecBus`; none exists
+  yet.
+
+D64 (35/40/42 tracks) and a loose PRG, synthesised as a read-only one-file 1541 disk,
+are registered in the default `ImageRegistry` like every other format. See
+[`iec/README.md`](iec/README.md).
+
 ### Shared FujiBus changes for the Palm cradle
 
 HotSync cradle sharing adds an optional `IBusLineCoordinator` to the common
@@ -1050,7 +1073,7 @@ FujiNet NIO treats “disk” as a **reusable core service**:
 
 - **DiskService (core)**: mounts disk image files from a named filesystem (`StorageManager`) and exposes sector-level reads/writes.
 - **DiskDevice (VirtualDevice)**: wraps DiskService and exposes a small v1 binary command set for tooling and generic hosts.
-- **Machine-specific disk protocols** (Atari SIO disk, BBC DFS/MMFS, MS-DOS,
+- **Machine-specific disk protocols** (Atari SIO disk, Commodore IEC drives, BBC DFS/MMFS, MS-DOS,
   and Amiga block-device clients) should reuse DiskService and implement only
   their own bus semantics. ADF images are served as generic raw 512-byte media;
   AmigaDOS, MountLists, OFS/FFS, directories, and files remain outside NIO.

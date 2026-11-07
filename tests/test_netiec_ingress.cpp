@@ -254,6 +254,83 @@ TEST_CASE("NetIEC ingress: a whole LOAD through the channel and the real device 
     CHECK(request(0x02, {0x3F}) == Bytes{0});
 }
 
+namespace {
+
+// A TCP-like channel whose peer can change between bytes.
+class ReconnectingChannel final : public Channel {
+public:
+    std::deque<std::uint8_t> inbound;
+    Bytes outbound;
+    std::uint32_t epoch{0};
+
+    bool available() override { return !inbound.empty(); }
+    std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override
+    {
+        std::size_t n = 0;
+        while (n < maxLen && !inbound.empty()) {
+            buffer[n++] = inbound.front();
+            inbound.pop_front();
+        }
+        return n;
+    }
+    void write(const std::uint8_t* buffer, std::size_t len) override
+    {
+        outbound.insert(outbound.end(), buffer, buffer + len);
+    }
+    std::uint32_t connection_epoch() const override { return epoch; }
+};
+
+} // namespace
+
+TEST_CASE("NetIEC ingress: a half request from a lost client is not completed by the next one")
+{
+    IecBus bus;
+    StubDevice device;
+    bus.attach(8, device);
+    auto owned = std::make_unique<ReconnectingChannel>();
+    ReconnectingChannel& channel = *owned;
+    NetIecIngress ingress(std::move(owned), bus, "TEST");
+
+    // The first client sends the start of an ATN request, then goes away.
+    const Bytes atn = frame(0x02, {0x28, 0x60});
+    channel.inbound.assign(atn.begin(), atn.begin() + 2);
+    ingress.poll();
+    CHECK(channel.outbound.empty());
+
+    // A new client says HELLO. Without the drop, its first bytes would finish
+    // the stale frame and the stream would stay out of step.
+    channel.epoch += 2;
+    const Bytes hello = frame(0x01, {1});
+    channel.inbound.assign(hello.begin(), hello.end());
+    ingress.poll();
+    REQUIRE(channel.outbound.size() >= 3);
+    CHECK(channel.outbound[0] == 0x81);
+
+    // The connection's later requests are answered normally.
+    channel.outbound.clear();
+    const Bytes next = frame(0x02, {0x28, 0x60});
+    channel.inbound.assign(next.begin(), next.end());
+    ingress.poll();
+    CHECK(channel.outbound == Bytes{0x82, 1, 0, 0});
+}
+
+TEST_CASE("NetIEC: READ is capped, and short or empty payloads are tolerated")
+{
+    Rig rig;
+    rig.device.toSend.assign(5000, 0x55);
+    REQUIRE(rig.exchange(0x02, {0x48, 0x60}) == Bytes{0x82, 1, 0, 0});
+
+    const Bytes big = rig.exchange(0x04, {0xFF, 0xFF});
+    REQUIRE(big.size() == 3 + 1 + 4096);
+    CHECK(big[0] == 0x84);
+    CHECK((big[3] & 1) == 0); // 5000 bytes: not at the end yet
+
+    // READ with no length, WRITE with no flags: answered, nothing moved.
+    const Bytes none = rig.exchange(0x04, {});
+    CHECK(none == Bytes{0x84, 1, 0, 0});
+    CHECK(rig.exchange(0x03, {}) == Bytes{0x83, 2, 0, 0, 0});
+}
+
 TEST_CASE("NetIEC ingress: it waits only if its channel can")
 {
     IecBus bus;

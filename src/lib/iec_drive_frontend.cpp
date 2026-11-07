@@ -424,8 +424,16 @@ void IecDriveFrontend::run_command(const std::string& raw)
                 bus_reset();
                 return;
             }
+            if (which == 0x01 || which == 0x02) {
+                // U1/U2 need a direct-access channel, which this drive never opens.
+                set_status(status_no_channel, "NO CHANNEL");
+                return;
+            }
             break;
         }
+        case 'B': // B-R, B-W, B-P, B-A, B-F: block access, as U1/U2
+            set_status(status_no_channel, "NO CHANNEL");
+            return;
         case 'S': // scratch
         case 'V': // validate
         case 'N': // new

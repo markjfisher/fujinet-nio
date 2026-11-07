@@ -23,6 +23,10 @@ OPEN, or a packet, comes after it has run. Bus work runs on the core loop, which
 channel wakes when bytes arrive; the bridge makes a round trip per bus byte, so a loop
 that slept between requests would cost about a millisecond a byte.
 
+A client that disconnects part way through a frame leaves that frame unfinished. The
+ingress drops it when the channel reports a new connection (`Channel::connection_epoch`),
+so the next client's HELLO is not read as the rest of it.
+
 HELLO starts a connection, which may be the same machine reconnecting: devices keep
 their state, and only an unfinished transaction is dropped. A reset of the machine
 arrives as its own RESET.

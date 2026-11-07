@@ -32,7 +32,7 @@ does not write over the screen.
 |---|---|
 | Writing | SAVE, write modes and `S`, `N`, `V`, `C`, `R` answer `26, WRITE PROTECT ON`. A refused write takes no bytes |
 | REL files | Answer `64, FILE TYPE MISMATCH` |
-| Direct access (`#`, `U1`, `B-R`) | `#` answers `70,NO CHANNEL`; the commands answer `31,SYNTAX ERROR` |
+| Direct access (`#`, `U1`, `U2`, `B-R` and the other `B-` commands) | All answer `70,NO CHANNEL`: no drive buffer is modelled |
 | Drive memory (`M-R`, `M-W`, `M-E`) | `31,SYNTAX ERROR`. Drive code cannot run here, so a fast loader fails at once |
 | D71, D81 | Not mounted as drive media |
 
@@ -50,7 +50,7 @@ does not write over the screen.
 | 62 | ` FILE NOT FOUND` | No such name |
 | 64 | ` FILE TYPE MISMATCH` | The wrong type for the channel or the name |
 | 66 | `ILLEGAL TRACK OR SECTOR` | A chain leaves the disk or loops |
-| 70 | `NO CHANNEL` | Direct access |
+| 70 | `NO CHANNEL` | Direct access, `#` or `U1`/`U2`/`B-` commands |
 | 73 | `FUJINET NIO DOS` | Power on and reset |
 | 74 | `DRIVE NOT READY` | No disk, or a disk of another machine |
 
