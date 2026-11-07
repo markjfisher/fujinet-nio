@@ -247,3 +247,20 @@ TEST_CASE("Visor ingress retires response serialization rejection through the re
     inject(fixture); pump(ingress); REQUIRE(ingress.receive(req));
     ingress.send(router.handleRequest(req)); pump(ingress); CHECK(mock_usb::outSubmits==1);
 }
+
+TEST_CASE("Visor host retries pre-session setup failure on the same device") {
+    mock_usb::reset();
+    SUBCASE("kernel driver released") { mock_usb::kernel=1; }
+    SUBCASE("claim becomes available") { mock_usb::claimError=LIBUSB_ERROR_BUSY; }
+    SUBCASE("Palm connection info becomes ready") { mock_usb::oldSize=0; }
+    SUBCASE("malformed connection info corrected") { mock_usb::info[0]=3; }
+    SUBCASE("active alternate corrected after claim") { mock_usb::alternate=1; }
+    Host h; h.poll(); REQUIRE_FALSE(h.active()); CHECK(h.generation()==0);
+    CHECK(mock_usb::pending()==0); CHECK(mock_usb::claims==mock_usb::releases);
+    mock_usb::kernel=0; mock_usb::claimError=0; mock_usb::oldSize=6;
+    mock_usb::info={2,0,0,1,0,2}; mock_usb::alternate=0;
+    h.poll(); CHECK_FALSE(h.active()); // retry remains rate-limited
+    std::this_thread::sleep_for(1010ms); h.poll(); REQUIRE(h.active());
+    CHECK(h.generation()==1); CHECK(mock_usb::outSubmits==0);
+    inject(fixture); pump(h); ByteBuffer p; REQUIRE(h.take(p)); CHECK(p==fixture);
+}

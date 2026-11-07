@@ -72,6 +72,19 @@ change global permissions as an automatic startup step. On macOS, exclusive
 access failures are reported without forced detachment or legacy kernel drivers.
 Do not run two backends against the same interface.
 
+Pre-session setup failures (including kernel ownership, a busy claim or missing/
+invalid Generic connection information) release acquired resources and retry at
+most once per second. They do not quarantine the device: releasing the driver or
+opening the Palm port can allow the same enumerated device to connect. Every
+retry repeats descriptor/function validation; it never sends or replays a NIO
+command. This recovery is mock-tested, not yet physically qualified on the Prism.
+
+For initial use, finish HotSync and arrange interface access, start the host,
+then open a Palm NIO client. The previous acceptance sessions used coordinated
+access release and stdio; they did not qualify recovery from an initial setup
+failure. If the Palm opening causes fresh enumeration, operator-controlled access
+may need to be arranged for the new instance.
+
 ## Discovery and packet handling
 
 Discovery validates active configuration 1, alternate 0, a unique vendor-class
@@ -119,7 +132,7 @@ seconds; an exceptional OS cancellation failure deliberately retains USB-owned
 storage until process exit instead of freeing live buffers.
 
 Each physical connection gets a private generation and owner. Retired callbacks,
-packets and responses cannot cross into a later generation. A faulted device is
+packets and responses cannot cross into a later generation. A device faulted after session activation is
 quarantined until discovery confirms its absence; a local buffer reset cannot
 establish a fresh physical session. Close/Reopen the Palm connection only as
 part of diagnosed recovery, not an automatic retry loop. Generations do not

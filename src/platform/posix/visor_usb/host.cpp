@@ -90,11 +90,11 @@ struct Host::Impl {
         if (error != text) FN_LOGW("visor-usb", "%s", text.c_str());
         error = text;
     }
-    void stop(const std::string& why)
+    void stop(const std::string& why, bool quarantine = true)
     {
         active = false; incoming.clear(); partialSince = {};
         report(why);
-        if (handle && !blocked) blocked = libusb_ref_device(libusb_get_device(handle));
+        if (quarantine && handle && !blocked) blocked = libusb_ref_device(libusb_get_device(handle));
         // Buffers/outgoing remain intact until both cancellation callbacks return.
         if (rx.pending) libusb_cancel_transfer(rx.transfer);
         if (tx.pending) libusb_cancel_transfer(tx.transfer);
@@ -187,14 +187,20 @@ struct Host::Impl {
         libusb_free_device_list(list, 1);
         finish_close();
     }
+    void setup_failed(const std::string& why)
+    {
+        // No packet transfers have been submitted during setup. Release any
+        // claim and retry discovery without retiring a physical session.
+        stop(why, false);
+    }
     void setup()
     {
         int configuration = 0;
         int rc = libusb_get_configuration(handle, &configuration);
-        if (rc || configuration != 1) { stop("Expected active USB configuration 1; not changing configuration"); return; }
+        if (rc || configuration != 1) { setup_failed("Expected active USB configuration 1; not changing configuration"); return; }
         libusb_config_descriptor* desc = nullptr;
         rc = libusb_get_active_config_descriptor(libusb_get_device(handle), &desc);
-        if (rc) { stop("Cannot read active USB descriptors"); return; }
+        if (rc) { setup_failed("Cannot read active USB descriptors"); return; }
         std::vector<io::visor_usb::Endpoint> eps;
         for (unsigned i = 0; i < desc->bNumInterfaces; ++i) {
             const auto& iface = desc->interface[i];
@@ -212,23 +218,23 @@ struct Host::Impl {
         // diagnostic only; PIPE is expected on Prism and never selects HotSync.
         std::array<unsigned char, 20> info{};
         rc = libusb_control_transfer(handle, 0xc2, 4, 0, 0, info.data(), info.size(), 250);
-        if (rc < 0 && rc != LIBUSB_ERROR_PIPE) { stop("Extended connection query failed"); return; }
+        if (rc < 0 && rc != LIBUSB_ERROR_PIPE) { setup_failed("Extended connection query failed"); return; }
         rc = libusb_control_transfer(handle, 0xc2, 3, 0, 0, info.data(), 6, 250);
         auto ports = io::visor_usb::connection_info({info.data(), rc < 0 ? 0u : std::size_t(rc)});
         auto selected = ports ? io::visor_usb::select_generic_pair(*ports, eps, options.port) : std::nullopt;
-        if (!selected) { stop("Malformed connection info or missing/ambiguous Generic bulk pair"); return; }
+        if (!selected) { setup_failed("Malformed connection info or missing/ambiguous Generic bulk pair"); return; }
         pair = *selected;
         rc = libusb_kernel_driver_active(handle, pair.input.interface);
-        if (rc == 1) { stop("Interface owned by kernel driver; manual release required (no auto-detach)"); return; }
-        if (rc < 0 && rc != LIBUSB_ERROR_NOT_SUPPORTED) { stop("Cannot inspect USB interface ownership"); return; }
+        if (rc == 1) { setup_failed("Interface owned by kernel driver; manual release required (no auto-detach)"); return; }
+        if (rc < 0 && rc != LIBUSB_ERROR_NOT_SUPPORTED) { setup_failed("Cannot inspect USB interface ownership"); return; }
         rc = libusb_claim_interface(handle, pair.input.interface);
-        if (rc) { stop(std::string("Cannot claim interface: ") + libusb_error_name(rc)); return; }
+        if (rc) { setup_failed(std::string("Cannot claim interface: ") + libusb_error_name(rc)); return; }
         interface = pair.input.interface;
         unsigned char alternate = 255;
         rc = libusb_control_transfer(handle, 0x81, 10, 0, interface, &alternate, 1, 250);
-        if (rc != 1 || alternate != pair.input.alternate) { stop("Active USB alternate setting mismatch"); return; }
+        if (rc != 1 || alternate != pair.input.alternate) { setup_failed("Active USB alternate setting mismatch"); return; }
         if (generation == std::numeric_limits<std::uint64_t>::max()) {
-            stop("USB generation exhausted; restart process"); return;
+            setup_failed("USB generation exhausted; restart process"); return;
         }
         ++generation;
         auto* device = libusb_get_device(handle);
