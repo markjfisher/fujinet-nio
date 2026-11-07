@@ -106,8 +106,11 @@ picocom /dev/pts/N
 
 `FN_CONSOLE=stdio` remains supported. The console PTY is separate from the USB
 cradle and does not claim it. A Linux automated test exercises the real PTY and console engine while the
-mock USB backend routes a Clock request. PTY use with an attached Prism still
-needs physical verification; recorded USB acceptance used stdio.
+mock USB backend routes a Clock request. Physical Prism verification also passed:
+Clock + two HTTP succeeded with the PTY connected, and console queries returned
+`active=1` on Generic 2 while the Palm USB Probe held the port open. The console
+reported config-sourced selection and zero active network handles; `kill` exited
+the host cleanly.
 
 Multiple matching devices require an unambiguous selector. An absent device is
 not an error requiring restart; discovery is limited to once per second.
@@ -229,13 +232,14 @@ Post-audit fixes passed the shorter USB/CS1 regression; logs ended with no activ
 network handles. The later cached-JSON NioLib/apps were separately reported
 working with faster app loading, without a new complete transport qualification
 sequence or timing benchmark. No RP2350 firmware/ROM change was required for USB.
-The later setup-retry and YAML/console changes are automatically verified only.
-For their next short physical check, use the PTY console, start the host before
-opening a Palm NIO client, inspect `visor.status`, and run Clock + two HTTP once.
-If checking kernel-driver release recovery, release only the verified interface
-with explicit operator approval; the same device should connect on a subsequent
-discovery without restarting the host. No PRC or Springboard firmware update is
-needed for these host-only changes.
+The subsequent Linux/Prism PTY check passed Clock + two HTTP, active-USB
+console queries, zero-handle cleanup and orderly console shutdown. The host was
+started before the Palm connection and also connected without restart after
+renewing expired temporary access. This observed `LIBUSB_ERROR_ACCESS` recovery;
+recovery specifically from a kernel-owned interface or invalid connection info
+remains mock-tested only. YAML persistence and environment precedence remain
+automatically verified; the physical session used the default config selection.
+No PRC or Springboard firmware update was needed for these host-only changes.
 macOS, serial hardware, arbitrary physical failure recovery and long-duration
 heap/stress qualification remain unverified.
 
