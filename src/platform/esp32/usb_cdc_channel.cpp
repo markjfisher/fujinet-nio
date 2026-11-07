@@ -18,6 +18,7 @@ extern "C" {
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 #include "tinyusb_cdc_acm.h"
+#include "tusb.h"
 }
 
 namespace fujinet::platform::esp32 {
@@ -34,7 +35,15 @@ UsbCdcChannel::UsbCdcChannel()
 
 bool UsbCdcChannel::available()
 {
-    return fujinet::platform::esp32::ensure_tinyusb_driver();
+    const auto port = (CONFIG_FN_FUJIBUS_USB_CDC_PORT == 0)
+        ? UsbCdcAcmPort::Port0 : UsbCdcAcmPort::Port1;
+    if (!ensure_tinyusb_cdc_acm(port)) {
+        return false;
+    }
+    // Readability is buffered input, not driver readiness. PacketLink retries
+    // while available() is true, so reporting an idle USB port would spin forever.
+    const auto itf = (port == UsbCdcAcmPort::Port0) ? TINYUSB_CDC_ACM_0 : TINYUSB_CDC_ACM_1;
+    return tud_cdc_n_available(itf) > 0;
 }
 
 std::size_t UsbCdcChannel::read(std::uint8_t* buffer, std::size_t maxLen)

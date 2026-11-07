@@ -15,6 +15,16 @@ class DiskImageTypeTests(unittest.TestCase):
         self.assertEqual(dp.TYPE_DC42, 5)
         self.assertEqual(disk._type_parse("DC42"), dp.TYPE_DC42)
 
+    def test_d64_matches_cpp_image_type(self):
+        self.assertEqual(dp.TYPE_D64, 7)
+        self.assertEqual(disk._type_parse("D64"), dp.TYPE_D64)
+        self.assertEqual(disk._type_str(7), "d64")
+
+    def test_prg_matches_cpp_image_type(self):
+        self.assertEqual(dp.TYPE_PRG, 8)
+        self.assertEqual(disk._type_parse("PRG"), dp.TYPE_PRG)
+        self.assertEqual(disk._type_str(8), "prg")
+
     def test_xexboot_matches_cpp_image_type(self):
         # disk::ImageType::XexBoot in include/fujinet/disk/disk_types.h
         self.assertEqual(dp.TYPE_XEXBOOT, 6)

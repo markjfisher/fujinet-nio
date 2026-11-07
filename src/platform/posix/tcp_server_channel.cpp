@@ -1,6 +1,7 @@
 #include "fujinet/platform/posix/tcp_server_channel.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
@@ -13,9 +14,10 @@ namespace fujinet::platform::posix {
 
 class TcpServerChannel : public fujinet::io::Channel {
 public:
-    TcpServerChannel(std::string host, std::uint16_t port)
+    TcpServerChannel(std::string host, std::uint16_t port, bool readableWait)
         : _host(std::move(host))
         , _port(port)
+        , _readableWait(readableWait)
     {
         open_listener();
     }
@@ -52,6 +54,22 @@ public:
         return (pfd.revents & POLLIN) != 0;
     }
 
+    std::uint32_t connection_epoch() const override { return _epoch; }
+
+    bool supports_readable_wait() const override { return _readableWait; }
+
+    bool wait_for_readable(std::chrono::milliseconds timeout) override
+    {
+        ensure_client();
+        pollfd pfd{};
+        pfd.fd = _clientFd >= 0 ? _clientFd : _listenFd;
+        pfd.events = POLLIN;
+        if (pfd.fd < 0) {
+            return false;
+        }
+        return ::poll(&pfd, 1, static_cast<int>(timeout.count())) > 0;
+    }
+
     std::size_t read(std::uint8_t* buffer, std::size_t maxLen) override
     {
         ensure_client();
@@ -86,6 +104,10 @@ public:
                 continue;
             }
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                // The peer is not reading. Dropping the rest leaves a framed peer
+                // out of step, so say so rather than fail silently.
+                std::cerr << "[TcpServerChannel] Send buffer full: dropped " << remaining
+                          << " of " << len << " bytes" << std::endl;
                 break;
             }
             close_client();
@@ -167,6 +189,7 @@ private:
         }
 
         _clientFd = fd;
+        ++_epoch;
         std::cout << "[TcpServerChannel] Client connected" << std::endl;
     }
 
@@ -175,20 +198,23 @@ private:
         if (_clientFd >= 0) {
             ::close(_clientFd);
             _clientFd = -1;
+            ++_epoch;
             std::cout << "[TcpServerChannel] Client disconnected" << std::endl;
         }
     }
 
     std::string _host;
     std::uint16_t _port;
+    bool _readableWait;
     int _listenFd{-1};
     int _clientFd{-1};
+    std::uint32_t _epoch{0};
 };
 
 std::unique_ptr<fujinet::io::Channel>
-create_tcp_server_channel(const std::string& host, std::uint16_t port)
+create_tcp_server_channel(const std::string& host, std::uint16_t port, bool readableWait)
 {
-    return std::make_unique<TcpServerChannel>(host, port);
+    return std::make_unique<TcpServerChannel>(host, port, readableWait);
 }
 
 } // namespace fujinet::platform::posix

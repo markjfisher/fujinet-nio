@@ -204,7 +204,7 @@ static void from_yaml(const YAML::Node& node, ChannelConfig& out)
 {
     out.ptyPath = get_or<std::string>(node, "pty_path", "");
     out.tcpHost = get_or<std::string>(node, "tcp_host", "127.0.0.1");
-    out.tcpPort = static_cast<std::uint16_t>(get_or<int>(node, "tcp_port", 65504));
+    out.tcpPort = static_cast<std::uint16_t>(get_or<int>(node, "tcp_port", out.tcpPort));
     out.serialPort = get_or<std::string>(node, "serial_port", "/dev/ttyUSB0");
     if (auto u = node["uart"]) {
         if (u.IsMap()) {

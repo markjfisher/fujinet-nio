@@ -30,6 +30,11 @@
       }
     },
     {
+      "name": "usb-host-rp2350",
+      "inherits": "firmware",
+      "binaryDir": "${sourceDir}/build/usb-host-rp2350"
+    },
+    {
       "name": "link-rp2350",
       "inherits": "firmware",
       "binaryDir": "${sourceDir}/build/link-rp2350",
@@ -304,6 +309,11 @@
     }
   ],
   "buildPresets": [
+    {
+      "name": "usb-host-rp2350",
+      "configurePreset": "usb-host-rp2350",
+      "targets": ["usb_host_probe"]
+    },
     {
       "name": "host",
       "configurePreset": "host"

@@ -45,6 +45,13 @@ public:
     // Write len bytes from buffer.
     virtual void write(const std::uint8_t* buffer, std::size_t len) = 0;
 
+    // Changes whenever the peer behind the channel changes: a connection made or
+    // lost. A consumer holding partly received protocol state compares it before
+    // using new bytes, and drops that state when it differs, so a half frame from
+    // a lost peer is not completed by a new one. Channels with one permanent peer
+    // (UART, PTY) never change it.
+    virtual std::uint32_t connection_epoch() const { return 0; }
+
     // Optionally wait until the channel may have bytes to read.
     // Returns true if work may be available now. The default is non-blocking
     // and lets the application loop fall back to its normal idle delay.

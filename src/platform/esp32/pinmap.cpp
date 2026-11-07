@@ -10,7 +10,8 @@ namespace fujinet::platform::esp32 {
 #define FN_PINMAP_ATARIV1           4
 #define FN_PINMAP_RS232             5
 #define FN_PINMAP_RS232_REV0        6
-#define FN_PINMAP_FUJIMAC_REV0      7
+#define FN_PINMAP_USB_BENCH         7
+#define FN_PINMAP_FUJIMAC_REV0      8
 // Add more here as they are used. These ensure we don't get weird macro expansions.
 
 // Ensure at least one of FN_PINMAP or FN_PINMAP_DEFAULT is defined
@@ -23,7 +24,11 @@ namespace fujinet::platform::esp32 {
 #  define FN_PINMAP FN_PINMAP_DEFAULT
 #endif
 
-#if FN_PINMAP == FN_PINMAP_BREADBOARD
+#if FN_PINMAP == FN_PINMAP_USB_BENCH
+// Bare USB bench: no SD, host bus, LEDs or application buttons wired.
+static constexpr PinMap BOARD_PINMAP{};
+
+#elif FN_PINMAP == FN_PINMAP_BREADBOARD
 static constexpr PinMap BOARD_PINMAP{
     .sd = SdSpiPins{ .mosi = 7, .miso = 8, .sck = 6, .cs = 9 },
 };

@@ -372,6 +372,16 @@ Notes:
 - Host continues reading by setting `offset += dataLen` until `eof=1`.
 - **Normative (v1):** If `offset` is at/after EOF, respond `Ok` with `dataLen=0` and `eof=1`.
 - Device should not allocate more than needed; ideally read directly into the response payload buffer.
+- On a network filesystem (TNFS, HTTP) the device keeps the file from a `ReadFile` open for the
+  next `ReadFile` of the same file, so a file read in chunks is opened once rather than once a
+  chunk (a TNFS open is the file and its read-ahead handles, each a round trip; an HTTP open
+  fetches the whole body). It is closed when a read returns fewer than `maxBytes`, when a
+  `ReadFile` names another file, on any `WriteFile`, and after 5 seconds without a read.
+  Requests stay independent: the host may read any offset in any order and never closes
+  anything. While the file is held, a change made to it on the server by someone else, or by
+  another part of the firmware (a disk image mounted from the same file, say), may not be
+  seen. A held file its server has forgotten is noticed when a read comes back short of the
+  file's size, and is opened again. Local filesystems are opened for every request.
 
 ---
 

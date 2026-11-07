@@ -574,10 +574,8 @@ extern "C" void app_main(void)
         // ... what to do?
     }
 
-    if (!fujinet::platform::esp32::init_sdcard_spi()) {
-        FN_LOGE(TAG, "Failed to initialise SD card.");
-        // ... what to do?
-    }
+    // Optional hardware: the initializer reports mount failures or disabled pins.
+    (void)fujinet::platform::esp32::init_sdcard_spi();
 
     // Core 1: the Wi-Fi driver task is pinned to core 0, and sharing a core with the radio costs the
     // SIO task part of its 16 ms ACK window. The CMD interrupt and the SIO UART are set up by this

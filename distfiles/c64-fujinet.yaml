@@ -1,0 +1,16 @@
+fujinet:
+  device_name: fn-c64
+boot:
+  mode: config
+  config_uri: "persist:/boot/c64/autorun.d64"
+  readonly: true
+wifi:
+  enabled: false
+  ssid: ""
+  passphrase: ""
+clock:
+  timezone: UTC
+  enabled: true
+channel:
+  tcp_host: 127.0.0.1
+  tcp_port: 1541

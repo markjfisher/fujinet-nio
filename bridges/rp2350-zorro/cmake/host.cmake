@@ -85,3 +85,14 @@ add_test(NAME report_summary COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SO
 add_test(NAME waveform_visual COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/feasibility/test_waveform_visual.py")
 
 add_test(NAME setup COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_setup.py")
+
+set(SPRINGBOARD_LINK "${CMAKE_CURRENT_SOURCE_DIR}/../rp2350-springboard")
+add_executable(test_usb_probe lab/usb-host/test_probe.c lab/usb-host/probe.c)
+target_include_directories(test_usb_probe PRIVATE lab/usb-host "${SPRINGBOARD_LINK}/src")
+target_compile_options(test_usb_probe PRIVATE -Wall -Wextra -Werror)
+add_test(NAME usb_probe COMMAND test_usb_probe)
+add_executable(test_usb_packet_link "${SPRINGBOARD_LINK}/tests/test_packet_link.c"
+    "${SPRINGBOARD_LINK}/src/packet_link.c")
+target_include_directories(test_usb_packet_link PRIVATE "${SPRINGBOARD_LINK}/src")
+target_compile_options(test_usb_packet_link PRIVATE -Wall -Wextra -Werror)
+add_test(NAME usb_packet_link COMMAND test_usb_packet_link)

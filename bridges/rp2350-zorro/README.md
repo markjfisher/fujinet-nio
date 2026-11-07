@@ -64,6 +64,11 @@ passes the selected SDK explicitly so a stale CMake cache does not override it.
 recognizes an installed compiler and the workspace's local toolchain cache.
 
 Outputs: `build/firmware/bridge_capture.elf` and `bridge_capture.uf2`.
+
+For the isolated RP2350-host / ESP32-device USB experiment, see the
+[USB host bench probe](lab/usb-host/README.md). Build it with
+`./scripts/build.sh usb-host-rp2350`; its console uses UART because native
+USB is the host link. Keep it disconnected from the Amiga bus.
 SDK import precedes `project()`; SDK initialization follows it. Wrong board or
 platform selections fail configuration. Source pins in `dependencies.json` are:
 

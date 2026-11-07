@@ -134,6 +134,28 @@ v1 includes (image-format understanding required for sector I/O):
     - 80 track: 800 sectors = 204,800 bytes
   - v1 scope: **geometry + sector read/write only** (no DFS catalog parsing)
 
+- **D64** (`ImageType::D64`, `.d64`): Commodore 1541 image, flat 256-byte sectors
+  in track and sector order
+  - supported sizes: 35, 40 or 42 tracks (683, 768 or 802 sectors), each with or
+    without the one-byte-per-sector error table at the end of the file, which is
+    ignored; any other size is `BadImage`
+  - v1 scope: **geometry + sector read/write only**. The DOS structures on the disk
+    are read by the IEC drive, not here: see [IEC drive](iec/drive.md)
+
+- **Commodore program disk** (`ImageType::Prg` = 8, wire type 8; mount only, no
+  `Create`): a loose `.prg` file presented as a synthesised, read-only, 35-track
+  1541 disk holding that one file
+  - the file and the disk are named after the source: its last path element
+    without `.prg`, in capitals, at most 16 characters. Characters that mean
+    something in a CBM file name become `-`, so the file can be loaded by name
+  - files of 2 to 168,656 bytes (664 data sectors of 254 bytes): anything shorter
+    has no load address, anything longer does not fit, and both are `BadImage`
+  - track 18 holds the BAM (18/0) and the directory (18/1). Data sectors run in
+    block order from track 1 sector 0, stepping over track 18, with no interleave
+  - sector bytes are computed per read from the source file; only the file handle
+    is kept. The image is always read-only: a mount asking for read-write succeeds
+    and reports read-only in the mount/info flags, and a write returns `ReadOnly`
+
 - **DSD** (`ImageType::Dsd`, `.dsd`): BBC double-sided DFS image. Each side is
   an SSD surface (DFS drives 0 and 2 on a BBC), stored track-interleaved:
   track 0 side 0, track 0 side 1, track 1 side 0, ...
@@ -240,11 +262,13 @@ them, so detection must never guess:
    called, and its geometry overrides any sector size hint the client sent.
 2. **Only unambiguous extensions imply geometry.** An extension may select a
    type or geometry only if it means the same thing on every machine:
-   `.atr`, `.ssd`, `.dsd`, `.adf`, `.hda`, `.hfv`, `.xfd`. Where that
+   `.atr`, `.ssd`, `.dsd`, `.d64`, `.adf`, `.hda`, `.hfv`, `.xfd`. Where that
    format's sector size varies (`.hda`, `.hfv`, `.xfd`), the geometry is an
    inference, so a client's sector size hint takes precedence when it fits
    the file (an image of a standard size may have another layout). Where the
    sector size is fixed (`.adf` is always 512), the hint is ignored.
+   `.prg` also claims a file, as `.com` and `.exe` do: other machines' `.prg`
+   files are programs too, never disk images, so claiming it cannot hide a disk.
 3. **Nothing is guessed.** `.img`, `.ima` and `.raw` are raw, but get
    geometry only from content or the client's sector size hint. An explicit
    `Raw` type is no different. Without either, the mount fails with
@@ -455,7 +479,7 @@ Mount an image into a slot using a **full URI**. The fujinet-nio parses the URI 
 u8  version
 u8  slot
 u8  flags            // bit0 = readonly_requested; bit1 = stage as a lazy pending mount
-u8  typeOverride     // 0=Auto, 1=ATR, 2=SSD, 3=DSD, 4=Raw, 5=DiskCopy42, 6=XexBoot
+u8  typeOverride     // 0=Auto, 1=ATR, 2=SSD, 3=DSD, 4=Raw, 5=DiskCopy42, 6=XexBoot, 7=D64, 8=Prg
 u16 sectorSizeHint   // for Raw; otherwise 0
 u16 uriLen           // LE
 u8[] uri             // length uriLen - e.g., "tnfs://192.168.1.101:16384/disk.atr" or "sd0:/games.atr"
@@ -843,7 +867,7 @@ Create a new image file on a named filesystem using a **full URI**. This command
 ```
 u8  version
 u8  flags            // bit0 = overwrite
-u8  type             // 1=ATR, 2=SSD, 3=DSD, 4=Raw (0=Auto invalid; 5=DiskCopy42 and 6=XexBoot have no creator)
+u8  type             // 1=ATR, 2=SSD, 3=DSD, 4=Raw (0=Auto invalid; 5=DiskCopy42, 6=XexBoot, 7=D64 and 8=Prg have no creator)
 u16 sectorSize       // LE
 u32 sectorCount      // LE
 u16 uriLen           // LE

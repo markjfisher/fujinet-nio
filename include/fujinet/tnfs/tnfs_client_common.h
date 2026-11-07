@@ -59,7 +59,9 @@ public:
             return false;
         }
 
+        // Any session number is valid: tnfsd gives its first session 0.
         _sessionId = read_u16le(pkt.sessionIdL, pkt.sessionIdH);
+        _mounted = true;
         // Reply: status, server version (minor, major), min retry. OPENDIRX/READDIRX are 1.1+.
         const unsigned serverMinor = pkt.payload[1];
         const unsigned serverMajor = pkt.payload[2];
@@ -74,7 +76,7 @@ public:
 
     bool umount() override
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return true;
         }
 
@@ -88,6 +90,7 @@ public:
         }
 
         _sessionId = 0;
+        _mounted = false;
         return true;
     }
 
@@ -145,7 +148,7 @@ public:
 
     bool rename(const std::string& from, const std::string& to) override
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return false;
         }
 
@@ -167,7 +170,7 @@ public:
     std::vector<std::string> listDirectory(const std::string& path) override
     {
         std::vector<std::string> entries;
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return entries;
         }
 
@@ -215,7 +218,7 @@ public:
     {
         out.clear();
         total = 0;
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return TnfsListStatus::Error;
         }
 
@@ -250,7 +253,7 @@ public:
 
     int open(const std::string& path, uint16_t openMode, uint16_t createPerms) override
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return -1;
         }
 
@@ -277,7 +280,7 @@ public:
 
     bool close(int fileHandle) override
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return false;
         }
 
@@ -292,7 +295,7 @@ public:
 
     std::size_t read(int fileHandle, void* buffer, std::size_t bytes) override
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return 0;
         }
 
@@ -323,7 +326,7 @@ public:
 
     std::size_t write(int fileHandle, const void* buffer, std::size_t bytes) override
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return 0;
         }
 
@@ -366,7 +369,7 @@ public:
         for (auto& r : reads) {
             r.got = 0;
         }
-        if (_sessionId == 0 || reads.empty() || !_parallelReads) {
+        if (!_mounted || reads.empty() || !_parallelReads) {
             return;
         }
 
@@ -465,7 +468,7 @@ private:
 
     bool build_path_command(std::uint8_t command, const std::string& path, TnfsPacket& pkt)
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return false;
         }
 
@@ -620,7 +623,7 @@ private:
 
     bool lseek_internal(int fileHandle, std::uint32_t offset, std::uint8_t whence, std::uint32_t& outPos)
     {
-        if (_sessionId == 0) {
+        if (!_mounted) {
             return false;
         }
 
@@ -678,7 +681,7 @@ private:
         if (response.sequenceNum != seq) {
             return false;
         }
-        return _sessionId == 0 ||
+        return !_mounted ||
                read_u16le(response.sessionIdL, response.sessionIdH) == _sessionId;
     }
 
@@ -754,6 +757,7 @@ private:
     const char* _transportName;
     bool _parallelReads{false};
     std::uint16_t _sessionId{0};
+    bool _mounted{false};
     std::uint8_t _sequenceNum{0};
     bool _noDirX{false};
     bool _hasDeadline{false};

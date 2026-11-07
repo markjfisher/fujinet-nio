@@ -14,6 +14,9 @@ boot:
   readonly: true
 ```
 
+The C64 boot disk is `c64/autorun.d64`, from `nio-core-apps`. The `c64-netiec`
+profiles look for it there without any configuration.
+
 Amiga default disks are profile-specific FFS/DD ADFs.  For a POSIX FujiNet
 instance, select one explicitly, for example:
 

@@ -8,6 +8,9 @@ FujiConfig default_config_for(const build::BuildProfile& profile)
     if (!profile.defaultBootConfigUri.empty()) {
         cfg.boot.configUri = std::string(profile.defaultBootConfigUri);
     }
+    if (profile.defaultChannelTcpPort != 0) {
+        cfg.channel.tcpPort = profile.defaultChannelTcpPort;
+    }
     return cfg;
 }
 

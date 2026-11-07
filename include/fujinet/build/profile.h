@@ -2,6 +2,7 @@
 
 #include <string_view>
 #include <cstddef>
+#include <cstdint>
 
 namespace fujinet::build {
 
@@ -78,6 +79,10 @@ struct BuildProfile {
     // Where this build expects its boot/config disk (the FujiConfig boot.config_uri
     // default). Empty: the generic default. A fujinet.yaml that sets config_uri wins.
     std::string_view defaultBootConfigUri{};
+
+    // The channel.tcp_port this build listens on by default. 0: the generic default.
+    // A fujinet.yaml that sets tcp_port wins.
+    std::uint16_t defaultChannelTcpPort{0};
 };
 
 // Filled by platform-specific code.
