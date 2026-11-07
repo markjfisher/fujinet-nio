@@ -35,10 +35,12 @@ CMakeFiles/
 /distfiles/boot/**/*.img
 /distfiles/boot/**/*.ssd
 /distfiles/boot/**/*.adf
+/distfiles/boot/**/*.d64
 /distfiles/esp32-data/boot/**/*.atr
 /distfiles/esp32-data/boot/**/*.img
 /distfiles/esp32-data/boot/**/*.ssd
 /distfiles/esp32-data/boot/**/*.adf
+/distfiles/esp32-data/boot/**/*.d64
 
 # IDE files
 .vscode/
