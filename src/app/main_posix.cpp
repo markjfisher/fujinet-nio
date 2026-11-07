@@ -30,7 +30,10 @@
 #include "fujinet/io/protocol/wire_device_ids.h"
 #include "fujinet/platform/channel_factory.h"
 #include "fujinet/platform/fuji_device_factory.h"
+#include "fujinet/io/iec_device_set.h"
+#include "fujinet/io/netiec_ingress.h"
 #include "fujinet/platform/posix/atari_netsio_fujibus_channel.h"
+#include "fujinet/platform/posix/tcp_server_channel.h"
 #include "fujinet/platform/posix/fs_factory.h"
 #include "fujinet/platform/posix/udp_channel.h"
 #include "fujinet/platform/posix/wifi_link.h"
@@ -277,7 +280,27 @@ int main()
         core.deviceManager().getDevice(fujinet::io::protocol::to_device_id(
             fujinet::io::protocol::WireDeviceId::DiskService)));
     std::unique_ptr<fujinet::platform::posix::AtariNetSioIngress> atariNetSioIngress;
-#if defined(FN_BUILD_ATARI_FUJIBUS_NETSIO)
+    std::unique_ptr<fujinet::io::IecDeviceSet> iecDevices;
+    std::unique_ptr<fujinet::io::NetIecIngress> netIecIngress;
+#if defined(FN_BUILD_C64_NETIEC)
+    if (!diskDev) {
+        FN_LOGE(TAG, "C64 IEC devices require DiskService");
+        return 1;
+    }
+    auto netIecChannel = fujinet::platform::posix::create_tcp_server_channel(
+        config.channel.tcpHost, config.channel.tcpPort, /*readableWait=*/true);
+    if (!netIecChannel) {
+        FN_LOGE(TAG, "Failed to create NetIEC TCP channel");
+        return 1;
+    }
+    FN_LOGI(TAG, "NetIEC on %s:%u", config.channel.tcpHost.c_str(),
+            static_cast<unsigned>(config.channel.tcpPort));
+    iecDevices = std::make_unique<fujinet::io::IecDeviceSet>(
+        diskDev->disk_service(), core.routingManager());
+    netIecIngress = std::make_unique<fujinet::io::NetIecIngress>(
+        std::move(netIecChannel), iecDevices->bus(), "FujiNet NIO");
+    core.addWorkSource(netIecIngress.get());
+#elif defined(FN_BUILD_ATARI_FUJIBUS_NETSIO)
     if (!diskDev) {
         FN_LOGE(TAG, "Atari NetSIO ingress requires DiskService");
         return 1;
@@ -325,6 +348,7 @@ int main()
     bool running = true;
     while (running) {
         if (atariNetSioIngress) atariNetSioIngress->poll();
+        if (netIecIngress) netIecIngress->poll();
         core.tick();
 
         running = console.step(0);

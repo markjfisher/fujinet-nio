@@ -96,6 +96,7 @@ static DiskResult prepare_image(
 
     MountOptions effective = opts;
     effective.readOnlyRequested = readOnlyEffective;
+    effective.sourcePath = path;
     ImageType type = opts.typeOverride;
     if (type == ImageType::Auto) {
         const auto probe = probe_image(*file, finfo.sizeBytes, path, opts);
