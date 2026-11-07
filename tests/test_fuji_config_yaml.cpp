@@ -92,6 +92,7 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.channel.packetLink.capacity != b.channel.packetLink.capacity) return false;
     if (a.channel.packetLink.recordTimeoutMs != b.channel.packetLink.recordTimeoutMs) return false;
 
+    if (a.visor.port != b.visor.port || a.visor.bus != b.visor.bus || a.visor.path != b.visor.path) return false;
     if (a.translation.image.maxPixels != b.translation.image.maxPixels) return false;
 
     return true;
@@ -975,4 +976,43 @@ TEST_CASE("YamlFujiConfigStoreFs: atari_sio defaults, load and round-trip")
     original.atariSio.procNotify = true;
     store.save(original);
     CHECK(configs_equal(original, store.load()));
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Visor selection defaults and round-trip")
+{
+    fujinet::tests::MemoryFileSystem primary("primary");
+    YamlFujiConfigStoreFs store(&primary, nullptr, "fujinet.yaml");
+    create_file(primary, "/fujinet.yaml", "fujinet: {device_name: x}\n");
+    auto cfg = store.load();
+    CHECK(cfg.visor.port == 2); CHECK(cfg.visor.bus == 0); CHECK(cfg.visor.path.empty());
+    create_file(primary, "/fujinet.yaml", "visor: {port: 1, bus: 255, path: 9.4}\n");
+    cfg = store.load();
+    CHECK(cfg.visor.port == 1); CHECK(cfg.visor.bus == 255); CHECK(cfg.visor.path == "9.4");
+    store.save(cfg); CHECK(configs_equal(cfg, store.load()));
+    create_file(primary, "/fujinet.yaml", "visor: {port: 2, bus: null, path: null}\n");
+    cfg = store.load(); CHECK(cfg.visor.bus == 0); CHECK(cfg.visor.path.empty());
+    store.save(cfg); CHECK(configs_equal(cfg, store.load()));
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Invalid Visor selection never falls back or overwrites")
+{
+    fujinet::tests::MemoryFileSystem primary("primary"), backup("backup");
+    YamlFujiConfigStoreFs store(&primary, &backup, "fujinet.yaml");
+    create_file(backup, "/fujinet.yaml", "visor: {port: 1}\n");
+    for (const auto* fields : {"port: 0", "port: 3", "port: ''", "port: 2x", "port: -1",
+            "port: 0x2", "bus: 0", "bus: 256", "bus: -1", "bus: ''", "path: 9.4",
+            "bus: 1, path: ''", "bus: 1, path: 9.", "bus: 1, path: .9", "bus: 1, path: 9..4",
+            "bus: 1, path: 0", "bus: 1, path: 256", "bus: 1, path: 1.2.3.4.5.6.7.8",
+            "port: [2]"}) {
+        const std::string yaml = std::string("visor: {") + fields + "}\n";
+        CAPTURE(yaml); create_file(primary, "/fujinet.yaml", yaml);
+        CHECK_THROWS_AS(store.load(), fujinet::config::InvalidVisorConfig);
+        CHECK(read_file(primary, "/fujinet.yaml") == yaml);
+    }
+    // The same failure on backup must not create a default primary.
+    YamlFujiConfigStoreFs backupOnly(nullptr, &backup, "fujinet.yaml");
+    create_file(backup, "/fujinet.yaml", "visor: {port: 3}\n");
+    CHECK_THROWS_AS(backupOnly.load(), fujinet::config::InvalidVisorConfig);
+    FujiConfig bad; bad.visor.port=3;
+    CHECK_THROWS_AS(store.save(bad), fujinet::config::InvalidVisorConfig);
 }

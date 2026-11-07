@@ -3,6 +3,7 @@
 #include "fujinet/io/transport/native_framer.h"
 #include "fujinet/io/transport/fujibus_transport.h"
 #include "fujinet/io/protocol/wire_device_ids.h"
+#include "fujinet/io/devices/fuji_device.h"
 #include <cstring>
 #include <limits>
 
@@ -33,13 +34,14 @@ struct Ingress::Impl {
     };
     io::IRequestHandler& router;
     Host host;
+    io::FujiDevice* fuji;
     Channel channel{host};
     std::unique_ptr<io::NativeFramer> framer;
     std::unique_ptr<io::FujiBusTransport> transport;
     std::unique_ptr<std::uint64_t> owner, retiredOwner;
     std::uint64_t generation{0}, pendingGeneration{0};
     io::RequestID nextId{0}, pendingId{0};
-    Impl(io::IRequestHandler& r, Options o) : router(r), host(std::move(o)) {}
+    Impl(io::IRequestHandler& r, Options o, io::FujiDevice* f) : router(r), host(std::move(o)), fuji(f) {}
     void cleanup() {
         if (owner) router.resetClient(io::protocol::to_device_id(io::protocol::WireDeviceId::NetworkService), owner.get());
         transport.reset(); framer.reset();
@@ -58,7 +60,8 @@ struct Ingress::Impl {
         }
     }
 };
-Ingress::Ingress(io::IRequestHandler& r, Options o) : _impl(std::make_unique<Impl>(r, std::move(o))) {}
+Ingress::Ingress(io::IRequestHandler& r, Options o, io::FujiDevice* f)
+    : _impl(std::make_unique<Impl>(r, std::move(o), f)) {}
 Ingress::~Ingress() { _impl->host.retire("Ingress shutdown"); _impl->cleanup(); }
 void Ingress::poll()
 {
@@ -108,11 +111,55 @@ bool Ingress::wait_for_work(std::chrono::milliseconds timeout)
 }
 void Ingress::list_commands(std::vector<diag::DiagCommandSpec>& out) const
 {
-    out.push_back({"visor.status", "show USB session, endpoints and last error", "visor.status", true});
+    out.push_back({"visor.status", "show effective selection sources, USB session and last error", "visor.status", true});
+    out.push_back({"visor.get", "show configured USB selection", "visor.get", true});
+    out.push_back({"visor.set", "set selection; restart to apply", "visor.set <port|bus|path> <value|unset>", false});
+    out.push_back({"visor.save", "save configured selection to fujinet.yaml", "visor.save", false});
 }
 diag::DiagResult Ingress::execute(const diag::DiagArgsView& args)
 {
-    if (args.argv.size() != 1 || args.argv[0] != "visor.status") return diag::DiagResult::invalid_args("usage: visor.status");
-    return diag::DiagResult::ok(_impl->host.status() + "\r\n");
+    if (args.argv.empty()) return diag::DiagResult::invalid_args("missing command");
+    const auto command = args.argv[0];
+    if (command == "visor.status" && args.argv.size() == 1)
+        return diag::DiagResult::ok(_impl->host.status() + "\r\n");
+    if (command != "visor.get" && command != "visor.set" && command != "visor.save")
+        return diag::DiagResult::invalid_args("usage: visor.status|get|set|save");
+    if (!_impl->fuji) return diag::DiagResult::not_ready("FujiDevice not available");
+    auto& stored = _impl->fuji->config_mut().visor;
+    try {
+        if (command == "visor.get" && args.argv.size() == 1) {
+            return diag::DiagResult::ok("port=" + std::to_string(stored.port) +
+                " bus=" + (stored.bus ? std::to_string(stored.bus) : "unset") +
+                " path=" + (stored.path.empty() ? "unset" : stored.path) +
+                "\r\nConfigured values; restart to apply. Environment overrides remain effective.\r\n");
+        }
+        if (command == "visor.set" && args.argv.size() == 3) {
+            auto next = stored;
+            const auto field = args.argv[1], value = args.argv[2];
+            if (field == "port") next.port = config::parse_visor_number(value, 2);
+            else if (field == "bus") next.bus = value == "unset" ? 0 : config::parse_visor_number(value, 255);
+            else if (field == "path") {
+                if (value.empty()) throw config::InvalidVisorConfig("use unset to clear path");
+                next.path = value == "unset" ? "" : std::string(value);
+            } else return diag::DiagResult::invalid_args("unknown field (port, bus or path)");
+            next.validate(); stored = std::move(next);
+            return diag::DiagResult::ok("Configured; visor.save to persist, restart to apply. Environment overrides take precedence.\r\n");
+        }
+        if (command == "visor.save" && args.argv.size() == 1) {
+            auto* store = _impl->fuji->config_store();
+            if (!store) return diag::DiagResult::not_ready("config store not available");
+            stored.validate();
+            store->save(_impl->fuji->config());
+            const auto saved = store->load().visor;
+            if (saved.port != stored.port || saved.bus != stored.bus || saved.path != stored.path)
+                return diag::DiagResult::error("Visor settings read-back mismatch");
+            return diag::DiagResult::ok("Saved visor settings; restart to apply.\r\n");
+        }
+    } catch (const config::InvalidVisorConfig& error) {
+        return diag::DiagResult::invalid_args(error.what());
+    } catch (const std::exception& error) {
+        return diag::DiagResult::error(error.what());
+    }
+    return diag::DiagResult::invalid_args("usage: visor.get | visor.set <port|bus|path> <value|unset> | visor.save");
 }
 } // namespace fujinet::platform::posix::visor_usb

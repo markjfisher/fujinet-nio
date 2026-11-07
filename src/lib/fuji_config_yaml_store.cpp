@@ -239,6 +239,22 @@ static void from_yaml(const YAML::Node& node, HotSyncConfig& out)
     out.backup   = yaml_lower_ascii(get_or<std::string>(node, "backup", out.backup));
 }
 
+static void from_yaml(const YAML::Node& node, VisorConfig& out)
+{
+    try {
+        if (!node.IsMap()) throw InvalidVisorConfig("visor must be a mapping");
+        if (auto n = node["port"]) out.port = parse_visor_number(n.as<std::string>(), 2);
+        if (auto n = node["bus"]) out.bus = n.IsNull() ? 0 : parse_visor_number(n.as<std::string>(), 255);
+        if (auto n = node["path"]) {
+            out.path = n.IsNull() ? "" : n.as<std::string>();
+            if (!n.IsNull() && out.path.empty()) throw InvalidVisorConfig("visor.path must be null or a port chain");
+        }
+        out.validate();
+    } catch (const YAML::Exception& error) {
+        throw InvalidVisorConfig(std::string("Invalid visor settings: ") + error.what());
+    }
+}
+
 // Top-level FujiConfig mapper.
 static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
 {
@@ -280,6 +296,8 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
         from_yaml(n, cfg.translation);
     }
 
+    if (auto n = root["visor"]) from_yaml(n, cfg.visor);
+
     if (auto n = root["hotsync"]) {
         from_yaml(n, cfg.hotsync);
     }
@@ -290,6 +308,12 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
 static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
 {
     out << YAML::BeginMap;
+
+    out << YAML::Key << "visor" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "port" << YAML::Value << cfg.visor.port;
+    if (cfg.visor.bus) out << YAML::Key << "bus" << YAML::Value << cfg.visor.bus;
+    if (!cfg.visor.path.empty()) out << YAML::Key << "path" << YAML::Value << cfg.visor.path;
+    out << YAML::EndMap;
 
     // fujinet:
     out << YAML::Key << "fujinet" << YAML::Value << YAML::BeginMap;
@@ -450,6 +474,8 @@ FujiConfig YamlFujiConfigStoreFs::load()
     if (_primary && _primary->exists(_relPath)) {
         try {
             return loadFromFs(*_primary);
+        } catch (const InvalidVisorConfig&) {
+            throw; // never overwrite invalid hardware selection with defaults
         } catch (const std::exception& ex) {
             FN_LOGE(TAG,
                     "Failed to load config from primary '%s' on '%s': %s",
@@ -468,6 +494,8 @@ FujiConfig YamlFujiConfigStoreFs::load()
                 save(config);
             }
             return config;
+        } catch (const InvalidVisorConfig&) {
+            throw;
         } catch (const std::exception& ex) {
             FN_LOGE(TAG,
                     "Failed to load config from backup '%s' on '%s': %s",
@@ -496,6 +524,7 @@ FujiConfig YamlFujiConfigStoreFs::load()
 
 void YamlFujiConfigStoreFs::save(const FujiConfig& cfg)
 {
+    cfg.visor.validate();
     // primary is the "authoritative" copy
     if (_primary) {
         try {

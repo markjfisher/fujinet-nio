@@ -52,11 +52,61 @@ state and network handles. Enter `kill` to exit through normal core shutdown.
 For a local log, redirect stdout/stderr to a private file; URLs/location data
 may occur in debug logs. Do not publish raw application traces.
 
-| Environment variable | Default | Purpose |
-| --- | --- | --- |
-| `FN_VISOR_USB_PORT` | `2` | Explicit Generic port 1 or 2; no fallback |
-| `FN_VISOR_USB_BUS` | unset | Optional numeric libusb bus selector |
-| `FN_VISOR_USB_PATH` | unset | Physical port chain, such as `9.4`; requires BUS |
+### Selection settings and console
+
+Device selection is loaded from `fujinet.yaml`. Environment variables override
+individual fields after loading; invalid configured or overridden values stop
+startup rather than silently choosing defaults or another device.
+
+```yaml
+visor:
+  port: 2
+  # bus: 1
+  # path: "9.4"
+```
+
+| YAML setting | Environment override | Default | Valid values |
+| --- | --- | --- | --- |
+| `visor.port` | `FN_VISOR_USB_PORT` | `2` | Generic port `1` or `2` |
+| `visor.bus` | `FN_VISOR_USB_BUS` | unset | Decimal `1..255`; omit or use YAML `null` to unset |
+| `visor.path` | `FN_VISOR_USB_PATH` | unset | 1–7 dot-separated decimal components, each `1..255`; requires bus |
+
+Omit `path` or use YAML `null` to unset it. Empty environment overrides are errors.
+The path is a physical port chain, not the changing USB device address. Invalid
+Visor settings are not replaced with backup/default settings or rewritten by the
+YAML loader; unrelated configuration recovery behavior is unchanged.
+
+The diagnostic console supports:
+
+```text
+visor.get
+visor.set port 2
+visor.set bus 1
+visor.set path 9.4
+visor.save
+visor.status
+```
+
+Use `visor.set path unset`, then `visor.set bus unset` to remove a selector.
+`visor.get` shows configured values. `visor.status` shows the effective startup
+selection and the source of each value (`config` or `environment`), plus the
+active USB session. `visor.set` validates before changing configuration, and
+`visor.save` saves configured values and verifies them by reading back. Environment
+overrides are never copied into the saved settings. **Restart the host to apply
+selection changes**, even if it has not connected yet. An active session is not
+retargeted by console edits.
+
+The standard POSIX PTY console is the default, or select it with `FN_CONSOLE=pty`:
+
+```sh
+FN_CONSOLE=pty ./build/fujibus-visor-usb-debug/fujinet-nio
+# In another terminal, use the console path printed at startup:
+picocom /dev/pts/N
+```
+
+`FN_CONSOLE=stdio` remains supported. The console PTY is separate from the USB
+cradle and does not claim it. PTY use with an attached Prism still needs physical
+verification; recorded USB acceptance used stdio.
 
 Multiple matching devices require an unambiguous selector. An absent device is
 not an error requiring restart; discovery is limited to once per second.

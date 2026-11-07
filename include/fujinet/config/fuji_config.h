@@ -2,6 +2,9 @@
 
 #include <string>
 #include <cstdint>
+#include <charconv>
+#include <stdexcept>
+#include <string_view>
 
 namespace fujinet::config {
 
@@ -140,6 +143,44 @@ struct HotSyncConfig {
     std::string   backup{"flagged"};      // none | flagged | all
 };
 
+// Invalid hardware selection must not fall back to another device or defaults.
+struct InvalidVisorConfig : std::invalid_argument {
+    using std::invalid_argument::invalid_argument;
+};
+
+inline unsigned parse_visor_number(std::string_view value, unsigned maximum)
+{
+    unsigned n = 0;
+    const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), n);
+    if (ec != std::errc{} || end != value.data() + value.size() || !n || n > maximum)
+        throw InvalidVisorConfig("Visor selection must be a decimal number in 1.." + std::to_string(maximum));
+    return n;
+}
+
+// Optional POSIX Visor USB Host selection. Other transports do not consume it.
+struct VisorConfig {
+    unsigned port{2};
+    unsigned bus{0}; // zero means unset; omitted/null in YAML
+    std::string path; // physical port chain, empty means unset
+
+    void validate() const
+    {
+        if ((port != 1 && port != 2) || bus > 255)
+            throw InvalidVisorConfig("visor.port must be 1 or 2; visor.bus must be unset or 1..255");
+        if (path.empty()) return;
+        if (!bus) throw InvalidVisorConfig("visor.path requires visor.bus");
+        std::string_view rest(path);
+        unsigned depth = 0;
+        for (;;) {
+            const auto dot = rest.find('.');
+            parse_visor_number(rest.substr(0, dot), 255);
+            if (++depth > 7) throw InvalidVisorConfig("visor.path has more than seven components");
+            if (dot == rest.npos) break;
+            rest.remove_prefix(dot + 1);
+        }
+    }
+};
+
 // Unified config for the whole FujiNet instance.
 struct FujiConfig {
     GeneralConfig        general;
@@ -155,6 +196,7 @@ struct FujiConfig {
     ChannelConfig        channel;
     ContentTranslationConfig translation;
     HotSyncConfig        hotsync;
+    VisorConfig          visor;
 };
 
 

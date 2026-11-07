@@ -5,11 +5,13 @@
 #include "fujinet/io/core/request_handler.h"
 #include "fujinet/io/transport/transport.h"
 
+namespace fujinet::io { class FujiDevice; }
+
 namespace fujinet::platform::posix::visor_usb {
 // POSIX-only ownership adapter. Composes existing framers/codecs; no service logic.
 class Ingress final : public io::ITransport, public diag::IDiagnosticProvider {
 public:
-    Ingress(io::IRequestHandler& router, Options options = {});
+    Ingress(io::IRequestHandler& router, Options options = {}, io::FujiDevice* fuji = nullptr);
     ~Ingress();
     void poll() override;
     bool receive(io::IORequest& request) override;

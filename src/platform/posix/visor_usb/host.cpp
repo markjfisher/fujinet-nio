@@ -4,7 +4,6 @@
 #include <libusb.h>
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cstdlib>
 #include <deque>
 #include <stdexcept>
@@ -14,34 +13,34 @@ namespace fujinet::platform::posix::visor_usb {
 namespace {
 using Clock = std::chrono::steady_clock;
 using namespace std::chrono_literals;
-unsigned number(std::string_view value, unsigned max)
-{
-    unsigned n = 0;
-    const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), n);
-    if (ec != std::errc{} || end != value.data() + value.size() || !n || n > max)
-        throw std::invalid_argument("Invalid FN_VISOR_USB selection");
-    return n;
 }
-}
-Options options_from_environment()
+Options resolve_options(const config::VisorConfig& stored)
 {
+    stored.validate();
+    auto selected = stored;
     Options o;
-    if (const char* p = std::getenv("FN_VISOR_USB_PORT")) o.port = number(p, 2);
-    if (const char* p = std::getenv("FN_VISOR_USB_BUS")) o.bus = number(p, 255);
+    if (const char* p = std::getenv("FN_VISOR_USB_PORT")) {
+        selected.port = config::parse_visor_number(p, 2); o.portSource = "environment";
+    }
+    if (const char* p = std::getenv("FN_VISOR_USB_BUS")) {
+        selected.bus = config::parse_visor_number(p, 255); o.busSource = "environment";
+    }
     if (const char* p = std::getenv("FN_VISOR_USB_PATH")) {
-        std::string_view path(p);
-        while (!path.empty()) {
-            const auto at = path.find('.');
-            o.path.push_back(number(path.substr(0, at), 255));
-            if (o.path.size() > 7) throw std::invalid_argument("USB path too deep");
-            if (at == path.npos) break;
-            path.remove_prefix(at + 1);
-            if (path.empty()) throw std::invalid_argument("Empty USB path component");
-        }
-        if (o.path.empty() || !o.bus) throw std::invalid_argument("USB path requires bus");
+        selected.path = p; o.pathSource = "environment";
+        if (selected.path.empty()) throw config::InvalidVisorConfig("FN_VISOR_USB_PATH must not be empty");
+    }
+    selected.validate();
+    o.port = selected.port; o.bus = selected.bus;
+    std::string_view rest(selected.path);
+    while (!rest.empty()) {
+        const auto dot = rest.find('.');
+        o.path.push_back(config::parse_visor_number(rest.substr(0, dot), 255));
+        if (dot == rest.npos) break;
+        rest.remove_prefix(dot + 1);
     }
     return o;
 }
+Options options_from_environment() { return resolve_options({}); }
 struct Host::Impl {
     struct Slot {
         Impl* self;
@@ -178,7 +177,7 @@ struct Host::Impl {
         unsigned count = 0;
         for (std::ptrdiff_t i = 0; i < n; ++i) if (matches(list[i])) { chosen = list[i]; ++count; }
         if (count != 1) {
-            report(count ? "Multiple matching Visors; specify FN_VISOR_USB_BUS and PATH" : "Visor absent");
+            report(count ? "Multiple matching Visors; set visor.bus and visor.path (or FN_VISOR_USB_BUS/PATH)" : "Visor absent");
             libusb_free_device_list(list, 1); return;
         }
         int rc = libusb_open(chosen, &handle);
@@ -296,7 +295,13 @@ bool Host::send(const io::protocol::ByteBuffer& p)
 void Host::retire(const std::string& reason) { _impl->stop(reason); }
 std::string Host::status() const
 {
-    return "active=" + std::to_string(active()) + " generation=" + std::to_string(generation()) +
+    std::string path;
+    for (auto component : _impl->options.path) path += (path.empty() ? "" : ".") + std::to_string(component);
+    const auto& o = _impl->options;
+    return "selection_port=" + std::to_string(o.port) + " source=" + o.portSource +
+        "\r\nselection_bus=" + (o.bus ? std::to_string(o.bus) : "unset") + " source=" + o.busSource +
+        "\r\nselection_path=" + (path.empty() ? "unset" : path) + " source=" + o.pathSource + "\r\n" +
+        "active=" + std::to_string(active()) + " generation=" + std::to_string(generation()) +
         " port=" + std::to_string(_impl->options.port) + " in=" + std::to_string(_impl->pair.input.address) +
         " out=" + std::to_string(_impl->pair.output.address) + " mps=" + std::to_string(_impl->pair.input.mps) +
         " tx_queue=" + std::to_string(_impl->outgoing.size()) + " " + _impl->deviceInfo + " last=" + _impl->error;

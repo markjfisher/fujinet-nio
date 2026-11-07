@@ -80,6 +80,20 @@ and ESP32. It exposes:
 See [`packet_link.md`](packet_link.md). On ESP32 the `uart` provider finds the
 UART beneath a packet link, so `uart.*` keeps working on packet-link boards.
 
+### Provider: `visor`
+
+The optional POSIX Visor USB Host profile registers this provider:
+
+- `visor.status` — effective startup port/bus/path, each value's config/environment
+  source, USB generation, endpoints and last error
+- `visor.get` — configured `visor.port`, `visor.bus` and `visor.path`
+- `visor.set <port|bus|path> <value|unset>` — validate and edit configuration;
+  `unset` applies to bus/path (clear path before bus)
+- `visor.save` — persist configured selection to `fujinet.yaml` and read back
+
+Selection changes need a host restart. Environment overrides take precedence and
+are not saved. See [Visor USB Host](visor-usb-host.md) for values and PTY/stdio use.
+
 ### Provider: `boot`
 
 Created with `fujinet::diag::create_boot_diagnostic_provider(fuji)` on POSIX and

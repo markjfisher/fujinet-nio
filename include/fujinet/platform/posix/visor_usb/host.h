@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fujinet/io/visor_usb/protocol.h"
+#include "fujinet/config/fuji_config.h"
 #include <chrono>
 #include <memory>
 #include <string>
@@ -10,7 +11,9 @@ struct Options {
     unsigned port{2};
     unsigned bus{0};             // zero: unspecified
     std::vector<std::uint8_t> path; // physical port chain, not volatile device address
+    std::string portSource{"config"}, busSource{"config"}, pathSource{"config"};
 };
+Options resolve_options(const config::VisorConfig& config);
 Options options_from_environment(); // strict; no invalid-value fallback
 
 // Single-threaded libusb backend. poll/wait callbacks only update private state;

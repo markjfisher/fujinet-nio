@@ -5,6 +5,9 @@
 #include "fujinet/io/devices/clock_device.h"
 #include "net_device_test_helpers.h"
 #include <thread>
+#include "fake_fs.h"
+#include "fujinet/config/fuji_config_yaml_store_fs.h"
+#include "fujinet/io/devices/fuji_device.h"
 #include "fujinet/io/transport/io_service.h"
 using namespace fujinet;
 using namespace fujinet::io;
@@ -115,7 +118,7 @@ TEST_CASE("Visor ingress wraps real Clock codec and publishes ownership without 
     const auto resp=router.handleRequest(req); REQUIRE(resp.status==StatusCode::Ok);
     ingress.send(resp); pump(ingress); REQUIRE(FujiBusPacket::fromRaw(mock_usb::written));
     CHECK_FALSE(ingress.receive(req));
-    std::vector<diag::DiagCommandSpec> commands; ingress.list_commands(commands); REQUIRE(commands.size()==1);
+    std::vector<diag::DiagCommandSpec> commands; ingress.list_commands(commands); REQUIRE(commands.size()==4);
     CHECK(commands[0].safe); CHECK(ingress.execute({"visor.status",{"visor.status"}}).text.find("mps=64")!=std::string::npos);
 }
 TEST_CASE("Visor ingress owner cleanup closes two handles and preserves another client's handle") {
@@ -263,4 +266,83 @@ TEST_CASE("Visor host retries pre-session setup failure on the same device") {
     std::this_thread::sleep_for(1010ms); h.poll(); REQUIRE(h.active());
     CHECK(h.generation()==1); CHECK(mock_usb::outSubmits==0);
     inject(fixture); pump(h); ByteBuffer p; REQUIRE(h.take(p)); CHECK(p==fixture);
+}
+
+namespace {
+// Restore the caller's environment even when a REQUIRE aborts a test.
+struct SelectionEnvironment {
+    struct Variable { const char* name; bool present; std::string value; };
+    std::vector<Variable> variables;
+    SelectionEnvironment() {
+        for (const auto* name : {"FN_VISOR_USB_PORT", "FN_VISOR_USB_BUS", "FN_VISOR_USB_PATH"}) {
+            const char* value = std::getenv(name);
+            variables.push_back({name, value != nullptr, value ? value : ""}); unsetenv(name);
+        }
+    }
+    ~SelectionEnvironment() {
+        for (const auto& v : variables) {
+            if (v.present) setenv(v.name, v.value.c_str(), 1); else unsetenv(v.name);
+        }
+    }
+};
+}
+TEST_CASE("Visor selection resolves config then strict environment overrides") {
+    SelectionEnvironment environment;
+    config::VisorConfig stored{1, 2, "9.4"};
+    auto o=resolve_options(stored);
+    CHECK(o.port==1); CHECK(o.bus==2); CHECK(o.path==std::vector<std::uint8_t>{9,4});
+    CHECK(o.portSource=="config"); CHECK(o.busSource=="config"); CHECK(o.pathSource=="config");
+    setenv("FN_VISOR_USB_PORT","2",1); setenv("FN_VISOR_USB_BUS","1",1); setenv("FN_VISOR_USB_PATH","9.5",1);
+    o=resolve_options(stored);
+    CHECK(o.port==2); CHECK(o.bus==1); CHECK(o.path==std::vector<std::uint8_t>{9,5});
+    CHECK(o.portSource=="environment"); CHECK(o.busSource=="environment"); CHECK(o.pathSource=="environment");
+    for (const auto* bad : {"0", "3", "", "2x", "-1"}) {
+        setenv("FN_VISOR_USB_PORT",bad,1); CHECK_THROWS_AS(resolve_options(stored),config::InvalidVisorConfig);
+    }
+    setenv("FN_VISOR_USB_PORT","2",1);
+    setenv("FN_VISOR_USB_PATH","",1); CHECK_THROWS_AS(resolve_options(stored),config::InvalidVisorConfig);
+    setenv("FN_VISOR_USB_PATH","9.4",1);
+    stored.port=3; CHECK_THROWS_AS(resolve_options(stored),config::InvalidVisorConfig); // bad config cannot be hidden
+}
+TEST_CASE("Visor console config get set save preserves live selection and environment provenance") {
+    SelectionEnvironment environment; mock_usb::reset();
+    tests::MemoryFileSystem fs("primary");
+    auto store=std::make_unique<config::YamlFujiConfigStoreFs>(&fs,nullptr,"fujinet.yaml");
+    io::FujiDevice fuji(nullptr,std::move(store)); fuji.start();
+    setenv("FN_VISOR_USB_PORT","2",1);
+    Router router; Ingress ingress(router,resolve_options(fuji.config().visor),&fuji);
+    pump(ingress); REQUIRE(ingress.execute({"visor.status",{"visor.status"}}).text.find("active=1")!=std::string::npos);
+    const auto run=[&](std::initializer_list<std::string_view> words) {
+        diag::DiagArgsView args; args.argv=words; return ingress.execute(args);
+    };
+    auto status=run({"visor.status"}).text;
+    CHECK(status.find("selection_port=2 source=environment")!=std::string::npos);
+    CHECK(status.find("selection_bus=unset source=config")!=std::string::npos);
+    CHECK(status.find("selection_path=unset source=config")!=std::string::npos);
+    CHECK(run({"visor.get"}).text.find("port=2 bus=unset path=unset")!=std::string::npos);
+    for (auto args : {std::vector<std::string_view>{"visor.set","port","0"}, {"visor.set","bus","256"},
+            {"visor.set","path","9.4"}, {"visor.set","port"}, {"visor.get","extra"}}) {
+        CHECK(ingress.execute({"",args}).status==diag::DiagStatus::InvalidArgs);
+    }
+    CHECK(run({"visor.set","port","1"}).status==diag::DiagStatus::Ok);
+    CHECK(run({"visor.set","bus","1"}).status==diag::DiagStatus::Ok);
+    CHECK(run({"visor.set","path","9.4"}).status==diag::DiagStatus::Ok);
+    CHECK(run({"visor.set","bus","unset"}).status==diag::DiagStatus::InvalidArgs);
+    CHECK(run({"visor.get"}).text.find("port=1 bus=1 path=9.4")!=std::string::npos);
+    CHECK(run({"visor.save"}).status==diag::DiagStatus::Ok);
+    const auto saved=fuji.config_store()->load();
+    CHECK(saved.visor.port==1); CHECK(saved.visor.bus==1); CHECK(saved.visor.path=="9.4");
+    // Environment is neither persisted nor changed, and no session is disrupted.
+    status=run({"visor.status"}).text;
+    CHECK(status.find("selection_port=2 source=environment")!=std::string::npos);
+    CHECK(status.find("selection_bus=unset source=config")!=std::string::npos);
+    CHECK(status.find("active=1 generation=1")!=std::string::npos);
+    CHECK(mock_usb::outSubmits==0);
+    CHECK(run({"visor.set","path","unset"}).status==diag::DiagStatus::Ok);
+    CHECK(run({"visor.set","bus","unset"}).status==diag::DiagStatus::Ok);
+    CHECK(run({"visor.save"}).status==diag::DiagStatus::Ok);
+    CHECK(fuji.config_store()->load().visor.path.empty());
+    // A newly created application/config store sees the saved values.
+    config::YamlFujiConfigStoreFs reopened(&fs,nullptr,"fujinet.yaml");
+    CHECK(reopened.load().visor.port==1);
 }

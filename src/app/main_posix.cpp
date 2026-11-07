@@ -207,7 +207,12 @@ int main()
     // Load config immediately - transports need it (especially NetSIO config)
     // This is fast (just reading a YAML file) and necessary for proper transport setup
     FN_LOGI(TAG, "[FujiDevice] Loading config for transport setup");
-    fujiConcrete->start();
+    try {
+        fujiConcrete->start();
+    } catch (const fujinet::config::InvalidVisorConfig& error) {
+        FN_LOGE(TAG, "Invalid Visor USB configuration: %s", error.what());
+        return 1;
+    }
     const auto& config = fujiConcrete->config();
 
     auto wifiLink = std::make_unique<fujinet::platform::posix::PosixWifiLink>(
@@ -307,7 +312,7 @@ int main()
     std::unique_ptr<fujinet::platform::posix::visor_usb::Ingress> visorUsb;
     try {
         visorUsb = std::make_unique<fujinet::platform::posix::visor_usb::Ingress>(
-            core.routingManager(), fujinet::platform::posix::visor_usb::options_from_environment());
+            core.routingManager(), fujinet::platform::posix::visor_usb::resolve_options(config.visor), fujiConcrete);
     } catch (const std::exception& error) {
         FN_LOGE(TAG, "Visor USB initialization: %s", error.what());
         return 1;
