@@ -18,6 +18,8 @@ static size_t command_len;
 static bool command_overflow;
 static uint8_t request[PL_MAX_BODY];
 static uint32_t log_bytes;
+static struct probe_bulk bulk;
+static bool bulk_pending, oversize_pending;
 
 static uint32_t now_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 
@@ -34,6 +36,25 @@ static void completion(void *ctx, enum pl_outcome outcome,
            " crc32=%08" PRIx32 "\n", outcome, (unsigned)n,
            now_ms() - started, pl_crc32(body, n, 0));
     last_ok = false;
+    if (oversize_pending) {
+        printf("oversize %s (local capacity rejection; no request sent)\n",
+               outcome == PL_REFUSED ? "PASS" : "FAIL");
+        oversize_pending = false;
+        return;
+    }
+    if (bulk_pending) {
+        bulk_pending = false;
+        if (outcome != PL_ANSWERED || !probe_bulk_response(&bulk, body, n)) {
+            bulk.stage = BULK_FAILED;
+            puts("bulk FAIL: response invalid, short, file exists, or request failed");
+        } else if (bulk.stage == BULK_DONE) {
+            last_ok = true;
+            printf("bulk PASS: %u data bytes compared; response=%u capacity=%u file=%s\n",
+                   bulk.size, (unsigned)n, bulk.capacity, bulk.uri);
+        }
+        if (outcome == PL_TIMED_OUT || outcome == PL_UNANSWERED) fault = true;
+        return;
+    }
     if (outcome == PL_ANSWERED) {
         if (clock_pending) {
             uint8_t status;
@@ -75,6 +96,7 @@ static void restart(void) {
     }
     fault = reported_fault = last_ok = false;
     auto_clock = false;
+    if (bulk.stage > BULK_IDLE && bulk.stage < BULK_DONE) bulk.stage = BULK_FAILED;
 }
 
 void tuh_cdc_mount_cb(uint8_t idx) {
@@ -102,11 +124,25 @@ void tuh_cdc_umount_cb(uint8_t idx) {
 }
 
 static bool can_submit(void) {
-    if (fault || link.state != PL_READY || link.pending || tx.used) {
+    if (fault || link.state != PL_READY || link.pending || tx.used ||
+        (bulk.stage > BULK_IDLE && bulk.stage < BULK_DONE)) {
         puts("not ready: use status; after fault use resync then a NEW request");
         return false;
     }
     return true;
+}
+
+static void bulk_pump(void) {
+    if (bulk.stage < BULK_STAT || bulk.stage > BULK_READ || bulk_pending ||
+        fault || link.state != PL_READY || link.pending || tx.used) return;
+    size_t n = probe_bulk_request(&bulk, request, sizeof request);
+    if (!n) { bulk.stage = BULK_FAILED; puts("bulk FAIL: cannot construct request"); return; }
+    printf("bulk stage=%s request=%u data=%u offset=%u\n",
+           bulk.stage == BULK_STAT ? "stat" : bulk.stage == BULK_WRITE ? "write" : "read",
+           (unsigned)n, bulk.chunk, bulk.offset);
+    started = now_ms();
+    bulk_pending = true;
+    pl_request(&link, request, n, started);
 }
 
 static void clock_request(void) {
@@ -126,6 +162,20 @@ static int hex_digit(char c) {
 static void execute(void) {
     if (!strcmp(command, "status")) status();
     else if (!strcmp(command, "clock")) clock_request();
+    else if (!strcmp(command, "bulk")) {
+        if (!can_submit()) return;
+        char uri[64];
+        snprintf(uri, sizeof uri, "flash:/zorro-usb-bench-%016" PRIx64 ".bin", time_us_64());
+        if (!probe_bulk_start(&bulk, link.capacity, uri)) { puts("bulk FAIL: invalid capacity"); return; }
+        printf("bulk starting: size=%u capacity=%u file=%s (retained on flash)\n",
+               bulk.size, bulk.capacity, bulk.uri);
+    } else if (!strcmp(command, "oversize")) {
+        if (!can_submit()) return;
+        if (link.capacity >= sizeof request) { puts("oversize unavailable: local buffer limit"); return; }
+        oversize_pending = true;
+        started = now_ms();
+        pl_request(&link, request, (size_t)link.capacity + 1, started);
+    }
     else if (!strcmp(command, "resync")) restart();
     else if (!strcmp(command, "bootsel")) {
         puts("Entering ROM device mode; power off and select Flash RP wiring.");
@@ -148,7 +198,7 @@ static void execute(void) {
         if (!can_submit()) return;
         started = now_ms();
         pl_request(&link, request, n / 2, started);
-    } else puts("commands: status | clock | send HEX | resync | bootsel");
+    } else puts("commands: status | clock | bulk | oversize | send HEX | resync | bootsel");
 }
 
 int main(void) {
@@ -194,6 +244,7 @@ int main(void) {
             if (data_port != 255) tuh_cdc_write_clear(data_port);
             puts("FAULT latched; uncertain request will not be replayed. status / resync");
         }
+        bulk_pump();
         for (unsigned i = 0; i < 64; ++i) {
             int c = getchar_timeout_us(0);
             if (c == PICO_ERROR_TIMEOUT) break;

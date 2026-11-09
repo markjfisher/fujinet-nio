@@ -179,3 +179,28 @@ The next unchecked link test is known data across multiple USB transfers up to
 capacity, including explicit capacity-plus-one rejection; fault recovery and
 shared-connector flashing also remain open. Documentation check: `git diff
 --check`.
+
+## Known-data bench probe prepared
+
+The RP probe now provides `bulk`, using existing FileDevice v1 on ESP flash.
+It verifies a unique scratch path does not exist, writes a deterministic
+pattern in chunks and compares every byte of the read-back. At a negotiated
+capacity of 4096, one write request and the read response are 4096 raw bytes;
+the file contains 4079 pattern bytes. The file remains on ESP flash.
+`oversize` verifies that the local controller refuses capacity + 1 without
+sending; this does not establish how the ESP handles a malformed oversized
+record. No ESP protocol or firmware change is needed.
+
+From `bridges/rp2350-zorro`, with the workspace environment sourced:
+
+- `cmake --preset host`, `cmake --build --preset host --target test_usb_probe test_usb_packet_link`,
+  `ctest --preset host -R '^usb_' --output-on-failure`: both tests passed.
+  The probe test covers the generated 4096-byte write, exact response, corrupt
+  data with a valid checksum and existing-file protection; checksum fixtures
+  were cross-checked with `py/fujinet_tools/fujibus.py`. Controller tests
+  cover local capacity rejection without sending.
+- `./scripts/build.sh usb-host-rp2350`: passed. UF2 SHA-256:
+  `023518b5bae835b3dfc193da80c2e43701afd3db2f9100ff7dadd1601cd1a393`.
+- `git diff --check`: passed.
+
+Physical transfer, long-record handling, isolation and recovery remain pending.

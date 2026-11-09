@@ -200,6 +200,8 @@ issues one read-only `Clock.GetTime` request. There is no continuous request loo
 | --- | --- |
 | `status` | Link state, interface indices, generation, capacity, pending transmit bytes, fault and protocol counters |
 | `clock` | A new Clock.GetTime, only while synchronized and idle |
+| `bulk` | Create a unique scratch file on ESP flash, write a known pattern and compare every byte read back. At capacity 4096 the 4079-byte read response and first write request are each exactly 4096 raw bytes. |
+| `oversize` | Ask the local PacketLink controller to submit capacity + 1 bytes and verify it refuses without sending. This tests local rejection, not peer rejection. |
 | `send HEX` | One raw FujiBus request, contiguous hex, up to 8192 local bytes and within the peer's advertised capacity; validates length/checksum |
 | `resync` | Discard local pending work, clear USB FIFOs and establish a fresh generation; does not replay the previous request |
 | `bootsel` | Enter ROM USB device mode; power off and select Flash RP wiring before connecting the PC |
@@ -213,6 +215,15 @@ and v1 time payload. `status=0` carries Unix seconds; a valid nonzero service
 status proves a response but does not prove that the ESP clock is initialized.
 Raw responses report size, CRC32 and a short prefix; that is not a full
 known-data comparison for bulk-transfer acceptance.
+
+`bulk` checks the scratch filename with FileDevice Stat first and refuses to
+overwrite an existing file. It leaves the named file on ESP internal flash for
+inspection; each run uses a new time-derived name. The command writes multiple
+chunks and compares the entire read response with its generated pattern. A
+successful run prints `bulk PASS`, the byte count, packet size and filename.
+Failures stop the sequence; a timeout or unknown completion is never replayed.
+`oversize PASS` applies only to the controller's local size guard. A malformed
+over-capacity record sent to the peer is a separate test.
 
 LED meanings: slow blink while waiting; steady after a structurally valid
 response (including a service error); fast blink for a latched fault. UART
