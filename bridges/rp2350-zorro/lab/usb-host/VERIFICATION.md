@@ -204,3 +204,32 @@ From `bridges/rp2350-zorro`, with the workspace environment sourced:
 - `git diff --check`: passed.
 
 Physical transfer, long-record handling, isolation and recovery remain pending.
+
+## Full-size known-data exchange confirmed
+
+On 2026-11-09 Mark flashed the known-data RP probe and reported this Run-mode
+result (ESP firmware unchanged):
+
+```text
+state=ready data=0 logs=1 generation=1 capacity=4096 tx=0 fault=0 requests=1 answers=1 resends=0 timeouts=0 corrupt=0 log_bytes=314
+completion outcome=1 bytes=0 elapsed_ms=0 crc32=00000000
+oversize PASS (local capacity rejection; no request sent)
+bulk starting: size=4079 capacity=4096 file=flash:/zorro-usb-bench-000000000408a8e3.bin (retained on flash)
+bulk stage=stat request=52 data=0 offset=0
+completion outcome=0 bytes=27 elapsed_ms=25 crc32=f4eeaac9
+bulk stage=write request=4096 data=4038 offset=0
+completion outcome=0 bytes=17 elapsed_ms=236 crc32=4f730e72
+bulk stage=write request=99 data=41 offset=4038
+completion outcome=0 bytes=17 elapsed_ms=78 crc32=a3b3c39b
+bulk stage=read request=58 data=4079 offset=4079
+completion outcome=0 bytes=4096 elapsed_ms=99 crc32=64e3233f
+bulk PASS: 4079 data bytes compared; response=4096 capacity=4096 file=flash:/zorro-usb-bench-000000000408a8e3.bin
+state=ready data=0 logs=1 generation=1 capacity=4096 tx=0 fault=0 requests=5 answers=5 resends=0 timeouts=0 corrupt=0 log_bytes=3836
+```
+
+This verifies a full-capacity request and response, multi-packet USB data in
+both directions, byte-for-byte read-back, and local capacity-plus-one rejection.
+It does not test peer rejection of an oversized wire record, failure recovery,
+or establish a latency/throughput distribution; elapsed values are single
+samples including ESP file operation and debug activity. The scratch file is
+retained on internal flash. Documentation-only check: `git diff --check`.
