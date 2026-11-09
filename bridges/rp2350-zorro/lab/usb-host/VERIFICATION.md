@@ -161,3 +161,21 @@ output, then exercise larger known data and link recovery. Shared-connector
 flashing, maximum-size transfers, fault handling and repeatable performance
 remain unverified. `git diff --check` is the verification for this documentation
 update; no firmware was changed or rebuilt.
+
+Mark subsequently confirmed that the ESP-Prog TX wire had been reconnected and
+the RP console accepted commands (without echo). Its `status` and a new
+`clock` returned:
+
+```text
+state=ready data=0 logs=1 generation=1 capacity=4096 tx=0 fault=0 requests=1 answers=1 resends=0 timeouts=0 corrupt=0 log_bytes=265
+completion outcome=0 bytes=19 elapsed_ms=4 crc32=eb2edab5
+clock valid status=0 unix_seconds=243 (nonzero status is a service error)
+```
+
+This confirms RP UART input and output, a second successful clock request, and
+the reported ready state and counters after the first request. The 4 ms and
+earlier 22 ms observations are individual samples, not a performance study.
+The next unchecked link test is known data across multiple USB transfers up to
+capacity, including explicit capacity-plus-one rejection; fault recovery and
+shared-connector flashing also remain open. Documentation check: `git diff
+--check`.
