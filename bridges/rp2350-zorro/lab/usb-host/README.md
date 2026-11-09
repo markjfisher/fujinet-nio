@@ -3,7 +3,10 @@
 First software slice of the workspace's `backlog/amiga-zorro-usb-bringup.md`,
 deliverable 1. This is an isolated bench image for a **Waveshare Core2350B**.
 Confirm the board before loading it. Keep the Amiga and all old SPI/bus wiring
-disconnected. Hardware acceptance remains pending physical runs.
+disconnected. See [verification](VERIFICATION.md) for completed physical runs
+and remaining acceptance work. The authoritative board-level USB routing,
+power and recovery requirements are in the hardware repository's
+[USB connector strategy](../../../../../fujinet-nio-hardware/amiga/docs/eventual-board-considerations.md#usb-connector-strategy).
 
 ## Components and wiring prerequisites
 
@@ -78,8 +81,8 @@ These labels describe the target's UART directions: pin 3 receives into the
 ESP-Prog and pin 5 transmits from it. See the
 [official schematic](https://dl.espressif.com/dl/schematics/SCH_ESP32-PROG_V2.1_20190709.pdf).
 Locate pin 1 using the board marking before wiring with power disconnected.
-Leave the jumpers unchanged for this three-wire console connection. Actual
-RP console traffic has not yet been verified.
+Leave the jumpers unchanged for this three-wire console connection. RP console
+input and output have been verified on the physical fixture.
 
 ### Existing local udev aliases
 
