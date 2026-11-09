@@ -378,3 +378,10 @@ probe UF2 succeeded, the RP rebooted and its LED flashed. This verifies the
 shared breakout-to-RP flashing path; ESP flashing through the same breakout
 and return to Run mode remain to be tested. Documentation check:
 `git diff --check`.
+
+Mark subsequently routed the same breakout to ESP GPIO20/GPIO19, 5V0 and GND,
+held BOOT while connecting PC USB, and reported the ESP ROM port as ttyACM1.
+After updating the local upload port, the normal firmware upload completed.
+This verifies flashing each target through the same manually rewired breakout
+using physical boot controls. Return to Run and a fresh exchange remain to be
+verified; automatic bootloader entry and automatic routing are not established.
