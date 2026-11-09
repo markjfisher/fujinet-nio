@@ -315,3 +315,20 @@ in-flight disconnect detection, stream stop and fault retention on reconnect.
 The capture does not establish whether the ESP processed request 16. Explicit
 resynchronization and a fresh successful request remain to be verified.
 Documentation-only check: `git diff --check`.
+
+Mark then verified recovery after the in-flight reset:
+
+```text
+status: state=off data=0 logs=1 generation=5 capacity=4096 tx=0 fault=1 requests=86 answers=85 resends=0 timeouts=0 corrupt=0 log_bytes=23233
+resync: (no output)
+status: state=ready data=0 logs=1 generation=6 capacity=4096 tx=0 fault=0 requests=86 answers=85 resends=0 timeouts=0 corrupt=0 log_bytes=23233
+clock: completion outcome=0 bytes=19 elapsed_ms=4 crc32=1127a29c
+clock valid status=0 unix_seconds=88 (nonzero status is a service error)
+```
+
+The request and answer counters were unchanged by `resync`; a fresh clock
+request then succeeded in the new generation. This completes the observed
+ESP-reset recovery case. It does not establish whether the interrupted request
+ran, and does not cover RP reset, physical cable disconnect, stalled receiver,
+partial record, or shared-connector flashing. Documentation-only check:
+`git diff --check`.
