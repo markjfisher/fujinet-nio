@@ -20,6 +20,8 @@ static uint8_t request[PL_MAX_BODY];
 static uint32_t log_bytes;
 static struct probe_bulk bulk;
 static bool bulk_pending, oversize_pending;
+static bool streaming, stream_request, suppress_auto_clock;
+static uint32_t stream_sequence, stream_next;
 
 static uint32_t now_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 
@@ -36,6 +38,25 @@ static void completion(void *ctx, enum pl_outcome outcome,
            " crc32=%08" PRIx32 "\n", outcome, (unsigned)n,
            now_ms() - started, pl_crc32(body, n, 0));
     last_ok = false;
+    if (stream_request) {
+        stream_request = false;
+        uint8_t status = 0;
+        uint64_t seconds = 0;
+        bool valid = outcome == PL_ANSWERED && probe_clock(body, n, &status, &seconds);
+        clock_pending = false;
+        last_ok = valid && status == 0;
+        if (!valid || status != 0) {
+            streaming = false;
+            suppress_auto_clock = true;
+            printf("stream STOP seq=%" PRIu32 " outcome=%u valid=%u status=%u\n",
+                   stream_sequence, outcome, valid, status);
+        } else {
+            printf("stream OK seq=%" PRIu32 "\n", stream_sequence);
+            stream_next = now_ms() + 10;
+        }
+        if (outcome == PL_TIMED_OUT || outcome == PL_UNANSWERED) fault = true;
+        return;
+    }
     if (oversize_pending) {
         printf("oversize %s (local capacity rejection; no request sent)\n",
                outcome == PL_REFUSED ? "PASS" : "FAIL");
@@ -107,14 +128,23 @@ void tuh_cdc_mount_cb(uint8_t idx) {
     /* ESP profile: CDC0's control interface is 0, CDC1's is 2. */
     if (info.desc.bInterfaceNumber == 0 && data_port == 255) {
         data_port = idx;
-        restart();
-        auto_clock = true;
+        if (fault) {
+            puts("FAULT retained across reconnect; use resync before a NEW request");
+        } else {
+            restart();
+            auto_clock = !suppress_auto_clock;
+        }
     } else if (info.desc.bInterfaceNumber == 2) log_port = idx;
 }
 
 void tuh_cdc_umount_cb(uint8_t idx) {
     printf("CDC unmount index=%u\n", idx);
     if (idx == data_port) {
+        if (streaming || stream_request) {
+            printf("stream disconnect: pending=%u seq=%" PRIu32 "\n", link.pending, stream_sequence);
+            streaming = false;
+            suppress_auto_clock = true;
+        }
         data_port = 255;
         pl_close(&link);
         tx = (struct probe_queue){0};
@@ -152,6 +182,15 @@ static void clock_request(void) {
     pl_request(&link, probe_clock_request, sizeof probe_clock_request, started);
 }
 
+static void stream_pump(void) {
+    if (!streaming || stream_request || fault || link.state != PL_READY ||
+        link.pending || tx.used || (int32_t)(now_ms() - stream_next) < 0) return;
+    ++stream_sequence;
+    started = now_ms();
+    clock_pending = stream_request = true;
+    pl_request(&link, probe_clock_request, sizeof probe_clock_request, started);
+}
+
 static int hex_digit(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -162,6 +201,17 @@ static int hex_digit(char c) {
 static void execute(void) {
     if (!strcmp(command, "status")) status();
     else if (!strcmp(command, "clock")) clock_request();
+    else if (!strcmp(command, "stream")) {
+        if (!can_submit() || streaming) return;
+        streaming = true;
+        suppress_auto_clock = true;
+        stream_sequence = 0;
+        stream_next = now_ms();
+        puts("stream started: PRESS ESP RESET NOW; stops on disconnect or failure");
+    } else if (!strcmp(command, "stop")) {
+        streaming = false;
+        puts("stream stopping: current request may still complete");
+    }
     else if (!strcmp(command, "bulk")) {
         if (!can_submit()) return;
         char uri[64];
@@ -176,7 +226,7 @@ static void execute(void) {
         started = now_ms();
         pl_request(&link, request, (size_t)link.capacity + 1, started);
     }
-    else if (!strcmp(command, "resync")) restart();
+    else if (!strcmp(command, "resync")) { streaming = false; suppress_auto_clock = true; restart(); }
     else if (!strcmp(command, "bootsel")) {
         puts("Entering ROM device mode; power off and select Flash RP wiring.");
         sleep_ms(10);
@@ -198,7 +248,7 @@ static void execute(void) {
         if (!can_submit()) return;
         started = now_ms();
         pl_request(&link, request, n / 2, started);
-    } else puts("commands: status | clock | bulk | oversize | send HEX | resync | bootsel");
+    } else puts("commands: status | clock | stream | stop | bulk | oversize | send HEX | resync | bootsel");
 }
 
 int main(void) {
@@ -245,6 +295,7 @@ int main(void) {
             puts("FAULT latched; uncertain request will not be replayed. status / resync");
         }
         bulk_pump();
+        stream_pump();
         for (unsigned i = 0; i < 64; ++i) {
             int c = getchar_timeout_us(0);
             if (c == PICO_ERROR_TIMEOUT) break;

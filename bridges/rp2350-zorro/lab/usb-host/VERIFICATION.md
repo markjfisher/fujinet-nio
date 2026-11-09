@@ -269,3 +269,22 @@ the earlier response's bytes were not captured. Idle ESP reset recovery is
 observed; the first automatic clock request still needs correct startup
 handling, and in-flight reset/recovery remains untested. Documentation-only
 check: `git diff --check`.
+
+## In-flight reset probe prepared
+
+The RP bench image provides `stream` for repeated independent read-only clock
+requests and `stop` for manual termination. It prints the pending flag on USB
+disconnect and stops rather than replaying a request. A pending unknown
+completion keeps the fault latched across USB remount, requiring explicit
+`resync` before a fresh request. Automatic startup clock requests are suppressed
+after a stream disconnect. A reset that reports `pending=0` is not evidence of
+an in-flight interruption.
+
+From the bridge, with the workspace environment sourced,
+`cmake --build --preset host --target test_usb_probe test_usb_packet_link`,
+`ctest --preset host -R '^usb_' --output-on-failure`, and
+`./scripts/build.sh usb-host-rp2350` passed. The existing native tests cover
+the packet controller and probe helpers, not this new Pico USB callback flow;
+physical stream/reset verification remains pending. UF2 SHA-256:
+`bcf14df9c40887bf780d1a556238b4baf1a39437bb3925361b602c2d7b63b29e`.
+Documentation and diff check: `git diff --check`.

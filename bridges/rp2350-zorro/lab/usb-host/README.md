@@ -194,12 +194,15 @@ mode; native ROM flashing has a different USB identity.
 Open the separate UART at **115200, 8N1, no flow control**. Send newline-ended
 commands; there is no local echo. On boot, the banner identifies the host probe.
 On enumeration it reports both CDC interfaces, synchronizes PacketLink, then
-issues one read-only `Clock.GetTime` request. There is no continuous request loop.
+issues one read-only `Clock.GetTime` request. A continuous test runs only when
+explicitly requested.
 
 | Command | Behaviour |
 | --- | --- |
 | `status` | Link state, interface indices, generation, capacity, pending transmit bytes, fault and protocol counters |
 | `clock` | A new Clock.GetTime, only while synchronized and idle |
+| `stream` | Repeated read-only clock requests, one at a time; prints when to press ESP reset and stops on disconnect or failure. |
+| `stop` | Stop issuing stream requests; a request already sent can complete. |
 | `bulk` | Create a unique scratch file on ESP flash, write a known pattern and compare every byte read back. At capacity 4096 the 4079-byte read response and first write request are each exactly 4096 raw bytes. |
 | `oversize` | Ask the local PacketLink controller to submit capacity + 1 bytes and verify it refuses without sending. This tests local rejection, not peer rejection. |
 | `send HEX` | One raw FujiBus request, contiguous hex, up to 8192 local bytes and within the peer's advertised capacity; validates length/checksum |
@@ -224,6 +227,16 @@ successful run prints `bulk PASS`, the byte count, packet size and filename.
 Failures stop the sequence; a timeout or unknown completion is never replayed.
 `oversize PASS` applies only to the controller's local size guard. A malformed
 over-capacity record sent to the peer is a separate test.
+
+For a reset test, enter `stream`, wait for `stream OK` lines, then press ESP
+RST. `stream disconnect: pending=1` and an unanswered/timeout completion
+indicate an in-flight interruption; `pending=0` means this particular reset
+missed the window, so repeat. The stream does not restart after disconnect.
+An unknown completion keeps the fault latched across reconnect: once the data
+CDC interface has remounted, use `status`, then `resync`, wait for ready and
+issue a fresh `clock`. Do not interpret a reset with no pending request as an
+in-flight fault test. The automatic startup clock is suppressed after the
+stream's disconnect so it cannot obscure the recovery observation.
 
 LED meanings: slow blink while waiting; steady after a structurally valid
 response (including a service error); fast blink for a latched fault. UART
