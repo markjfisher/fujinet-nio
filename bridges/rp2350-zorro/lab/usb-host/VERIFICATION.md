@@ -332,3 +332,18 @@ ESP-reset recovery case. It does not establish whether the interrupted request
 ran, and does not cover RP reset, physical cable disconnect, stalled receiver,
 partial record, or shared-connector flashing. Documentation-only check:
 `git diff --check`.
+
+## Idle RP reset
+
+On 2026-11-09 Mark reset the RP while the link was idle and the ESP remained
+powered. The RP restarted, mounted CDC interfaces 0 and 2, and its automatic
+clock request completed successfully (19 bytes, 25 ms, status 0). `status`
+reported `state=ready`, generation 1, capacity 4096, fault 0, one request and
+answer, and zero resends, timeouts and corrupt records. A fresh manual clock
+request also succeeded (19 bytes, 9 ms, status 0, unix_seconds=540).
+
+This confirms the observed idle RP reset recovery. The generation and counters
+restart with the RP, so generation 1 is not evidence of a globally unique
+generation. An RP reset while a request is in flight remains untested and the
+RP's volatile state cannot establish the interrupted request's outcome.
+Documentation-only check: `git diff --check`.
