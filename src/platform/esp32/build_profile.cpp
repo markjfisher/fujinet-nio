@@ -65,6 +65,19 @@ BuildProfile current_build_profile()
         .name             = "S3 + FujiBus over GPIO (e.g. RS232)",
         .hw               = {},
     };
+#elif defined(FN_BUILD_ESP32_FUJIBUS_LINK_UART)
+    profile = BuildProfile{
+        .machine          = Machine::FujiNetESP32,
+        .primaryTransport = TransportKind::FujiBusNative,
+        .primaryChannel   = ChannelKind::UartGpio,
+        .packetLink       = true,
+        .name             = "ESP32 + FujiBus over a packet link on UART",
+        .hw               = {},
+        // The link controller (the FujiNet Mac board's RP2040) runs the UART at
+        // 2 Mbaud and reads at line rate, so the board needs no fujinet.yaml for it.
+        .defaultUartBaudRate = 2000000,
+        .defaultUartUnpaced  = true,
+    };
 #else
     // Default ESP32 fallback
     profile = BuildProfile{

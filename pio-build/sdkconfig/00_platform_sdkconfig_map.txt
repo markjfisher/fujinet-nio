@@ -16,6 +16,7 @@ atari-nio-fujibus-sio-gpio-fujinet-v1-16mb=common,wifi,fatfs,fs-littlefs,flash-1
 fujibus-gpio-rs232-cdc-log-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,fujibus-gpio,log-cdc,cli-cdc
 fujibus-gpio-rs232-uart-log-s3-wroom-1-n16r8=common,wifi,fatfs,fs-littlefs,spiram-oct80,fujibus-gpio,log-uart,cli-uart
 fujibus-gpio-rs232-uart-log-rev0=common,wifi,fatfs,fs-littlefs,fujibus-gpio,log-uart,cli-uart
+fujibus-link-uart-log-fujimac-rev0=common,wifi,fatfs,fs-littlefs,flash-8mb,spiram-quad40,uart-iram,log-uart,cli-uart
 
 
 #################################################################

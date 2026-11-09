@@ -16,6 +16,7 @@ ATARI_PROFILES = tuple(
     for size in (8, 16)
     for kind in ("legacy", "nio-fujibus")
 )
+FUJIMAC_PROFILE = "fujibus-link-uart-log-fujimac-rev0"
 
 
 def _read_ini(path: Path) -> configparser.RawConfigParser:
@@ -47,65 +48,71 @@ def _read_sdkconfig_map() -> dict[str, list[str]]:
     return entries
 
 
+def _board_and_sdkconfig_defaults(name: str) -> tuple[dict, dict[str, str]]:
+    """An environment's board JSON, and the CONFIG_ values its sdkconfig fragments set."""
+    config = _read_ini(PLATFORM_DIR / f"platformio-{name}.ini")
+    board_id = config.get(f"env:{name}", "board")
+    board = json.loads((BOARDS_DIR / f"{board_id}.json").read_text())
+    defaults: dict[str, str] = {}
+    for template in _read_sdkconfig_map()[name]:
+        for line in (SDKCONFIG_DIR / f"{template}.defaults").read_text().splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.startswith("CONFIG_"):
+                defaults[key] = value.strip('"')
+    return board, defaults
+
+
 class TestPlatformIOBoardConfig(unittest.TestCase):
+    def _assert_original_esp32_quad_psram(self, board: dict, defaults: dict[str, str]) -> None:
+        self.assertEqual(board["build"]["mcu"], "esp32")
+        self.assertEqual(board["build"]["f_flash"], "40000000L")
+        self.assertEqual(defaults["CONFIG_SPIRAM"], "y")
+        self.assertEqual(defaults["CONFIG_SPIRAM_MODE_QUAD"], "y")
+        self.assertEqual(defaults["CONFIG_SPIRAM_SPEED_40M"], "y")
+        self.assertEqual(defaults["CONFIG_SPIRAM_USE_MALLOC"], "y")
+        self.assertEqual(defaults["CONFIG_SPIRAM_CACHE_WORKAROUND"], "y")
+        self.assertEqual(defaults["CONFIG_ESP_WIFI_IRAM_OPT"], "n")
+        self.assertEqual(defaults["CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM"], "n")
+        self.assertEqual(defaults["CONFIG_FATFS_ALLOC_PREFER_EXTRAM"], "y")
+        self.assertNotIn("CONFIG_SPIRAM_MODE_OCT", defaults)
+        self.assertNotIn("CONFIG_SPIRAM_CS_IO", defaults)
+
+    def _assert_flash_layout(self, board: dict, defaults: dict[str, str], flash_mb: int) -> None:
+        self.assertEqual(board["upload"]["flash_size"], f"{flash_mb}MB")
+        self.assertEqual(board["upload"]["maximum_size"], flash_mb * 1024 * 1024)
+        self.assertEqual(defaults[f"CONFIG_ESPTOOLPY_FLASHSIZE_{flash_mb}MB"], "y")
+        self.assertEqual(defaults["CONFIG_PARTITION_TABLE_CUSTOM"], "y")
+        partitions = defaults["CONFIG_PARTITION_TABLE_CUSTOM_FILENAME"]
+        self.assertEqual(partitions, board["build"]["partitions"])
+        self.assertTrue((REPO_ROOT / partitions).is_file())
+        end = 0
+        for row in (REPO_ROOT / partitions).read_text().splitlines():
+            if not row.strip() or row.lstrip().startswith("#"):
+                continue
+            fields = [field.strip() for field in row.split(",")]
+            offset, size = int(fields[3], 0), int(fields[4], 0)
+            self.assertGreaterEqual(offset, end)
+            end = offset + size
+        self.assertEqual(end, flash_mb * 1024 * 1024)
+
     def test_atari_psram_defaults_match_original_esp32_hardware(self) -> None:
-        sdkconfig_map = _read_sdkconfig_map()
         for name in ATARI_PROFILES:
             with self.subTest(board_name=name):
-                config = _read_ini(PLATFORM_DIR / f"platformio-{name}.ini")
-                board_id = config.get(f"env:{name}", "board")
-                board = json.loads((BOARDS_DIR / f"{board_id}.json").read_text())
-                defaults = {}
-                for template in sdkconfig_map[name]:
-                    for line in (SDKCONFIG_DIR / f"{template}.defaults").read_text().splitlines():
-                        key, sep, value = line.partition("=")
-                        if sep and key.startswith("CONFIG_"):
-                            defaults[key] = value.strip('"')
-
-                self.assertEqual(board["build"]["mcu"], "esp32")
-                self.assertEqual(board["build"]["f_flash"], "40000000L")
-                self.assertEqual(defaults["CONFIG_SPIRAM"], "y")
-                self.assertEqual(defaults["CONFIG_SPIRAM_MODE_QUAD"], "y")
-                self.assertEqual(defaults["CONFIG_SPIRAM_SPEED_40M"], "y")
-                self.assertEqual(defaults["CONFIG_SPIRAM_USE_MALLOC"], "y")
-                self.assertEqual(defaults["CONFIG_SPIRAM_CACHE_WORKAROUND"], "y")
-                self.assertEqual(defaults["CONFIG_ESP_WIFI_IRAM_OPT"], "n")
-                self.assertEqual(defaults["CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM"], "n")
-                self.assertEqual(defaults["CONFIG_FATFS_ALLOC_PREFER_EXTRAM"], "y")
-                self.assertNotIn("CONFIG_SPIRAM_MODE_OCT", defaults)
-                self.assertNotIn("CONFIG_SPIRAM_CS_IO", defaults)
+                self._assert_original_esp32_quad_psram(*_board_and_sdkconfig_defaults(name))
 
     def test_atari_flash_defaults_match_board_and_partition_layout(self) -> None:
-        sdkconfig_map = _read_sdkconfig_map()
         for name in ATARI_PROFILES:
             with self.subTest(board_name=name):
-                config = _read_ini(PLATFORM_DIR / f"platformio-{name}.ini")
-                board_id = config.get(f"env:{name}", "board")
-                board = json.loads((BOARDS_DIR / f"{board_id}.json").read_text())
-                defaults = {}
-                for template in sdkconfig_map[name]:
-                    for line in (SDKCONFIG_DIR / f"{template}.defaults").read_text().splitlines():
-                        key, sep, value = line.partition("=")
-                        if sep and key.startswith("CONFIG_"):
-                            defaults[key] = value.strip('"')
+                board, defaults = _board_and_sdkconfig_defaults(name)
+                self._assert_flash_layout(board, defaults, 16 if name.endswith("16mb") else 8)
 
-                flash_mb = 16 if name.endswith("16mb") else 8
-                self.assertEqual(board["upload"]["flash_size"], f"{flash_mb}MB")
-                self.assertEqual(board["upload"]["maximum_size"], flash_mb * 1024 * 1024)
-                self.assertEqual(defaults[f"CONFIG_ESPTOOLPY_FLASHSIZE_{flash_mb}MB"], "y")
-                self.assertEqual(defaults["CONFIG_PARTITION_TABLE_CUSTOM"], "y")
-                partitions = defaults["CONFIG_PARTITION_TABLE_CUSTOM_FILENAME"]
-                self.assertEqual(partitions, board["build"]["partitions"])
-                self.assertTrue((REPO_ROOT / partitions).is_file())
-                end = 0
-                for row in (REPO_ROOT / partitions).read_text().splitlines():
-                    if not row.strip() or row.lstrip().startswith("#"):
-                        continue
-                    fields = [field.strip() for field in row.split(",")]
-                    offset, size = int(fields[3], 0), int(fields[4], 0)
-                    self.assertGreaterEqual(offset, end)
-                    end = offset + size
-                self.assertEqual(end, flash_mb * 1024 * 1024)
+    # The board's ESP32-WROVER-E N8R8: 8 MB flash, 8 MB quad PSRAM, as on the Atari v1.
+    def test_fujimac_psram_defaults_match_its_wrover_e_module(self) -> None:
+        self._assert_original_esp32_quad_psram(*_board_and_sdkconfig_defaults(FUJIMAC_PROFILE))
+
+    def test_fujimac_flash_defaults_match_board_and_partition_layout(self) -> None:
+        board, defaults = _board_and_sdkconfig_defaults(FUJIMAC_PROFILE)
+        self._assert_flash_layout(board, defaults, 8)
 
     def test_all_platform_fragments_are_selectable(self) -> None:
         sdkconfig_map = _read_sdkconfig_map()
@@ -205,3 +212,18 @@ class TestPlatformIOBoardConfig(unittest.TestCase):
         for source_list in ("CMakeLists_posix.cmake", "src/CMakeLists.txt"):
             with self.subTest(source_list=source_list):
                 self.assertNotIn("atari_sio_fujibus", (REPO_ROOT / source_list).read_text())
+
+    def test_fujimac_board_runs_the_packet_link_profile(self) -> None:
+        name = FUJIMAC_PROFILE
+        config = _read_ini(PLATFORM_DIR / f"platformio-{name}.ini")
+        section = f"env:{name}"
+
+        self.assertEqual(config.get(section, "board"), "fujimac-rev0-8mb")
+        flags = config.get(section, "build_flags")
+        self.assertIn("-DFN_BUILD_ESP32_FUJIBUS_LINK_UART", flags)
+        self.assertIn("-DFN_PINMAP_DEFAULT=FN_PINMAP_FUJIMAC_REV0", flags)
+
+        board = (BOARDS_DIR / "fujimac-rev0-8mb.json").read_text()
+        self.assertIn('"mcu": "esp32"', board)
+
+        self.assertIn("uart-iram", _read_sdkconfig_map()[name])
