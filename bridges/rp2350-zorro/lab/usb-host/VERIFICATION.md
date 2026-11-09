@@ -347,3 +347,18 @@ restart with the RP, so generation 1 is not evidence of a globally unique
 generation. An RP reset while a request is in flight remains untested and the
 RP's volatile state cannot establish the interrupted request's outcome.
 Documentation-only check: `git diff --check`.
+
+## RP reset during active clock stream
+
+On 2026-11-09 Mark pressed RP RESET while `stream` was running. The last
+captured stream result was `stream OK seq=16`; the RP then printed its boot
+banner, mounted CDC interfaces 0 and 2, and completed an automatic clock
+request successfully (19 bytes, 26 ms, status 0). A later `status` showed
+ready, generation 1, capacity 4096, fault 0, one request and answer, and no
+resends, timeouts or corrupt records. A new manual clock request succeeded
+(19 bytes, 13 ms, status 0).
+
+This demonstrates restart and fresh communication after an RP reset during
+active traffic. It does not prove a request was pending at the reset instant
+or determine its outcome: the RP's pending state and counters are volatile.
+Documentation-only check: `git diff --check`.
