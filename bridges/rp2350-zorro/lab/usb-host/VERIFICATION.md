@@ -233,3 +233,24 @@ It does not test peer rejection of an oversized wire record, failure recovery,
 or establish a latency/throughput distribution; elapsed values are single
 samples including ESP file operation and debug activity. The scratch file is
 retained on internal flash. Documentation-only check: `git diff --check`.
+
+## Idle ESP reset observation
+
+On 2026-11-09 Mark reported removing the temporary ESP countdown and pressing
+ESP reset while the link was idle. The RP reported both CDC interfaces
+unmounted and mounted again. Its automatic Clock.GetTime completed with 7 bytes
+and CRC32 `2d67f8ad`, followed by `FAIL invalid Clock.GetTime response`.
+
+Inference, not a raw capture: CRC32 matches the valid FujiBus bytes
+`45 00 07 00 4e 01 01`, representing device 0x45, command 0 and status 1
+(`DeviceNotFound`). The packet was not printed, so the CRC match does not prove
+its contents. Source inspection shows an unknown device response leaves its
+command at zero, and ClockDevice is registered during phase 1 after the main
+loop has run for 100 ticks. The automatic request can therefore precede clock
+registration; the probe rejects command 0 when expecting command 1.
+
+Next verify `status` and a fresh manual `clock` after startup settles. A success
+would show the reset link and clock service recovered; the initial response
+must still be reported as a service/startup issue, not counted as an automatic
+clock success. In-flight reset and other fault cases remain untested. This is a
+documentation-only observation, checked with `git diff --check`.
