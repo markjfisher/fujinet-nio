@@ -362,3 +362,19 @@ This demonstrates restart and fresh communication after an RP reset during
 active traffic. It does not prove a request was pending at the reset instant
 or determine its outcome: the RP's pending state and counters are volatile.
 Documentation-only check: `git diff --check`.
+
+## Shared USB-C breakout: RP flashing
+
+On 2026-11-09 Mark measured the separate six-pin USB-C breakout: CC1 to GND
+and CC2 to GND each measured 5.1 kΩ; CC1 to CC2 measured 10.2 kΩ. The
+SunFounder BreadVolt has no battery attached and is USB-C powered.
+
+With the analyzer and ESP-Prog disconnected, BreadVolt 5 V removed from both
+boards, and ESP USB data disconnected, Mark connected the breakout's VBUS to
+the RP 5 V input, D+/D- to RP USB-DP/USB-DM, and GND to common ground. A
+measurement showed 5 V at RP VCC with PC USB attached. Holding RP BOOT while
+connecting the PC to this breakout produced the RP boot drive; copying the
+probe UF2 succeeded, the RP rebooted and its LED flashed. This verifies the
+shared breakout-to-RP flashing path; ESP flashing through the same breakout
+and return to Run mode remain to be tested. Documentation check:
+`git diff --check`.
