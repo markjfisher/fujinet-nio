@@ -254,3 +254,18 @@ would show the reset link and clock service recovered; the initial response
 must still be reported as a service/startup issue, not counted as an automatic
 clock success. In-flight reset and other fault cases remain untested. This is a
 documentation-only observation, checked with `git diff --check`.
+
+After startup settled, Mark reported:
+
+```text
+state=ready data=0 logs=1 generation=2 capacity=4096 tx=0 fault=0 requests=6 answers=6 resends=0 timeouts=0 corrupt=0 log_bytes=4150
+completion outcome=0 bytes=19 elapsed_ms=21 crc32=29b795de
+clock valid status=0 unix_seconds=130 (nonzero status is a service error)
+```
+
+The link returned to ready in a fresh generation and a new manual clock
+request succeeded. This supports the early-service timing explanation, though
+the earlier response's bytes were not captured. Idle ESP reset recovery is
+observed; the first automatic clock request still needs correct startup
+handling, and in-flight reset/recovery remains untested. Documentation-only
+check: `git diff --check`.
