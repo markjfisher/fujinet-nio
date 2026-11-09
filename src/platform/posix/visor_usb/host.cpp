@@ -214,6 +214,18 @@ struct Host::Impl {
             }
         }
         libusb_free_config_descriptor(desc);
+        // Ownership first: libusb answers it from the kernel, so a device whose interface
+        // another driver holds is turned away without a single vendor request reaching it.
+        // The Generic port's bulk endpoints are addressed by port number (OUT) and 0x80|port
+        // (IN), so the interface is known from the descriptors before the connection query.
+        for (const auto& ep : eps) {
+            if (ep.configuration != 1 || ep.alternate != 0 || ep.interfaceClass != 255 ||
+                ep.address != (0x80u | options.port)) continue;
+            rc = libusb_kernel_driver_active(handle, ep.interface);
+            if (rc == 1) { setup_failed("Interface owned by kernel driver; manual release required (no auto-detach)"); return; }
+            if (rc < 0 && rc != LIBUSB_ERROR_NOT_SUPPORTED) { setup_failed("Cannot inspect USB interface ownership"); return; }
+            break;
+        }
         // Old request is authoritative for this tested family. Extended request is
         // diagnostic only; PIPE is expected on Prism and never selects HotSync.
         std::array<unsigned char, 20> info{};

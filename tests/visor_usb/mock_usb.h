@@ -9,7 +9,7 @@ struct Result { libusb_transfer_status status; std::vector<unsigned char> data; 
 extern unsigned eventCalls, positiveWaits;
 extern long lastWaitMicros;
 extern unsigned opens, closes, references;
-extern unsigned devices, claims, releases, inLength, outSubmits, freesPending;
+extern unsigned devices, claims, releases, inLength, outSubmits, freesPending, controlTransfers;
 extern int openError, claimError, config, kernel, extendedError, oldSize, alternate;
 extern unsigned vid, pid, endpointType, inAddress, outAddress, mps, interfaceClass;
 extern bool holdOutput;

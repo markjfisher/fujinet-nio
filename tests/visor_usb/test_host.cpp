@@ -278,6 +278,17 @@ TEST_CASE("Visor host retries pre-session setup failure on the same device") {
     inject(fixture); pump(h); ByteBuffer p; REQUIRE(h.take(p)); CHECK(p==fixture);
 }
 
+TEST_CASE("Visor host sends no vendor request to a device another driver owns") {
+    mock_usb::reset(); mock_usb::kernel = 1;
+    Host h({}, mock_usb::now); h.poll();
+    for (int i = 0; i < 5; ++i) { mock_usb::advance(1000ms); h.poll(); }
+    REQUIRE_FALSE(h.active());
+    CHECK(mock_usb::controlTransfers == 0);
+    CHECK(mock_usb::claims == mock_usb::releases); CHECK(mock_usb::opens == mock_usb::closes);
+    mock_usb::kernel = 0; mock_usb::advance(1000ms); h.poll();
+    REQUIRE(h.active()); CHECK(mock_usb::controlTransfers == 3); // the two queries and the alternate check, once it is free
+}
+
 namespace {
 // Restore the caller's environment even when a REQUIRE aborts a test.
 struct SelectionEnvironment {

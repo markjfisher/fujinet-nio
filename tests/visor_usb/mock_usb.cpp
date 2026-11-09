@@ -9,7 +9,7 @@ namespace mock_usb {
 unsigned eventCalls, positiveWaits;
 long lastWaitMicros;
 unsigned opens, closes, references;
-unsigned devices, claims, releases, inLength, outSubmits, freesPending;
+unsigned devices, claims, releases, inLength, outSubmits, freesPending, controlTransfers;
 int openError, claimError, config, kernel, extendedError, oldSize, alternate;
 unsigned vid, pid, endpointType, inAddress, outAddress, mps, interfaceClass;
 bool holdOutput;
@@ -26,7 +26,7 @@ void advance(std::chrono::milliseconds elapsed) { clockNow += elapsed; }
 void reset() {
     clockNow = {}; holdOutput = false;
     assert(transfers.empty()); assert(opens==closes); assert(references==0);
-    opens=closes=references=0; eventCalls = positiveWaits = 0; lastWaitMicros = 0; devices = 1; claims = releases = inLength = outSubmits = freesPending = 0;
+    opens=closes=references=0; eventCalls = positiveWaits = 0; lastWaitMicros = 0; devices = 1; claims = releases = inLength = outSubmits = freesPending = controlTransfers = 0;
     openError = claimError = kernel = alternate = 0; config = 1; extendedError = LIBUSB_ERROR_PIPE; oldSize = 6;
     vid = 0x082d; pid = 0x0100; endpointType = 2; inAddress = 0x82; outAddress = 2; mps = 64; interfaceClass = 255;
     present = true; inCallback = holdCancellation = lateSuccess = false; identity = 0;
@@ -76,7 +76,7 @@ int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device*, libusb_confi
 void LIBUSB_CALL libusb_free_config_descriptor(libusb_config_descriptor* d) { delete d; }
 int LIBUSB_CALL libusb_control_transfer(libusb_device_handle*, uint8_t type, uint8_t req, uint16_t value, uint16_t index,
     unsigned char* data, uint16_t length, unsigned timeout) {
-    assert(timeout && timeout <= 250); assert(value == 0);
+    ++controlTransfers; assert(timeout && timeout <= 250); assert(value == 0);
     if(req == 4) { assert(type==0xc2 && index==0 && length==20); return extendedError; }
     if(req == 3) { assert(type==0xc2 && length==6); std::copy_n(info.data(), std::min<std::size_t>(6, info.size()),data); return oldSize; }
     assert(req == 10 && type == 0x81 && length == 1); data[0] = alternate; return 1;
