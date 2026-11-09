@@ -133,3 +133,31 @@ this report does not establish whether it persisted after the fix.
 
 Documentation-only update: `git diff --check` passed; evidence is the user's
 physical console capture, not an additional firmware build.
+
+## First physical RP-to-ESP clock exchange
+
+On 2026-11-09 Mark reported that RP GP0 and GP1 had been swapped during the
+earlier UART troubleshooting; after correcting the wiring, picocom showed a
+legible RP startup log with both boards powered from the shared 5 V bench rail:
+
+```text
+USB host probe: UART0 GP0 TX / GP1 RX, 115200 8N1; NO AMIGA
+CDC mount index=0 address=1 interface=0
+CDC mount index=1 address=1 interface=2
+completion outcome=0 bytes=19 elapsed_ms=22 crc32=dc193838
+clock valid status=0 unix_seconds=26 (nonzero status is a service error)
+```
+
+This establishes physical enumeration of the expected packet and console CDC
+interfaces, PacketLink synchronization, and a successful 19-byte Clock.GetTime
+response through the RP-to-ESP link. The 22 ms is a single observed completion,
+not a latency benchmark. The returned value 26 is not a credible current Unix
+time; a successful clock response does not establish a synchronized clock.
+Mark also captured the startup with the logic analyzer; its file location and
+capture details were not supplied for this run.
+
+Next checks: confirm the RP console can receive `status` and `clock`, save their
+output, then exercise larger known data and link recovery. Shared-connector
+flashing, maximum-size transfers, fault handling and repeatable performance
+remain unverified. `git diff --check` is the verification for this documentation
+update; no firmware was changed or rebuilt.
