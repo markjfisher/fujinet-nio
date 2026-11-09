@@ -288,3 +288,30 @@ the packet controller and probe helpers, not this new Pico USB callback flow;
 physical stream/reset verification remains pending. UF2 SHA-256:
 `bcf14df9c40887bf780d1a556238b4baf1a39437bb3925361b602c2d7b63b29e`.
 Documentation and diff check: `git diff --check`.
+
+## ESP reset during clock stream
+
+On 2026-11-09 Mark ran the stream/reset probe on the physical fixture. One run
+reported `pending=0` after 47 successful stream requests and returned to ready
+in generation 2 with fault=0, requests=48, answers=48, resends=0, timeouts=0
+and corrupt=0. This was another idle-reset observation.
+
+After further attempts, the reset interrupted request 16:
+
+```text
+CDC unmount index=0
+stream disconnect: pending=1 seq=16
+completion outcome=2 bytes=0 elapsed_ms=7 crc32=00000000
+stream STOP seq=16 outcome=2 valid=0 status=0
+CDC unmount index=1
+FAULT latched; uncertain request will not be replayed. status / resync
+CDC mount index=0 address=1 interface=0
+FAULT retained across reconnect; use resync before a NEW request
+CDC mount index=1 address=1 interface=2
+```
+
+Outcome 2 is `PL_UNANSWERED`: the request may have run. This demonstrates
+in-flight disconnect detection, stream stop and fault retention on reconnect.
+The capture does not establish whether the ESP processed request 16. Explicit
+resynchronization and a fresh successful request remain to be verified.
+Documentation-only check: `git diff --check`.
