@@ -385,3 +385,12 @@ After updating the local upload port, the normal firmware upload completed.
 This verifies flashing each target through the same manually rewired breakout
 using physical boot controls. Return to Run and a fresh exchange remain to be
 verified; automatic bootloader entry and automatic routing are not established.
+
+Mark then removed the shared breakout, restored the RP–ESP USB data pair,
+BreadVolt power and ESP-Prog console, and reported that both `status` and
+`clock` succeeded. This confirms a return to Run and a fresh clock exchange
+after flashing both processors through the same breakout. Exact command output
+was not supplied. The fixture used manual rewiring and working application
+firmware; independent recovery from nonfunctional firmware, a user-serviceable
+selector and automatic routing remain unverified. Documentation-only check:
+`git diff --check`.
