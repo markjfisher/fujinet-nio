@@ -504,17 +504,14 @@ that configuration (or regenerate it from the updated defaults).
     controller on the primary UART, such as the FujiNet Mac board, whose RP2040
     serves the Mac's floppy port.
   - PlatformIO environment: `fujibus-link-uart-log-fujimac-rev0`
-    (pinmap `FN_PINMAP_FUJIMAC_REV0`, UART interrupt in IRAM).
-  - The link runs at the controller's rate and needs no pacing, so the board's
-    `fujinet.yaml` sets:
-
-    ```yaml
-    channel:
-      uart:
-        baud_rate: 2000000
-        tx_chunk_size: 0
-        tx_chunk_gap_us: 0
-    ```
+    (pinmap `FN_PINMAP_FUJIMAC_REV0`, UART interrupt in IRAM). The board's
+    ESP32-WROVER-E N8R8 has 8 MB of flash and 8 MB of quad PSRAM, set up as on
+    the Atari v1 boards (`flash-8mb`, `spiram-quad40`).
+  - The link runs at the controller's rate and needs no pacing, so the profile
+    starts the UART at 2 Mbaud with `tx_chunk_size` and `tx_chunk_gap_us` 0
+    (`BuildProfile::defaultUartBaudRate` and `defaultUartUnpaced`). The board
+    needs no `fujinet.yaml` of its own; one that sets `channel.uart` values
+    still wins, and a key it leaves out keeps the profile's value.
 
 A profile carries `FujiBusNative` over a byte-stream channel by setting
 `packetLink = true`; the channel factory then wraps the stream in

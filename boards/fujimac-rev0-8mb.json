@@ -29,7 +29,7 @@
   "frameworks": [
     "espidf"
   ],
-  "name": "FujiNet Mac rev0 (ESP32-WROVER-E, 8MB)",
+  "name": "FujiNet Mac rev0 (ESP32-WROVER-E N8R8: 8MB flash, 8MB PSRAM)",
   "upload": {
     "flash_size": "8MB",
     "maximum_ram_size": 327680,

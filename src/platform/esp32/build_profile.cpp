@@ -73,6 +73,10 @@ BuildProfile current_build_profile()
         .packetLink       = true,
         .name             = "ESP32 + FujiBus over a packet link on UART",
         .hw               = {},
+        // The link controller (the FujiNet Mac board's RP2040) runs the UART at
+        // 2 Mbaud and reads at line rate, so the board needs no fujinet.yaml for it.
+        .defaultUartBaudRate = 2000000,
+        .defaultUartUnpaced  = true,
     };
 #else
     // Default ESP32 fallback

@@ -19,6 +19,7 @@ using fujinet::build::BuildProfile;
 using fujinet::config::BootMode;
 using fujinet::config::FujiConfig;
 using fujinet::config::FujiConfigStore;
+using fujinet::config::UartParity;
 using fujinet::config::YamlFujiConfigStoreFs;
 using fujinet::config::default_config_for;
 using fujinet::diag::DiagArgsView;
@@ -33,6 +34,15 @@ BuildProfile profile_with_boot_uri(std::string_view uri)
 {
     BuildProfile p{};
     p.defaultBootConfigUri = uri;
+    return p;
+}
+
+// As the ESP32 packet link on UART build sets it: the link controller's rate, no pacing.
+BuildProfile uart_link_profile()
+{
+    BuildProfile p{};
+    p.defaultUartBaudRate = 2000000;
+    p.defaultUartUnpaced = true;
     return p;
 }
 
@@ -116,6 +126,60 @@ TEST_CASE("config store: a boot section without config_uri takes the profile's, 
     write_file(*explicitFs, "/fujinet.yaml", "boot:\n  mode: config\n  config_uri: \"sd0:/mine.atr\"\n");
     YamlFujiConfigStoreFs chosen(explicitFs.get(), nullptr, "fujinet.yaml", default_config_for(profile_with_boot_uri(kAtari)));
     CHECK(chosen.load().boot.configUri == "sd0:/mine.atr");
+}
+
+TEST_CASE("default_config_for: a profile without UART defaults keeps the generic rate and pacing")
+{
+    const FujiConfig cfg = default_config_for(BuildProfile{});
+    CHECK(cfg.channel.uart.baudRate == 115200);
+    CHECK(cfg.channel.uart.txChunkSize == 16);
+    CHECK(cfg.channel.uart.txChunkGapUs == 2000);
+}
+
+TEST_CASE("default_config_for: a profile's UART rate and no pacing replace the generic defaults, nothing else")
+{
+    const FujiConfig cfg = default_config_for(uart_link_profile());
+    CHECK(cfg.channel.uart.baudRate == 2000000);
+    CHECK(cfg.channel.uart.txChunkSize == 0);
+    CHECK(cfg.channel.uart.txChunkGapUs == 0);
+    CHECK(cfg.channel.uart.dataBits == 8);
+    CHECK(cfg.channel.uart.parity == UartParity::None);
+    CHECK(cfg.channel.uart.txByteGapUs == 0);
+    CHECK(cfg.boot.configUri == kGeneric);
+}
+
+TEST_CASE("config store: with no file the profile's UART settings are used and written for next time")
+{
+    auto primary = std::make_unique<fujinet::tests::MemoryFileSystem>("primary");
+    YamlFujiConfigStoreFs store(primary.get(), nullptr, "fujinet.yaml", default_config_for(uart_link_profile()));
+    CHECK(store.load().channel.uart.baudRate == 2000000);
+
+    YamlFujiConfigStoreFs again(primary.get(), nullptr, "fujinet.yaml");
+    const FujiConfig cfg = again.load();
+    CHECK(cfg.channel.uart.baudRate == 2000000);
+    CHECK(cfg.channel.uart.txChunkSize == 0);
+    CHECK(cfg.channel.uart.txChunkGapUs == 0);
+}
+
+TEST_CASE("config store: a uart section keeps the profile's values for keys it leaves out, and its own win")
+{
+    auto partialFs = std::make_unique<fujinet::tests::MemoryFileSystem>("partial");
+    write_file(*partialFs, "/fujinet.yaml", "channel:\n  uart:\n    parity: even\n");
+    YamlFujiConfigStoreFs partial(partialFs.get(), nullptr, "fujinet.yaml", default_config_for(uart_link_profile()));
+    FujiConfig cfg = partial.load();
+    CHECK(cfg.channel.uart.parity == UartParity::Even);
+    CHECK(cfg.channel.uart.baudRate == 2000000);
+    CHECK(cfg.channel.uart.txChunkSize == 0);
+    CHECK(cfg.channel.uart.txChunkGapUs == 0);
+
+    auto explicitFs = std::make_unique<fujinet::tests::MemoryFileSystem>("explicit");
+    write_file(*explicitFs, "/fujinet.yaml",
+               "channel:\n  uart:\n    baud_rate: 115200\n    tx_chunk_size: 32\n");
+    YamlFujiConfigStoreFs chosen(explicitFs.get(), nullptr, "fujinet.yaml", default_config_for(uart_link_profile()));
+    cfg = chosen.load();
+    CHECK(cfg.channel.uart.baudRate == 115200);
+    CHECK(cfg.channel.uart.txChunkSize == 32);
+    CHECK(cfg.channel.uart.txChunkGapUs == 0);
 }
 
 TEST_CASE("boot diagnostics exist only with a FujiDevice")

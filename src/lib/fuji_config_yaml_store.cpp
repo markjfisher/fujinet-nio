@@ -181,17 +181,19 @@ static std::string uart_flow_to_string(UartFlowControl f)
     }
 }
 
+// A key the file leaves out keeps the value it started with: the build profile's
+// default (default_config_for), or UartConfig's own.
 static void from_yaml(const YAML::Node& node, UartConfig& out)
 {
-    out.baudRate   = static_cast<std::uint32_t>(get_or<int>(node, "baud_rate", 115200));
-    out.dataBits   = get_or<int>(node, "data_bits", 8);
-    out.parity     = parse_uart_parity(get_or<std::string>(node, "parity", "none"));
-    out.stopBits   = parse_uart_stop_bits(get_or<std::string>(node, "stop_bits", "1"));
-    out.flowControl = parse_uart_flow_control(get_or<std::string>(node, "flow_control", "none"));
-    out.txGapUs      = static_cast<std::uint32_t>(get_or<int>(node, "tx_gap_us", 0));
-    out.txByteGapUs  = static_cast<std::uint32_t>(get_or<int>(node, "tx_byte_gap_us", 0));
-    out.txChunkSize  = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_size", 16));
-    out.txChunkGapUs = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_gap_us", 2000));
+    out.baudRate   = static_cast<std::uint32_t>(get_or<int>(node, "baud_rate", static_cast<int>(out.baudRate)));
+    out.dataBits   = get_or<int>(node, "data_bits", out.dataBits);
+    out.parity     = parse_uart_parity(get_or<std::string>(node, "parity", uart_parity_to_string(out.parity)));
+    out.stopBits   = parse_uart_stop_bits(get_or<std::string>(node, "stop_bits", uart_stop_bits_to_string(out.stopBits)));
+    out.flowControl = parse_uart_flow_control(get_or<std::string>(node, "flow_control", uart_flow_to_string(out.flowControl)));
+    out.txGapUs      = static_cast<std::uint32_t>(get_or<int>(node, "tx_gap_us", static_cast<int>(out.txGapUs)));
+    out.txByteGapUs  = static_cast<std::uint32_t>(get_or<int>(node, "tx_byte_gap_us", static_cast<int>(out.txByteGapUs)));
+    out.txChunkSize  = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_size", static_cast<int>(out.txChunkSize)));
+    out.txChunkGapUs = static_cast<std::uint32_t>(get_or<int>(node, "tx_chunk_gap_us", static_cast<int>(out.txChunkGapUs)));
 }
 
 static void from_yaml(const YAML::Node& node, PacketLinkConfig& out)

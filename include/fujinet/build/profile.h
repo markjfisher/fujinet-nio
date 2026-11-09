@@ -83,6 +83,15 @@ struct BuildProfile {
     // The channel.tcp_port this build listens on by default. 0: the generic default.
     // A fujinet.yaml that sets tcp_port wins.
     std::uint16_t defaultChannelTcpPort{0};
+
+    // The channel.uart baud rate this build starts at, for a UART whose far end the
+    // board fixes, such as a link controller. 0: the generic default. A fujinet.yaml
+    // that sets baud_rate wins.
+    std::uint32_t defaultUartBaudRate{0};
+
+    // Start with no TX pacing on the UART (tx_chunk_size and tx_chunk_gap_us 0), for
+    // a far end that reads at line rate. A fujinet.yaml that sets either wins.
+    bool defaultUartUnpaced{false};
 };
 
 // Filled by platform-specific code.
