@@ -207,12 +207,7 @@ int main()
     // Load config immediately - transports need it (especially NetSIO config)
     // This is fast (just reading a YAML file) and necessary for proper transport setup
     FN_LOGI(TAG, "[FujiDevice] Loading config for transport setup");
-    try {
-        fujiConcrete->start();
-    } catch (const fujinet::config::InvalidVisorConfig& error) {
-        FN_LOGE(TAG, "Invalid Visor USB configuration: %s", error.what());
-        return 1;
-    }
+    fujiConcrete->start();
     const auto& config = fujiConcrete->config();
 
     auto wifiLink = std::make_unique<fujinet::platform::posix::PosixWifiLink>(

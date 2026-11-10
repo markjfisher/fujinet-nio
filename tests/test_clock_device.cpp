@@ -129,7 +129,7 @@ public:
 
 } // namespace
 
-TEST_CASE("ClockDevice SetTimezoneSave survives invalid Visor YAML after startup")
+TEST_CASE("ClockDevice SetTimezoneSave ignores and preserves invalid Visor YAML")
 {
     fujinet::platform::ScopedTimezone timezone("UTC0");
     fujinet::tests::MemoryFileSystem fs("primary");
@@ -137,8 +137,6 @@ TEST_CASE("ClockDevice SetTimezoneSave survives invalid Visor YAML after startup
     fujinet::config::FujiConfig initial;
     initial.clock.timezone = "UTC0";
     store.save(initial);
-    REQUIRE(store.load().visor.port == 2);
-
     fujinet::io::IODeviceManager devices;
     REQUIRE(devices.registerDevice(0x45, std::make_unique<ClockDevice>(&store)));
     const std::string invalid = "visor: {port: 3}\n";
@@ -146,30 +144,16 @@ TEST_CASE("ClockDevice SetTimezoneSave survives invalid Visor YAML after startup
     auto request = make_save_timezone_request();
     fujinet::io::IOResponse response;
     REQUIRE_NOTHROW(response = devices.handleRequest(request));
-    CHECK(response.status == StatusCode::IOError);
+    CHECK(response.status == StatusCode::Ok);
     CHECK(response.id == request.id);
     CHECK(response.deviceId == request.deviceId);
-    CHECK(response.payload.empty());
-    CHECK(fujinet::platform::get_timezone() == "UTC0");
-
-    // Neither fallback nor a failed clock save may replace the invalid file.
-    auto file = fs.open("/fujinet.yaml", "rb");
-    REQUIRE(file);
-    std::vector<char> bytes(invalid.size() + 1);
-    auto n = file->read(bytes.data(), bytes.size());
-    CHECK(std::string(bytes.data(), n) == invalid);
-    CHECK_THROWS_AS(store.load(), fujinet::config::InvalidVisorConfig);
-
-    // The same service still handles requests, and saves after operator repair.
+    CHECK(fujinet::platform::get_timezone() == "UTC");
+    auto saved = store.load();
+    CHECK(saved.clock.timezone == "UTC");
+    CHECK_THROWS_AS(saved.visor.validate(), fujinet::config::InvalidVisorConfig);
     request.command = static_cast<std::uint16_t>(ClockCommand::GetTimezone);
     request.payload.clear();
     CHECK(devices.handleRequest(request).status == StatusCode::Ok);
-    file.reset();
-    store.save(initial);
-    REQUIRE_NOTHROW(response = devices.handleRequest(make_save_timezone_request()));
-    REQUIRE(response.status == StatusCode::Ok);
-    CHECK(store.load().clock.timezone == "UTC");
-    CHECK(fujinet::platform::get_timezone() == "UTC");
 }
 
 TEST_CASE("ClockDevice SetTimezoneSave returns IOError for throwing config stores")

@@ -55,8 +55,9 @@ may occur in debug logs. Do not publish raw application traces.
 ### Selection settings and console
 
 Device selection is loaded from `fujinet.yaml`. Environment variables override
-individual fields after loading; invalid configured or overridden values stop
-startup rather than silently choosing defaults or another device.
+individual fields after loading. The Visor USB profile rejects invalid configured
+or overridden values rather than choosing defaults or another device. Other
+profiles can load configuration with an invalid `visor:` block; they do not use it.
 
 ```yaml
 visor:
@@ -72,12 +73,18 @@ visor:
 | `visor.path` | `FN_VISOR_USB_PATH` | unset | 1–7 dot-separated decimal components, each `1..255`; requires bus |
 
 Omit `path` or use YAML `null` to unset it. Empty environment overrides are errors.
-The path is a physical port chain, not the changing USB device address. Invalid
-Visor settings are not replaced with backup/default settings or rewritten by the
-YAML loader; unrelated configuration recovery behavior is unchanged. If Visor
-settings become invalid after startup, `Clock.SetTimezoneSave` returns `IOError`
-instead of terminating the request loop. A rejected reload leaves the live
-timezone and invalid file unchanged; subsequent requests remain usable.
+The path is a physical port chain, not the changing USB device address. YAML
+loading records invalid Visor settings and their reason without falling back to
+backup/default settings or rewriting the file. The USB profile validates them
+when resolving its selection, before opening a USB device. An environment override
+cannot hide an invalid configuration block.
+
+Ordinary profiles omit default Visor settings when saving; the Visor profile
+includes them. Explicit non-default settings are preserved across profiles.
+Unrelated saves, including `Clock.SetTimezoneSave`, retain a malformed Visor
+block rather than replacing it with defaults. Such a block still requires
+correction before the USB profile can start. Other configuration-recovery
+behavior is unchanged.
 
 The diagnostic console supports:
 
@@ -108,12 +115,9 @@ picocom /dev/pts/N
 ```
 
 `FN_CONSOLE=stdio` remains supported. The console PTY is separate from the USB
-cradle and does not claim it. A Linux automated test exercises the real PTY and console engine while the
-mock USB backend routes a Clock request. Physical Prism verification also passed:
-Clock + two HTTP succeeded with the PTY connected, and console queries returned
-`active=1` on Generic 2 while the Palm USB Probe held the port open. The console
-reported config-sourced selection and zero active network handles; `kill` exited
-the host cleanly.
+cradle and does not claim it. It remains usable while a Palm client holds the USB
+connection. `visor.status` reports the active generation and effective selection;
+`net.sessions` reports open network handles.
 
 Multiple matching devices require an unambiguous selector. An absent device is
 not an error requiring restart; discovery is limited to once per second.
@@ -134,12 +138,8 @@ invalid Generic connection information) release acquired resources and retry at
 most once per second. They do not quarantine the device: releasing the driver or
 opening the Palm port can allow the same enumerated device to connect. Every
 retry repeats descriptor/function validation; it never sends or replays a NIO
-command. Practical Linux/Prism recovery passed: after the kernel-ownership error
-and operator-controlled interface release, the host connected without restart.
-The user confirmed Palm screen timeouts during the test pauses; sleep/wake
-re-enumeration changed the USB address and required renewing temporary access.
-Stable-enumeration retries and missing/malformed connection-info recovery are
-also covered by the driver mocks.
+command. Kernel ownership is checked before vendor control requests, so retries
+do not query a kernel-owned interface.
 
 For initial use, finish HotSync and arrange interface access/release, start the
 host, then open a Palm NIO client. If opening the connection or a sleep/wake cycle
@@ -233,22 +233,11 @@ python3 tests/visor_usb/test_generation.py
 ```
 
 Linux enabled/disabled builds, mock tests and relevant POSIX regressions have
-passed. Physical Prism acceptance passed USB Clock + two HTTP requests,
-ISS → Weather → ISS, then Springboard Clock + two HTTP after switching transport.
-Post-audit fixes passed the shorter USB/CS1 regression; logs ended with no active
-network handles. The later cached-JSON NioLib/apps were separately reported
-working with faster app loading, without a new complete transport qualification
-sequence or timing benchmark. No RP2350 firmware/ROM change was required for USB.
-The subsequent Linux/Prism PTY check passed Clock + two HTTP, active-USB
-console queries, zero-handle cleanup and orderly console shutdown. The host was
-started before the Palm connection and recovered without restart after temporary
-access renewal. A separate kernel-ownership check passed practical recovery with
-Palm sleep/wake and renewed access after re-enumeration, with the host PID
-unchanged and no manual unplug or reset. Stable-enumeration setup retry and
-invalid connection-info recovery are automatically tested. YAML persistence and
-environment precedence are also automatically verified; the physical session
-used the default config selection.
-No PRC or Springboard firmware update was needed for these host-only changes.
+passed. Minimum normal-use qualification on a Visor Prism covered USB Generic 2,
+Clock + two HTTP requests, ISS → Weather → ISS, and switching back to Springboard
+CS1 for Clock + two HTTP. The PTY console was also verified with an active USB
+connection. No RP2350 firmware/ROM change was required for USB.
+
 macOS, serial hardware, arbitrary physical failure recovery and long-duration
 heap/stress qualification remain unverified.
 

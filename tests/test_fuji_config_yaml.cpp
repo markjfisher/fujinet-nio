@@ -4,10 +4,15 @@
 
 #include "fujinet/config/fuji_config.h"
 #include "fujinet/config/fuji_config_yaml_store_fs.h"
+#include "fujinet/build/profile.h"
+#include "fujinet/platform/fuji_config_store_factory.h"
+#include "fujinet/fs/storage_manager.h"
+#include "fujinet/io/devices/fuji_device.h"
 
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <yaml-cpp/yaml.h>
 
 using fujinet::config::BootMode;
 using fujinet::config::FujiConfig;
@@ -92,7 +97,8 @@ bool configs_equal(const FujiConfig& a, const FujiConfig& b)
     if (a.channel.packetLink.capacity != b.channel.packetLink.capacity) return false;
     if (a.channel.packetLink.recordTimeoutMs != b.channel.packetLink.recordTimeoutMs) return false;
 
-    if (a.visor.port != b.visor.port || a.visor.bus != b.visor.bus || a.visor.path != b.visor.path) return false;
+    if (a.visor.port != b.visor.port || a.visor.bus != b.visor.bus || a.visor.path != b.visor.path ||
+        a.visor.validationError != b.visor.validationError || a.visor.invalidYaml != b.visor.invalidYaml) return false;
     if (a.translation.image.maxPixels != b.translation.image.maxPixels) return false;
 
     return true;
@@ -994,7 +1000,7 @@ TEST_CASE("YamlFujiConfigStoreFs: Visor selection defaults and round-trip")
     store.save(cfg); CHECK(configs_equal(cfg, store.load()));
 }
 
-TEST_CASE("YamlFujiConfigStoreFs: Invalid Visor selection never falls back or overwrites")
+TEST_CASE("YamlFujiConfigStoreFs: Invalid Visor selection is deferred without fallback or overwrite")
 {
     fujinet::tests::MemoryFileSystem primary("primary"), backup("backup");
     YamlFujiConfigStoreFs store(&primary, &backup, "fujinet.yaml");
@@ -1006,13 +1012,94 @@ TEST_CASE("YamlFujiConfigStoreFs: Invalid Visor selection never falls back or ov
             "port: [2]"}) {
         const std::string yaml = std::string("visor: {") + fields + "}\n";
         CAPTURE(yaml); create_file(primary, "/fujinet.yaml", yaml);
-        CHECK_THROWS_AS(store.load(), fujinet::config::InvalidVisorConfig);
+        FujiConfig cfg;
+        REQUIRE_NOTHROW(cfg = store.load());
+        CHECK_FALSE(cfg.visor.validationError.empty());
+        CHECK_THROWS_AS(cfg.visor.validate(), fujinet::config::InvalidVisorConfig);
         CHECK(read_file(primary, "/fujinet.yaml") == yaml);
+        CHECK(read_file(backup, "/fujinet.yaml") == "visor: {port: 1}\n");
     }
     // The same failure on backup must not create a default primary.
     YamlFujiConfigStoreFs backupOnly(nullptr, &backup, "fujinet.yaml");
     create_file(backup, "/fujinet.yaml", "visor: {port: 3}\n");
-    CHECK_THROWS_AS(backupOnly.load(), fujinet::config::InvalidVisorConfig);
-    FujiConfig bad; bad.visor.port=3;
-    CHECK_THROWS_AS(store.save(bad), fujinet::config::InvalidVisorConfig);
+    FujiConfig cfg;
+    REQUIRE_NOTHROW(cfg = backupOnly.load());
+    CHECK_THROWS_AS(cfg.visor.validate(), fujinet::config::InvalidVisorConfig);
+    CHECK(read_file(backup, "/fujinet.yaml") == "visor: {port: 3}\n");
+    // An invalid backup must not be mirrored into a missing primary during load.
+    fujinet::tests::MemoryFileSystem missing("missing");
+    YamlFujiConfigStoreFs mirror(&missing, &backup, "fujinet.yaml");
+    REQUIRE_NOTHROW(cfg = mirror.load());
+    CHECK_THROWS_AS(cfg.visor.validate(), fujinet::config::InvalidVisorConfig);
+    CHECK_FALSE(missing.exists("/fujinet.yaml"));
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Default Visor selection does not leak into ordinary saves")
+{
+    fujinet::tests::MemoryFileSystem fs("primary");
+    YamlFujiConfigStoreFs store(&fs, nullptr, "fujinet.yaml");
+    store.save(FujiConfig{});
+    CHECK_FALSE(YAML::Load(read_file(fs, "/fujinet.yaml"))["visor"]);
+    auto cfg = store.load();
+    cfg.visor.port = 1;
+    store.save(cfg);
+    CHECK(YAML::Load(read_file(fs, "/fujinet.yaml"))["visor"]["port"].as<int>() == 1);
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Unrelated saves preserve malformed Visor blocks")
+{
+    fujinet::tests::MemoryFileSystem fs("primary");
+    YamlFujiConfigStoreFs store(&fs, nullptr, "fujinet.yaml");
+    for (const auto* block : {"{port: 3, extra: keep}", "{port: [2]}", "{bus: 1, path: ''}",
+            "{port: null}", "null", "[]", "wrong"}) {
+        const std::string input = std::string("visor: ") + block + "\nclock: {timezone: UTC0}\n";
+        create_file(fs, "/fujinet.yaml", input);
+        FujiConfig cfg;
+        REQUIRE_NOTHROW(cfg = store.load());
+        CHECK(cfg.clock.timezone == "UTC0");
+        CHECK_FALSE(cfg.visor.validationError.empty());
+        CHECK_THROWS_AS(cfg.visor.validate(), fujinet::config::InvalidVisorConfig);
+        CHECK(read_file(fs, "/fujinet.yaml") == input);
+        cfg.clock.timezone = "UTC-1";
+        REQUIRE_NOTHROW(store.save(cfg));
+        const auto saved = YAML::Load(read_file(fs, "/fujinet.yaml"));
+        CHECK(YAML::Dump(saved["visor"]) == YAML::Dump(YAML::Load(input)["visor"]));
+        CHECK(saved["clock"]["timezone"].as<std::string>() == "UTC-1");
+        CHECK_THROWS_AS(store.load().visor.validate(), fujinet::config::InvalidVisorConfig);
+    }
+}
+
+TEST_CASE("YamlFujiConfigStoreFs: Visor factory can request emission of default settings")
+{
+    fujinet::tests::MemoryFileSystem fs("primary");
+    YamlFujiConfigStoreFs store(&fs, nullptr, "fujinet.yaml", {}, true);
+    auto cfg = store.load();
+    const auto saved = YAML::Load(read_file(fs, "/fujinet.yaml"));
+    CHECK(saved["visor"]["port"].as<unsigned>() == 2);
+    CHECK_FALSE(saved["visor"]["bus"]);
+    CHECK_FALSE(saved["visor"]["path"]);
+    CHECK(cfg.visor.validationError.empty());
+    CHECK(cfg.visor.invalidYaml.empty());
+}
+
+TEST_CASE("POSIX config factory emits Visor defaults only for its channel and startup defers errors")
+{
+    fujinet::fs::StorageManager storage;
+    auto fs = std::make_unique<fujinet::tests::MemoryFileSystem>("host");
+    auto* host = fs.get();
+    REQUIRE(storage.registerFileSystem(std::move(fs)));
+    auto store = fujinet::platform::create_fuji_config_store(storage);
+    REQUIRE(store);
+    REQUIRE_NOTHROW(store->load());
+    const auto saved = YAML::Load(read_file(*host, "/fujinet.yaml"));
+    const bool visorProfile = fujinet::build::current_build_profile().primaryChannel ==
+        fujinet::build::ChannelKind::VisorUsbHost;
+    CHECK(saved["visor"].IsDefined() == visorProfile);
+    const std::string invalid = "visor: {port: 3}\nfujinet: {device_name: retained}\n";
+    create_file(*host, "/fujinet.yaml", invalid);
+    fujinet::io::FujiDevice fuji(nullptr, std::move(store));
+    REQUIRE_NOTHROW(fuji.start());
+    CHECK(fuji.config().general.deviceName == "retained");
+    CHECK_FALSE(fuji.config().visor.validationError.empty());
+    CHECK(read_file(*host, "/fujinet.yaml") == invalid);
 }

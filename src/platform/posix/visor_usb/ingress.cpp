@@ -152,6 +152,7 @@ diag::DiagResult Ingress::execute(const diag::DiagArgsView& args)
             stored.validate();
             store->save(_impl->fuji->config());
             const auto saved = store->load().visor;
+            saved.validate();
             if (saved.port != stored.port || saved.bus != stored.bus || saved.path != stored.path)
                 return diag::DiagResult::error("Visor settings read-back mismatch");
             return diag::DiagResult::ok("Saved visor settings; restart to apply.\r\n");

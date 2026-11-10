@@ -162,9 +162,14 @@ struct VisorConfig {
     unsigned port{2};
     unsigned bus{0}; // zero means unset; omitted/null in YAML
     std::string path; // physical port chain, empty means unset
+    // A malformed optional YAML block must not stop unrelated profiles. Keep its
+    // reason and serialized content so unrelated saves cannot replace it with defaults.
+    std::string validationError;
+    std::string invalidYaml;
 
     void validate() const
     {
+        if (!validationError.empty()) throw InvalidVisorConfig(validationError);
         if ((port != 1 && port != 2) || bus > 255)
             throw InvalidVisorConfig("visor.port must be 1 or 2; visor.bus must be unset or 1..255");
         if (path.empty()) return;

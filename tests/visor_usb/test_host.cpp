@@ -333,6 +333,38 @@ TEST_CASE("Visor selection resolves config then strict environment overrides") {
     setenv("FN_VISOR_USB_PATH","9.4",1);
     stored.port=3; CHECK_THROWS_AS(resolve_options(stored),config::InvalidVisorConfig); // bad config cannot be hidden
 }
+TEST_CASE("Visor profile rejects invalid YAML only when resolving its selection") {
+    SelectionEnvironment environment;
+    mock_usb::reset();
+    tests::MemoryFileSystem fs("primary");
+    config::YamlFujiConfigStoreFs store(&fs,nullptr,"fujinet.yaml");
+    for (const auto* fields : {"port: 0", "port: 3", "port: ''", "port: 2x", "port: -1", "port: 0x2",
+            "bus: 0", "bus: 256", "bus: -1", "bus: ''", "path: 9.4", "bus: 1, path: ''",
+            "bus: 1, path: 9.", "bus: 1, path: .9", "bus: 1, path: 9..4", "bus: 1, path: 0",
+            "bus: 1, path: 256", "bus: 1, path: 1.2.3.4.5.6.7.8", "port: [2]", "port: null"}) {
+        const std::string input=std::string("visor: {")+fields+"}\n";
+        REQUIRE(fs.create_file("/fujinet.yaml",{input.begin(),input.end()}));
+        config::FujiConfig cfg;
+        REQUIRE_NOTHROW(cfg=store.load());
+        CHECK_FALSE(cfg.visor.validationError.empty());
+        CHECK_THROWS_AS(resolve_options(cfg.visor),config::InvalidVisorConfig);
+        // An otherwise valid override must not hide the rejected configuration.
+        setenv("FN_VISOR_USB_PORT","2",1);
+        CHECK_THROWS_AS(resolve_options(cfg.visor),config::InvalidVisorConfig);
+        unsetenv("FN_VISOR_USB_PORT");
+        auto file=fs.open("/fujinet.yaml","rb"); REQUIRE(file);
+        std::vector<char> bytes(input.size()+1);
+        const auto n=file->read(bytes.data(),bytes.size());
+        CHECK(std::string(bytes.data(),n)==input);
+    }
+    const std::string repaired="visor: {port: 2}\n";
+    REQUIRE(fs.create_file("/fujinet.yaml",{repaired.begin(),repaired.end()}));
+    const auto cfg=store.load();
+    CHECK(cfg.visor.validationError.empty()); CHECK(cfg.visor.invalidYaml.empty());
+    CHECK(resolve_options(cfg.visor).port==2);
+    CHECK(mock_usb::opens==0); CHECK(mock_usb::controlTransfers==0);
+}
+
 TEST_CASE("Visor console config get set save preserves live selection and environment provenance") {
     SelectionEnvironment environment; mock_usb::reset();
     tests::MemoryFileSystem fs("primary");
@@ -374,6 +406,31 @@ TEST_CASE("Visor console config get set save preserves live selection and enviro
     // A newly created application/config store sees the saved values.
     config::YamlFujiConfigStoreFs reopened(&fs,nullptr,"fujinet.yaml");
     CHECK(reopened.load().visor.port==1);
+    fuji.config_mut().visor.validationError="malformed Visor block";
+    CHECK(run({"visor.save"}).status==diag::DiagStatus::InvalidArgs);
+    CHECK(run({"visor.set","port","2"}).status==diag::DiagStatus::InvalidArgs);
+    CHECK(reopened.load().visor.port==1);
+}
+
+TEST_CASE("Visor console save rejects malformed read-back even when selector fields match") {
+    struct ReadbackStore final : config::FujiConfigStore {
+        config::FujiConfig saved;
+        bool corruptReadback{false};
+        config::FujiConfig load() override {
+            auto result=saved;
+            if (corruptReadback) result.visor.validationError="invalid saved visor block";
+            return result;
+        }
+        void save(const config::FujiConfig& cfg) override { saved=cfg; }
+    };
+    SelectionEnvironment environment; mock_usb::reset();
+    auto store=std::make_unique<ReadbackStore>(); auto* readback=store.get();
+    io::FujiDevice fuji(nullptr,std::move(store)); fuji.start();
+    Router router; Ingress ingress(router,resolve_options(fuji.config().visor),&fuji,mock_usb::now);
+    readback->corruptReadback=true;
+    const auto result=ingress.execute({"visor.save",{"visor.save"}});
+    CHECK(result.status==diag::DiagStatus::InvalidArgs);
+    CHECK(result.text.find("invalid saved visor block")!=std::string::npos);
 }
 
 TEST_CASE("Visor host output deadline is exact and never replays a pending write") {
