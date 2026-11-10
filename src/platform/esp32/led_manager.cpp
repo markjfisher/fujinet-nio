@@ -21,6 +21,11 @@ void note_network_activity() noexcept
     network_events.fetch_add(1, std::memory_order_relaxed);
 }
 
+void note_activity() noexcept
+{
+    network_events.fetch_add(1, std::memory_order_relaxed);
+}
+
 void LedManager::activity_tick(void* arg)
 {
     auto* self = static_cast<LedManager*>(arg);

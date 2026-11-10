@@ -13,6 +13,13 @@
 #include <dirent.h>   // ESP-IDF provides this via newlib too
 #include <errno.h>
 
+#ifdef ESP_PLATFORM
+#include "fujinet/platform/esp32/led_manager.h"
+#define FN_NOTE_DISK_ACTIVITY() ::fujinet::platform::esp32::note_activity()
+#else
+#define FN_NOTE_DISK_ACTIVITY() ((void)0)
+#endif
+
 namespace fujinet::fs {
 
 using fujinet::fs::FileInfo;
@@ -41,14 +48,18 @@ public:
     {
         if (!_fp || maxBytes == 0) return 0;
         switch_to(LastOp::Read);
-        return std::fread(dst, 1, maxBytes, _fp);
+        const std::size_t n = std::fread(dst, 1, maxBytes, _fp);
+        if (n > 0) FN_NOTE_DISK_ACTIVITY();
+        return n;
     }
 
     std::size_t write(const void* src, std::size_t bytes) override
     {
         if (!_fp || bytes == 0) return 0;
         switch_to(LastOp::Write);
-        return std::fwrite(src, 1, bytes, _fp);
+        const std::size_t n = std::fwrite(src, 1, bytes, _fp);
+        if (n > 0) FN_NOTE_DISK_ACTIVITY();
+        return n;
     }
 
     bool seek(std::uint64_t offset) override

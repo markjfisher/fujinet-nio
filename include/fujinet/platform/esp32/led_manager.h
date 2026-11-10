@@ -15,6 +15,9 @@ enum class LedId {
 // It never waits for a timer or GPIO operation.
 void note_network_activity() noexcept;
 
+// Same pulse for local file/SD transfers.
+void note_activity() noexcept;
+
 // Timer-side pulse state; the counter can coalesce any number of events.
 class NetworkActivityPulse {
 public:
