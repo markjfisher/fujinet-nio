@@ -13,13 +13,6 @@
 #include <dirent.h>   // ESP-IDF provides this via newlib too
 #include <errno.h>
 
-#ifdef ESP_PLATFORM
-#include "fujinet/platform/esp32/led_manager.h"
-#define FN_NOTE_DISK_ACTIVITY() ::fujinet::platform::esp32::note_activity()
-#else
-#define FN_NOTE_DISK_ACTIVITY() ((void)0)
-#endif
-
 namespace fujinet::fs {
 
 using fujinet::fs::FileInfo;
@@ -34,8 +27,9 @@ static constexpr const char* TAG = "fs";
 // ----------------------
 class StdioFile : public IFile {
 public:
-    explicit StdioFile(std::FILE* fp)
+    StdioFile(std::FILE* fp, FileActivityHook onActivity)
         : _fp(fp)
+        , _onActivity(onActivity)
     {}
 
     ~StdioFile() override {
@@ -49,7 +43,7 @@ public:
         if (!_fp || maxBytes == 0) return 0;
         switch_to(LastOp::Read);
         const std::size_t n = std::fread(dst, 1, maxBytes, _fp);
-        if (n > 0) FN_NOTE_DISK_ACTIVITY();
+        if (n > 0 && _onActivity) _onActivity();
         return n;
     }
 
@@ -58,7 +52,7 @@ public:
         if (!_fp || bytes == 0) return 0;
         switch_to(LastOp::Write);
         const std::size_t n = std::fwrite(src, 1, bytes, _fp);
-        if (n > 0) FN_NOTE_DISK_ACTIVITY();
+        if (n > 0 && _onActivity) _onActivity();
         return n;
     }
 
@@ -96,6 +90,7 @@ private:
     }
 
     std::FILE* _fp{};
+    FileActivityHook _onActivity{};
     LastOp _last{LastOp::None};
 };
 
@@ -104,10 +99,12 @@ private:
 // ----------------------
 class StdioFileSystem : public IFileSystem {
 public:
-    StdioFileSystem(std::string rootDir, std::string name, FileSystemKind kind)
+    StdioFileSystem(std::string rootDir, std::string name, FileSystemKind kind,
+                    FileActivityHook onActivity)
         : _root(std::move(rootDir))
         , _name(std::move(name))
         , _kind(kind)
+        , _onActivity(onActivity)
     {
         // normalise root: no trailing slash (except "/" itself)
         if (!_root.empty() && _root.size() > 1 && _root.back() == '/') {
@@ -182,7 +179,7 @@ public:
             return nullptr;
         }
 
-        return std::make_unique<StdioFile>(fp);
+        return std::make_unique<StdioFile>(fp, _onActivity);
     }
 
     bool stat(const std::string& path, FileInfo& out) override
@@ -279,17 +276,19 @@ private:
     std::string    _root;
     std::string    _name;
     FileSystemKind _kind;
+    FileActivityHook _onActivity{};
 };
 
 // Factory
 std::unique_ptr<fujinet::fs::IFileSystem>
 create_stdio_filesystem(const std::string& rootDir,
                         const std::string& name,
-                        FileSystemKind kind)
+                        FileSystemKind kind,
+                        FileActivityHook onActivity)
 {
     FN_ELOG("Creating stdio filesystem '%s' at root '%s'",
         name.c_str(), rootDir.c_str());
-    return std::make_unique<StdioFileSystem>(rootDir, name, kind);
+    return std::make_unique<StdioFileSystem>(rootDir, name, kind, onActivity);
 }
 
 } // namespace fujinet::fs

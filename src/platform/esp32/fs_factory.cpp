@@ -1,6 +1,7 @@
 #include "fujinet/fs/fs_stdio.h"
 #include "fujinet/platform/esp32/fs_factory.h"
 #include "fujinet/platform/esp32/fs_init.h"
+#include "fujinet/platform/esp32/led_manager.h"
 #include "fujinet/fs/http_filesystem.h"
 #include "fujinet/fs/tnfs_filesystem.h"
 #include "fujinet/core/logging.h"
@@ -34,7 +35,8 @@ std::unique_ptr<fujinet::fs::IFileSystem> create_sdcard_filesystem()
     return fujinet::fs::create_stdio_filesystem(
         "/sdcard",
         "sd0",
-        FileSystemKind::LocalSD
+        FileSystemKind::LocalSD,
+        &note_activity
     );
 }
 

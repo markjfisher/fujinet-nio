@@ -5,6 +5,15 @@ This repository contains the firmware for the Fujinet network adapter.
 Key documents to read are:
 - [Context Bootstrap](docs/context_bootstrap.md) for the basic information and links to other docs in the project
 
+## Architecture rule: no platform `#ifdef`s in shared code
+
+Core and `src/lib/` code carries no platform `#ifdef`s and includes no
+`platform/<name>/` headers (see `docs/architecture.md`, "1. No `#ifdef`
+spaghetti", and `docs/context_bootstrap.md`, "What “no ifdefs” means in
+practice"). Platform behaviour lives under `src/platform/<name>/` and is
+selected at registration time; when shared code needs a platform effect, inject
+it (for example a callback passed to the factory), as `FileActivityHook` does.
+
 ## Building and Testing
 
 To compile the project with its tests run:
