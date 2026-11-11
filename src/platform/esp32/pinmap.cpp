@@ -95,6 +95,7 @@ static constexpr PinMap BOARD_PINMAP{
     .led = LedPins{
         .wifi = 14,     // GPIO_NUM_14 (PIN_LED_WIFI)
         .bus = 12,      // GPIO_NUM_12 (PIN_LED_BUS)
+        .network_activity = true,
     },
     .button = ButtonPins{
         .a = 0,         // GPIO_NUM_0 (PIN_BUTTON_A)
@@ -126,6 +127,7 @@ static constexpr PinMap BOARD_PINMAP{
     .led = LedPins{
         .wifi    = 14,  // GPIO_NUM_14 (PIN_LED_WIFI)
         .bus     = 12,  // GPIO_NUM_12 (PIN_LED_BUS)
+        .network_activity = true,
     },
     .button = ButtonPins{
         .a       = 0,   // GPIO_NUM_0 (PIN_BUTTON_A)
