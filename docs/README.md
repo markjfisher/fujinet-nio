@@ -18,6 +18,7 @@ Principal evergreen documents include:
 | `protocol_reference.md` | FujiBus protocol reference |
 | `disk_device_protocol.md` | DiskDevice wire contract |
 | `driver_architecture.md` | Client driver, session, and channel architecture |
+| `visor-usb-host.md` | Optional Linux/macOS Handspring USB Host transport, raw packets and lifecycle |
 | `packet_link.md` | FujiBus packets over a byte stream (UART, TCP) from a bridge microcontroller |
 | `hotsync.md` | Palm HotSync service (NetSync), its settings, files and protocol stack |
 | `amiga/amiga-floppy-channel.md` | Amiga floppy/Pico channel trade study |

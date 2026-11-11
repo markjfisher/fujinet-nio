@@ -271,6 +271,19 @@
         "FN_BUILD_POSIX_APP": "OFF",
         "FN_BUILD_TESTS": "ON"
       }
+    },
+    {
+      "name": "fujibus-visor-usb-debug",
+      "displayName": "Handspring Visor USB Host (Debug, optional libusb)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FN_BUILD_VISOR_USB_HOST": "ON",
+        "FN_WITH_HOTSYNC": "OFF",
+        "FN_BUILD_POSIX_APP": "ON",
+        "FN_BUILD_TESTS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -337,6 +350,10 @@
     {
       "name": "lib-only-build",
       "configurePreset": "lib-only"
+    },
+    {
+      "name": "fujibus-visor-usb-debug",
+      "configurePreset": "fujibus-visor-usb-debug"
     }
   ]
 }

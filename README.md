@@ -20,6 +20,10 @@ See the [`docs/` documentation index](docs/README.md) for current architecture,
 protocols, testing guidance, and the policy for preserving historical plans
 and design discussions.
 
+For a Handspring Visor USB cradle, see the opt-in
+[Linux/macOS USB Host guide](docs/visor-usb-host.md). Only that profile requires
+libusb; existing transport builds remain unchanged.
+
 ## Building TL;DR:
 
 ### prerequisites

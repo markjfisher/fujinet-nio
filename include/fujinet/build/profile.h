@@ -36,6 +36,7 @@ enum class ChannelKind {
     UartGpio,     // ESP32 GPIO-based UART (RS232, etc.)
     SioGpio,      // ESP32 Atari SIO connector owned by the dual-plane ingress
     SerialPort,   // POSIX serial port (RS-232 via /dev/ttyS* or /dev/ttyUSB*)
+    VisorUsbHost, // opt-in POSIX Handspring vendor USB host (not CDC)
     // Future: SpiBridge, etc.
 };
 

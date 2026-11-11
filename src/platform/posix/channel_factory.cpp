@@ -43,6 +43,10 @@ create_channel_for_profile(const build::BuildProfile& profile, const config::Fuj
         std::cout << "[ChannelFactory] Using PTY channel (Pty).\n";
         return posix::create_pty_channel(config);
 
+    case ChannelKind::VisorUsbHost:
+        // Dedicated profile registers an ownership-aware packet ingress in main_posix.
+        return nullptr;
+
     case ChannelKind::UsbCdcDevice:
         std::cout << "[ChannelFactory] UsbCdcDevice not supported on POSIX.\n";
         return nullptr;

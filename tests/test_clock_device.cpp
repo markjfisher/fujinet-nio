@@ -4,6 +4,12 @@
 #include "fujinet/io/devices/clock_commands.h"
 #include "fujinet/io/devices/clock_device.h"
 
+#include "fake_fs.h"
+#include "fujinet/config/fuji_config_yaml_store_fs.h"
+#include "fujinet/io/core/io_device_manager.h"
+#include "fujinet/platform/time.h"
+
+#include <stdexcept>
 #include <string>
 
 using fujinet::io::ClockDevice;
@@ -88,4 +94,99 @@ TEST_CASE("ClockDevice GetTimeFormat rejects trailing bytes after timezone")
     auto resp = device.handle(make_get_time_format_request({1, 4, 3, 'U', 'T', 'C', 0xAA}));
 
     CHECK(resp.status == StatusCode::InvalidRequest);
+}
+
+namespace {
+
+IORequest make_save_timezone_request()
+{
+    IORequest request{};
+    request.id = 17;
+    request.deviceId = 0x45;
+    request.command = static_cast<std::uint16_t>(ClockCommand::SetTimezoneSave);
+    request.payload = {1, 3, 'U', 'T', 'C'};
+    return request;
+}
+
+class ThrowingClockStore final : public fujinet::config::FujiConfigStore {
+public:
+    fujinet::config::FujiConfig load() override
+    {
+        ++loads;
+        if (failLoad) throw std::runtime_error("config read failed");
+        return saved;
+    }
+    void save(const fujinet::config::FujiConfig& config) override
+    {
+        ++saves;
+        if (failSave) throw std::runtime_error("config write failed");
+        saved = config;
+    }
+    fujinet::config::FujiConfig saved;
+    bool failLoad{false}, failSave{false};
+    unsigned loads{0}, saves{0};
+};
+
+} // namespace
+
+TEST_CASE("ClockDevice SetTimezoneSave ignores and preserves invalid Visor YAML")
+{
+    fujinet::platform::ScopedTimezone timezone("UTC0");
+    fujinet::tests::MemoryFileSystem fs("primary");
+    fujinet::config::YamlFujiConfigStoreFs store(&fs, nullptr, "fujinet.yaml");
+    fujinet::config::FujiConfig initial;
+    initial.clock.timezone = "UTC0";
+    store.save(initial);
+    fujinet::io::IODeviceManager devices;
+    REQUIRE(devices.registerDevice(0x45, std::make_unique<ClockDevice>(&store)));
+    const std::string invalid = "visor: {port: 3}\n";
+    REQUIRE(fs.create_file("/fujinet.yaml", {invalid.begin(), invalid.end()}));
+    auto request = make_save_timezone_request();
+    fujinet::io::IOResponse response;
+    REQUIRE_NOTHROW(response = devices.handleRequest(request));
+    CHECK(response.status == StatusCode::Ok);
+    CHECK(response.id == request.id);
+    CHECK(response.deviceId == request.deviceId);
+    CHECK(fujinet::platform::get_timezone() == "UTC");
+    auto saved = store.load();
+    CHECK(saved.clock.timezone == "UTC");
+    CHECK_THROWS_AS(saved.visor.validate(), fujinet::config::InvalidVisorConfig);
+    request.command = static_cast<std::uint16_t>(ClockCommand::GetTimezone);
+    request.payload.clear();
+    CHECK(devices.handleRequest(request).status == StatusCode::Ok);
+}
+
+TEST_CASE("ClockDevice SetTimezoneSave returns IOError for throwing config stores")
+{
+    fujinet::platform::ScopedTimezone timezone("UTC0");
+    ThrowingClockStore store;
+    store.saved.clock.timezone = "UTC0";
+    SUBCASE("reload failure") { store.failLoad = true; }
+    SUBCASE("save failure") { store.failSave = true; }
+    ClockDevice device(&store);
+    fujinet::io::IOResponse response;
+    REQUIRE_NOTHROW(response = device.handle(make_save_timezone_request()));
+    CHECK(response.status == StatusCode::IOError);
+    CHECK(response.payload.empty());
+    CHECK(store.saved.clock.timezone == "UTC0");
+    CHECK(store.loads == 1);
+    if (store.failLoad) {
+        CHECK(store.saves == 0);
+        CHECK(fujinet::platform::get_timezone() == "UTC0");
+    } else CHECK(store.saves == 1);
+
+    store.failLoad = store.failSave = false;
+    REQUIRE_NOTHROW(response = device.handle(make_save_timezone_request()));
+    CHECK(response.status == StatusCode::Ok);
+    CHECK(store.saved.clock.timezone == "UTC");
+}
+
+TEST_CASE("ClockDevice SetTimezoneSave retains behavior without a config store")
+{
+    fujinet::platform::ScopedTimezone timezone("UTC0");
+    ClockDevice device;
+    const auto response = device.handle(make_save_timezone_request());
+    CHECK(response.status == StatusCode::Ok);
+    CHECK(fujinet::platform::get_timezone() == "UTC");
+    CHECK(response.payload == std::vector<std::uint8_t>{1, 3, 'U', 'T', 'C', 0});
 }

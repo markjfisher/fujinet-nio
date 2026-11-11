@@ -241,6 +241,30 @@ static void from_yaml(const YAML::Node& node, HotSyncConfig& out)
     out.backup   = yaml_lower_ascii(get_or<std::string>(node, "backup", out.backup));
 }
 
+static void from_yaml(const YAML::Node& node, VisorConfig& out)
+{
+    auto parsed = out;
+    parsed.validationError.clear();
+    parsed.invalidYaml.clear();
+    try {
+        if (!node.IsMap()) throw InvalidVisorConfig("visor must be a mapping");
+        if (auto n = node["port"]) parsed.port = parse_visor_number(n.as<std::string>(), 2);
+        if (auto n = node["bus"]) parsed.bus = n.IsNull() ? 0 : parse_visor_number(n.as<std::string>(), 255);
+        if (auto n = node["path"]) {
+            parsed.path = n.IsNull() ? "" : n.as<std::string>();
+            if (!n.IsNull() && parsed.path.empty()) throw InvalidVisorConfig("visor.path must be null or a port chain");
+        }
+        parsed.validate();
+        out = std::move(parsed);
+    } catch (const InvalidVisorConfig& error) {
+        out.validationError = error.what();
+        out.invalidYaml = YAML::Dump(node);
+    } catch (const YAML::Exception& error) {
+        out.validationError = std::string("Invalid visor settings: ") + error.what();
+        out.invalidYaml = YAML::Dump(node);
+    }
+}
+
 // Top-level FujiConfig mapper.
 static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
 {
@@ -282,6 +306,8 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
         from_yaml(n, cfg.translation);
     }
 
+    if (auto n = root["visor"]) from_yaml(n, cfg.visor);
+
     if (auto n = root["hotsync"]) {
         from_yaml(n, cfg.hotsync);
     }
@@ -289,9 +315,20 @@ static void from_yaml(const YAML::Node& root, FujiConfig& cfg)
 
 // ---------- to_yaml helpers (minimal stub to start) ----------
 
-static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg)
+static void to_yaml(YAML::Emitter& out, const FujiConfig& cfg, bool emitVisorDefaults)
 {
     out << YAML::BeginMap;
+
+    if (!cfg.visor.validationError.empty()) {
+        // Preserve the rejected block when another service saves its own settings.
+        out << YAML::Key << "visor" << YAML::Value << YAML::Load(cfg.visor.invalidYaml);
+    } else if (emitVisorDefaults || cfg.visor.port != 2 || cfg.visor.bus || !cfg.visor.path.empty()) {
+        out << YAML::Key << "visor" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "port" << YAML::Value << cfg.visor.port;
+        if (cfg.visor.bus) out << YAML::Key << "bus" << YAML::Value << cfg.visor.bus;
+        if (!cfg.visor.path.empty()) out << YAML::Key << "path" << YAML::Value << cfg.visor.path;
+        out << YAML::EndMap;
+    }
 
     // fujinet:
     out << YAML::Key << "fujinet" << YAML::Value << YAML::BeginMap;
@@ -436,11 +473,13 @@ static void write_all(fs::IFile& file, const std::string& data)
 YamlFujiConfigStoreFs::YamlFujiConfigStoreFs(fs::IFileSystem* primary,
                                              fs::IFileSystem* backup,
                                              std::string      relativePath,
-                                             FujiConfig       defaults)
+                                             FujiConfig       defaults,
+                                             bool             emitVisorDefaults)
     : _primary(primary)
     , _backup(backup)
     , _relPath(std::move(relativePath))
     , _defaults(std::move(defaults))
+    , _emitVisorDefaults(emitVisorDefaults)
 {
 }
 
@@ -465,7 +504,7 @@ FujiConfig YamlFujiConfigStoreFs::load()
     if (_backup && _backup->exists(_relPath)) {
         try {
             auto config = loadFromFs(*_backup);
-            if (_primary) {
+            if (_primary && config.visor.validationError.empty()) {
                 FN_LOGI(TAG, "copying missing config from backup to primary");
                 save(config);
             }
@@ -554,7 +593,7 @@ FujiConfig YamlFujiConfigStoreFs::loadFromFs(fs::IFileSystem& fs)
 void YamlFujiConfigStoreFs::saveToFs(fs::IFileSystem& fs, const FujiConfig& cfg)
 {
     YAML::Emitter out;
-    to_yaml(out, cfg);
+    to_yaml(out, cfg, _emitVisorDefaults);
 
     auto file = fs.open(_relPath, "wb");
     if (!file) {

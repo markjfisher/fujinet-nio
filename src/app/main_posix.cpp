@@ -12,6 +12,9 @@
 #endif
 
 #include "fujinet/build/profile.h"
+#if defined(FN_BUILD_VISOR_USB_HOST)
+#include "fujinet/platform/posix/visor_usb/ingress.h"
+#endif
 #include "fujinet/console/console_engine.h"
 #include "fujinet/core/bootstrap.h"
 #include "fujinet/core/core.h"
@@ -300,6 +303,17 @@ int main()
     netIecIngress = std::make_unique<fujinet::io::NetIecIngress>(
         std::move(netIecChannel), iecDevices->bus(), "FujiNet NIO");
     core.addWorkSource(netIecIngress.get());
+#elif defined(FN_BUILD_VISOR_USB_HOST)
+    std::unique_ptr<fujinet::platform::posix::visor_usb::Ingress> visorUsb;
+    try {
+        visorUsb = std::make_unique<fujinet::platform::posix::visor_usb::Ingress>(
+            core.routingManager(), fujinet::platform::posix::visor_usb::resolve_options(config.visor), fujiConcrete);
+    } catch (const std::exception& error) {
+        FN_LOGE(TAG, "Visor USB initialization: %s", error.what());
+        return 1;
+    }
+    core.addTransport(visorUsb.get());
+    diagRegistry.add_provider(*visorUsb);
 #elif defined(FN_BUILD_ATARI_FUJIBUS_NETSIO)
     if (!diskDev) {
         FN_LOGE(TAG, "Atari NetSIO ingress requires DiskService");

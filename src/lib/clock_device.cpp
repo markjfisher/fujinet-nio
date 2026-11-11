@@ -9,6 +9,7 @@
 #include <string>
 #include <cstdint>
 #include <stdexcept>
+#include <optional>
 
 namespace fujinet::io {
 
@@ -290,19 +291,28 @@ IOResponse ClockDevice::handle(const IORequest& request)
                 return resp;
             }
 
-            // Set the timezone
-            if (!set_timezone(tz.c_str())) {
+            try {
+                // A reload may reject edited configuration. Do that before
+                // changing the live timezone, and never let persistence errors
+                // escape into the cooperative request loop.
+                std::optional<config::FujiConfig> cfg;
+                if (_configStore) cfg = _configStore->load();
+
+                if (!set_timezone(tz.c_str())) {
+                    resp.status = StatusCode::IOError;
+                    return resp;
+                }
+
+                if (cfg) {
+                    cfg->clock.timezone = tz;
+                    _configStore->save(*cfg);
+                }
+            } catch (const std::exception& error) {
+                FN_LOGE(TAG, "Timezone persistence failed: %s", error.what());
                 resp.status = StatusCode::IOError;
                 return resp;
             }
 
-            // Persist to config store
-            if (_configStore) {
-                auto cfg = _configStore->load();
-                cfg.clock.timezone = tz;
-                _configStore->save(cfg);
-            }
-            
             FN_LOGI(TAG, "Timezone set and saved: %s", tz.c_str());
             
             build_timezone_payload(resp.payload, tz);
