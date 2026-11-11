@@ -111,6 +111,20 @@ jobs:
           path: ${{ env.WORKSPACE_DIR }}/repos/MyPicoDOS
           token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
 
+      # The MS-DOS boot disk links PDCurses, which the workspace carries as the
+      # opt-in submodule external/PDCurses (a recursive workspace clone skips it).
+      - name: Resolve PDCurses revision
+        id: pdcurses
+        run: echo "sha=$(git -C "$WORKSPACE_DIR" rev-parse HEAD:external/PDCurses)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PDCurses
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          repository: wmcbrine/PDCurses
+          ref: ${{ steps.pdcurses.outputs.sha }}
+          path: ${{ env.WORKSPACE_DIR }}/external/PDCurses
+
       # The Amiga default disks are built from the driver, nio-core-apps,
       # nio-apps and nio-config.
       - name: Checkout fujinet-nio-driver
