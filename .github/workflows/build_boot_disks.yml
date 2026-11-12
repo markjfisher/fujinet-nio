@@ -128,7 +128,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          repository: markjfisher/fujinet-nio-driver
+          repository: fujinet-nio/fujinet-nio-driver
           path: ${{ env.WORKSPACE_DIR }}/repos/fujinet-nio-driver
           fetch-depth: 0
           token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}

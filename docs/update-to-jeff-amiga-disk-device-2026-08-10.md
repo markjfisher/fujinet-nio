@@ -72,7 +72,7 @@ the following reading order:
 2. [`fujinet-nio-lib/docs/building.md`](https://github.com/markjfisher/fujinet-nio-lib/blob/master/docs/building.md)
    for the Amiga toolchain prerequisites and the separate application and
    resident-driver library variants.
-3. [`fujinet-nio-driver/README.md`](https://github.com/markjfisher/fujinet-nio-driver/blob/master/README.md)
+3. [`fujinet-nio-driver/README.md`](https://github.com/fujinet-nio/fujinet-nio-driver/blob/master/README.md)
    for the sibling layout, `LIB_ROOT` override, tests, native build,
    installation, MountList setup, mount sequence, and current limitations.
 
