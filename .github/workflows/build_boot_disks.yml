@@ -60,7 +60,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          repository: markjfisher/nio-core-apps
+          repository: fujinet-nio/nio-core-apps
           path: ${{ env.WORKSPACE_DIR }}/repos/nio-core-apps
           fetch-depth: 0
           token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
