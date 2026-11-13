@@ -32,7 +32,7 @@ test.
 AltirraSDL fork:
 
 ```text
-git@github.com:markjfisher/AltirraSDL.git
+git@github.com:fujinet-nio/AltirraSDL.git
 ```
 
 Workspace clone:
