@@ -87,7 +87,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          repository: markjfisher/cc65
+          repository: fujinet-nio/cc65
           ref: bbc-clib
           path: ${{ env.WORKSPACE_DIR }}/repos/cc65
           fetch-depth: 0
@@ -103,7 +103,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          repository: markjfisher/MyPicoDOS
+          repository: fujinet-nio/MyPicoDOS
           ref: ${{ steps.mypicodos.outputs.sha }}
           path: ${{ env.WORKSPACE_DIR }}/repos/MyPicoDOS
           token: ${{ secrets.NIO_WORKSPACE_TOKEN || github.token }}
