@@ -32,7 +32,7 @@ jobs:
   build:
     # Forks have no Pages site of ours to publish to.
     if: github.repository == 'fujinet-nio/fujinet-nio'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # clang-uml PPA has no amd64v3 index, so 26.04 runners cannot install it
     timeout-minutes: 30
 
     steps:
