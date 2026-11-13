@@ -67,9 +67,9 @@ The implementation does not require the FujiNet NIO workspace tooling. Add
 `fujinet-nio-lib` and `fujinet-nio-driver` as sibling git submodules, then use
 the following reading order:
 
-1. [`fujinet-nio-lib/README.md`](https://github.com/markjfisher/fujinet-nio-lib/blob/master/README.md)
+1. [`fujinet-nio-lib/README.md`](https://github.com/fujinet-nio/fujinet-nio-lib/blob/master/README.md)
    for the supported targets and library build entry points.
-2. [`fujinet-nio-lib/docs/building.md`](https://github.com/markjfisher/fujinet-nio-lib/blob/master/docs/building.md)
+2. [`fujinet-nio-lib/docs/building.md`](https://github.com/fujinet-nio/fujinet-nio-lib/blob/master/docs/building.md)
    for the Amiga toolchain prerequisites and the separate application and
    resident-driver library variants.
 3. [`fujinet-nio-driver/README.md`](https://github.com/fujinet-nio/fujinet-nio-driver/blob/master/README.md)
