@@ -23,7 +23,7 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO_URL = "https://github.com/markjfisher/fujinet-nio"
+REPO_URL = "https://github.com/fujinet-nio/fujinet-nio"
 SITE_SRC = Path(__file__).resolve().parent.parent / "docs" / "site"
 
 

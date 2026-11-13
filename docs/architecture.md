@@ -332,7 +332,7 @@ to `FujiBusTransport`.
 Diagram source:
 [`docs/uml/seq_atari_fujibus_paths.puml`](uml/seq_atari_fujibus_paths.puml).
 Rendered SVG:
-[`seq_atari_fujibus_paths`](https://markjfisher.github.io/fujinet-nio/uml/seq_atari_fujibus_paths.svg).
+[`seq_atari_fujibus_paths`](https://fujinet-nio.github.io/fujinet-nio/uml/seq_atari_fujibus_paths.svg).
 
 ### Handspring Visor USB host path
 
@@ -1284,7 +1284,7 @@ extern "C" void app_main(void)
 # **UML Diagrams**
 
 Diagrams are published, not committed, at
-<https://markjfisher.github.io/fujinet-nio/>. The "Publish UML diagrams"
+<https://fujinet-nio.github.io/fujinet-nio/>. The "Publish UML diagrams"
 workflow rebuilds them on every push to master whose build and unit tests pass.
 
 Most are **generated from the code** by clang-uml (`clang-uml.yml`), so they
@@ -1292,7 +1292,7 @@ cannot go stale. The overviews select by relationship ("every implementation of
 `Channel`", "every `VirtualDevice`") and hide members, so they follow the code
 without editing:
 
-![Core layers](https://markjfisher.github.io/fujinet-nio/uml/gen_core_layers.svg)
+![Core layers](https://fujinet-nio.github.io/fujinet-nio/uml/gen_core_layers.svg)
 
 Only what cannot be generated is hand-authored in `docs/uml/` (`arch_*.puml`,
 `seq_*.puml`): the FujiBus packet layout, the Atari ingress flow across systems

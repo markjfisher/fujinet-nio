@@ -61,6 +61,6 @@ same piece of work:
 ## Architecture diagrams
 
 The code-derived architecture/UML diagrams (`gen_*`) are built by a GitHub
-workflow on pushes to master in markjfisher/fujinet-nio (forks skip it) and
+workflow on pushes to master in fujinet-nio/fujinet-nio (forks skip it) and
 published to GitHub Pages; they are not committed. Never generate or commit
 them, and don't mention them in PR descriptions.
