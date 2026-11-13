@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          repository: markjfisher/fujinet-nio-workspace
+          repository: fujinet-nio/fujinet-nio-workspace
           path: ${{ env.WORKSPACE_DIR }}
           submodules: false
           fetch-depth: 0
